@@ -1,0 +1,18 @@
+{
+  "adjustments_version": "kura_adjustments_v1",
+  "note": "Ajustes por guia clinica (no calibrados con datos). Revalidar prospectivamente.",
+  "itb": {
+    "na":   {"A": 0,    "B": 0,    "C": 0},
+    "high": {"A": 0.7,  "B": 0.2,  "C": -1.0},
+    "mod":  {"A": -0.4, "B": 1.0,  "C": -0.2},
+    "low":  {"A": -2.2, "B": -0.6, "C": 2.8}
+  },
+  "alb": {
+    "na":     {"A": 0,    "B": 0,    "C": 0},
+    "normal": {"A": 0.4,  "B": 0.1,  "C": -0.4},
+    "mild":   {"A": -0.2, "B": 0.4,  "C": -0.1},
+    "low":    {"A": -0.8, "B": -0.1, "C": 0.8}
+  },
+  "itb_thresholds": {"high_min": 0.80, "mod_min": 0.50},
+  "alb_thresholds": {"normal_min": 3.5, "mild_min": 3.0}
+}

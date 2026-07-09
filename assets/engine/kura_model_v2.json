@@ -1,0 +1,14 @@
+{
+  "model_version": "kura_model_v2",
+  "cohort_note": "Regresion multinomial 3 clases, cohorte Kura+ n~306. No calibrado prospectivamente.",
+  "classes": ["A", "B", "C"],
+  "feature_order": ["logarea", "necrosis_f", "esfacelo_f", "depth_f", "n_comorb_struct", "et_lpp", "et_vasc", "et_quir", "et_traum"],
+  "intercept": {"A": 0.06353920676509701, "B": -0.38042579294823065, "C": 0.3168865861831329},
+  "coef": {
+    "A": {"logarea": -0.15255089827670415, "necrosis_f": -0.007073378927437956, "esfacelo_f": 0.0466749831024359, "depth_f": 0.08892745938740243, "n_comorb_struct": -0.15012471578914466, "et_lpp": -0.11818675660176771, "et_vasc": 0.12093338398908733, "et_quir": -0.02648210618245856, "et_traum": -0.18169749883294},
+    "B": {"logarea": 0.003244470711701539, "necrosis_f": -0.15613161753497498, "esfacelo_f": -0.046186264641688395, "depth_f": -0.04853751319553725, "n_comorb_struct": -0.03491081782681462, "et_lpp": 0.196812253324782, "et_vasc": -0.05693479962019451, "et_quir": 0.03058194227182142, "et_traum": 0.27265145824336356},
+    "C": {"logarea": 0.1493064275650022, "necrosis_f": 0.16320499646241285, "esfacelo_f": -0.0004887184607468693, "depth_f": -0.04038994619186433, "n_comorb_struct": 0.18503553361596004, "et_lpp": -0.07862549672301444, "et_vasc": -0.0639985843688926, "et_quir": -0.004099836089362461, "et_traum": -0.090953959410424}
+  },
+  "mean": {"logarea": 1.2970621610639268, "necrosis_f": 13.648366013071895, "esfacelo_f": 21.415032679738562, "depth_f": 0.28594771241830064, "n_comorb_struct": 0.6078431372549019, "et_lpp": 0.5915032679738562, "et_vasc": 0.03594771241830065, "et_quir": 0.07516339869281045, "et_traum": 0.15359477124183007},
+  "scale": {"logarea": 1.1240697007507783, "necrosis_f": 24.892784750288673, "esfacelo_f": 27.059984858726132, "depth_f": 0.7174974099003573, "n_comorb_struct": 0.8573808278068802, "et_lpp": 0.49155584825135046, "et_vasc": 0.18615980874021065, "et_quir": 0.26365481635986865, "et_traum": 0.3605598667198}
+}
