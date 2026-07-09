@@ -177,11 +177,11 @@ El usuario del proyecto definió el criterio de priorización: **si el destino e
 
 **Orden de trabajo acordado:**
 
-1. **Conectar un proyecto Supabase real**
-   - Provisionar proyecto, aplicar las 4 migraciones SQL existentes (`supabase/migrations/`).
-   - Sustituir `AppConfig` (hoy vacío) con URL/anon key reales.
-   - Reemplazar `LocalStore`/`DataRepository` en modo local por llamadas reales a Supabase (Postgres + Auth), conservando una capa offline-first (cache local + cola de sincronización) para que el modo sin conexión siga funcionando en campo.
-   - Verificar RLS en vivo: un clínico solo debe poder leer/escribir sus pacientes asignados; el admin, todos.
+1. **Conectar un proyecto Supabase real** — 📖 runbook detallado en [`SUPABASE_SETUP.md`](./SUPABASE_SETUP.md)
+   - Provisionar proyecto (dueño: el cliente/usuario final, nunca esta cuenta de desarrollo), aplicar las 4 migraciones SQL existentes (`supabase/migrations/`) **en orden estricto 0001→0002→0003→0004** (0002 depende de las tablas de 0001; 0003 y 0004 dependen de las funciones helper `is_admin()`/`current_staff_id()` creadas en 0002).
+   - Arquitectura de cliente **ya implementada** (`lib/services/remote/data_store.dart` + `supabase_data_store.dart` + `supabase_bootstrap.dart`): abstrae el origen de datos vía un `DataStore`; usa Supabase real cuando `AppConfig.isSupabaseConfigured` es `true` (URL + anon key inyectadas por `--dart-define`), y cae a `LocalStore` (modo demo local) cuando no hay credenciales — así el modo offline/demo sigue funcionando sin backend.
+   - Verificar RLS en vivo **antes** de conectar la app (ver sección 4 de `SUPABASE_SETUP.md`): login autenticado + lectura de `/rest/v1/patients` confirmando que un clínico sin asignaciones no ve pacientes de otros.
+   - Seed de datos sintéticos para el piloto: `supabase/seed/seed_synthetic_patients.sql` — 6 pacientes ficticios (2×escenario A, 2×B, 2×C; 5 etiologías distintas), idempotente, se corre desde el SQL Editor **después** de aplicar las 4 migraciones y de verificar RLS.
 2. **Storage real de fotos**
    - Subir evidencia fotográfica al bucket `wound-evidence` respetando el límite de 17 MB por lote.
    - Sustituir los paths locales temporales en el estado del formulario de captura por URLs firmadas/reales de Supabase Storage.
