@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/theme/kura_theme.dart';
 import '../../core/providers/session_provider.dart';
+import '../../core/config/app_config.dart';
 import '../../services/data_repository.dart';
 import '../../models/app_user.dart';
 
@@ -15,15 +16,26 @@ class LoginScreen extends ConsumerStatefulWidget {
 }
 
 class _LoginScreenState extends ConsumerState<LoginScreen> {
-  final _emailCtrl = TextEditingController(text: 'ana.martinez@curamas.mx');
-  final _passCtrl = TextEditingController(text: '••••••••');
+  // En modo demo local se precarga un correo de ejemplo y la contrasena es
+  // decorativa (cualquier valor funciona). En modo Supabase (produccion)
+  // ambos campos se dejan vacios y se valida la contrasena real.
+  final _emailCtrl = TextEditingController(
+    text: AppConfig.isSupabaseConfigured ? '' : 'ana.martinez@curamas.mx',
+  );
+  final _passCtrl = TextEditingController(
+    text: AppConfig.isSupabaseConfigured ? '' : 'demo',
+  );
   String? _error;
 
-  Future<void> _doLogin(String email) async {
+  Future<void> _doLogin(String email, {String? password}) async {
     setState(() => _error = null);
-    final ok = await ref.read(sessionProvider.notifier).login(email, 'demo');
+    final ok = await ref
+        .read(sessionProvider.notifier)
+        .login(email, password ?? _passCtrl.text.trim());
     if (!ok) {
-      setState(() => _error = 'Usuario no encontrado o inactivo.');
+      setState(() => _error = AppConfig.isSupabaseConfigured
+          ? 'Correo o contraseña incorrectos, o usuario inactivo.'
+          : 'Usuario no encontrado o inactivo.');
       return;
     }
     if (mounted) context.go('/');
@@ -95,9 +107,16 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         TextField(
                           controller: _passCtrl,
                           obscureText: true,
-                          decoration: const InputDecoration(
-                            labelText: 'Contraseña (demo, cualquier valor)',
-                            prefixIcon: Icon(Icons.lock_outline),
+                          onSubmitted: (_) {
+                            if (!session.isLoading) {
+                              _doLogin(_emailCtrl.text.trim());
+                            }
+                          },
+                          decoration: InputDecoration(
+                            labelText: AppConfig.isSupabaseConfigured
+                                ? 'Contraseña'
+                                : 'Contraseña (demo, cualquier valor)',
+                            prefixIcon: const Icon(Icons.lock_outline),
                           ),
                         ),
                         if (_error != null) ...[
@@ -132,6 +151,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   ),
                 ),
                 const SizedBox(height: 20),
+                if (!AppConfig.isSupabaseConfigured)
                 repoAsync.when(
                   data: (repo) {
                     final users = repo.listUsers();

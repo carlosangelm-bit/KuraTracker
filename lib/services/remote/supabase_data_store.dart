@@ -1,0 +1,131 @@
+import 'package:supabase_flutter/supabase_flutter.dart';
+
+import '../local_db/local_store.dart' show Collections;
+import 'data_store.dart';
+
+/// Implementacion de [DataStore] respaldada por Supabase real (Postgrest +
+/// Auth + RLS). Es la fuente de datos autoritativa en produccion.
+///
+/// ESTRATEGIA DE CACHE (ver documentacion en [DataStore]):
+///   - `hydrate()` se llama una vez tras un login exitoso: hace un SELECT *
+///     de cada tabla en [Collections.all]. Gracias a RLS, cada SELECT
+///     devuelve SOLO las filas visibles para el usuario autenticado (todas
+///     si es admin; solo las de sus pacientes asignados si es clinico). El
+///     resultado se guarda en una cache en memoria (`_cache`).
+///   - `getAll()` es sincrono y lee unicamente de esa cache — nunca hace
+///     I/O. Esto preserva la API sincrona que 9+ pantallas ya usan via
+///     [DataRepository] sin tener que reescribir esas pantallas a
+///     FutureBuilder/StreamBuilder.
+///   - Las escrituras (`insertRow`/`updateRow`/`deleteRow`/`upsertRow`)
+///     hacen la llamada real a Postgrest (respetando RLS: si la policy
+///     rechaza la operacion, Postgrest devuelve 401/403 y se relanza como
+///     [PostgrestException]) y, si tiene exito, actualizan la cache local
+///     con la fila resultante para que la siguiente lectura sincrona la
+///     refleje sin esperar un round-trip adicional.
+///   - `refreshCollection()` vuelve a traer una tabla completa desde el
+///     servidor; se usa cuando una mutacion en una tabla puede afectar la
+///     forma de otra tabla relacionada en la UI (p.ej. tras borrar una
+///     asignacion, refrescar `patients` para que listAllPatients() ya no
+///     incluya un paciente que el usuario perdio visibilidad).
+class SupabaseDataStore implements DataStore {
+  final SupabaseClient _client;
+  final Map<String, List<Map<String, dynamic>>> _cache = {};
+  bool _hydrated = false;
+
+  SupabaseDataStore(this._client);
+
+  @override
+  List<Map<String, dynamic>> getAll(String collection) {
+    return _cache[collection] ?? const [];
+  }
+
+  @override
+  Future<void> hydrate() async {
+    for (final collection in Collections.all) {
+      await refreshCollection(collection);
+    }
+    _hydrated = true;
+  }
+
+  bool get isHydrated => _hydrated;
+
+  /// Limpia toda la cache en memoria (usado en logout, para no dejar datos
+  /// del usuario anterior visibles si otro usuario inicia sesion despues
+  /// en la misma pestana/instancia de la app).
+  void clearCache() {
+    _cache.clear();
+    _hydrated = false;
+  }
+
+  @override
+  Future<void> refreshCollection(String collection) async {
+    final rows = await _client.from(collection).select();
+    _cache[collection] = (rows as List).cast<Map<String, dynamic>>();
+  }
+
+  @override
+  Future<Map<String, dynamic>> insertRow(
+      String collection, Map<String, dynamic> data) async {
+    // No se envia 'id' si viene null/vacio: se deja que Postgres lo genere
+    // (default gen_random_uuid()) y que triggers (p.ej. folios) corran.
+    final payload = Map<String, dynamic>.from(data);
+    if (payload['id'] == null || (payload['id'] as String).isEmpty) {
+      payload.remove('id');
+    }
+    final inserted = await _client
+        .from(collection)
+        .insert(payload)
+        .select()
+        .single();
+    final row = Map<String, dynamic>.from(inserted);
+    _upsertIntoCache(collection, row);
+    return row;
+  }
+
+  @override
+  Future<Map<String, dynamic>> updateRow(
+      String collection, String id, Map<String, dynamic> patch) async {
+    final updated = await _client
+        .from(collection)
+        .update(patch)
+        .eq('id', id)
+        .select()
+        .single();
+    final row = Map<String, dynamic>.from(updated);
+    _upsertIntoCache(collection, row);
+    return row;
+  }
+
+  @override
+  Future<void> deleteRow(String collection, String id) async {
+    await _client.from(collection).delete().eq('id', id);
+    _cache[collection]?.removeWhere((e) => e['id'] == id);
+  }
+
+  @override
+  Future<Map<String, dynamic>> upsertRow(
+      String collection, Map<String, dynamic> data) async {
+    final payload = Map<String, dynamic>.from(data);
+    if (payload['id'] == null || (payload['id'] as String).isEmpty) {
+      payload.remove('id');
+    }
+    final upserted = await _client
+        .from(collection)
+        .upsert(payload)
+        .select()
+        .single();
+    final row = Map<String, dynamic>.from(upserted);
+    _upsertIntoCache(collection, row);
+    return row;
+  }
+
+  void _upsertIntoCache(String collection, Map<String, dynamic> row) {
+    final list = _cache.putIfAbsent(collection, () => []);
+    final idx = list.indexWhere((e) => e['id'] == row['id']);
+    if (idx >= 0) {
+      list[idx] = row;
+    } else {
+      list.add(row);
+    }
+  }
+}

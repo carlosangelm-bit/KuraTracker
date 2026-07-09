@@ -1,5 +1,7 @@
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 
+import '../core/config/app_config.dart';
 import '../models/app_user.dart';
 import '../models/consultation.dart';
 import '../models/patient.dart';
@@ -11,19 +13,25 @@ import '../engine/models/kura_engine_output.dart';
 import '../engine/models/kura_engine_enums.dart';
 import 'local_db/demo_seed.dart';
 import 'local_db/local_store.dart';
+import 'remote/data_store.dart';
+import 'remote/supabase_data_store.dart';
 
 const _uuid = Uuid();
 
 /// Repositorio unico de datos para toda la app.
 ///
-/// Encapsula el almacen local (fuente de datos operativa en esta demo,
-/// diseñado para funcionar 100% offline) exponiendo una API tipada por
-/// entidad. La estructura de esta clase refleja 1:1 el esquema SQL de
-/// Supabase (supabase/migrations), de forma que sustituir la
-/// implementacion interna por llamadas reales a Supabase (postgrest) es
-/// un cambio localizado y no afecta a la capa de UI.
+/// Encapsula el almacen de datos (via la interfaz [DataStore]) exponiendo
+/// una API tipada por entidad. La estructura de esta clase refleja 1:1 el
+/// esquema SQL de Supabase (supabase/migrations).
+///
+/// BACKEND: segun [AppConfig.isSupabaseConfigured], `instance()` construye
+/// un [SupabaseDataStore] (produccion, Postgrest + RLS en vivo) o un
+/// [LocalStoreDataStore] (demo offline-first con datos sinteticos
+/// precargados). En ambos casos, [DataRepository] usa exactamente la misma
+/// API publica sincrona-en-lectura / asincrona-en-escritura, por lo que
+/// ninguna pantalla necesita saber cual backend esta activo.
 class DataRepository {
-  final LocalStore _store;
+  final DataStore _store;
 
   DataRepository._(this._store);
 
@@ -31,17 +39,61 @@ class DataRepository {
 
   static Future<DataRepository> instance() async {
     if (_instance != null) return _instance!;
-    final store = await LocalStore.instance();
-    await DemoSeed.ensureSeeded(store);
-    _instance = DataRepository._(store);
+
+    if (AppConfig.isSupabaseConfigured) {
+      final store = SupabaseDataStore(Supabase.instance.client);
+      // Si hay sesion activa (usuario ya logueado en un run anterior de la
+      // app / refresh de pagina), hidrata la cache de una vez. Si no hay
+      // sesion aun, hydrate() se llama explicitamente desde el login
+      // (ver SessionController) una vez autenticado, para que las policies
+      // de RLS ya tengan auth.uid() disponible.
+      if (Supabase.instance.client.auth.currentSession != null) {
+        await store.hydrate();
+      }
+      _instance = DataRepository._(store);
+      return _instance!;
+    }
+
+    final localStore = await LocalStore.instance();
+    await DemoSeed.ensureSeeded(localStore);
+    _instance = DataRepository._(LocalStoreDataStore(localStore));
     return _instance!;
   }
 
-  Future<void> resetDemoData() async {
-    await DemoSeed.resetAndReseed(_store);
+  /// Fuerza la re-hidratacion de la cache (backend Supabase) tras login.
+  /// No-op en modo local.
+  Future<void> hydrateAfterLogin() async {
+    final store = _store;
+    if (store is SupabaseDataStore) {
+      await store.hydrate();
+    }
   }
 
-  // ---------------- Auth / usuarios (simplificado para demo local) ----------------
+  /// Limpia la cache en memoria (backend Supabase) tras logout, para que
+  /// un siguiente login (posiblemente de otro usuario) no vea datos
+  /// residuales antes de re-hidratar. No-op en modo local.
+  void clearCacheOnLogout() {
+    final store = _store;
+    if (store is SupabaseDataStore) {
+      store.clearCache();
+    }
+  }
+
+  /// Solo disponible en modo demo local (SharedPreferences). En produccion
+  /// (Supabase) esto no aplica: los datos de prueba se cargan una sola vez
+  /// via el script de seed SQL (ver supabase/seed/), no desde la app.
+  Future<void> resetDemoData() async {
+    if (_store is LocalStoreDataStore) {
+      final localStore = await LocalStore.instance();
+      await DemoSeed.resetAndReseed(localStore);
+    }
+  }
+
+  // ---------------- Auth / usuarios ----------------
+  // NOTA: en modo Supabase, el login/logout real (email+password via
+  // Supabase Auth) vive en SessionController (core/providers/session_provider.dart).
+  // Estos metodos siguen sirviendo para leer/administrar la tabla `profiles`
+  // (p.ej. pantalla de administracion de usuarios) en ambos backends.
 
   List<AppUser> listUsers() {
     final profiles = _store.getAll(Collections.profiles);
@@ -66,21 +118,11 @@ class DataRepository {
   }
 
   Future<void> setUserActive(String userId, bool active) async {
-    final profiles = _store.getAll(Collections.profiles);
-    final idx = profiles.indexWhere((p) => p['id'] == userId);
-    if (idx >= 0) {
-      profiles[idx]['is_active'] = active;
-      await _store.saveAll(Collections.profiles, profiles);
-    }
+    await _store.updateRow(Collections.profiles, userId, {'is_active': active});
   }
 
   Future<void> setUserPremium(String userId, bool premium) async {
-    final profiles = _store.getAll(Collections.profiles);
-    final idx = profiles.indexWhere((p) => p['id'] == userId);
-    if (idx >= 0) {
-      profiles[idx]['premium_enabled'] = premium;
-      await _store.saveAll(Collections.profiles, profiles);
-    }
+    await _store.updateRow(Collections.profiles, userId, {'premium_enabled': premium});
   }
 
   // ---------------- Sitios ----------------
@@ -90,9 +132,9 @@ class DataRepository {
 
   Future<Site> createSite(Site site) async {
     final data = site.toJson();
-    data['id'] = data['id'].toString().isEmpty ? _uuid.v4() : data['id'];
-    await _store.upsert(Collections.sites, data);
-    return Site.fromJson(data);
+    if ((data['id'] as String?)?.isEmpty ?? true) data['id'] = _uuid.v4();
+    final saved = await _store.insertRow(Collections.sites, data);
+    return Site.fromJson(saved);
   }
 
   // ---------------- Personal sanitario ----------------
@@ -123,17 +165,12 @@ class DataRepository {
       'is_active': true,
       'created_at': DateTime.now().toIso8601String(),
     };
-    await _store.upsert(Collections.staff, data);
-    return StaffMember.fromJson(data);
+    final saved = await _store.insertRow(Collections.staff, data);
+    return StaffMember.fromJson(saved);
   }
 
   Future<void> setStaffActive(String staffId, bool active) async {
-    final all = _store.getAll(Collections.staff);
-    final idx = all.indexWhere((s) => s['id'] == staffId);
-    if (idx >= 0) {
-      all[idx]['is_active'] = active;
-      await _store.saveAll(Collections.staff, all);
-    }
+    await _store.updateRow(Collections.staff, staffId, {'is_active': active});
   }
 
   List<Patient> listPatientsForStaff(String staffId) {
@@ -192,16 +229,18 @@ class DataRepository {
       'is_active': true,
       'created_at': DateTime.now().toIso8601String(),
     };
-    await _store.upsert(Collections.patients, data);
-    return Patient.fromJson(data);
+    final saved = await _store.insertRow(Collections.patients, data);
+    return Patient.fromJson(saved);
   }
 
   Future<void> assignPatientToStaff(String patientId, String staffId) async {
     final all = _store.getAll(Collections.staffPatientAssignments);
     final exists = all.any((a) => a['patient_id'] == patientId && a['staff_id'] == staffId);
     if (!exists) {
-      all.add({'id': _uuid.v4(), 'staff_id': staffId, 'patient_id': patientId});
-      await _store.saveAll(Collections.staffPatientAssignments, all);
+      await _store.insertRow(Collections.staffPatientAssignments, {
+        'staff_id': staffId,
+        'patient_id': patientId,
+      });
     }
   }
 
@@ -212,7 +251,7 @@ class DataRepository {
       .toList();
 
   Future<void> upsertComorbidity(PatientComorbidity comorbidity) async {
-    await _store.upsert(Collections.patientComorbidities, comorbidity.toJson());
+    await _store.upsertRow(Collections.patientComorbidities, comorbidity.toJson());
   }
 
   // ---------------- Consultas ----------------
@@ -249,17 +288,12 @@ class DataRepository {
       'is_draft': isDraft,
       'created_at': DateTime.now().toIso8601String(),
     };
-    await _store.upsert(Collections.consultations, data);
-    return Consultation.fromJson(data);
+    final saved = await _store.insertRow(Collections.consultations, data);
+    return Consultation.fromJson(saved);
   }
 
   Future<void> updateConsultationDraftStatus(String id, bool isDraft) async {
-    final all = _store.getAll(Collections.consultations);
-    final idx = all.indexWhere((c) => c['id'] == id);
-    if (idx >= 0) {
-      all[idx]['is_draft'] = isDraft;
-      await _store.saveAll(Collections.consultations, all);
-    }
+    await _store.updateRow(Collections.consultations, id, {'is_draft': isDraft});
   }
 
   // ---------------- Heridas ----------------
@@ -276,11 +310,12 @@ class DataRepository {
   }
 
   Future<Wound> createWound(Map<String, dynamic> data) async {
-    data['id'] = data['id'] ?? _uuid.v4();
-    data['created_at'] = data['created_at'] ?? DateTime.now().toIso8601String();
-    data['is_active'] = data['is_active'] ?? true;
-    await _store.upsert(Collections.wounds, data);
-    return Wound.fromJson(data);
+    final row = Map<String, dynamic>.from(data);
+    row['id'] = row['id'] ?? _uuid.v4();
+    row['created_at'] = row['created_at'] ?? DateTime.now().toIso8601String();
+    row['is_active'] = row['is_active'] ?? true;
+    final saved = await _store.insertRow(Collections.wounds, row);
+    return Wound.fromJson(saved);
   }
 
   // ---------------- Evaluaciones ----------------
@@ -292,9 +327,10 @@ class DataRepository {
       .toList();
 
   Future<WoundAssessment> createAssessment(Map<String, dynamic> data) async {
-    data['id'] = data['id'] ?? _uuid.v4();
-    await _store.upsert(Collections.woundAssessments, data);
-    return WoundAssessment.fromJson(data);
+    final row = Map<String, dynamic>.from(data);
+    row['id'] = row['id'] ?? _uuid.v4();
+    final saved = await _store.insertRow(Collections.woundAssessments, row);
+    return WoundAssessment.fromJson(saved);
   }
 
   // ---------------- Mediciones ----------------
@@ -310,9 +346,10 @@ class DataRepository {
   }
 
   Future<WoundMeasurement> createMeasurement(Map<String, dynamic> data) async {
-    data['id'] = data['id'] ?? _uuid.v4();
-    await _store.upsert(Collections.woundMeasurements, data);
-    return WoundMeasurement.fromJson(data);
+    final row = Map<String, dynamic>.from(data);
+    row['id'] = row['id'] ?? _uuid.v4();
+    final saved = await _store.insertRow(Collections.woundMeasurements, row);
+    return WoundMeasurement.fromJson(saved);
   }
 
   // ---------------- Perfusion / nutricion ----------------
@@ -327,9 +364,10 @@ class DataRepository {
   }
 
   Future<PerfusionNutritionData> upsertPerfusion(Map<String, dynamic> data) async {
-    data['id'] = data['id'] ?? _uuid.v4();
-    await _store.upsert(Collections.perfusionNutrition, data);
-    return PerfusionNutritionData.fromJson(data);
+    final row = Map<String, dynamic>.from(data);
+    row['id'] = row['id'] ?? _uuid.v4();
+    final saved = await _store.upsertRow(Collections.perfusionNutrition, row);
+    return PerfusionNutritionData.fromJson(saved);
   }
 
   // ---------------- Fotos ----------------
@@ -341,10 +379,11 @@ class DataRepository {
       .toList();
 
   Future<WoundPhoto> createPhoto(Map<String, dynamic> data) async {
-    data['id'] = data['id'] ?? _uuid.v4();
-    data['taken_at'] = data['taken_at'] ?? DateTime.now().toIso8601String();
-    await _store.upsert(Collections.woundPhotos, data);
-    return WoundPhoto.fromJson(data);
+    final row = Map<String, dynamic>.from(data);
+    row['id'] = row['id'] ?? _uuid.v4();
+    row['taken_at'] = row['taken_at'] ?? DateTime.now().toIso8601String();
+    final saved = await _store.insertRow(Collections.woundPhotos, row);
+    return WoundPhoto.fromJson(saved);
   }
 
   // ---------------- Planes de tratamiento ----------------
@@ -382,14 +421,22 @@ class DataRepository {
       'used_kura_protocol': usedKuraProtocol,
       'final_description': finalDescription,
     };
-    await _store.upsert(Collections.treatmentPlans, planData);
+    await _store.upsertRow(Collections.treatmentPlans, planData);
 
-    // reemplaza componentes
-    final allComponents = _store.getAll(Collections.treatmentComponents);
-    allComponents.removeWhere((c) => c['treatment_plan_id'] == planId);
+    // Reemplaza componentes: borra los existentes del plan y crea los nuevos.
+    // (Se hace fila por fila via la interfaz DataStore, en vez de un
+    // "replace masivo", para que funcione igual sobre LocalStore y sobre
+    // Postgrest sin necesitar un endpoint de bulk-replace).
+    final existingComponents = _store
+        .getAll(Collections.treatmentComponents)
+        .where((c) => c['treatment_plan_id'] == planId)
+        .toList();
+    for (final c in existingComponents) {
+      await _store.deleteRow(Collections.treatmentComponents, c['id'] as String);
+    }
     for (var i = 0; i < components.length; i++) {
       final c = components[i];
-      allComponents.add({
+      await _store.insertRow(Collections.treatmentComponents, {
         'id': c.id.isEmpty ? _uuid.v4() : c.id,
         'treatment_plan_id': planId,
         'method': c.method,
@@ -398,7 +445,6 @@ class DataRepository {
         'sort_order': i,
       });
     }
-    await _store.saveAll(Collections.treatmentComponents, allComponents);
 
     return getTreatmentPlanForConsultation(consultationId, woundId)!;
   }
@@ -437,7 +483,7 @@ class DataRepository {
       'generated_at': output.generatedAt.toIso8601String(),
       'created_at': DateTime.now().toIso8601String(),
     };
-    await _store.upsert(Collections.kuraRecommendations, data);
+    await _store.insertRow(Collections.kuraRecommendations, data);
   }
 
   List<Map<String, dynamic>> listRecommendationsForWound(String woundId) => _store
@@ -448,9 +494,10 @@ class DataRepository {
   // ---------------- Checkpoints Sheehan ----------------
 
   Future<void> saveSheehanCheckpoint(Map<String, dynamic> data) async {
-    data['id'] = data['id'] ?? _uuid.v4();
-    data['created_at'] = data['created_at'] ?? DateTime.now().toIso8601String();
-    await _store.upsert(Collections.sheehanCheckpoints, data);
+    final row = Map<String, dynamic>.from(data);
+    row['id'] = row['id'] ?? _uuid.v4();
+    row['created_at'] = row['created_at'] ?? DateTime.now().toIso8601String();
+    await _store.insertRow(Collections.sheehanCheckpoints, row);
   }
 
   List<Map<String, dynamic>> listSheehanCheckpointsForWound(String woundId) => _store
@@ -459,7 +506,14 @@ class DataRepository {
       .toList();
 
   // ---------------- Auditoria ----------------
-
+  // NOTA: en Supabase, la auditoria de patients/wounds/consultations/
+  // measurements/treatment_plans/kura_recommendations/staff/profiles YA se
+  // genera automaticamente via triggers AFTER INSERT/UPDATE/DELETE
+  // (audit_trigger_fn en 0002_triggers_and_functions.sql). Esta llamada
+  // manual queda como registro adicional explicito desde la app (p.ej.
+  // para acciones que no tienen trigger, o en modo local donde no hay
+  // triggers de Postgres). Ver roadmap paso 4 (auditoria completa) para el
+  // trabajo restante de conciliar ambos mecanismos.
   List<Map<String, dynamic>> listAuditLog({int limit = 200}) {
     final list = _store.getAll(Collections.auditLog);
     list.sort((a, b) => (b['occurred_at'] as String).compareTo(a['occurred_at'] as String));
@@ -475,10 +529,8 @@ class DataRepository {
     Map<String, dynamic>? oldData,
     Map<String, dynamic>? newData,
   }) async {
-    final list = _store.getAll(Collections.auditLog);
-    list.add({
-      'id': _uuid.v4(),
-      'actor_id': actorId,
+    await _store.insertRow(Collections.auditLog, {
+      'actor_id': actorId.isEmpty ? null : actorId,
       'actor_role': actorRole,
       'action': action,
       'table_name': tableName,
@@ -487,6 +539,5 @@ class DataRepository {
       'new_data': newData,
       'occurred_at': DateTime.now().toIso8601String(),
     });
-    await _store.saveAll(Collections.auditLog, list);
   }
 }

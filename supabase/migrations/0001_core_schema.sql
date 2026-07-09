@@ -76,10 +76,14 @@ create table public.staff (
 comment on table public.staff is 'Registro de personal sanitario (kuradores, medicos). Folio tipo K2024-0001.';
 
 -- Asignacion de pacientes a personal sanitario (N:M) — "ve solo sus pacientes asignados".
+-- NOTA: la FK hacia public.patients(id) se agrega mas abajo via ALTER TABLE
+-- (seccion 4), una vez que la tabla patients ya existe, para evitar el error
+-- "relation public.patients does not exist" al ejecutar este script de arriba
+-- a abajo en el SQL Editor.
 create table public.staff_patient_assignments (
   id uuid primary key default gen_random_uuid(),
   staff_id uuid not null references public.staff(id) on delete cascade,
-  patient_id uuid not null references public.patients(id) on delete cascade,
+  patient_id uuid not null,
   assigned_at timestamptz not null default now(),
   unique (staff_id, patient_id)
 );

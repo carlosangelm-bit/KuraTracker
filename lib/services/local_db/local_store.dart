@@ -1,5 +1,10 @@
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:uuid/uuid.dart';
+
+import '../remote/data_store.dart';
+
+const _uuid = Uuid();
 
 /// Almacen local generico basado en SharedPreferences (JSON por coleccion).
 ///
@@ -84,6 +89,69 @@ class LocalStore {
   }
 }
 
+/// Adaptador que expone [LocalStore] a traves de la interfaz [DataStore],
+/// para que [DataRepository] pueda depender uniformemente de [DataStore]
+/// sin importar si el backend es local (demo) o Supabase (produccion).
+///
+/// Como SharedPreferences ya es sincrono en lectura (una vez cargado en
+/// memoria por el plugin), `getAll` delega directamente sin cache adicional;
+/// las escrituras generan id (uuid v4) si no viene incluido, igual que hacia
+/// antes `DataRepository` manualmente en cada metodo `createX`.
+class LocalStoreDataStore implements DataStore {
+  final LocalStore _store;
+  LocalStoreDataStore(this._store);
+
+  @override
+  List<Map<String, dynamic>> getAll(String collection) => _store.getAll(collection);
+
+  @override
+  Future<Map<String, dynamic>> insertRow(
+      String collection, Map<String, dynamic> data) async {
+    final row = Map<String, dynamic>.from(data);
+    row['id'] ??= _uuid.v4();
+    await _store.upsert(collection, row);
+    return row;
+  }
+
+  @override
+  Future<Map<String, dynamic>> updateRow(
+      String collection, String id, Map<String, dynamic> patch) async {
+    final items = _store.getAll(collection);
+    final idx = items.indexWhere((e) => e['id'] == id);
+    if (idx < 0) {
+      throw StateError('No existe fila id=$id en "$collection" (update).');
+    }
+    final merged = {...items[idx], ...patch};
+    await _store.upsert(collection, merged);
+    return merged;
+  }
+
+  @override
+  Future<void> deleteRow(String collection, String id) async {
+    await _store.delete(collection, id);
+  }
+
+  @override
+  Future<Map<String, dynamic>> upsertRow(
+      String collection, Map<String, dynamic> data) async {
+    final row = Map<String, dynamic>.from(data);
+    row['id'] ??= _uuid.v4();
+    await _store.upsert(collection, row);
+    return row;
+  }
+
+  @override
+  Future<void> refreshCollection(String collection) async {
+    // No-op: SharedPreferences no tiene "servidor" que consultar; getAll()
+    // ya lee el estado mas reciente en cada llamada.
+  }
+
+  @override
+  Future<void> hydrate() async {
+    // No-op: no hay cache separada que poblar en el caso local.
+  }
+}
+
 /// Nombres de colecciones (equivalentes a las tablas SQL de Supabase).
 class Collections {
   static const profiles = 'profiles';
@@ -104,4 +172,29 @@ class Collections {
   static const sheehanCheckpoints = 'sheehan_checkpoints';
   static const auditLog = 'audit_log';
   static const importBatches = 'import_batches';
+
+  /// Todas las colecciones/tablas, en un orden razonable para hidratar la
+  /// cache de [SupabaseDataStore] tras el login (catalogos primero, luego
+  /// datos clinicos). El orden no importa para SELECT (a diferencia de las
+  /// migraciones SQL, que si tienen dependencias de FK en INSERT/CREATE).
+  static const List<String> all = [
+    profiles,
+    sites,
+    staff,
+    staffPatientAssignments,
+    patients,
+    patientComorbidities,
+    consultations,
+    wounds,
+    woundAssessments,
+    woundMeasurements,
+    perfusionNutrition,
+    woundPhotos,
+    treatmentPlans,
+    treatmentComponents,
+    kuraRecommendations,
+    sheehanCheckpoints,
+    auditLog,
+    importBatches,
+  ];
 }
