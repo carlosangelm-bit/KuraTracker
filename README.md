@@ -13,8 +13,8 @@ EHR (expediente clínico electrónico) especializado en **cuidado avanzado de he
 | Motor Protocolo Kura+ (8.1–8.5) | ✅ Completo, 42/42 tests pasando, paridad numérica validada contra referencia Python (tolerancia 1e-8/1e-9) |
 | App Flutter (Web/iOS/Android desde una sola base) | ✅ Compila sin errores (`flutter analyze` limpio), build web exitoso |
 | Flujo de captura de heridas (rediseñado) | ✅ Completo — inventario clínico original conservado |
-| Esquema Supabase (SQL: tablas, RLS, triggers, storage) | ✅ Diseñado y versionado en `supabase/migrations/` — **NO** aplicado aún a un proyecto Supabase real |
-| Persistencia real / multiusuario / RLS en vivo | ❌ Pendiente — hoy la app corre en modo **local-first demo** (SharedPreferences), sin backend en la nube conectado |
+| Esquema Supabase (SQL: tablas, RLS, triggers, storage) | ✅ Diseñado, versionado en `supabase/migrations/` **y aplicado** (0001→0004) al proyecto Supabase real del cliente; admin creado y promovido |
+| Persistencia real / multiusuario / RLS en vivo | ⚠️ Arquitectura lista (`DataStore`/`SupabaseDataStore`) y migraciones aplicadas; **smoke-test end-to-end contra Supabase real pendiente** (siguiente paso); verificación formal de RLS con prueba negativa diferida hasta antes de cargar datos reales (se avanza con datos sintéticos) |
 | Storage real de fotos (bucket `wound-evidence`) | ❌ Pendiente — hoy solo se referencian rutas locales temporales del dispositivo |
 | Motor como Edge Function (Supabase, TypeScript) | ❌ Pendiente — hoy el motor corre embebido en el cliente Dart |
 | Bitácora de auditoría | ⚠️ Parcial — cubre creación de paciente/medición/plan de tratamiento; faltan updates/deletes |

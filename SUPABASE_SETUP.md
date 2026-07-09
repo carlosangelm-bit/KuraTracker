@@ -12,6 +12,18 @@ pacientes sintéticos.
 > se pega en el chat, y nunca se sube al repo. Solo tú la usas, y solo si
 > algún día necesitas un script de administración fuera del navegador.
 
+> ✅ **Estado en el proyecto piloto (actualizado):** las secciones 1–3 de
+> este runbook ya se completaron en el proyecto Supabase real del piloto
+> (4 migraciones aplicadas 0001→0004, usuario admin creado y promovido).
+> En el camino se encontró y corrigió un bug real de `search_path` en
+> funciones `SECURITY DEFINER` de la migración 0002 — ver
+> `supabase/hotfixes/0002_fix_search_path.sql` y la fila correspondiente en
+> la sección 8 (Problemas comunes). Ese fix ya quedó incorporado también en
+> `0002_triggers_and_functions.sql` para que un proyecto nuevo (ej.
+> producción) no lo sufra al aplicar las migraciones desde cero. El resto
+> de este documento (secciones 4+) sigue siendo la referencia vigente para
+> la verificación de RLS pendiente y para futuros entornos.
+
 ---
 
 ## 0. Qué vas a terminar teniendo
@@ -270,9 +282,17 @@ momento con el detalle exacto.
 | `relation "public.staff" does not exist` al correr 0002 | Corriste 0002 antes de 0001, o 0001 falló a medias | Revisa que 0001 haya corrido completo con éxito antes de reintentar 0002 |
 | `function public.is_admin() does not exist` al correr 0003 | Corriste 0003 antes de 0002 | Corre 0002 completo primero |
 | `permission denied for table patients` al leer desde `curl`/app | RLS activo pero no tienes `profiles.role='admin'` ni asignación en `staff_patient_assignments` | Verifica la sección 3.2 (promoción a admin) |
-| El usuario nuevo no aparece en `profiles` tras crearlo en Authentication | El trigger `handle_new_auth_user` no corrió (falta 0002) o falló silenciosamente | Revisa que 0002 esté aplicada; si sigue sin aparecer, avísame para revisar el trigger |
+| **"Database error creating new user"** al hacer Authentication → Add user (el error real en **Postgres logs** dice `type "user_role" does not exist`) | **Bug corregido — detectado en el piloto.** `handle_new_auth_user()` (y las otras funciones `SECURITY DEFINER` de 0002) referenciaban `user_role` sin calificar por esquema. El trigger corre bajo el rol interno `supabase_auth_admin`, que no tiene `public` en su `search_path`, así que no resolvía el tipo aunque `public.user_role` sí existiera. | Si tu proyecto ya tiene las migraciones aplicadas (como el caso del piloto): corre `supabase/hotfixes/0002_fix_search_path.sql` desde el SQL Editor (seguro de re-ejecutar, solo reemplaza cuerpos de función, no toca triggers). Si es un proyecto **nuevo**, ya no te afecta: el fix está incorporado directamente en `0002_triggers_and_functions.sql`. |
+| El usuario nuevo no aparece en `profiles` tras crearlo en Authentication | El trigger `handle_new_auth_user` no corrió (falta 0002), falló silenciosamente, o es el bug de `search_path` de arriba | Revisa Postgres Logs para el error exacto; si es el bug de `search_path`, aplica el hotfix de la fila anterior |
 | Bucket `wound-evidence` no aparece en Storage | 0004 no se aplicó, o se aplicó con error | Re-revisa el resultado del `Run` de 0004 en el SQL Editor |
 | Quiero "resetear" y volver a empezar | Las migraciones no son 100% idempotentes por diseño | Lo más simple en esta etapa: crear un proyecto Supabase nuevo y repetir el runbook; o pídeme un script de limpieza si prefieres reusar el mismo proyecto |
+
+> 💡 **Dónde ver el error real de Postgres** (no solo el mensaje genérico del
+> dashboard de Auth): Dashboard → **Logs** → **Postgres Logs**, filtra por la
+> hora en que intentaste crear el usuario. El dashboard de Authentication
+> suele mostrar un mensaje genérico ("Database error creating new user")
+> que oculta la causa real — siempre revisa Postgres Logs para triggers que
+> fallan en `auth.users`.
 
 ---
 

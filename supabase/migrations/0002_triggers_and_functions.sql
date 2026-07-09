@@ -74,8 +74,33 @@ create trigger trg_treatment_plans_updated_at before update on public.treatment_
 -- Bitacora de auditoria generica (AFTER INSERT/UPDATE/DELETE)
 -- -----------------------------------------------------------------------------
 
+-- NOTA DE SEGURIDAD (todas las funciones SECURITY DEFINER de este archivo):
+-- Una funcion SECURITY DEFINER se ejecuta con los privilegios de su
+-- propietario, pero por defecto usa el search_path del ROL QUE LA INVOCA en
+-- tiempo de ejecucion, no el search_path de quien la creo. Si el cuerpo de
+-- la funcion referencia un tipo/tabla/funcion SIN calificar por esquema
+-- (p.ej. "user_role" en vez de "public.user_role"), Postgres resuelve ese
+-- nombre contra el search_path del invocador. Esto es explotable/fragil:
+-- el ejemplo real que rompio el pilotaje fue el trigger
+-- on_auth_user_created, disparado por el rol interno de Supabase
+-- "supabase_auth_admin" al crear un usuario en auth.users — ese rol NO
+-- tiene "public" en su search_path, asi que "::user_role" fallaba con
+-- 'type "user_role" does not exist' aunque el tipo existiera perfectamente
+-- en public.user_role.
+-- Fix aplicado a las 5 funciones SECURITY DEFINER de abajo:
+--   1) "set search_path = public, pg_temp" explicito en la funcion.
+--   2) Calificar por esquema cualquier tipo/objeto referenciado dentro del
+--      cuerpo (::public.user_role, "returns public.user_role", etc.),
+--      como defensa en profundidad adicional al punto 1.
+-- Esto tambien es exactamente lo que reporta el linter de seguridad de
+-- Supabase como "Function Search Path Mutable" — no es solo un parche
+-- puntual para este bug, es la practica recomendada para toda funcion
+-- SECURITY DEFINER.
+
 create or replace function public.audit_trigger_fn()
-returns trigger language plpgsql security definer as $$
+returns trigger language plpgsql security definer
+set search_path = public, pg_temp
+as $$
 declare
   v_actor uuid := auth.uid();
   v_role text;
@@ -129,13 +154,24 @@ create trigger trg_audit_profiles
 -- Helper: crear perfil automaticamente al registrar un usuario en auth.users
 -- -----------------------------------------------------------------------------
 
+-- IMPORTANTE: este trigger corre AFTER INSERT ON auth.users, disparado por
+-- el rol interno "supabase_auth_admin" (no por "postgres" ni por el usuario
+-- autenticado). Ese rol no tiene "public" en su search_path por defecto,
+-- por eso el "set search_path" de abajo y el cast calificado
+-- "::public.user_role" son OBLIGATORIOS, no opcionales, para esta funcion
+-- especifica. Bug real detectado en pilotaje: sin ambos, falla con
+-- 'type "user_role" does not exist' al crear cualquier usuario en
+-- Authentication -> Add user, con el error visible solo en los Postgres
+-- logs (Supabase muestra "Database error creating new user" en el UI).
 create or replace function public.handle_new_auth_user()
-returns trigger language plpgsql security definer as $$
+returns trigger language plpgsql security definer
+set search_path = public, pg_temp
+as $$
 begin
   insert into public.profiles (id, role, full_name, email)
   values (
     new.id,
-    coalesce((new.raw_user_meta_data->>'role')::user_role, 'clinico'),
+    coalesce((new.raw_user_meta_data->>'role')::public.user_role, 'clinico'::public.user_role),
     coalesce(new.raw_user_meta_data->>'full_name', new.email),
     new.email
   )
@@ -153,16 +189,22 @@ create trigger trg_on_auth_user_created
 -- -----------------------------------------------------------------------------
 
 create or replace function public.current_user_role()
-returns user_role language sql stable security definer as $$
+returns public.user_role language sql stable security definer
+set search_path = public, pg_temp
+as $$
   select role from public.profiles where id = auth.uid();
 $$;
 
 create or replace function public.is_admin()
-returns boolean language sql stable security definer as $$
-  select coalesce((select role = 'admin' from public.profiles where id = auth.uid()), false);
+returns boolean language sql stable security definer
+set search_path = public, pg_temp
+as $$
+  select coalesce((select role = 'admin'::public.user_role from public.profiles where id = auth.uid()), false);
 $$;
 
 create or replace function public.current_staff_id()
-returns uuid language sql stable security definer as $$
+returns uuid language sql stable security definer
+set search_path = public, pg_temp
+as $$
   select id from public.staff where profile_id = auth.uid();
 $$;
