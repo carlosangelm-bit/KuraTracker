@@ -289,16 +289,18 @@ que tú corras el seed.
 > y `audit_trigger_fn()` generó su entrada de auditoría al crear el
 > paciente — ambas funciones corregidas.
 >
-> **Datos de prueba creados** (quedan en tu proyecto, claramente marcados):
-> `staff` folio `K2026-SMOKE1`, `patients` folio `PA2026-0001` ("Paciente
-> Smoketest (borrar)"), `sites` "Kura+ Piloto (smoketest)", más las
-> consultas/heridas/mediciones/plan/recomendación/checkpoint asociados.
-> **Recomendación**: bórralos desde el SQL Editor antes de correr el seed
-> (para no confundir `PA2026-0001` con los folios `SEED-PA2026-000x` del
-> seed real) — por ejemplo `delete from public.patients where folio =
-> 'PA2026-0001';` (el `on delete cascade` del esquema se encarga del resto).
-> Si prefieres dejarlos como referencia, no hay conflicto técnico real
-> porque el seed usa el prefijo `SEED-`.
+> **Limpieza ya realizada (2026-07-10).** Con tu confirmación, borré yo
+> mismo los datos de smoketest vía REST (usando la cuenta de prueba, que
+> tiene `role='admin'`): `delete` de `patients` (folio `PA2026-0001`,
+> cascada automática sobre consultas/heridas/evaluación/mediciones/
+> perfusión/plan/componentes/recomendación Kura+/checkpoint Sheehan/
+> asignación), y `delete` explícito de `staff` (`K2026-SMOKE1`) y `sites`
+> ("Kura+ Piloto (smoketest)"). Verifiqué con `count=exact` que las 13
+> tablas clínicas quedaron en **0 filas**. La bitácora (`audit_log`)
+> registró cada borrado —incluidos los cascadeados— con su `old_data`
+> completo, otra confirmación en vivo del trigger de auditoría. Los 2
+> perfiles admin (`carlosangelm@gmail.com`, `smoketest@curamas.mx`) no se
+> tocaron. **El proyecto queda limpio y listo para el seed.**
 
 ---
 
