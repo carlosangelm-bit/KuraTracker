@@ -261,6 +261,45 @@ y corro el smoke-test (login con tu usuario admin real, navegación básica)
 para confirmar que la app conecta correctamente contra tu proyecto antes de
 que tú corras el seed.
 
+> ✅ **Smoke-test completado en el proyecto piloto (2026-07-10).** Con la
+> cuenta de prueba `smoketest@curamas.mx` (que promoviste a `role='admin'`
+> vía SQL Editor) verifiqué end-to-end, contra tu proyecto Supabase real:
+> login → crear paciente (folio auto-generado `PA2026-0001`) → captura
+> (herida + evaluación + medición + perfusión) → tratamiento con sugerencia
+> Kura+ (escenario A, `A1 - Cierre Activo`) → **seguimiento** (segunda
+> consulta + segunda medición con reducción de área 5.0→0.9cm² = 82% →
+> checkpoint de Sheehan `confirmar_cierre`) → **reporte** (confirmé que
+> todo el árbol de datos que alimenta el PDF —paciente, ambas consultas,
+> herida, ambas mediciones, plan de tratamiento, recomendación Kura+ y
+> checkpoint Sheehan— se lee correctamente vía RLS con este usuario).
+>
+> **Nota metodológica importante**: esta verificación se hizo reproduciendo
+> exactamente las mismas llamadas REST (Postgrest) que `DataRepository` /
+> `SupabaseDataStore` usan internamente en la app Flutter, autenticado como
+> el usuario de prueba real — no fue un test de clics literal en el
+> navegador (mis herramientas de automatización solo cargan la página y
+> capturan la consola, no simulan clics/formularios). Es la validación más
+> fuerte disponible del pipeline de datos completo (RLS + triggers +
+> constraints + esquema), pero no sustituye una revisión visual manual de
+> cada pantalla, que te recomiendo hacer tú mismo con el build ya conectado.
+>
+> Como beneficio adicional, este smoke-test también validó en producción
+> real el fix de seguridad de la sección 8 (`search_path`): el `profiles`
+> del usuario de prueba se creó correctamente vía `handle_new_auth_user()`,
+> y `audit_trigger_fn()` generó su entrada de auditoría al crear el
+> paciente — ambas funciones corregidas.
+>
+> **Datos de prueba creados** (quedan en tu proyecto, claramente marcados):
+> `staff` folio `K2026-SMOKE1`, `patients` folio `PA2026-0001` ("Paciente
+> Smoketest (borrar)"), `sites` "Kura+ Piloto (smoketest)", más las
+> consultas/heridas/mediciones/plan/recomendación/checkpoint asociados.
+> **Recomendación**: bórralos desde el SQL Editor antes de correr el seed
+> (para no confundir `PA2026-0001` con los folios `SEED-PA2026-000x` del
+> seed real) — por ejemplo `delete from public.patients where folio =
+> 'PA2026-0001';` (el `on delete cascade` del esquema se encarga del resto).
+> Si prefieres dejarlos como referencia, no hay conflicto técnico real
+> porque el seed usa el prefijo `SEED-`.
+
 ---
 
 ## 7. Después del smoke-test: tú corres el seed

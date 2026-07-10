@@ -14,7 +14,7 @@ EHR (expediente clínico electrónico) especializado en **cuidado avanzado de he
 | App Flutter (Web/iOS/Android desde una sola base) | ✅ Compila sin errores (`flutter analyze` limpio), build web exitoso |
 | Flujo de captura de heridas (rediseñado) | ✅ Completo — inventario clínico original conservado |
 | Esquema Supabase (SQL: tablas, RLS, triggers, storage) | ✅ Diseñado, versionado en `supabase/migrations/` **y aplicado** (0001→0004) al proyecto Supabase real del cliente; admin creado y promovido |
-| Persistencia real / multiusuario / RLS en vivo | ⚠️ Arquitectura lista (`DataStore`/`SupabaseDataStore`) y migraciones aplicadas; **smoke-test end-to-end contra Supabase real pendiente** (siguiente paso); verificación formal de RLS con prueba negativa diferida hasta antes de cargar datos reales (se avanza con datos sintéticos) |
+| Persistencia real / multiusuario / RLS en vivo | ✅ Migraciones aplicadas y **smoke-test end-to-end completado contra Supabase real** (login → paciente → captura → tratamiento con sugerencia Kura+ → seguimiento con checkpoint Sheehan → datos listos para reporte), incl. bug de `search_path` corregido y validado en producción; verificación formal de RLS con prueba negativa (segundo usuario clínico sin asignaciones) sigue diferida hasta antes de cargar datos reales, por decisión del cliente — se avanza con datos sintéticos |
 | Storage real de fotos (bucket `wound-evidence`) | ❌ Pendiente — hoy solo se referencian rutas locales temporales del dispositivo |
 | Motor como Edge Function (Supabase, TypeScript) | ❌ Pendiente — hoy el motor corre embebido en el cliente Dart |
 | Bitácora de auditoría | ⚠️ Parcial — cubre creación de paciente/medición/plan de tratamiento; faltan updates/deletes |
