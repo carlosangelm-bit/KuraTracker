@@ -15,8 +15,34 @@ class AdminHomeScreen extends ConsumerStatefulWidget {
   ConsumerState<AdminHomeScreen> createState() => _AdminHomeScreenState();
 }
 
-class _AdminHomeScreenState extends ConsumerState<AdminHomeScreen> {
+class _AdminHomeScreenState extends ConsumerState<AdminHomeScreen>
+    with SingleTickerProviderStateMixin {
   int _tab = 0;
+  // TabController propio y explícito: NO depende de DefaultTabController.
+  //
+  // Bug previo: `TabBar` vivía en `AppBar.bottom` mientras `DefaultTabController`
+  // envolvía solo el `body`. En el árbol de widgets, TabBar y DefaultTabController
+  // quedaban como HERMANOS (AppBar y body son ambos hijos directos de Scaffold),
+  // no en relación ancestro/descendiente. Por eso `DefaultTabController.maybeOf(context)`
+  // -llamado internamente por TabBar- devolvía null. En debug esto lanza un
+  // FlutterError controlado por assert(); en release (el build real desplegado)
+  // el assert se elimina y el controller interno de TabBar queda null, causando
+  // luego "Null check operator used on a null value" dentro del propio framework
+  // de Flutter (_TabBarState), no en código de esta pantalla. Ocurría siempre,
+  // con datos vacíos o no: no dependía de que el admin tuviera o no fila en `staff`.
+  late final TabController _tabController = TabController(length: 3, vsync: this)
+    ..addListener(() {
+      if (_tabController.indexIsChanging) return;
+      if (_tabController.index != _tab) {
+        setState(() => _tab = _tabController.index);
+      }
+    });
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -26,6 +52,7 @@ class _AdminHomeScreenState extends ConsumerState<AdminHomeScreen> {
       appBar: AppBar(
         title: const Text('Administración'),
         bottom: TabBar(
+          controller: _tabController,
           tabs: const [
             Tab(text: 'Usuarios'),
             Tab(text: 'Personal sanitario'),
@@ -34,22 +61,19 @@ class _AdminHomeScreenState extends ConsumerState<AdminHomeScreen> {
           onTap: (i) => setState(() => _tab = i),
         ),
       ),
-      body: DefaultTabController(
-        length: 3,
-        child: repoAsync.when(
-          loading: () => const Center(child: CircularProgressIndicator()),
-          error: (e, st) => Center(child: Text('Error: $e')),
-          data: (repo) {
-            switch (_tab) {
-              case 1:
-                return _StaffTab(repo: repo);
-              case 2:
-                return _SitesTab(repo: repo);
-              default:
-                return _UsersTab(repo: repo);
-            }
-          },
-        ),
+      body: repoAsync.when(
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (e, st) => Center(child: Text('Error: $e')),
+        data: (repo) {
+          switch (_tab) {
+            case 1:
+              return _StaffTab(repo: repo);
+            case 2:
+              return _SitesTab(repo: repo);
+            default:
+              return _UsersTab(repo: repo);
+          }
+        },
       ),
     );
   }
