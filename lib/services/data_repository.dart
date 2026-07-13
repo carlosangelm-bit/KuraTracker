@@ -137,6 +137,31 @@ class DataRepository {
     return Site.fromJson(saved);
   }
 
+  /// Edita un sitio existente (nombre, tipo, direccion). Solo se envian al
+  /// backend los campos que el llamador especifica explicitamente.
+  Future<Site> updateSite(
+    String id, {
+    String? name,
+    String? kind,
+    String? address,
+    bool clearAddress = false,
+  }) async {
+    final patch = <String, dynamic>{};
+    if (name != null) patch['name'] = name;
+    if (kind != null) patch['kind'] = kind;
+    if (clearAddress) {
+      patch['address'] = null;
+    } else if (address != null) {
+      patch['address'] = address;
+    }
+    final saved = await _store.updateRow(Collections.sites, id, patch);
+    return Site.fromJson(saved);
+  }
+
+  Future<void> setSiteActive(String siteId, bool active) async {
+    await _store.updateRow(Collections.sites, siteId, {'is_active': active});
+  }
+
   // ---------------- Personal sanitario ----------------
 
   List<StaffMember> listStaff() =>
@@ -171,6 +196,50 @@ class DataRepository {
 
   Future<void> setStaffActive(String staffId, bool active) async {
     await _store.updateRow(Collections.staff, staffId, {'is_active': active});
+  }
+
+  /// Edita un registro de personal existente (nombre, cargo, sitio
+  /// principal y/o vinculo a un profile_id). Solo se envian al backend los
+  /// campos que el llamador especifica explicitamente; para desvincular un
+  /// profile_id ya asignado, usar [clearProfileId].
+  Future<StaffMember> updateStaff(
+    String staffId, {
+    String? fullName,
+    String? roleTitle,
+    String? primarySiteId,
+    bool clearPrimarySiteId = false,
+    String? profileId,
+    bool clearProfileId = false,
+  }) async {
+    final patch = <String, dynamic>{};
+    if (fullName != null) patch['full_name'] = fullName;
+    if (roleTitle != null) patch['role_title'] = roleTitle;
+    if (clearPrimarySiteId) {
+      patch['primary_site_id'] = null;
+    } else if (primarySiteId != null) {
+      patch['primary_site_id'] = primarySiteId;
+    }
+    if (clearProfileId) {
+      patch['profile_id'] = null;
+    } else if (profileId != null) {
+      patch['profile_id'] = profileId;
+    }
+    final saved = await _store.updateRow(Collections.staff, staffId, patch);
+    return StaffMember.fromJson(saved);
+  }
+
+  /// Perfiles (`profiles`) que aun NO tienen una fila en `staff` vinculada
+  /// via profile_id — candidatos para dar de alta como personal sanitario
+  /// operativo desde el panel de Administración, sin tocar SQL a mano.
+  /// Incluye perfiles admin (un admin puede necesitar staff_id propio para
+  /// poder crear consultas, ver aclaración del modelo de datos).
+  List<AppUser> listProfilesWithoutStaffLink() {
+    final linkedProfileIds = _store
+        .getAll(Collections.staff)
+        .map((s) => s['profile_id'] as String?)
+        .whereType<String>()
+        .toSet();
+    return listUsers().where((u) => !linkedProfileIds.contains(u.id)).toList();
   }
 
   List<Patient> listPatientsForStaff(String staffId) {
