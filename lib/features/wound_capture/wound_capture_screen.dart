@@ -868,49 +868,72 @@ class _SectionCard extends StatefulWidget {
 class _SectionCardState extends State<_SectionCard> {
   late bool _expanded = widget.initiallyExpanded;
 
+  /// Header de la seccion (icono + titulo + chevron). Es el UNICO lugar
+  /// donde vive el gesto de expandir/colapsar. Se aisla en su propio
+  /// Material para que el InkWell no compita en la gesture arena con los
+  /// controles interactivos del contenido (dropdowns, mapa corporal,
+  /// selector de fotos): al no ser el contenido un descendiente de este
+  /// InkWell, un tap dentro del contenido nunca puede ser interceptado o
+  /// "ganado" por el reconocedor de tap del header.
+  Widget _buildHeader() {
+    return Material(
+      type: MaterialType.transparency,
+      child: InkWell(
+        onTap: () => setState(() => _expanded = !_expanded),
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: KuraColors.primary.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(widget.icon, color: KuraColors.primary, size: 20),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(widget.title, style: const TextStyle(fontWeight: FontWeight.w700)),
+                    if (widget.subtitle != null)
+                      Text(widget.subtitle!,
+                          style: TextStyle(
+                              fontSize: 12, color: KuraColors.darkText.withOpacity(0.55))),
+                  ],
+                ),
+              ),
+              Icon(_expanded ? Icons.expand_less : Icons.expand_more),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Contenido de la seccion (controles interactivos del formulario).
+  /// Se construye fuera de cualquier InkWell/GestureDetector ancestro
+  /// propio de esta tarjeta: es hermano del header en el Column, nunca
+  /// descendiente de su gesto de expandir/colapsar.
+  Widget _buildContent() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
+      child: widget.child,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Card(
+      clipBehavior: Clip.antiAlias,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
         children: [
-          InkWell(
-            onTap: () => setState(() => _expanded = !_expanded),
-            child: Padding(
-              padding: const EdgeInsets.all(14),
-              child: Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: KuraColors.primary.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Icon(widget.icon, color: KuraColors.primary, size: 20),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(widget.title, style: const TextStyle(fontWeight: FontWeight.w700)),
-                        if (widget.subtitle != null)
-                          Text(widget.subtitle!,
-                              style: TextStyle(
-                                  fontSize: 12, color: KuraColors.darkText.withOpacity(0.55))),
-                      ],
-                    ),
-                  ),
-                  Icon(_expanded ? Icons.expand_less : Icons.expand_more),
-                ],
-              ),
-            ),
-          ),
-          if (_expanded)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
-              child: widget.child,
-            ),
+          _buildHeader(),
+          if (_expanded) _buildContent(),
         ],
       ),
     );
