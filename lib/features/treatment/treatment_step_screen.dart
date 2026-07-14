@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 
 import '../../core/theme/kura_theme.dart';
@@ -428,10 +429,18 @@ class _TreatmentStepScreenState extends ConsumerState<TreatmentStepScreen> {
     }
 
     if (context.mounted) {
-      Navigator.of(context).popUntil((route) => route.isFirst);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Consulta guardada correctamente.')),
       );
+      // TreatmentStepScreen se abre con Navigator.push (imperativo) sobre la
+      // ruta de captura de herida (GoRouter). Se hace pop del push imperativo
+      // y luego se navega explicitamente a la pagina del paciente: usar solo
+      // popUntil(isFirst) podia dejar al usuario en la pantalla de captura
+      // de la herida en vez de en la ficha del paciente.
+      Navigator.of(context).pop();
+      if (context.mounted) {
+        context.go('/patients/${widget.patientId}');
+      }
     }
   }
 }
