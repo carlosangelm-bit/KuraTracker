@@ -9,6 +9,7 @@ import '../../core/providers/session_provider.dart';
 import '../../engine/kura_sheehan_checkpoint.dart';
 import '../../engine/models/kura_engine_enums.dart';
 import '../../models/treatment_plan.dart';
+import '../../models/wound.dart';
 import '../../services/photo_upload_service.dart';
 
 /// Vista de seguimiento comparativa (seccion 6.1): grafica de tendencia de
@@ -62,11 +63,48 @@ class FollowUpScreen extends ConsumerWidget {
           final weeksSinceBaseline =
               current.measuredAt.difference(baseline.measuredAt).inDays ~/ 7;
 
+          // Evaluacion clinica de la visita mas reciente (la misma consulta
+          // de `current`), para alimentar los flags de penalizacion del
+          // checkpoint. Se empata por consultationId cuando es posible; si
+          // no hay match directo (dato legado sin consultation_id), se cae
+          // a la evaluacion cuya consulta tenga la fecha mas reciente.
+          WoundAssessment? latestAssessment;
+          if (hasFollowUps) {
+            final assessments = repo.listAssessmentsForWound(woundId);
+            final matching =
+                assessments.where((a) => a.consultationId == current.consultationId).toList();
+            if (matching.isNotEmpty) {
+              latestAssessment = matching.first;
+            } else if (assessments.isNotEmpty) {
+              final withDates = assessments
+                  .map((a) => (
+                        assessment: a,
+                        date: repo.getConsultation(a.consultationId)?.visitDate ??
+                            DateTime.fromMillisecondsSinceEpoch(0),
+                      ))
+                  .toList()
+                ..sort((x, y) => x.date.compareTo(y.date));
+              latestAssessment = withDates.last.assessment;
+            }
+          }
+
           final checkpoint = hasFollowUps
               ? KuraSheehanCheckpoint.evaluate(
                   semana: weeksSinceBaseline.clamp(1, 52),
                   areaBasalCm2: baseline.areaCm2,
                   areaActualCm2: current.areaCm2,
+                  // Definitivo: campo capturado explicitamente en el
+                  // formulario de seguimiento (wound_assessments.low_adherence).
+                  bajaAdherencia: latestAssessment?.lowAdherence ?? false,
+                  // INTERINO — pendiente de validar con la Dra. Capistran
+                  // la representacion/umbral oficial de IWII (14 criterios
+                  // vs. 3 niveles de severidad). Proxy actual: cualquier
+                  // criterio de infeccion marcado en la evaluacion.
+                  infeccionActiva: latestAssessment?.infectionCriteria.isNotEmpty ?? false,
+                  // TODO(clinico): deterioroDelLecho y aumentoDeExudado
+                  // requieren una regla comparativa (actual vs. evaluacion
+                  // anterior) todavia no definida. No se inventa la regla;
+                  // se dejan en false (default) hasta que se defina.
                 )
               : null;
 
@@ -202,10 +240,33 @@ class FollowUpScreen extends ConsumerWidget {
                           _buildGauge(checkpoint),
                           const SizedBox(height: 12),
                           Text(
-                            'Reducción: ${checkpoint.pctReduccionBruta.toStringAsFixed(1)}% '
+                            'Reducción bruta: ${checkpoint.pctReduccionBruta.toStringAsFixed(1)}% '
                             '(umbral cierre ${checkpoint.umbralCierre.toStringAsFixed(0)}% · '
                             'umbral alerta ${checkpoint.umbralAlerta.toStringAsFixed(0)}%)',
                           ),
+                          if (checkpoint.penalizacionesAplicadas.isNotEmpty) ...[
+                            const SizedBox(height: 4),
+                            Text(
+                              'Reducción ajustada: '
+                              '${checkpoint.pctReduccionAjustada.toStringAsFixed(1)}%',
+                              style: const TextStyle(fontWeight: FontWeight.w700),
+                            ),
+                            const SizedBox(height: 8),
+                            Wrap(
+                              spacing: 6,
+                              runSpacing: 6,
+                              children: checkpoint.penalizacionesAplicadas
+                                  .map((p) => Chip(
+                                        avatar: const Icon(Icons.remove_circle_outline,
+                                            size: 16, color: KuraColors.danger),
+                                        label: Text('$p −5 pp', style: const TextStyle(fontSize: 11)),
+                                        backgroundColor: KuraColors.danger.withOpacity(0.08),
+                                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                        visualDensity: VisualDensity.compact,
+                                      ))
+                                  .toList(),
+                            ),
+                          ],
                           const SizedBox(height: 8),
                           Container(
                             padding: const EdgeInsets.all(12),
@@ -273,7 +334,9 @@ class FollowUpScreen extends ConsumerWidget {
   }
 
   Widget _buildGauge(SheehanCheckpointResult checkpoint) {
-    final pct = checkpoint.pctReduccionBruta.clamp(0, 100) / 100;
+    // El gauge refleja el % ajustado (con penalizaciones), que es el valor
+    // real usado para tomar la decision — no el bruto.
+    final pct = checkpoint.pctReduccionAjustada.clamp(0, 100) / 100;
     return ClipRRect(
       borderRadius: BorderRadius.circular(8),
       child: LinearProgressIndicator(

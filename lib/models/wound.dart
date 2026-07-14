@@ -272,6 +272,12 @@ class WoundAssessment {
         painVas: json['pain_vas'] as int?,
         odor: json['odor'] as String?,
         woundEdge: json['wound_edge'] as String?,
+        exudateType: json['exudate_type'] == null
+            ? null
+            : ExudadoTipo.values.firstWhere(
+                (e) => e.name == json['exudate_type'],
+                orElse: () => ExudadoTipo.otro,
+              ),
         exudateAmount: ExudadoCantidad.values.firstWhere(
           (e) => e.name == (json['exudate_amount'] ?? 'escaso'),
           orElse: () => ExudadoCantidad.escaso,
@@ -298,6 +304,7 @@ class WoundAssessment {
         'pain_type': painType,
         'pain_duration': painDuration,
         'pain_vas': painVas,
+        'exudate_type': exudateType?.name,
         'exudate_amount': exudateAmount.name,
         'infection_criteria': infectionCriteria.map((e) => e.name).toList(),
         'odor': odor,
