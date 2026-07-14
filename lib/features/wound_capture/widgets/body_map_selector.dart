@@ -114,8 +114,8 @@ class _BodyMapSelectorState extends State<BodyMapSelector> {
                   Positioned.fill(
                     child: Image.asset(
                       _showBack
-                          ? 'assets/images/vista_trasera.jpg'
-                          : 'assets/images/vista_frontal.jpg',
+                          ? 'assets/images/vista_trasera.png'
+                          : 'assets/images/vista_frontal.png',
                       fit: BoxFit.contain,
                     ),
                   ),
