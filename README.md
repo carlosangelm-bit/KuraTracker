@@ -13,9 +13,9 @@ EHR (expediente clínico electrónico) especializado en **cuidado avanzado de he
 | Motor Protocolo Kura+ (8.1–8.5) | ✅ Completo, 42/42 tests pasando, paridad numérica validada contra referencia Python (tolerancia 1e-8/1e-9) |
 | App Flutter (Web/iOS/Android desde una sola base) | ✅ Compila sin errores (`flutter analyze` limpio), build web exitoso |
 | Flujo de captura de heridas (rediseñado) | ✅ Completo — inventario clínico original conservado |
-| Esquema Supabase (SQL: tablas, RLS, triggers, storage) | ✅ Diseñado, versionado en `supabase/migrations/` **y aplicado** (0001→0007, incl. `low_adherence`) al proyecto Supabase real del cliente; admin creado y promovido |
-| Persistencia real / multiusuario / RLS en vivo | ✅ Migraciones aplicadas y **smoke-test end-to-end completado contra Supabase real** (login → paciente → captura → tratamiento con sugerencia Kura+ → seguimiento con checkpoint Sheehan → datos listos para reporte), incl. bug de `search_path` corregido y validado en producción; verificación formal de RLS con prueba negativa (segundo usuario clínico sin asignaciones) sigue diferida hasta antes de cargar datos reales, por decisión del cliente — se avanza con datos sintéticos |
-| Registro de seguimiento (visitas subsecuentes) | ✅ Completo — formulario "Registrar seguimiento" persiste medición + evaluación + foto en Supabase (`visit_type='seguimiento'`); tablero de seguimiento 100% derivado de la serie real, sin datos de ejemplo (ver sección 3.4) |
+| Esquema Supabase (SQL: tablas, RLS, triggers, storage) | ✅ Diseñado, versionado en `supabase/migrations/` **y aplicado** (0001→0007, incl. `low_adherence`) al proyecto Supabase real del cliente; admin creado y promovido. **Migración `0008` (alineación Prioridad 1 — protocolos Kura+) creada y pendiente de aplicar en el Supabase real** (ver sección 5) |
+| Persistencia real / multiusuario / RLS en vivo | ✅ Migraciones 0001-0007 aplicadas y **smoke-test end-to-end completado contra Supabase real** (login → paciente → captura → tratamiento con sugerencia Kura+ → seguimiento con checkpoint Sheehan → datos listos para reporte), incl. bug de `search_path` corregido y validado en producción; verificación formal de RLS con prueba negativa (segundo usuario clínico sin asignaciones) sigue diferida hasta antes de cargar datos reales, por decisión del cliente — se avanza con datos sintéticos |
+| Registro de seguimiento (visitas subsecuentes) | ✅ **Alineado con protocolos clínicos Kura+ (Prioridad 1)** — formulario "Registrar seguimiento" ahora captura reevaluación integral (edema/dolor+EVA/exudado/olor/borde/piel perilesional/infección IWII/adherencia), medición 2D + 3D (volumen en heridas profundas) + nota de medición manual para socavamiento/tunelización, **2 fotografías obligatorias** (después de limpiar sin medición + con medición) y **nota de seguimiento obligatoria** (tipo de atención, procedimiento, material, evolución, firma + cédula profesional), sin campos vacíos. Persiste todo en Supabase (`visit_type='seguimiento'`). Tablero de seguimiento 100% derivado de la serie real, sin datos de ejemplo, y ahora incluye **alerta de "sin avance en 2–4 semanas → considerar referir a especialista"** (Protocolo de Desbridamiento §13) (ver sección 3.4) |
 | Detalle de consulta (solo lectura) desde el historial | ✅ Completo — historial de consultas del paciente es tappable y navega a `ConsultationDetailScreen` (ver sección 3.5) |
 | Storage real de fotos (bucket `wound-evidence`) | ✅ Implementado — `PhotoUploadService` sube a Supabase Storage con ruta `{wound_id}/{consultation_id}/...` y resuelve URL firmada; cae a data-URL base64 automáticamente en modo demo sin credenciales |
 | Motor como Edge Function (Supabase, TypeScript) | ❌ Pendiente — hoy el motor corre embebido en el cliente Dart |
@@ -139,6 +139,7 @@ Definidas en `lib/core/router/app_router.dart` (GoRouter):
 - `0005_wifi_braden_hba1c.sql` — columnas `braden_score`/`hba1c_pct` en `wound_assessments`.
 - `0006_prevent_profile_privilege_escalation.sql` — hardening de RLS en `profiles`.
 - `0007_wound_assessment_adherence.sql` — columna `low_adherence boolean not null default false` en `wound_assessments`, para el flag de baja adherencia capturado en el formulario de seguimiento. **Aplicada y verificada contra el proyecto Supabase real del cliente** — `wound_assessments.low_adherence` ya existe en producción y el checkpoint de Sheehan ya la consume (ver sección 3.4).
+- `0008_follow_up_protocol_fields.sql` — alineación Prioridad 1 (protocolos clínicos Kura+): `wound_measurements.volume_cm3` (medición 3D, heridas profundas) + `wound_measurements.manual_measurement_note` (socavamiento/tunelización/circunferencial/irregular); `wound_photos.photo_stage` (`antes_limpiar`/`despues_limpiar`/`con_medicion`/`cierre`, Protocolo de Fotografías §1.2); `consultations.follow_up_care_type`/`follow_up_procedure_desc`/`follow_up_materials_used`/`follow_up_evolution`/`follow_up_signed_by`/`follow_up_signed_license` (nota de seguimiento obligatoria, Instructivo de Archivo); `staff.cedula_profesional` (catálogo para prellenar la firma). **⚠️ Creada en este repo, pendiente de aplicarse (SQL Editor) contra el proyecto Supabase real del cliente** — no se tiene acceso a credenciales de Supabase desde este entorno de desarrollo; aplicar antes de que el flujo de seguimiento funcione contra producción.
 
 ### 5.2 Almacenamiento actual (modo demo local-first)
 `lib/services/local_db/local_store.dart`: `SharedPreferences` usado como almacén de documentos JSON; `Collections` define nombres de colección que son espejo exacto de las tablas SQL anteriores. `demo_seed.dart` siembra automáticamente, en el primer arranque:
@@ -184,6 +185,13 @@ Definidas en `lib/core/router/app_router.dart` (GoRouter):
 3. **Checkpoint de Sheehan — dos de los cuatro flags de penalización siguen sin regla definida**: `bajaAdherencia` (definitivo, cableado desde `wound_assessments.low_adherence`) e `infeccionActiva` (proxy INTERINO: cualquier criterio IWII marcado) ya alimentan el cálculo real (ver sección 3.4). `deterioroDelLecho` y `aumentoDeExudado` requieren una regla comparativa visita-actual-vs-visita-anterior que aún no se ha definido con el equipo clínico — se dejan en `false` a propósito, no se inventó la regla.
 4. **Import CSV con persistencia real de `import_batches`** — la pantalla de import/export es funcional como demo de mapeo de columnas, pero no persiste el lote de importación como una fila real de la tabla `import_batches`.
 5. **Autenticación real** (verificación de contraseña, recuperación de cuenta, expiración de sesión) — el login demo acepta cualquier contraseña.
+6. **Prioridades 2–7 de la alineación con protocolos clínicos Kura+** (Prioridad 1 ya completada, ver secciones 1/5):
+   - **P2** — número de fotos y modo de medición (2D/3D/manual) según tipo de visita (valoración=3, seguimiento=2, cierre=1); import/export eKare a preservar.
+   - **P3** — confirmar con el equipo clínico que `ConsultationDetailScreen` (ya construida) satisface el detalle de consulta solo-lectura requerido.
+   - **P4** — consentimientos (privacidad/fotográfico/desbridamiento) como registro en el expediente; bloqueo de captura de fotos sin consentimiento fotográfico.
+   - **P5** — registro/formato de interconsultas-referencias (especialidad + motivo, ligado a la consulta).
+   - **P6** — módulo de eventos adversos (clasificación, acciones, seguimiento pautado por severidad).
+   - **P7** — catálogo "Terapia seca / Yodopovidona 10%" + tracking de desbridamiento (método/consentimiento/EVA/sangrado/respuesta).
 
 ---
 
@@ -261,12 +269,13 @@ assets/
 test/
   engine/          # 42 tests: paridad, casos límite, reglas de seguridad, Sheehan
 supabase/
-  migrations/      # 7 migraciones SQL (esquema, triggers, RLS, storage, WIFI/Braden/HbA1c,
-                   # hardening RLS profiles, low_adherence) — las 7 (0001–0007) aplicadas y
-                   # verificadas contra el proyecto Supabase real del cliente
+  migrations/      # 8 migraciones SQL (esquema, triggers, RLS, storage, WIFI/Braden/HbA1c,
+                   # hardening RLS profiles, low_adherence, alineacion protocolo seguimiento) —
+                   # 0001-0007 aplicadas y verificadas contra el proyecto Supabase real del
+                   # cliente; 0008 creada en este repo, pendiente de aplicar en producción
   functions/kura-protocol-engine/  # carpeta reservada para la Edge Function TS (pendiente)
 ```
 
 ---
 
-*Última actualización: cableado de los flags de penalización del checkpoint de Sheehan (`bajaAdherencia` definitivo desde `wound_assessments.low_adherence`, `infeccionActiva` proxy interino desde criterios IWII) con visibilidad del % ajustado y las penalizaciones aplicadas en el tablero de seguimiento; parseo de `exudate_type` en `WoundAssessment` (round-trip completo toJson↔fromJson). Migraciones 0001–0007 confirmadas aplicadas en el Supabase real del cliente. Build/analyze/tests verificados, demo desplegada en sandbox de desarrollo.*
+*Última actualización: Prioridad 1 de la alineación con los protocolos clínicos Kura+ — formulario "Registrar seguimiento" expandido a reevaluación integral (edema/dolor+EVA/exudado/olor/borde/piel perilesional/infección IWII), medición 2D+3D (volumen) + nota de medición manual, 2 fotografías obligatorias (después de limpiar + con medición vía `wound_photos.photo_stage`) y nota de seguimiento obligatoria (tipo de atención/procedimiento/material/evolución/firma/cédula profesional) sin campos vacíos; tablero de seguimiento con nueva alerta "sin avance en 2–4 semanas → considerar referir a especialista" (Protocolo de Desbridamiento §13). Migración `0008_follow_up_protocol_fields.sql` creada (pendiente de aplicar en el Supabase real del cliente). Build/analyze (0 errores)/tests (52/52) verificados, demo desplegada en sandbox de desarrollo. Pendiente: Prioridades 2–7 de la misma instrucción (foto/medición por tipo de visita, consentimientos, interconsultas, eventos adversos, alineación de tratamiento).*

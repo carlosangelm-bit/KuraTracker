@@ -7,6 +7,9 @@ class StaffMember {
   final String? primarySiteId;
   final bool isActive;
   final DateTime createdAt;
+  // Numero de cedula profesional; usado para prellenar la firma de la nota
+  // de seguimiento obligatoria (Instructivo de Archivo).
+  final String? cedulaProfesional;
 
   const StaffMember({
     required this.id,
@@ -17,6 +20,7 @@ class StaffMember {
     this.primarySiteId,
     this.isActive = true,
     required this.createdAt,
+    this.cedulaProfesional,
   });
 
   factory StaffMember.fromJson(Map<String, dynamic> json) => StaffMember(
@@ -28,6 +32,7 @@ class StaffMember {
         primarySiteId: json['primary_site_id'] as String?,
         isActive: json['is_active'] as bool? ?? true,
         createdAt: DateTime.parse(json['created_at'] as String),
+        cedulaProfesional: json['cedula_profesional'] as String?,
       );
 
   Map<String, dynamic> toJson() => {
@@ -39,5 +44,6 @@ class StaffMember {
         'primary_site_id': primarySiteId,
         'is_active': isActive,
         'created_at': createdAt.toIso8601String(),
+        'cedula_profesional': cedulaProfesional,
       };
 }

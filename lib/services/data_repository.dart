@@ -345,6 +345,14 @@ class DataRepository {
     required DateTime visitDate,
     Map<String, dynamic>? vitalSigns,
     bool isDraft = false,
+    // Nota de seguimiento obligatoria (Instructivo de Archivo), aplica a
+    // visit_type=seguimiento; ver migracion 0008.
+    String? followUpCareType,
+    String? followUpProcedureDesc,
+    String? followUpMaterialsUsed,
+    String? followUpEvolution,
+    String? followUpSignedBy,
+    String? followUpSignedLicense,
   }) async {
     final data = {
       'id': _uuid.v4(),
@@ -356,6 +364,12 @@ class DataRepository {
       'vital_signs': vitalSigns,
       'is_draft': isDraft,
       'created_at': DateTime.now().toIso8601String(),
+      'follow_up_care_type': followUpCareType,
+      'follow_up_procedure_desc': followUpProcedureDesc,
+      'follow_up_materials_used': followUpMaterialsUsed,
+      'follow_up_evolution': followUpEvolution,
+      'follow_up_signed_by': followUpSignedBy,
+      'follow_up_signed_license': followUpSignedLicense,
     };
     final saved = await _store.insertRow(Collections.consultations, data);
     return Consultation.fromJson(saved);

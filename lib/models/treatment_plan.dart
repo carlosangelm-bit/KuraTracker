@@ -100,6 +100,52 @@ class TreatmentPlan {
       };
 }
 
+/// Etapa de la secuencia fotografica (Protocolo de Fotografias SS1.2).
+enum PhotoStage { antesLimpiar, despuesLimpiar, conMedicion, cierre }
+
+extension PhotoStageDb on PhotoStage {
+  String get dbValue {
+    switch (this) {
+      case PhotoStage.antesLimpiar:
+        return 'antes_limpiar';
+      case PhotoStage.despuesLimpiar:
+        return 'despues_limpiar';
+      case PhotoStage.conMedicion:
+        return 'con_medicion';
+      case PhotoStage.cierre:
+        return 'cierre';
+    }
+  }
+
+  String get label {
+    switch (this) {
+      case PhotoStage.antesLimpiar:
+        return 'Antes de limpiar';
+      case PhotoStage.despuesLimpiar:
+        return 'Despues de limpiar (sin medicion)';
+      case PhotoStage.conMedicion:
+        return 'Con medicion';
+      case PhotoStage.cierre:
+        return 'Cierre (herida cicatrizada)';
+    }
+  }
+
+  static PhotoStage? fromDb(String? s) {
+    switch (s) {
+      case 'antes_limpiar':
+        return PhotoStage.antesLimpiar;
+      case 'despues_limpiar':
+        return PhotoStage.despuesLimpiar;
+      case 'con_medicion':
+        return PhotoStage.conMedicion;
+      case 'cierre':
+        return PhotoStage.cierre;
+      default:
+        return null;
+    }
+  }
+}
+
 class WoundPhoto {
   final String id;
   final String woundId;
@@ -109,6 +155,9 @@ class WoundPhoto {
   final DateTime takenAt;
   final bool isBaseline;
   final int? sizeBytes;
+  // Etapa de la secuencia fotografica segun protocolo. NULL permitido para
+  // fotos historicas/importadas (p.ej. desde eKare) sin clasificar.
+  final PhotoStage? photoStage;
 
   const WoundPhoto({
     required this.id,
@@ -119,6 +168,7 @@ class WoundPhoto {
     required this.takenAt,
     this.isBaseline = false,
     this.sizeBytes,
+    this.photoStage,
   });
 
   factory WoundPhoto.fromJson(Map<String, dynamic> json) => WoundPhoto(
@@ -130,6 +180,7 @@ class WoundPhoto {
         takenAt: DateTime.parse(json['taken_at'] as String),
         isBaseline: json['is_baseline'] as bool? ?? false,
         sizeBytes: json['size_bytes'] as int?,
+        photoStage: PhotoStageDb.fromDb(json['photo_stage'] as String?),
       );
 
   Map<String, dynamic> toJson() => {
@@ -141,5 +192,6 @@ class WoundPhoto {
         'taken_at': takenAt.toIso8601String(),
         'is_baseline': isBaseline,
         'size_bytes': sizeBytes,
+        'photo_stage': photoStage?.dbValue,
       };
 }

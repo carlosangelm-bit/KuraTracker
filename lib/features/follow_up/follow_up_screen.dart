@@ -113,6 +113,18 @@ class FollowUpScreen extends ConsumerWidget {
           final baselinePhoto = photos.isNotEmpty ? photos.first : null;
           final currentPhoto = photos.isNotEmpty ? photos.last : null;
 
+          // Regla de decision clinica (Protocolo de Desbridamiento SS13): si
+          // no hay avance (reduccion de area) en una ventana de 2-4 semanas,
+          // sugerir referir a especialista o replantear el plan. Se busca,
+          // entre las mediciones reales ya registradas, la mas cercana a esa
+          // ventana antes de la medicion actual; si aun no existe ninguna
+          // medicion con esa antiguedad, la regla simplemente no aplica
+          // todavia (sin inventar datos).
+          final referenceForProgress =
+              hasFollowUps ? _referenceMeasurementForWindow(measurements, current) : null;
+          final noProgressInWindow =
+              referenceForProgress != null && current.areaCm2 >= referenceForProgress.areaCm2;
+
           return SingleChildScrollView(
             padding: const EdgeInsets.all(20),
             child: Column(
@@ -294,6 +306,45 @@ class FollowUpScreen extends ConsumerWidget {
                       ),
                     ),
                   ),
+                if (noProgressInWindow) ...[
+                  const SizedBox(height: 16),
+                  Card(
+                    color: KuraColors.danger.withOpacity(0.06),
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Icon(Icons.warning_amber_rounded, color: KuraColors.danger),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'Sin avance en 2–4 semanas: considerar referir a especialista',
+                                  style: TextStyle(
+                                      fontWeight: FontWeight.w800, color: KuraColors.danger),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  'El área no se redujo entre '
+                                  '${dateFmt.format(referenceForProgress.measuredAt)} '
+                                  '(${referenceForProgress.areaCm2.toStringAsFixed(1)} cm²) y '
+                                  '${dateFmt.format(current.measuredAt)} '
+                                  '(${current.areaCm2.toStringAsFixed(1)} cm²). '
+                                  'Protocolo de Desbridamiento §13: replantear el plan de '
+                                  'tratamiento o generar una interconsulta.',
+                                  style: const TextStyle(fontSize: 12),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 20),
                 Row(
                   children: [
@@ -347,6 +398,32 @@ class FollowUpScreen extends ConsumerWidget {
       ),
     );
   }
+}
+
+/// Busca, dentro de la serie real de mediciones, la mas antigua entre
+/// [minWeeks] y [maxWeeks] semanas antes de [current] (ventana 2-4 semanas
+/// del Protocolo de Desbridamiento SS13). No hay una cadencia de seguimiento
+/// fija en los protocolos (fecha libre), asi que se toma la medicion mas
+/// cercana a esa ventana entre las ya registradas; si ninguna medicion cae
+/// en el rango, la regla de "sin avance" no se evalua (retorna null) en vez
+/// de inventar un punto de comparacion.
+WoundMeasurement? _referenceMeasurementForWindow(
+  List<WoundMeasurement> measurements,
+  WoundMeasurement current, {
+  int minWeeks = 2,
+  int maxWeeks = 4,
+}) {
+  final candidates = measurements.where((m) {
+    if (m.id == current.id) return false;
+    final weeksBefore = current.measuredAt.difference(m.measuredAt).inDays / 7;
+    return weeksBefore >= minWeeks && weeksBefore <= maxWeeks;
+  }).toList();
+  if (candidates.isEmpty) return null;
+  // La mas antigua dentro del rango, para comparar "misma ventana" contra
+  // la mas reciente disponible en el rango (criterio conservador: si hubo
+  // cualquier mejora parcial mas tarde dentro del rango, no se dispara).
+  candidates.sort((a, b) => a.measuredAt.compareTo(b.measuredAt));
+  return candidates.first;
 }
 
 /// Foto "basal"/"actual" real de la herida (mas antigua / mas reciente en

@@ -147,6 +147,12 @@ class WoundMeasurement {
   final double necrosisPct;
   final double epithelializationPct;
   final bool capturedBeforeDebridement;
+  // Medicion 3D (heridas profundas): volumen en cm3. NULL si solo se midio
+  // en 2D (largo/ancho/area). Protocolo de Fotografias y Medicion (P1/P2).
+  final double? volumeCm3;
+  // Nota de medicion manual (hisopo/regla) para socavamiento, tunelizacion,
+  // heridas circunferenciales o de geometria irregular.
+  final String? manualMeasurementNote;
 
   const WoundMeasurement({
     required this.id,
@@ -164,6 +170,8 @@ class WoundMeasurement {
     this.necrosisPct = 0,
     this.epithelializationPct = 0,
     this.capturedBeforeDebridement = true,
+    this.volumeCm3,
+    this.manualMeasurementNote,
   });
 
   double get bedCompositionSum =>
@@ -185,6 +193,8 @@ class WoundMeasurement {
         necrosisPct: (json['necrosis_pct'] as num?)?.toDouble() ?? 0,
         epithelializationPct: (json['epithelialization_pct'] as num?)?.toDouble() ?? 0,
         capturedBeforeDebridement: json['captured_before_debridement'] as bool? ?? true,
+        volumeCm3: (json['volume_cm3'] as num?)?.toDouble(),
+        manualMeasurementNote: json['manual_measurement_note'] as String?,
       );
 
   Map<String, dynamic> toJson() => {
@@ -203,6 +213,8 @@ class WoundMeasurement {
         'necrosis_pct': necrosisPct,
         'epithelialization_pct': epithelializationPct,
         'captured_before_debridement': capturedBeforeDebridement,
+        'volume_cm3': volumeCm3,
+        'manual_measurement_note': manualMeasurementNote,
       };
 }
 
