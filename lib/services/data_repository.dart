@@ -167,11 +167,22 @@ class DataRepository {
   List<StaffMember> listStaff() =>
       _store.getAll(Collections.staff).map(StaffMember.fromJson).toList();
 
+  /// Busca un miembro del personal por id. Devuelve `null` si no existe.
+  /// Util para prefills (p.ej. cedula profesional en la nota de
+  /// seguimiento) sin tener que exponer una consulta directa a la tabla.
+  StaffMember? getStaff(String staffId) {
+    for (final json in _store.getAll(Collections.staff)) {
+      if (json['id'] == staffId) return StaffMember.fromJson(json);
+    }
+    return null;
+  }
+
   Future<StaffMember> createStaff({
     required String fullName,
     required String roleTitle,
     String? primarySiteId,
     String? profileId,
+    String? cedulaProfesional,
   }) async {
     final existing = _store.getAll(Collections.staff);
     final year = DateTime.now().year;
@@ -189,6 +200,7 @@ class DataRepository {
       'primary_site_id': primarySiteId,
       'is_active': true,
       'created_at': DateTime.now().toIso8601String(),
+      'cedula_profesional': cedulaProfesional,
     };
     final saved = await _store.insertRow(Collections.staff, data);
     return StaffMember.fromJson(saved);
@@ -210,6 +222,8 @@ class DataRepository {
     bool clearPrimarySiteId = false,
     String? profileId,
     bool clearProfileId = false,
+    String? cedulaProfesional,
+    bool clearCedulaProfesional = false,
   }) async {
     final patch = <String, dynamic>{};
     if (fullName != null) patch['full_name'] = fullName;
@@ -223,6 +237,11 @@ class DataRepository {
       patch['profile_id'] = null;
     } else if (profileId != null) {
       patch['profile_id'] = profileId;
+    }
+    if (clearCedulaProfesional) {
+      patch['cedula_profesional'] = null;
+    } else if (cedulaProfesional != null) {
+      patch['cedula_profesional'] = cedulaProfesional;
     }
     final saved = await _store.updateRow(Collections.staff, staffId, patch);
     return StaffMember.fromJson(saved);

@@ -280,6 +280,8 @@ class _StaffFormDialogState extends State<_StaffFormDialog> {
       TextEditingController(text: widget.existing?.fullName ?? '');
   late final TextEditingController _roleCtrl =
       TextEditingController(text: widget.existing?.roleTitle ?? 'Kurador');
+  late final TextEditingController _cedulaCtrl =
+      TextEditingController(text: widget.existing?.cedulaProfesional ?? '');
   String? _siteId;
   String? _profileId;
   bool _saving = false;
@@ -296,6 +298,7 @@ class _StaffFormDialogState extends State<_StaffFormDialog> {
   void dispose() {
     _nameCtrl.dispose();
     _roleCtrl.dispose();
+    _cedulaCtrl.dispose();
     super.dispose();
   }
 
@@ -306,12 +309,14 @@ class _StaffFormDialogState extends State<_StaffFormDialog> {
       _error = null;
     });
     try {
+      final cedula = _cedulaCtrl.text.trim();
       if (widget.existing == null) {
         await widget.repo.createStaff(
           fullName: _nameCtrl.text.trim(),
           roleTitle: _roleCtrl.text.trim().isEmpty ? 'Kurador' : _roleCtrl.text.trim(),
           primarySiteId: _siteId,
           profileId: _profileId,
+          cedulaProfesional: cedula.isEmpty ? null : cedula,
         );
       } else {
         await widget.repo.updateStaff(
@@ -322,6 +327,8 @@ class _StaffFormDialogState extends State<_StaffFormDialog> {
           clearPrimarySiteId: _siteId == null,
           profileId: _profileId,
           clearProfileId: _profileId == null,
+          cedulaProfesional: cedula.isEmpty ? null : cedula,
+          clearCedulaProfesional: cedula.isEmpty,
         );
       }
       if (mounted) Navigator.pop(context, true);
@@ -358,6 +365,14 @@ class _StaffFormDialogState extends State<_StaffFormDialog> {
                   decoration: const InputDecoration(
                     labelText: 'Cargo',
                     hintText: 'Kurador, Médico, Enfermera...',
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _cedulaCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Cédula profesional',
+                    hintText: 'Requerida para firmar notas de seguimiento',
                   ),
                 ),
                 const SizedBox(height: 12),

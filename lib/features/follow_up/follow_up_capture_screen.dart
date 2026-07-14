@@ -137,12 +137,19 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
     }
   }
 
-  void _prefillSignatureIfNeeded(SessionState session) {
+  void _prefillSignatureIfNeeded(SessionState session, DataRepository? repo) {
     if (_prefilledSignature) return;
     _prefilledSignature = true;
     final name = session.user?.fullName;
     if (name != null && name.isNotEmpty) {
       _signedByCtrl.text = name;
+    }
+    final staffId = session.user?.staffId;
+    if (repo != null && staffId != null) {
+      final cedula = repo.getStaff(staffId)?.cedulaProfesional;
+      if (cedula != null && cedula.isNotEmpty) {
+        _signedLicenseCtrl.text = cedula;
+      }
     }
   }
 
@@ -165,7 +172,8 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
   @override
   Widget build(BuildContext context) {
     final session = ref.watch(sessionProvider);
-    _prefillSignatureIfNeeded(session);
+    final repoAsync = ref.watch(dataRepositoryProvider);
+    _prefillSignatureIfNeeded(session, repoAsync.asData?.value);
 
     final canSave = !_saving &&
         _lengthCm > 0 &&
