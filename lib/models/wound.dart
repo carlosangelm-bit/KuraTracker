@@ -228,6 +228,10 @@ class WoundAssessment {
   final String? odor;
   final String? woundEdge;
   final Set<PielPerilesionalEstado> perilesionalSkin;
+  // Baja adherencia al tratamiento indicado desde la visita anterior
+  // (reportado por el clinico en visitas de seguimiento). Alimenta el
+  // parametro bajaAdherencia de KuraSheehanCheckpoint.evaluate().
+  final bool lowAdherence;
 
   const WoundAssessment({
     required this.id,
@@ -248,6 +252,7 @@ class WoundAssessment {
     this.odor,
     this.woundEdge,
     this.perilesionalSkin = const {},
+    this.lowAdherence = false,
   });
 
   factory WoundAssessment.fromJson(Map<String, dynamic> json) => WoundAssessment(
@@ -277,6 +282,7 @@ class WoundAssessment {
         perilesionalSkin: ((json['perilesional_skin'] as List?) ?? [])
             .map((s) => PielPerilesionalEstado.values.firstWhere((e) => e.name == s))
             .toSet(),
+        lowAdherence: json['low_adherence'] as bool? ?? false,
       );
 
   Map<String, dynamic> toJson() => {
@@ -297,6 +303,7 @@ class WoundAssessment {
         'odor': odor,
         'wound_edge': woundEdge,
         'perilesional_skin': perilesionalSkin.map((e) => e.name).toList(),
+        'low_adherence': lowAdherence,
       };
 }
 

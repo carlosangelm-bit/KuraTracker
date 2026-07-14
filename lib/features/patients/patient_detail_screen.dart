@@ -102,6 +102,8 @@ class _PatientDetailScreenState extends ConsumerState<PatientDetailScreen> {
                       ...consultations.map((c) => Card(
                             margin: const EdgeInsets.only(bottom: 8),
                             child: ListTile(
+                              onTap: () => context
+                                  .go('/patients/${widget.patientId}/consultation/${c.id}'),
                               leading: Icon(
                                 c.visitType == VisitType.valoracion
                                     ? Icons.assignment_outlined
@@ -115,7 +117,7 @@ class _PatientDetailScreenState extends ConsumerState<PatientDetailScreen> {
                                       label: Text('Borrador'),
                                       backgroundColor: KuraColors.chipBg,
                                     )
-                                  : null,
+                                  : const Icon(Icons.chevron_right, size: 18),
                             ),
                           )),
                     const SizedBox(height: 40),

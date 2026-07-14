@@ -15,9 +15,11 @@ EHR (expediente clínico electrónico) especializado en **cuidado avanzado de he
 | Flujo de captura de heridas (rediseñado) | ✅ Completo — inventario clínico original conservado |
 | Esquema Supabase (SQL: tablas, RLS, triggers, storage) | ✅ Diseñado, versionado en `supabase/migrations/` **y aplicado** (0001→0004) al proyecto Supabase real del cliente; admin creado y promovido |
 | Persistencia real / multiusuario / RLS en vivo | ✅ Migraciones aplicadas y **smoke-test end-to-end completado contra Supabase real** (login → paciente → captura → tratamiento con sugerencia Kura+ → seguimiento con checkpoint Sheehan → datos listos para reporte), incl. bug de `search_path` corregido y validado en producción; verificación formal de RLS con prueba negativa (segundo usuario clínico sin asignaciones) sigue diferida hasta antes de cargar datos reales, por decisión del cliente — se avanza con datos sintéticos |
-| Storage real de fotos (bucket `wound-evidence`) | ❌ Pendiente — hoy solo se referencian rutas locales temporales del dispositivo |
+| Registro de seguimiento (visitas subsecuentes) | ✅ Completo — formulario "Registrar seguimiento" persiste medición + evaluación + foto en Supabase (`visit_type='seguimiento'`); tablero de seguimiento 100% derivado de la serie real, sin datos de ejemplo (ver sección 3.4) |
+| Detalle de consulta (solo lectura) desde el historial | ✅ Completo — historial de consultas del paciente es tappable y navega a `ConsultationDetailScreen` (ver sección 3.5) |
+| Storage real de fotos (bucket `wound-evidence`) | ✅ Implementado — `PhotoUploadService` sube a Supabase Storage con ruta `{wound_id}/{consultation_id}/...` y resuelve URL firmada; cae a data-URL base64 automáticamente en modo demo sin credenciales |
 | Motor como Edge Function (Supabase, TypeScript) | ❌ Pendiente — hoy el motor corre embebido en el cliente Dart |
-| Bitácora de auditoría | ⚠️ Parcial — cubre creación de paciente/medición/plan de tratamiento; faltan updates/deletes |
+| Bitácora de auditoría | ⚠️ Parcial — cubre creación de paciente/medición/plan de tratamiento vía trigger SQL; faltan updates/deletes. `wound_assessments`/`wound_photos` no están en la lista de tablas auditadas (por diseño del trigger existente) |
 | Import/Export CSV (eKare) | ✅ Demo funcional (mapeo configurable en UI); persistencia real de `import_batches` pendiente |
 | Generación de PDF (reportes) | ✅ Funcional en cliente vía `pdf`/`printing` |
 
@@ -79,10 +81,19 @@ Pantallas en `lib/features/wound_capture/`. Conserva los 3 pasos clínicos origi
 - **Dictado por voz** disponible en el paso de tratamiento.
 - **Modo offline**: toda la captura funciona sin conexión sobre el almacén local.
 
-### 3.4 Seguimiento comparativo
-`lib/features/follow_up/follow_up_screen.dart`: gráfica de tendencia de área (`fl_chart`) y checkpoint Sheehan integrado con gauge de decisión.
+### 3.4 Seguimiento comparativo (100% derivado de la serie real)
+`lib/features/follow_up/follow_up_screen.dart` + `lib/features/follow_up/follow_up_capture_screen.dart`.
 
-### 3.5 Reportes
+- **Registrar seguimiento**: botón en el AppBar de la pantalla de seguimiento abre `FollowUpCaptureScreen`, un formulario que crea una consulta `visit_type='seguimiento'` ligada a la herida y persiste en Supabase: nueva fila en `wound_measurements` (largo/ancho→área, profundidad, composición del lecho con los mismos `BedCompositionSliders` de la captura inicial), estado clínico en `wound_assessments` (infección IWII, exudado, adherencia al tratamiento — nuevo campo `low_adherence`), y foto "actual" en `wound_photos` vía `PhotoUploadService`. No hace INSERT directo a `audit_log` (el trigger existente ya audita `wound_measurements`; `wound_assessments`/`wound_photos` no están en su alcance por diseño).
+- **Gráfica de tendencia de área**: grafica *todas* las mediciones de la herida ordenadas por `measured_at` — un punto por visita (basal = primera, una por cada seguimiento), nunca solo basal-vs-actual.
+- **Checkpoint de Sheehan**: se recalcula basal vs. medición más reciente contra el umbral de la semana correspondiente. Si solo existe la valoración basal (0 seguimientos), se muestra un estado vacío explícito ("Aún sin seguimientos") en vez de comparar la basal contra sí misma. Las tablas de umbrales oficiales (`KuraSheehanCheckpoint._umbralesOficiales`) son constantes legítimas del protocolo y no se tocan.
+- **Fotos "basal"/"actual"**: son la `wound_photo` más antigua y la más reciente (por `taken_at`) de la herida, resueltas vía `PhotoUploadService.resolveDisplayUrl` (URL firmada en Supabase real, o data-URL en modo demo). Si no hay fotos, se muestra un placeholder explícito, nunca una imagen de ejemplo.
+- **Gap conocido, no resuelto**: el checkpoint de Sheehan todavía no recibe los flags de penalización reales (`bajaAdherencia`, infección activa, deterioro del lecho, aumento de exudado) — se capturan y persisten (`low_adherence` en `wound_assessments`), pero la llamada a `KuraSheehanCheckpoint.evaluate()` aún no los pasa. Pendiente para una siguiente iteración.
+
+### 3.5 Detalle de consulta (solo lectura)
+`lib/features/consultation/consultation_detail_screen.dart`. Cada ítem del historial de consultas en `patient_detail_screen.dart` es tappable y navega a esta pantalla, que muestra —solo lectura, respetando RLS— todo lo registrado en esa consulta: datos generales (fecha, tipo de visita, sitio, personal sanitario), la(s) herida(s) evaluada(s) en la consulta y su evaluación (mediciones, composición del lecho, exudado, infección, borde, piel perilesional), la recomendación Kura+ emitida si la hubo (escenario A/B/C, fenotipo comercial, régimen, interconsultas), el tratamiento aplicado y las fotos tomadas en esa visita. Como `wounds` no tiene FK directa a `consultations`, la asociación herida↔consulta se infiere del lado del cliente revisando qué mediciones/evaluaciones de cada herida tienen ese `consultation_id`.
+
+### 3.6 Reportes
 `lib/features/reports/reports_screen.dart`: selección múltiple de pacientes, filtros (consultas/seguimientos/antecedentes/evidencias — todas o primera/última), botón de generación de PDF.
 
 ### 3.6 Roles y administración
@@ -108,7 +119,9 @@ Definidas en `lib/core/router/app_router.dart` (GoRouter):
 | `/patients/:patientId` | Detalle de paciente | Heridas con badge de escenario Kura+ |
 | `/patients/:patientId/consultation/new` | Encabezado de consulta | Fecha/sitio/tipo de visita |
 | `/patients/:patientId/wound/:woundId/capture?consultationId=` | Captura de herida | `woundId` opcional (nueva herida) |
-| `/patients/:patientId/wound/:woundId/follow-up` | Seguimiento | Gráfica + Sheehan |
+| `/patients/:patientId/wound/:woundId/follow-up` | Seguimiento | Gráfica + Sheehan, 100% derivado de la serie real |
+| `/patients/:patientId/wound/:woundId/follow-up/new` | Registrar seguimiento | Formulario de nueva visita de seguimiento |
+| `/patients/:patientId/consultation/:consultationId` | Detalle de consulta | Solo lectura, accesible desde el historial del paciente |
 | `/reports` | Reportes | Generación de PDF |
 | `/admin` | Administración | Solo rol admin |
 | `/import-export` | Import/Export CSV | Interoperabilidad eKare |
@@ -123,6 +136,9 @@ Definidas en `lib/core/router/app_router.dart` (GoRouter):
 - `0002_triggers_and_functions.sql` — folios automáticos, `updated_at`, `audit_trigger_fn()` (SECURITY DEFINER, AFTER INSERT/UPDATE/DELETE en tablas clínicas), `handle_new_auth_user()`, helpers `is_admin()`, `current_staff_id()`, `current_user_role()`.
 - `0003_row_level_security.sql` — RLS en todas las tablas clínicas: acceso total para admin, y para personal clínico solo si existe una fila en `staff_patient_assignments` para ese paciente.
 - `0004_storage_buckets.sql` — bucket `wound-evidence` (límite 17 825 792 bytes = 17 MB), políticas RLS sobre `storage.objects` basadas en el primer segmento de la ruta (`(storage.foldername(name))[1] = wound_id`).
+- `0005_wifi_braden_hba1c.sql` — columnas `braden_score`/`hba1c_pct` en `wound_assessments`.
+- `0006_prevent_profile_privilege_escalation.sql` — hardening de RLS en `profiles`.
+- `0007_wound_assessment_adherence.sql` — columna `low_adherence boolean not null default false` en `wound_assessments`, para el flag de baja adherencia capturado en el formulario de seguimiento. **Nota**: como las demás migraciones aplicadas al proyecto Supabase real, ésta necesita aplicarse manualmente vía SQL Editor si aún no se ha corrido contra el proyecto en producción.
 
 ### 5.2 Almacenamiento actual (modo demo local-first)
 `lib/services/local_db/local_store.dart`: `SharedPreferences` usado como almacén de documentos JSON; `Collections` define nombres de colección que son espejo exacto de las tablas SQL anteriores. `demo_seed.dart` siembra automáticamente, en el primer arranque:
@@ -144,10 +160,11 @@ Definidas en `lib/core/router/app_router.dart` (GoRouter):
 3. Desde el Dashboard o `/patients`, seleccionar un paciente para ver su expediente y heridas.
 4. Para capturar una nueva consulta/herida: **Nueva consulta** → completar encabezado → **Continuar** hacia captura de herida → seleccionar etiología y ubicación en el mapa corporal → completar evaluación (los campos cambian según etiología) → ajustar sliders de composición del lecho → observar el **panel de pronóstico en vivo** actualizarse.
 5. Al continuar a tratamiento: si la cuenta tiene premium, activar **"Utilizar protocolo Kura+"** para prellenar el régimen sugerido (editable); se registra si el clínico lo aceptó tal cual o lo editó.
-6. Desde el detalle de una herida existente, abrir **Seguimiento** para ver la gráfica de tendencia de área y el checkpoint Sheehan.
-7. `/reports` permite seleccionar pacientes y generar un PDF de reporte.
-8. `/admin` (solo visible para el usuario admin) permite gestionar personal, sitios y activar premium por usuario.
-9. `/import-export` permite previsualizar una importación CSV con mapeo de columnas y exportar mediciones a CSV.
+6. Desde el detalle de una herida existente, abrir **Seguimiento** para ver la gráfica de tendencia de área y el checkpoint Sheehan. Usar **Registrar seguimiento** (botón en el AppBar) para capturar una nueva visita subsecuente — al guardarla, la gráfica, el checkpoint y la foto "actual" se actualizan automáticamente con el dato recién creado.
+7. Desde el detalle de un paciente, tocar cualquier ítem del **historial de consultas** para ver el detalle completo (solo lectura) de esa visita: mediciones, evaluación, recomendación Kura+, tratamiento y fotos.
+8. `/reports` permite seleccionar pacientes y generar un PDF de reporte.
+9. `/admin` (solo visible para el usuario admin) permite gestionar personal, sitios y activar premium por usuario.
+10. `/import-export` permite previsualizar una importación CSV con mapeo de columnas y exportar mediciones a CSV.
 
 ---
 
@@ -162,29 +179,28 @@ Definidas en `lib/core/router/app_router.dart` (GoRouter):
 
 ## 8. Funcionalidades NO implementadas todavía
 
-1. **Persistencia real / multiusuario / RLS en vivo** — hoy el almacén es local por instancia de navegador; no hay sincronización entre dispositivos ni concurrencia real entre usuarios.
-2. **Storage real de fotos** — las fotos capturadas solo se referencian por ruta local temporal del dispositivo (`image_picker`); no se sube nada al bucket `wound-evidence`.
-3. **Motor Kura+ como Edge Function (Supabase, TypeScript)** — hoy el motor corre embebido en el cliente Dart; no existe todavía una versión servidor que sea la fuente de verdad para el cálculo "oficial" (ver decisión de arquitectura en sección 9).
-4. **Bitácora de auditoría completa** — `logAudit()` se invoca en creación de paciente, medición y plan de tratamiento, pero no todavía en actualizaciones ni eliminaciones.
-5. **Import CSV con persistencia real de `import_batches`** — la pantalla de import/export es funcional como demo de mapeo de columnas, pero no persiste el lote de importación como una fila real de la tabla `import_batches`.
-6. **Autenticación real** (verificación de contraseña, recuperación de cuenta, expiración de sesión) — el login demo acepta cualquier contraseña.
+1. **Motor Kura+ como Edge Function (Supabase, TypeScript)** — hoy el motor corre embebido en el cliente Dart; no existe todavía una versión servidor que sea la fuente de verdad para el cálculo "oficial" (ver decisión de arquitectura en sección 9).
+2. **Bitácora de auditoría completa** — el trigger `audit_trigger_fn()` cubre `patients`, `wounds`, `consultations`, `wound_measurements`, `treatment_plans`, `kura_recommendations`, `staff`, `profiles`, y solo en INSERT/UPDATE/DELETE; `wound_assessments`/`wound_photos` no están en su alcance por diseño actual.
+3. **Checkpoint de Sheehan sin penalizaciones reales** — el campo `low_adherence` (y los demás flags: infección activa, deterioro del lecho, aumento de exudado) ya se capturan/persisten en el formulario de seguimiento, pero la llamada a `KuraSheehanCheckpoint.evaluate()` todavía no los recibe como parámetro — el checkpoint solo usa área basal vs. actual.
+4. **Import CSV con persistencia real de `import_batches`** — la pantalla de import/export es funcional como demo de mapeo de columnas, pero no persiste el lote de importación como una fila real de la tabla `import_batches`.
+5. **Autenticación real** (verificación de contraseña, recuperación de cuenta, expiración de sesión) — el login demo acepta cualquier contraseña.
+6. **`WoundAssessment.fromJson()` no parsea `exudate_type`** — el campo se escribe correctamente a Supabase (`toJson`) pero al releer el modelo Dart siempre vuelve `null`, incluso si el formulario de seguimiento o la evaluación inicial lo guardaron. Afecta la columna "Exudado (tipo)" en el detalle de consulta (sección 3.5). Gap detectado, no corregido en esta iteración.
 
 ---
 
 ## 9. Roadmap recomendado (próximos pasos)
 
-El usuario del proyecto definió el criterio de priorización: **si el destino es un piloto clínico real (no solo demo), lo no negociable es conectar Supabase real (persistencia, multiusuario, RLS) y storage real de fotos** — el resto puede esperar.
+El usuario del proyecto definió el criterio de priorización: **si el destino es un piloto clínico real (no solo demo), lo no negociable es conectar Supabase real (persistencia, multiusuario, RLS) y storage real de fotos** — ambos ya resueltos; el resto puede esperar.
 
 **Orden de trabajo acordado:**
 
 1. **Conectar un proyecto Supabase real** — 📖 runbook detallado en [`SUPABASE_SETUP.md`](./SUPABASE_SETUP.md)
-   - Provisionar proyecto (dueño: el cliente/usuario final, nunca esta cuenta de desarrollo), aplicar las 4 migraciones SQL existentes (`supabase/migrations/`) **en orden estricto 0001→0002→0003→0004** (0002 depende de las tablas de 0001; 0003 y 0004 dependen de las funciones helper `is_admin()`/`current_staff_id()` creadas en 0002).
+   - Provisionar proyecto (dueño: el cliente/usuario final, nunca esta cuenta de desarrollo), aplicar las 7 migraciones SQL existentes (`supabase/migrations/`) **en orden estricto 0001→0007** (cada una depende de objetos creados por la anterior: 0002 de las tablas de 0001; 0003/0004 de las funciones helper de 0002; 0005/0006/0007 son alteraciones incrementales sobre el esquema base).
+   - **Pendiente de aplicar**: la migración `0007_wound_assessment_adherence.sql` (columna `low_adherence`) fue creada en esta iteración y todavía no se ha aplicado contra el proyecto Supabase real del cliente — no hay credenciales de base de datos disponibles en este entorno de desarrollo para aplicarla automáticamente. Debe aplicarse manualmente vía SQL Editor antes de que el formulario de seguimiento se use contra producción.
    - Arquitectura de cliente **ya implementada** (`lib/services/remote/data_store.dart` + `supabase_data_store.dart` + `supabase_bootstrap.dart`): abstrae el origen de datos vía un `DataStore`; usa Supabase real cuando `AppConfig.isSupabaseConfigured` es `true` (URL + anon key inyectadas por `--dart-define`), y cae a `LocalStore` (modo demo local) cuando no hay credenciales — así el modo offline/demo sigue funcionando sin backend.
    - Verificar RLS en vivo **antes** de conectar la app (ver sección 4 de `SUPABASE_SETUP.md`): login autenticado + lectura de `/rest/v1/patients` confirmando que un clínico sin asignaciones no ve pacientes de otros.
-   - Seed de datos sintéticos para el piloto: `supabase/seed/seed_synthetic_patients.sql` — 6 pacientes ficticios (2×escenario A, 2×B, 2×C; 5 etiologías distintas), idempotente, se corre desde el SQL Editor **después** de aplicar las 4 migraciones y de verificar RLS.
-2. **Storage real de fotos**
-   - Subir evidencia fotográfica al bucket `wound-evidence` respetando el límite de 17 MB por lote.
-   - Sustituir los paths locales temporales en el estado del formulario de captura por URLs firmadas/reales de Supabase Storage.
+   - Seed de datos sintéticos para el piloto: `supabase/seed/seed_synthetic_patients.sql` — 6 pacientes ficticios (2×escenario A, 2×B, 2×C; 5 etiologías distintas), idempotente, se corre desde el SQL Editor **después** de aplicar las migraciones y de verificar RLS.
+2. **Storage real de fotos** — ✅ resuelto: `PhotoUploadService` sube al bucket `wound-evidence` y resuelve URLs firmadas; falta solo aplicar la migración 0007 pendiente (ver arriba) para que el flag de adherencia se persista contra producción.
 3. **Migrar el motor Kura+ a una Supabase Edge Function (TypeScript)**
    - Puerto exacto de `kura_prognosis_model.dart`, `kura_clinical_adjustments.dart`, `kura_treatment_rules_engine.dart` y `kura_sheehan_checkpoint.dart` a TypeScript, usando los mismos JSON versionados de `assets/engine/`.
    - El cliente Flutter pasa a **consumir la Edge Function** como fuente de verdad para toda recomendación que se persiste en el expediente (auditable, versión de servidor).
@@ -236,7 +252,9 @@ lib/
   models/          # modelos de dominio (Site, Staff, Patient, Consultation, Wound, TreatmentPlan, AppUser)
   services/
     local_db/      # LocalStore (SharedPreferences) + DemoSeed
-    data_repository.dart  # API central de datos consumida por toda la UI
+    remote/        # DataStore, SupabaseDataStore (Postgrest real)
+    data_repository.dart      # API central de datos consumida por toda la UI
+    photo_upload_service.dart # subida a Supabase Storage / fallback data-URL en modo demo
   features/        # una carpeta por módulo de UI (auth, dashboard, patients, consultation,
                    # wound_capture, treatment, follow_up, reports, admin, import_export)
 assets/
@@ -244,10 +262,12 @@ assets/
 test/
   engine/          # 42 tests: paridad, casos límite, reglas de seguridad, Sheehan
 supabase/
-  migrations/      # 4 migraciones SQL (esquema, triggers, RLS, storage) — NO aplicadas aún
+  migrations/      # 7 migraciones SQL (esquema, triggers, RLS, storage, WIFI/Braden/HbA1c,
+                   # hardening RLS profiles, low_adherence) — aplicadas 0001–0006 al proyecto
+                   # real del cliente; 0007 pendiente de aplicar (ver sección 9)
   functions/kura-protocol-engine/  # carpeta reservada para la Edge Function TS (pendiente)
 ```
 
 ---
 
-*Última actualización: verificación de build/tests/analyze + demo desplegada en sandbox de desarrollo.*
+*Última actualización: Feature de seguimiento end-to-end (formulario + tablero 100% derivado de datos reales + storage de fotos) y detalle de consulta solo lectura desde el historial. Build/analyze verificados, demo desplegada en sandbox de desarrollo.*

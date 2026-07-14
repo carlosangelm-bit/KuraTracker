@@ -11,6 +11,8 @@ import '../../features/patients/patient_form_screen.dart';
 import '../../features/consultation/consultation_hub_screen.dart';
 import '../../features/wound_capture/wound_capture_screen.dart';
 import '../../features/follow_up/follow_up_screen.dart';
+import '../../features/follow_up/follow_up_capture_screen.dart';
+import '../../features/consultation/consultation_detail_screen.dart';
 import '../../features/reports/reports_screen.dart';
 import '../../features/admin/admin_home_screen.dart';
 import '../../features/import_export/import_export_screen.dart';
@@ -79,6 +81,20 @@ final routerProvider = Provider<GoRouter>((ref) {
             builder: (context, state) => FollowUpScreen(
               patientId: state.pathParameters['patientId']!,
               woundId: state.pathParameters['woundId']!,
+            ),
+          ),
+          GoRoute(
+            path: '/patients/:patientId/wound/:woundId/follow-up/new',
+            builder: (context, state) => FollowUpCaptureScreen(
+              patientId: state.pathParameters['patientId']!,
+              woundId: state.pathParameters['woundId']!,
+            ),
+          ),
+          GoRoute(
+            path: '/patients/:patientId/consultation/:consultationId',
+            builder: (context, state) => ConsultationDetailScreen(
+              patientId: state.pathParameters['patientId']!,
+              consultationId: state.pathParameters['consultationId']!,
             ),
           ),
           GoRoute(path: '/reports', builder: (context, state) => const ReportsScreen()),
