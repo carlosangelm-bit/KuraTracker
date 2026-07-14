@@ -14,12 +14,24 @@ class WoundCaptureFormState {
 
   // ---- Condicionales por etiologia ----
   WagnerGrade? wagnerGrade;
+  // WIfI (Wound/Ischemia/foot Infection): 3 subescalas independientes 0-3,
+  // capturadas junto a Wagner en pie diabetico (Hoja de Valoracion Kura+).
+  int? wifiWound;
+  int? wifiIschemia;
+  int? wifiInfection;
   CeapClass? ceapClass;
   WuwhsGrade? wuwhsGrade;
   AgenteCausal? agenteCausal;
+  // Braden (riesgo de LPP), score total 6-23. Obligatorio en UI si la
+  // etiologia de la herida es LPP.
+  int? bradenScore;
 
   // ---- Evaluacion clinica ----
   double? glucoseMgDl;
+  // HbA1c (hemoglobina glucosilada, %) - distinta de glucoseMgDl (glucosa
+  // capilar puntual). Se muestra si el paciente es diabetico o la
+  // etiologia es pie diabetico.
+  double? hba1cPct;
   DateTime? firstAssessmentDate;
   String edema = 'ninguno';
   bool pain = false;
@@ -72,6 +84,15 @@ class WoundCaptureFormState {
         loc.contains('talon') ||
         loc.contains('rodilla');
   }
+
+  /// Paciente diabetico: por comorbilidad marcada como presente o por
+  /// etiologia de pie diabetico (gatea HbA1c y, junto a la etiologia, WIfI).
+  bool get isDiabeticPatient =>
+      comorbilidades[Comorbilidad.diabetesMellitus] == ComorbilidadEstado.presente ||
+      etiologia == Etiologia.pieDiabetico;
+
+  /// LPP (lesion por presion): gatea el campo obligatorio de Braden.
+  bool get isLpp => etiologia == Etiologia.lpp;
 
   KuraEngineInput toEngineInput() {
     return KuraEngineInput(

@@ -45,6 +45,11 @@ class Wound {
   final String? bodyLocationSecondary;
   final DateTime? onsetDate;
   final WagnerGrade? wagnerGrade;
+  // WIfI (Wound/Ischemia/foot Infection): 3 subescalas independientes 0-3,
+  // capturadas junto a Wagner en pie diabetico.
+  final int? wifiWound;
+  final int? wifiIschemia;
+  final int? wifiInfection;
   final CeapClass? ceapClass;
   final WuwhsGrade? wuwhsGrade;
   final AgenteCausal? agenteCausal;
@@ -61,6 +66,9 @@ class Wound {
     this.bodyLocationSecondary,
     this.onsetDate,
     this.wagnerGrade,
+    this.wifiWound,
+    this.wifiIschemia,
+    this.wifiInfection,
     this.ceapClass,
     this.wuwhsGrade,
     this.agenteCausal,
@@ -82,6 +90,9 @@ class Wound {
         wagnerGrade: json['wagner_grade'] == null
             ? null
             : WagnerGrade.values.firstWhere((e) => e.name == json['wagner_grade']),
+        wifiWound: json['wifi_wound'] as int?,
+        wifiIschemia: json['wifi_ischemia'] as int?,
+        wifiInfection: json['wifi_infection'] as int?,
         ceapClass: json['ceap_class'] == null
             ? null
             : CeapClass.values.firstWhere((e) => e.name == json['ceap_class']),
@@ -107,6 +118,9 @@ class Wound {
         'body_location_secondary': bodyLocationSecondary,
         'onset_date': onsetDate?.toIso8601String().substring(0, 10),
         'wagner_grade': wagnerGrade?.name,
+        'wifi_wound': wifiWound,
+        'wifi_ischemia': wifiIschemia,
+        'wifi_infection': wifiInfection,
         'ceap_class': ceapClass?.name,
         'wuwhs_grade': wuwhsGrade?.name,
         'agente_causal': agenteCausal?.name,
@@ -198,6 +212,10 @@ class WoundAssessment {
   final String consultationId;
   final String woundId;
   final double? glucoseMgDl;
+  // HbA1c (hemoglobina glucosilada, %) - distinta de glucoseMgDl.
+  final double? hba1cPct;
+  // Escala de Braden (riesgo de LPP), score total 6-23.
+  final int? bradenScore;
   final DateTime? firstAssessmentDate;
   final String? edema;
   final bool? pain;
@@ -216,6 +234,8 @@ class WoundAssessment {
     required this.consultationId,
     required this.woundId,
     this.glucoseMgDl,
+    this.hba1cPct,
+    this.bradenScore,
     this.firstAssessmentDate,
     this.edema,
     this.pain,
@@ -235,6 +255,8 @@ class WoundAssessment {
         consultationId: json['consultation_id'] as String,
         woundId: json['wound_id'] as String,
         glucoseMgDl: (json['glucose_mg_dl'] as num?)?.toDouble(),
+        hba1cPct: (json['hba1c_pct'] as num?)?.toDouble(),
+        bradenScore: json['braden_score'] as int?,
         firstAssessmentDate: json['first_assessment_date'] == null
             ? null
             : DateTime.parse(json['first_assessment_date'] as String),
@@ -262,6 +284,8 @@ class WoundAssessment {
         'consultation_id': consultationId,
         'wound_id': woundId,
         'glucose_mg_dl': glucoseMgDl,
+        'hba1c_pct': hba1cPct,
+        'braden_score': bradenScore,
         'first_assessment_date': firstAssessmentDate?.toIso8601String().substring(0, 10),
         'edema': edema,
         'pain': pain,

@@ -201,6 +201,9 @@ class _WoundCaptureScreenState extends ConsumerState<WoundCaptureScreen> {
           'body_location_secondary': formState.bodyLocationSecondary,
           'onset_date': formState.onsetDate?.toIso8601String().substring(0, 10),
           'wagner_grade': formState.wagnerGrade?.name,
+          'wifi_wound': formState.wifiWound,
+          'wifi_ischemia': formState.wifiIschemia,
+          'wifi_infection': formState.wifiInfection,
           'ceap_class': formState.ceapClass?.name,
           'wuwhs_grade': formState.wuwhsGrade?.name,
           'agente_causal': formState.agenteCausal?.name,
@@ -213,6 +216,8 @@ class _WoundCaptureScreenState extends ConsumerState<WoundCaptureScreen> {
           'consultation_id': consultationId,
           'wound_id': wound.id,
           'glucose_mg_dl': formState.glucoseMgDl,
+          'hba1c_pct': formState.hba1cPct,
+          'braden_score': formState.bradenScore,
           'first_assessment_date':
               formState.firstAssessmentDate?.toIso8601String().substring(0, 10),
           'edema': formState.edema,
@@ -441,6 +446,17 @@ class _WoundCaptureScreenState extends ConsumerState<WoundCaptureScreen> {
                 keyboardType: TextInputType.number,
                 onChanged: (v) => update(() => formState.glucoseMgDl = double.tryParse(v)),
               ),
+              if (formState.isDiabeticPatient) ...[
+                const SizedBox(height: 12),
+                TextFormField(
+                  decoration: const InputDecoration(
+                    labelText: 'HbA1c (hemoglobina glucosilada, %) *',
+                    helperText: 'Distinta de la glucosa capilar; control metabólico de los últimos 2-3 meses.',
+                  ),
+                  keyboardType: TextInputType.number,
+                  onChanged: (v) => update(() => formState.hba1cPct = double.tryParse(v)),
+                ),
+              ],
               const SizedBox(height: 12),
               DropdownButtonFormField<String>(
                 value: formState.edema,
@@ -724,7 +740,15 @@ class _WoundCaptureScreenState extends ConsumerState<WoundCaptureScreen> {
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
                 title: const Text('Herida de extremidad inferior'),
-                subtitle: const Text('Habilita la captura de ABI/ITB'),
+                subtitle: Text(
+                  formState.isLowerExtremityLocation
+                      ? 'Detectado automáticamente por la ubicación seleccionada. Puedes anularlo si no aplica.'
+                      : 'La ubicación seleccionada no es de extremidad inferior. Activa esto solo para anular la detección.',
+                ),
+                // Gateo primario: isLowerExtremityLocation (derivado de la
+                // ubicacion corporal). El switch actua como override manual
+                // para casos donde la deteccion automatica no coincide con
+                // el criterio clinico (p. ej. ubicacion no capturada aun).
                 value: formState.esExtremidadInferior,
                 activeColor: KuraColors.primary,
                 onChanged: (v) => update(() => formState.esExtremidadInferior = v),
@@ -768,21 +792,56 @@ class _WoundCaptureScreenState extends ConsumerState<WoundCaptureScreen> {
       case Etiologia.pieDiabetico:
         return _SectionCard(
           icon: Icons.accessibility_new,
-          title: 'Pie diabético — Clasificación Wagner',
+          title: 'Pie diabético — Wagner + WIfI',
           subtitle: 'Determina el dispositivo de descarga sugerido',
           initiallyExpanded: true,
-          child: Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: WagnerGrade.values.map((g) {
-              final selected = formState.wagnerGrade == g;
-              return ChoiceChip(
-                label: Text(g.name.toUpperCase()),
-                selected: selected,
-                selectedColor: KuraColors.primary.withOpacity(0.18),
-                onSelected: (_) => update(() => formState.wagnerGrade = g),
-              );
-            }).toList(),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Text('Clasificación Wagner *', style: TextStyle(fontWeight: FontWeight.w600)),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: WagnerGrade.values.map((g) {
+                  final selected = formState.wagnerGrade == g;
+                  return ChoiceChip(
+                    label: Text(g.name.toUpperCase()),
+                    selected: selected,
+                    selectedColor: KuraColors.primary.withOpacity(0.18),
+                    onSelected: (_) => update(() => formState.wagnerGrade = g),
+                  );
+                }).toList(),
+              ),
+              const SizedBox(height: 16),
+              const Divider(),
+              const SizedBox(height: 8),
+              const Text('Clasificación WIfI (Wound / Ischemia / foot Infection) *',
+                  style: TextStyle(fontWeight: FontWeight.w600)),
+              const SizedBox(height: 4),
+              Text(
+                'Cada subescala se gradúa por separado, de 0 (mínimo) a 3 (máximo).',
+                style: TextStyle(fontSize: 12, color: KuraColors.darkText.withOpacity(0.6)),
+              ),
+              const SizedBox(height: 8),
+              _WifiSubscaleSelector(
+                label: 'W — Herida (Wound)',
+                value: formState.wifiWound,
+                onChanged: (v) => update(() => formState.wifiWound = v),
+              ),
+              const SizedBox(height: 8),
+              _WifiSubscaleSelector(
+                label: 'I — Isquemia (Ischemia)',
+                value: formState.wifiIschemia,
+                onChanged: (v) => update(() => formState.wifiIschemia = v),
+              ),
+              const SizedBox(height: 8),
+              _WifiSubscaleSelector(
+                label: 'fI — Infección del pie (foot Infection)',
+                value: formState.wifiInfection,
+                onChanged: (v) => update(() => formState.wifiInfection = v),
+              ),
+            ],
           ),
         );
       case Etiologia.vascular:
@@ -846,6 +905,48 @@ class _WoundCaptureScreenState extends ConsumerState<WoundCaptureScreen> {
           ),
         );
       case Etiologia.lpp:
+        return _SectionCard(
+          icon: Icons.airline_seat_flat_outlined,
+          title: 'Lesión por presión — Escala de Braden *',
+          subtitle: 'Riesgo de LPP: a menor puntaje, mayor riesgo (obligatorio)',
+          initiallyExpanded: true,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'Puntaje total: ${formState.bradenScore ?? '—'} / 23',
+                style: const TextStyle(fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Suma de las 6 subescalas (percepción sensorial, humedad, actividad, '
+                'movilidad, nutrición, fricción/cizallamiento), cada una de 1 a 4 '
+                '(fricción/cizallamiento de 1 a 3). Rango total: 6-23.',
+                style: TextStyle(fontSize: 12, color: KuraColors.darkText.withOpacity(0.6)),
+              ),
+              const SizedBox(height: 8),
+              Slider(
+                value: (formState.bradenScore ?? 23).toDouble(),
+                min: 6,
+                max: 23,
+                divisions: 17,
+                activeColor: KuraColors.primary,
+                label: '${formState.bradenScore ?? 23}',
+                onChanged: (v) => update(() => formState.bradenScore = v.round()),
+              ),
+              Wrap(
+                spacing: 8,
+                children: const [
+                  Text('≤9: Riesgo muy alto', style: TextStyle(fontSize: 11)),
+                  Text('10-12: Alto', style: TextStyle(fontSize: 11)),
+                  Text('13-14: Moderado', style: TextStyle(fontSize: 11)),
+                  Text('15-18: Bajo', style: TextStyle(fontSize: 11)),
+                  Text('19-23: Sin riesgo', style: TextStyle(fontSize: 11)),
+                ],
+              ),
+            ],
+          ),
+        );
       case Etiologia.otra:
         return const SizedBox.shrink();
     }
@@ -942,6 +1043,48 @@ class _SectionCardState extends State<_SectionCard> {
           if (_expanded) _buildContent(),
         ],
       ),
+    );
+  }
+}
+
+/// Selector de una subescala WIfI individual (0-3), como fila de chips
+/// numerados con su significado clinico como tooltip/label corto.
+class _WifiSubscaleSelector extends StatelessWidget {
+  final String label;
+  final int? value;
+  final ValueChanged<int?> onChanged;
+
+  const _WifiSubscaleSelector({
+    required this.label,
+    required this.value,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Expanded(
+          flex: 3,
+          child: Text(label, style: const TextStyle(fontSize: 13)),
+        ),
+        Expanded(
+          flex: 4,
+          child: Wrap(
+            spacing: 6,
+            children: List.generate(4, (grade) {
+              final selected = value == grade;
+              return ChoiceChip(
+                label: Text('$grade'),
+                selected: selected,
+                selectedColor: KuraColors.primary.withOpacity(0.18),
+                onSelected: (_) => onChanged(grade),
+              );
+            }),
+          ),
+        ),
+      ],
     );
   }
 }
