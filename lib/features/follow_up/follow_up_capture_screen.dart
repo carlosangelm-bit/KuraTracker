@@ -9,7 +9,9 @@ import 'package:intl/intl.dart';
 import '../../core/providers/session_provider.dart';
 import '../../core/theme/kura_theme.dart';
 import '../../engine/models/kura_engine_enums.dart';
+import '../../models/app_user.dart';
 import '../../models/consultation.dart';
+import '../../models/note_option_catalog.dart';
 import '../../models/treatment_plan.dart';
 import '../../services/data_repository.dart';
 import '../../services/photo_upload_service.dart';
@@ -19,13 +21,25 @@ import '../wound_capture/widgets/bed_composition_sliders.dart';
 /// ligada a una herida existente).
 ///
 /// Alineado con los protocolos clinicos Kura+ (Prioridad 1 de la
-/// instruccion "Alinear KuraTracker con los protocolos clinicos Kura+"):
-/// reevaluacion integral (medidas 2D/3D + composicion del lecho + olor +
-/// borde + piel perilesional + EVA de dolor + infeccion + adherencia),
-/// medicion manual para socavamiento/tunelizacion/circunferencial/
-/// irregular, 2 fotografias de seguimiento (despues de limpiar sin
-/// medicion + con medicion) y nota de seguimiento obligatoria (tipo de
-/// atencion, procedimiento, material, evolucion, firma + cedula).
+/// instruccion "Alinear KuraTracker con los protocolos clinicos Kura+",
+/// incluyendo el refinamiento UX/fidelidad clinica posterior):
+///   1. Reevaluacion integral (medidas 2D/3D + composicion del lecho +
+///      olor + borde + piel perilesional + EVA de dolor + infeccion +
+///      adherencia), medicion manual para socavamiento/tunelizacion.
+///   2. Las 2 fotografias de seguimiento se solicitan EN el punto clinico
+///      correspondiente del flujo (Protocolo de Fotografias y Medicion),
+///      no al final: la foto "despues de limpiar (sin medicion)" se pide
+///      justo antes/junto a la composicion del lecho (que tambien exige
+///      capturarse antes de curar/desbridar), y la foto "con medicion" se
+///      pide inmediatamente despues de registrar las medidas 2D/3D.
+///   3. Nota de seguimiento obligatoria cuyos conceptos (tipo de atencion,
+///      procedimiento, material, evolucion) se seleccionan como chips
+///      desde un catalogo administrado por el centro (note_option_catalog,
+///      admin-only via Configuracion), con "Otro" como texto libre que
+///      solo se persiste al catalogo si quien captura es admin.
+///   4. Firma (nombre) y cedula profesional se muestran de solo lectura,
+///      tomadas del registro `staff` del profesional en sesion — nunca se
+///      piden como campos editables en cada nota.
 ///
 /// Persiste, en este orden:
 ///   1. consultations (visit_type='seguimiento' + nota de seguimiento)
@@ -68,7 +82,7 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
   double _epitelizacion = 0;
   bool _capturedBeforeDebridement = true;
 
-  // ---- Evaluacion clinica (reevaluacion integral, PROTOC~3 UPD) ----
+  // ---- Evaluacion clinica (reevaluacion integral) ----
   String _edema = 'ninguno';
   bool _pain = false;
   String _painType = 'nociceptivo';
@@ -82,22 +96,32 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
   final Set<PielPerilesionalEstado> _perilesionalSkin = {};
   bool _lowAdherence = false;
 
-  // ---- Fotografia de seguimiento (Protocolo de Fotografias SS1.2): 2 fotos
-  // ----   1ra despues de limpiar (sin medicion), 2da con medicion.
+  // ---- Fotografia de seguimiento (Protocolo de Fotografias y Medicion):
+  // 2 fotos, cada una solicitada en su momento clinico real dentro del
+  // flujo (no al final): 1ra despues de limpiar (sin medicion) junto al
+  // paso de composicion del lecho/limpieza; 2da con medicion, justo
+  // despues del bloque de medidas 2D/3D.
   XFile? _photoAfterCleaning;
   Uint8List? _photoAfterCleaningBytes;
   XFile? _photoWithMeasurement;
   Uint8List? _photoWithMeasurementBytes;
   final _picker = ImagePicker();
 
-  // ---- Nota de seguimiento obligatoria (Instructivo de Archivo) ----
-  final _careTypeCtrl = TextEditingController();
-  final _procedureDescCtrl = TextEditingController();
-  final _materialsUsedCtrl = TextEditingController();
-  final _evolutionCtrl = TextEditingController();
-  final _signedByCtrl = TextEditingController();
-  final _signedLicenseCtrl = TextEditingController();
-  bool _prefilledSignature = false;
+  // ---- Nota de seguimiento obligatoria (conceptos desde catalogo del
+  // centro; "Otro" como texto libre por campo) ----
+  String? _careTypeSelected;
+  final _careTypeOtherCtrl = TextEditingController();
+  String? _procedureDescSelected;
+  final _procedureDescOtherCtrl = TextEditingController();
+  String? _materialsUsedSelected;
+  final _materialsUsedOtherCtrl = TextEditingController();
+  String? _evolutionSelected;
+  final _evolutionOtherCtrl = TextEditingController();
+
+  // Firma/cedula: solo lectura, resueltas desde el staff de la sesion (no
+  // se piden como campos editables en cada nota).
+  String? _signedByReadOnly;
+  String? _signedLicenseReadOnly;
 
   bool _saving = false;
 
@@ -110,13 +134,22 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
   // se activa el modo de medicion 3D (volumen) ademas del 2D.
   bool get _isDeepWound => _depthCm >= 0.5;
 
+  String get _careTypeFinal =>
+      _careTypeSelected == kOtherOptionValue ? _careTypeOtherCtrl.text.trim() : (_careTypeSelected ?? '');
+  String get _procedureDescFinal => _procedureDescSelected == kOtherOptionValue
+      ? _procedureDescOtherCtrl.text.trim()
+      : (_procedureDescSelected ?? '');
+  String get _materialsUsedFinal => _materialsUsedSelected == kOtherOptionValue
+      ? _materialsUsedOtherCtrl.text.trim()
+      : (_materialsUsedSelected ?? '');
+  String get _evolutionFinal =>
+      _evolutionSelected == kOtherOptionValue ? _evolutionOtherCtrl.text.trim() : (_evolutionSelected ?? '');
+
   bool get _followUpNoteComplete =>
-      _careTypeCtrl.text.trim().isNotEmpty &&
-      _procedureDescCtrl.text.trim().isNotEmpty &&
-      _materialsUsedCtrl.text.trim().isNotEmpty &&
-      _evolutionCtrl.text.trim().isNotEmpty &&
-      _signedByCtrl.text.trim().isNotEmpty &&
-      _signedLicenseCtrl.text.trim().isNotEmpty;
+      _careTypeFinal.isNotEmpty &&
+      _procedureDescFinal.isNotEmpty &&
+      _materialsUsedFinal.isNotEmpty &&
+      _evolutionFinal.isNotEmpty;
 
   Future<void> _pickPhoto({required bool withMeasurement}) async {
     try {
@@ -137,19 +170,20 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
     }
   }
 
-  void _prefillSignatureIfNeeded(SessionState session, DataRepository? repo) {
-    if (_prefilledSignature) return;
-    _prefilledSignature = true;
-    final name = session.user?.fullName;
-    if (name != null && name.isNotEmpty) {
-      _signedByCtrl.text = name;
-    }
+  bool _resolvedSignature = false;
+
+  /// Resuelve firma/cedula de solo lectura desde el registro `staff` del
+  /// profesional en sesion (nunca se piden como campos editables). Si el
+  /// staff no tiene cedula registrada, se deja null: la UI muestra un
+  /// aviso para completarla una vez en Administración, en vez de pedirla
+  /// aqui.
+  void _resolveSignatureIfNeeded(SessionState session, DataRepository? repo) {
+    if (_resolvedSignature) return;
+    _resolvedSignature = true;
+    _signedByReadOnly = session.user?.fullName;
     final staffId = session.user?.staffId;
     if (repo != null && staffId != null) {
-      final cedula = repo.getStaff(staffId)?.cedulaProfesional;
-      if (cedula != null && cedula.isNotEmpty) {
-        _signedLicenseCtrl.text = cedula;
-      }
+      _signedLicenseReadOnly = repo.getStaff(staffId)?.cedulaProfesional;
     }
   }
 
@@ -160,12 +194,10 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
     _depthCtrl.dispose();
     _volumeCtrl.dispose();
     _manualMeasurementCtrl.dispose();
-    _careTypeCtrl.dispose();
-    _procedureDescCtrl.dispose();
-    _materialsUsedCtrl.dispose();
-    _evolutionCtrl.dispose();
-    _signedByCtrl.dispose();
-    _signedLicenseCtrl.dispose();
+    _careTypeOtherCtrl.dispose();
+    _procedureDescOtherCtrl.dispose();
+    _materialsUsedOtherCtrl.dispose();
+    _evolutionOtherCtrl.dispose();
     super.dispose();
   }
 
@@ -173,14 +205,19 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
   Widget build(BuildContext context) {
     final session = ref.watch(sessionProvider);
     final repoAsync = ref.watch(dataRepositoryProvider);
-    _prefillSignatureIfNeeded(session, repoAsync.asData?.value);
+    final repo = repoAsync.asData?.value;
+    _resolveSignatureIfNeeded(session, repo);
 
     final canSave = !_saving &&
         _lengthCm > 0 &&
         _widthCm > 0 &&
         _photoAfterCleaningBytes != null &&
         _photoWithMeasurementBytes != null &&
-        _followUpNoteComplete;
+        _followUpNoteComplete &&
+        _signedByReadOnly != null &&
+        _signedByReadOnly!.isNotEmpty &&
+        _signedLicenseReadOnly != null &&
+        _signedLicenseReadOnly!.isNotEmpty;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Registrar seguimiento')),
@@ -192,7 +229,7 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Text('Medición', style: _sectionStyle(context)),
+                Text('Fecha de la visita', style: _sectionStyle(context)),
                 const SizedBox(height: 8),
                 OutlinedButton.icon(
                   icon: const Icon(Icons.calendar_today, size: 16),
@@ -207,6 +244,55 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
                     if (picked != null) setState(() => _visitDate = picked);
                   },
                 ),
+
+                // -----------------------------------------------------------------
+                // PASO 1: Composicion del lecho + limpieza (se captura ANTES de
+                // curar/desbridar) -> justo aqui, INMEDIATAMENTE antes de este
+                // paso, se pide la 1a foto de seguimiento (despues de limpiar,
+                // sin medicion). El orden refleja la secuencia real del
+                // Protocolo de Fotografias y Medicion: limpiar -> fotografiar
+                // sin medir -> evaluar el lecho -> medir -> fotografiar con
+                // medicion.
+                // -----------------------------------------------------------------
+                const SizedBox(height: 24),
+                Text('Fotografía 1: después de limpiar', style: _sectionStyle(context)),
+                const SizedBox(height: 4),
+                const Text(
+                  'Protocolo de Fotografías §1.2: se toma justo después de limpiar '
+                  'la herida, ANTES de evaluar el lecho o medir. Sin medición.',
+                  style: TextStyle(fontSize: 12, color: KuraColors.darkText),
+                ),
+                const SizedBox(height: 12),
+                _photoTile(
+                  label: '1. Después de limpiar (sin medición) *',
+                  bytes: _photoAfterCleaningBytes,
+                  hasPhoto: _photoAfterCleaning != null,
+                  onPick: () => _pickPhoto(withMeasurement: false),
+                ),
+
+                const SizedBox(height: 24),
+                Text('Composición del lecho', style: _sectionStyle(context)),
+                const SizedBox(height: 8),
+                BedCompositionSliders(
+                  granulacion: _granulacion,
+                  esfacelo: _esfacelo,
+                  necrosis: _necrosis,
+                  epitelizacion: _epitelizacion,
+                  onGranulacionChanged: (v) => setState(() => _granulacion = v),
+                  onEsfaceloChanged: (v) => setState(() => _esfacelo = v),
+                  onNecrosisChanged: (v) => setState(() => _necrosis = v),
+                  onEpitelizacionChanged: (v) => setState(() => _epitelizacion = v),
+                  capturedBeforeDebridement: _capturedBeforeDebridement,
+                  onCapturedBeforeDebridementChanged: (v) =>
+                      setState(() => _capturedBeforeDebridement = v),
+                ),
+
+                // -----------------------------------------------------------------
+                // PASO 2: Medicion 2D/3D/manual -> inmediatamente despues, se
+                // pide la 2a foto (con medicion), tal como indica el protocolo.
+                // -----------------------------------------------------------------
+                const SizedBox(height: 24),
+                Text('Medición', style: _sectionStyle(context)),
                 const SizedBox(height: 12),
                 Row(
                   children: [
@@ -300,23 +386,24 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
                     ),
                   ),
                 ],
-                const SizedBox(height: 20),
-                Text('Composición del lecho', style: _sectionStyle(context)),
-                const SizedBox(height: 8),
-                BedCompositionSliders(
-                  granulacion: _granulacion,
-                  esfacelo: _esfacelo,
-                  necrosis: _necrosis,
-                  epitelizacion: _epitelizacion,
-                  onGranulacionChanged: (v) => setState(() => _granulacion = v),
-                  onEsfaceloChanged: (v) => setState(() => _esfacelo = v),
-                  onNecrosisChanged: (v) => setState(() => _necrosis = v),
-                  onEpitelizacionChanged: (v) => setState(() => _epitelizacion = v),
-                  capturedBeforeDebridement: _capturedBeforeDebridement,
-                  onCapturedBeforeDebridementChanged: (v) =>
-                      setState(() => _capturedBeforeDebridement = v),
+
+                const SizedBox(height: 24),
+                Text('Fotografía 2: con medición', style: _sectionStyle(context)),
+                const SizedBox(height: 4),
+                const Text(
+                  'Protocolo de Fotografías §1.2: se toma justo después de registrar '
+                  'las medidas, con la regla/referencia visible junto a la herida.',
+                  style: TextStyle(fontSize: 12, color: KuraColors.darkText),
                 ),
-                const SizedBox(height: 20),
+                const SizedBox(height: 12),
+                _photoTile(
+                  label: '2. Con medición *',
+                  bytes: _photoWithMeasurementBytes,
+                  hasPhoto: _photoWithMeasurement != null,
+                  onPick: () => _pickPhoto(withMeasurement: true),
+                ),
+
+                const SizedBox(height: 24),
                 Text('Estado clínico', style: _sectionStyle(context)),
                 const SizedBox(height: 12),
                 DropdownButtonFormField<String>(
@@ -499,90 +586,56 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
                   ),
                   onChanged: (v) => setState(() => _lowAdherence = v ?? false),
                 ),
-                const SizedBox(height: 20),
-                Text('Fotografía de seguimiento (2 fotos requeridas)', style: _sectionStyle(context)),
-                const SizedBox(height: 4),
-                const Text(
-                  'Protocolo de Fotografías §1.2: 1ª después de limpiar (sin medición), 2ª con medición.',
-                  style: TextStyle(fontSize: 12, color: KuraColors.darkText),
-                ),
-                const SizedBox(height: 12),
-                _photoTile(
-                  label: '1. Después de limpiar (sin medición) *',
-                  bytes: _photoAfterCleaningBytes,
-                  hasPhoto: _photoAfterCleaning != null,
-                  onPick: () => _pickPhoto(withMeasurement: false),
-                ),
-                const SizedBox(height: 12),
-                _photoTile(
-                  label: '2. Con medición *',
-                  bytes: _photoWithMeasurementBytes,
-                  hasPhoto: _photoWithMeasurement != null,
-                  onPick: () => _pickPhoto(withMeasurement: true),
-                ),
-                const SizedBox(height: 20),
+
+                const SizedBox(height: 24),
                 Text('Nota de seguimiento (obligatoria)', style: _sectionStyle(context)),
                 const SizedBox(height: 4),
                 const Text(
-                  'Instructivo de Archivo: sin campos vacíos. Requiere firma y cédula profesional de quien atiende.',
+                  'Instructivo de Archivo: sin campos vacíos. Selecciona los conceptos '
+                  'configurados por el centro; usa "Otro" solo si ninguno aplica.',
                   style: TextStyle(fontSize: 12, color: KuraColors.darkText),
                 ),
                 const SizedBox(height: 12),
-                TextField(
-                  controller: _careTypeCtrl,
-                  decoration: const InputDecoration(
-                    labelText: 'Tipo de atención *',
-                    hintText: 'Ej. curación ambulatoria, visita domiciliaria...',
+                if (repo != null) ...[
+                  _noteFieldChips(
+                    repo: repo,
+                    session: session,
+                    field: NoteOptionField.careType,
+                    selected: _careTypeSelected,
+                    otherCtrl: _careTypeOtherCtrl,
+                    onSelected: (v) => setState(() => _careTypeSelected = v),
                   ),
-                  onChanged: (_) => setState(() {}),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: _procedureDescCtrl,
-                  maxLines: 2,
-                  decoration: const InputDecoration(
-                    labelText: 'Descripción del procedimiento *',
+                  const SizedBox(height: 16),
+                  _noteFieldChips(
+                    repo: repo,
+                    session: session,
+                    field: NoteOptionField.procedureDesc,
+                    selected: _procedureDescSelected,
+                    otherCtrl: _procedureDescOtherCtrl,
+                    onSelected: (v) => setState(() => _procedureDescSelected = v),
                   ),
-                  onChanged: (_) => setState(() {}),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: _materialsUsedCtrl,
-                  maxLines: 2,
-                  decoration: const InputDecoration(
-                    labelText: 'Material utilizado *',
+                  const SizedBox(height: 16),
+                  _noteFieldChips(
+                    repo: repo,
+                    session: session,
+                    field: NoteOptionField.materialsUsed,
+                    selected: _materialsUsedSelected,
+                    otherCtrl: _materialsUsedOtherCtrl,
+                    onSelected: (v) => setState(() => _materialsUsedSelected = v),
                   ),
-                  onChanged: (_) => setState(() {}),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: _evolutionCtrl,
-                  maxLines: 2,
-                  decoration: const InputDecoration(
-                    labelText: 'Evolución *',
+                  const SizedBox(height: 16),
+                  _noteFieldChips(
+                    repo: repo,
+                    session: session,
+                    field: NoteOptionField.evolution,
+                    selected: _evolutionSelected,
+                    otherCtrl: _evolutionOtherCtrl,
+                    onSelected: (v) => setState(() => _evolutionSelected = v),
                   ),
-                  onChanged: (_) => setState(() {}),
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _signedByCtrl,
-                        decoration: const InputDecoration(labelText: 'Firma (nombre) *'),
-                        onChanged: (_) => setState(() {}),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: TextField(
-                        controller: _signedLicenseCtrl,
-                        decoration: const InputDecoration(labelText: 'Cédula profesional *'),
-                        onChanged: (_) => setState(() {}),
-                      ),
-                    ),
-                  ],
-                ),
+                ],
+                const SizedBox(height: 16),
+                _signatureReadOnlyCard(),
+
                 const SizedBox(height: 28),
                 FilledButton.icon(
                   icon: _saving
@@ -617,13 +670,172 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
 
   String _saveBlockedReason() {
     if (_lengthCm <= 0 || _widthCm <= 0) return 'Completa al menos largo y ancho para guardar.';
-    if (_photoAfterCleaningBytes == null || _photoWithMeasurementBytes == null) {
-      return 'Se requieren las 2 fotografías de seguimiento (después de limpiar + con medición).';
+    if (_photoAfterCleaningBytes == null) {
+      return 'Falta la fotografía 1 (después de limpiar, sin medición).';
+    }
+    if (_photoWithMeasurementBytes == null) {
+      return 'Falta la fotografía 2 (con medición).';
     }
     if (!_followUpNoteComplete) {
-      return 'Completa todos los campos de la nota de seguimiento (sin campos vacíos).';
+      return 'Completa todos los conceptos de la nota de seguimiento (sin campos vacíos).';
+    }
+    if (_signedByReadOnly == null || _signedByReadOnly!.isEmpty) {
+      return 'No se encontró el nombre del profesional en sesión.';
+    }
+    if (_signedLicenseReadOnly == null || _signedLicenseReadOnly!.isEmpty) {
+      return 'Completa la cédula profesional en tu registro de personal (Administración) '
+          'antes de guardar una nota de seguimiento.';
     }
     return '';
+  }
+
+  /// Fila de chips (mismo componente visual que la multiselección de
+  /// infección IWII) para un campo de la nota de seguimiento, cargados
+  /// desde el catálogo activo del centro (note_option_catalog), más un
+  /// chip "Otro". Al elegir "Otro": si quien captura es admin, se ofrece
+  /// guardarlo al catálogo (createNoteOption); si es clínico, el texto se
+  /// usa únicamente en esta nota y no se persiste como concepto.
+  Widget _noteFieldChips({
+    required DataRepository repo,
+    required SessionState session,
+    required NoteOptionField field,
+    required String? selected,
+    required TextEditingController otherCtrl,
+    required ValueChanged<String?> onSelected,
+  }) {
+    final options = repo.listNoteOptions(field);
+    final isAdmin = session.user?.role == AppRole.admin;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('${field.label} *', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            ...options.map((o) {
+              final isSelected = selected == o.label;
+              return FilterChip(
+                label: Text(o.label, style: const TextStyle(fontSize: 12)),
+                selected: isSelected,
+                selectedColor: KuraColors.primary.withOpacity(0.15),
+                onSelected: (_) => onSelected(o.label),
+              );
+            }),
+            FilterChip(
+              label: const Text('Otro', style: TextStyle(fontSize: 12)),
+              selected: selected == kOtherOptionValue,
+              selectedColor: KuraColors.warning.withOpacity(0.2),
+              onSelected: (_) => onSelected(kOtherOptionValue),
+            ),
+          ],
+        ),
+        if (selected == kOtherOptionValue) ...[
+          const SizedBox(height: 8),
+          TextField(
+            controller: otherCtrl,
+            decoration: InputDecoration(
+              labelText: 'Especifica "${field.label}"',
+              hintText: isAdmin
+                  ? 'Al guardar se ofrecerá agregarlo al catálogo del centro.'
+                  : 'Se usará solo en esta nota (no se agrega al catálogo).',
+            ),
+            onChanged: (_) => setState(() {}),
+          ),
+          if (isAdmin) ...[
+            const SizedBox(height: 4),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                icon: const Icon(Icons.playlist_add, size: 16),
+                label: const Text('Guardar este concepto en el catálogo', style: TextStyle(fontSize: 12)),
+                onPressed: otherCtrl.text.trim().isEmpty
+                    ? null
+                    : () async {
+                        final label = otherCtrl.text.trim();
+                        try {
+                          await repo.createNoteOption(
+                            field: field,
+                            label: label,
+                            createdByProfileId: session.user?.id,
+                          );
+                          if (mounted) {
+                            setState(() => onSelected(label));
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('"$label" agregado al catálogo de ${field.label}.')),
+                            );
+                          }
+                        } catch (e) {
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('No se pudo agregar al catálogo: $e')),
+                            );
+                          }
+                        }
+                      },
+              ),
+            ),
+          ],
+        ],
+      ],
+    );
+  }
+
+  Widget _signatureReadOnlyCard() {
+    final hasLicense = _signedLicenseReadOnly != null && _signedLicenseReadOnly!.isNotEmpty;
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: KuraColors.chipBg,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Firma de quien atiende', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              const Icon(Icons.badge_outlined, size: 16, color: KuraColors.darkText),
+              const SizedBox(width: 6),
+              Text(_signedByReadOnly ?? 'Sin resolver', style: const TextStyle(fontWeight: FontWeight.w600)),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Row(
+            children: [
+              const Icon(Icons.badge_outlined, size: 16, color: KuraColors.darkText),
+              const SizedBox(width: 6),
+              Text(
+                hasLicense ? 'Cédula profesional: $_signedLicenseReadOnly' : 'Cédula profesional: sin registrar',
+                style: TextStyle(
+                  fontWeight: FontWeight.w600,
+                  color: hasLicense ? null : KuraColors.danger,
+                ),
+              ),
+            ],
+          ),
+          if (!hasLicense) ...[
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                const Icon(Icons.info_outline, size: 16, color: KuraColors.danger),
+                const SizedBox(width: 6),
+                const Expanded(
+                  child: Text(
+                    'Completa tu cédula profesional una sola vez en tu registro de '
+                    'personal (Administración → Personal sanitario) para poder '
+                    'firmar notas de seguimiento.',
+                    style: TextStyle(fontSize: 11, color: KuraColors.danger),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
   }
 
   Widget _photoTile({
@@ -705,12 +917,12 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
         visitType: VisitType.seguimiento,
         visitDate: _visitDate,
         isDraft: false,
-        followUpCareType: _careTypeCtrl.text.trim(),
-        followUpProcedureDesc: _procedureDescCtrl.text.trim(),
-        followUpMaterialsUsed: _materialsUsedCtrl.text.trim(),
-        followUpEvolution: _evolutionCtrl.text.trim(),
-        followUpSignedBy: _signedByCtrl.text.trim(),
-        followUpSignedLicense: _signedLicenseCtrl.text.trim(),
+        followUpCareType: _careTypeFinal,
+        followUpProcedureDesc: _procedureDescFinal,
+        followUpMaterialsUsed: _materialsUsedFinal,
+        followUpEvolution: _evolutionFinal,
+        followUpSignedBy: _signedByReadOnly!,
+        followUpSignedLicense: _signedLicenseReadOnly!,
       );
 
       final measurement = await repo.createMeasurement({
@@ -751,7 +963,7 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
         'low_adherence': _lowAdherence,
       });
 
-      // 2 fotografias de seguimiento (Protocolo de Fotografias SS1.2):
+      // 2 fotografias de seguimiento (Protocolo de Fotografias y Medicion):
       // 1ra despues de limpiar (sin medicion), 2da con medicion.
       final afterCleaningPath = await PhotoUploadService.uploadWoundPhoto(
         woundId: widget.woundId,
@@ -809,3 +1021,7 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
     }
   }
 }
+
+/// Valor centinela para el chip "Otro" en los campos de la nota de
+/// seguimiento (no es un id real del catalogo).
+const String kOtherOptionValue = '__other__';

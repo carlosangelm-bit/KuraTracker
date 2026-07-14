@@ -172,6 +172,7 @@ class Collections {
   static const sheehanCheckpoints = 'sheehan_checkpoints';
   static const auditLog = 'audit_log';
   static const importBatches = 'import_batches';
+  static const noteOptionCatalog = 'note_option_catalog';
 
   /// Todas las colecciones/tablas, en un orden razonable para hidratar la
   /// cache de [SupabaseDataStore] tras el login (catalogos primero, luego
@@ -196,5 +197,6 @@ class Collections {
     sheehanCheckpoints,
     auditLog,
     importBatches,
+    noteOptionCatalog,
   ];
 }

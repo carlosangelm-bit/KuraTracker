@@ -712,5 +712,46 @@ class DemoSeed {
         'sort_order': 1,
       },
     ]);
+
+    // ---------------- Catalogo de conceptos de nota de seguimiento ----------------
+    // Espejo de la precarga de la migracion 0010_note_option_catalog.sql,
+    // para que el modo demo local tenga los mismos chips base que
+    // produccion (el admin los administra igual desde Configuracion).
+    final noteOptionRows = <Map<String, dynamic>>[];
+    void noteOption(String field, String label) {
+      noteOptionRows.add({
+        'id': _uuid.v4(),
+        'field': field,
+        'label': label,
+        'is_active': true,
+        'created_by': null,
+        'created_at': iso(now),
+      });
+    }
+
+    noteOption('care_type', 'Curación ambulatoria');
+    noteOption('care_type', 'Visita domiciliaria');
+    noteOption('care_type', 'Curación en hospitalización');
+    noteOption('care_type', 'Interconsulta');
+    noteOption('care_type', 'Desbridamiento programado');
+    noteOption('procedure_desc', 'Limpieza con solución salina y cambio de apósito');
+    noteOption('procedure_desc', 'Desbridamiento cortante parcial');
+    noteOption('procedure_desc', 'Desbridamiento autolítico/enzimático');
+    noteOption('procedure_desc', 'Toma de medidas y fotografía de control');
+    noteOption('procedure_desc', 'Aplicación de terapia compresiva');
+    noteOption('procedure_desc', 'Educación al paciente/cuidador');
+    noteOption('materials_used', 'Solución salina 0.9%');
+    noteOption('materials_used', 'Yodopovidona 10%');
+    noteOption('materials_used', 'Apósito de espuma (foam)');
+    noteOption('materials_used', 'Apósito de alginato');
+    noteOption('materials_used', 'Apósito hidrocoloide');
+    noteOption('materials_used', 'Gasa estéril');
+    noteOption('materials_used', 'Vendaje de compresión');
+    noteOption('evolution', 'Favorable, con reducción de área');
+    noteOption('evolution', 'Estable, sin cambios significativos');
+    noteOption('evolution', 'Sin avance esperado para la semana de tratamiento');
+    noteOption('evolution', 'Signos de infección local');
+    noteOption('evolution', 'Mejoría del tejido de granulación');
+    await store.saveAll(Collections.noteOptionCatalog, noteOptionRows);
   }
 }

@@ -5,6 +5,7 @@ import 'package:collection/collection.dart';
 import '../../core/theme/kura_theme.dart';
 import '../../core/providers/session_provider.dart';
 import '../../models/app_user.dart';
+import '../../models/note_option_catalog.dart';
 import '../../models/site.dart';
 import '../../models/staff.dart';
 import '../../services/data_repository.dart';
@@ -33,7 +34,7 @@ class _AdminHomeScreenState extends ConsumerState<AdminHomeScreen>
   // luego "Null check operator used on a null value" dentro del propio framework
   // de Flutter (_TabBarState), no en código de esta pantalla. Ocurría siempre,
   // con datos vacíos o no: no dependía de que el admin tuviera o no fila en `staff`.
-  late final TabController _tabController = TabController(length: 3, vsync: this)
+  late final TabController _tabController = TabController(length: 4, vsync: this)
     ..addListener(() {
       if (_tabController.indexIsChanging) return;
       if (_tabController.index != _tab) {
@@ -60,6 +61,7 @@ class _AdminHomeScreenState extends ConsumerState<AdminHomeScreen>
             Tab(text: 'Usuarios'),
             Tab(text: 'Personal sanitario'),
             Tab(text: 'Sitios'),
+            Tab(text: 'Configuración'),
           ],
           onTap: (i) => setState(() => _tab = i),
         ),
@@ -73,6 +75,8 @@ class _AdminHomeScreenState extends ConsumerState<AdminHomeScreen>
               return _StaffTab(repo: repo);
             case 2:
               return _SitesTab(repo: repo);
+            case 3:
+              return _NoteCatalogTab(repo: repo);
             default:
               return _UsersTab(repo: repo);
           }
@@ -665,6 +669,164 @@ class _SiteFormDialogState extends State<_SiteFormDialog> {
       ],
     );
   }
+}
+
+/// Pantalla de Configuración (dentro del panel de Administración): el
+/// admin gestiona por campo los conceptos del catálogo de la nota de
+/// seguimiento (note_option_catalog, ver 0010_note_option_catalog.sql).
+/// Agregar/editar/desactivar aquí es lo único que persiste conceptos al
+/// catálogo del centro; el personal clínico solo los selecciona como
+/// chips al capturar una nota (ver follow_up_capture_screen.dart).
+class _NoteCatalogTab extends StatefulWidget {
+  final DataRepository repo;
+  const _NoteCatalogTab({required this.repo});
+
+  @override
+  State<_NoteCatalogTab> createState() => _NoteCatalogTabState();
+}
+
+class _NoteCatalogTabState extends State<_NoteCatalogTab> {
+  NoteOptionField _selectedField = NoteOptionField.careType;
+
+  Future<void> _addOption() async {
+    final label = await _promptForLabel(context, title: 'Nuevo concepto');
+    if (label == null || label.trim().isEmpty) return;
+    try {
+      await widget.repo.createNoteOption(field: _selectedField, label: label.trim());
+      if (mounted) setState(() {});
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('No se pudo agregar: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _toggleActive(NoteOptionCatalogItem item) async {
+    try {
+      await widget.repo.setNoteOptionActive(item.id, !item.isActive);
+      if (mounted) setState(() {});
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('No se pudo actualizar: $e')),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final options = widget.repo.listAllNoteOptions(_selectedField);
+    return Scaffold(
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Catálogo de la nota de seguimiento',
+                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Estos conceptos son los que el personal clínico ve como '
+                  'chips al registrar una nota de seguimiento. Configúralos '
+                  'una vez para todo el centro; desactivar no borra el '
+                  'historial de notas que ya los usaron.',
+                  style: TextStyle(fontSize: 12, color: KuraColors.darkText.withOpacity(0.6)),
+                ),
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: NoteOptionField.values.map((f) {
+                    final selected = f == _selectedField;
+                    return ChoiceChip(
+                      label: Text(f.label),
+                      selected: selected,
+                      selectedColor: KuraColors.primary.withOpacity(0.15),
+                      onSelected: (_) => setState(() => _selectedField = f),
+                    );
+                  }).toList(),
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1),
+          Expanded(
+            child: options.isEmpty
+                ? const _EmptyState(
+                    icon: Icons.list_alt_outlined,
+                    message: 'Sin conceptos configurados aún para este campo.',
+                  )
+                : ListView.separated(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 88),
+                    itemCount: options.length,
+                    separatorBuilder: (_, __) => const SizedBox(height: 6),
+                    itemBuilder: (context, i) {
+                      final o = options[i];
+                      return Card(
+                        color: o.isActive ? null : KuraColors.chipBg,
+                        child: ListTile(
+                          title: Text(
+                            o.label,
+                            style: TextStyle(
+                              decoration: o.isActive ? null : TextDecoration.lineThrough,
+                              color: o.isActive
+                                  ? null
+                                  : KuraColors.darkText.withOpacity(0.5),
+                            ),
+                          ),
+                          trailing: Switch(
+                            value: o.isActive,
+                            activeColor: KuraColors.primary,
+                            onChanged: (_) => _toggleActive(o),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+          ),
+        ],
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        backgroundColor: KuraColors.primary,
+        icon: const Icon(Icons.add),
+        label: const Text('Nuevo concepto'),
+        onPressed: _addOption,
+      ),
+    );
+  }
+}
+
+Future<String?> _promptForLabel(BuildContext context, {required String title}) {
+  final ctrl = TextEditingController();
+  return showDialog<String>(
+    context: context,
+    builder: (_) => AlertDialog(
+      title: Text(title),
+      content: TextField(
+        controller: ctrl,
+        autofocus: true,
+        decoration: const InputDecoration(labelText: 'Texto del concepto'),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancelar'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(context, ctrl.text),
+          style: FilledButton.styleFrom(backgroundColor: KuraColors.primary),
+          child: const Text('Guardar'),
+        ),
+      ],
+    ),
+  );
 }
 
 class _EmptyState extends StatelessWidget {

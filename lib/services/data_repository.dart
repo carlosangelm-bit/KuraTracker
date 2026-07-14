@@ -5,6 +5,7 @@ import '../core/config/app_config.dart';
 import '../models/app_user.dart';
 import '../models/consultation.dart';
 import '../models/patient.dart';
+import '../models/note_option_catalog.dart';
 import '../models/site.dart';
 import '../models/staff.dart';
 import '../models/treatment_plan.dart';
@@ -259,6 +260,59 @@ class DataRepository {
         .whereType<String>()
         .toSet();
     return listUsers().where((u) => !linkedProfileIds.contains(u.id)).toList();
+  }
+
+  // ---------------- Catalogo de conceptos de nota de seguimiento ----------------
+  // (note_option_catalog, ver 0010_note_option_catalog.sql). Configurable
+  // por el centro (admin) desde el panel de Configuracion; el personal
+  // clinico solo lee/selecciona (RLS: SELECT para autenticados, INSERT/
+  // UPDATE/DELETE solo admin via is_admin()). No es tabla auditada por el
+  // trigger (catalogo administrativo, no dato clinico de paciente).
+
+  /// Conceptos activos para un campo dado, en el orden en que fueron
+  /// creados (los precargados por la migracion 0010 primero).
+  List<NoteOptionCatalogItem> listNoteOptions(NoteOptionField field) {
+    return _store
+        .getAll(Collections.noteOptionCatalog)
+        .map(NoteOptionCatalogItem.fromJson)
+        .where((o) => o.field == field && o.isActive)
+        .toList();
+  }
+
+  /// Todos los conceptos (activos e inactivos) de un campo, para la
+  /// pantalla de Configuracion del admin, donde tambien se pueden
+  /// reactivar conceptos previamente desactivados.
+  List<NoteOptionCatalogItem> listAllNoteOptions(NoteOptionField field) {
+    return _store
+        .getAll(Collections.noteOptionCatalog)
+        .map(NoteOptionCatalogItem.fromJson)
+        .where((o) => o.field == field)
+        .toList();
+  }
+
+  /// Agrega un concepto nuevo al catalogo. Uso previsto: (a) pantalla de
+  /// Configuracion del admin, y (b) alta "sobre la marcha" cuando quien
+  /// captura la nota de seguimiento es admin y escribe algo nuevo en
+  /// "Otro" (se le ofrece guardarlo; si es personal clinico, "Otro" se
+  /// usa solo como texto de esa nota y este metodo NO se invoca).
+  Future<NoteOptionCatalogItem> createNoteOption({
+    required NoteOptionField field,
+    required String label,
+    String? createdByProfileId,
+  }) async {
+    final data = {
+      'id': _uuid.v4(),
+      'field': field.dbValue,
+      'label': label,
+      'is_active': true,
+      'created_by': createdByProfileId,
+    };
+    final saved = await _store.insertRow(Collections.noteOptionCatalog, data);
+    return NoteOptionCatalogItem.fromJson(saved);
+  }
+
+  Future<void> setNoteOptionActive(String id, bool active) async {
+    await _store.updateRow(Collections.noteOptionCatalog, id, {'is_active': active});
   }
 
   List<Patient> listPatientsForStaff(String staffId) {
