@@ -132,6 +132,24 @@ class _TreatmentStepScreenState extends ConsumerState<TreatmentStepScreen> {
     });
   }
 
+  /// Lista de metodos para el dropdown: el catalogo base + el metodo actual
+  /// de la fila si el motor Kura+ sugirio uno que no esta en el catalogo
+  /// (para que nunca quede en blanco, ver comentario en TreatmentCatalog).
+  List<String> _methodItems(String currentMethod) {
+    final base = TreatmentCatalog.methods;
+    if (base.contains(currentMethod)) return base;
+    return [currentMethod, ...base];
+  }
+
+  /// Lista de productos para el dropdown de un metodo dado: los productos
+  /// base de ese metodo en el catalogo + el producto actual de la fila si
+  /// no esta incluido (idem _methodItems).
+  List<String> _productItems(String currentMethod, String currentProduct) {
+    final base = TreatmentCatalog.methodToProducts[currentMethod] ?? const [];
+    if (base.contains(currentProduct)) return base;
+    return [currentProduct, ...base];
+  }
+
   @override
   Widget build(BuildContext context) {
     final session = ref.watch(sessionProvider);
@@ -255,18 +273,24 @@ class _TreatmentStepScreenState extends ConsumerState<TreatmentStepScreen> {
                             const SizedBox(width: 10),
                             Expanded(
                               child: DropdownButtonFormField<String>(
-                                value: TreatmentCatalog.methods.contains(row.method)
-                                    ? row.method
-                                    : null,
+                                // Tolerante: si el metodo sugerido por el motor
+                                // Kura+ no esta en el catalogo base (p. ej. se
+                                // agrego uno nuevo al motor y aun no se
+                                // reflejo aqui), se inyecta como opcion extra
+                                // en vez de dejar el campo en blanco (bug #6).
+                                value: row.method,
                                 decoration: const InputDecoration(labelText: 'Método'),
-                                items: TreatmentCatalog.methods
+                                items: _methodItems(row.method)
                                     .map((m) => DropdownMenuItem(value: m, child: Text(m)))
                                     .toList(),
                                 onChanged: (v) {
                                   if (v == null) return;
                                   setState(() {
                                     row.method = v;
-                                    row.product = TreatmentCatalog.methodToProducts[v]!.first;
+                                    final products = TreatmentCatalog.methodToProducts[v];
+                                    row.product = (products != null && products.isNotEmpty)
+                                        ? products.first
+                                        : row.product;
                                   });
                                   _markEdited(i);
                                 },
@@ -275,12 +299,13 @@ class _TreatmentStepScreenState extends ConsumerState<TreatmentStepScreen> {
                             const SizedBox(width: 10),
                             Expanded(
                               child: DropdownButtonFormField<String>(
-                                value: (TreatmentCatalog.methodToProducts[row.method] ?? [])
-                                        .contains(row.product)
-                                    ? row.product
-                                    : null,
+                                // Misma tolerancia que el dropdown de Metodo:
+                                // el producto sugerido siempre se muestra,
+                                // aunque no pertenezca a la lista base de ese
+                                // metodo en el catalogo.
+                                value: row.product,
                                 decoration: const InputDecoration(labelText: 'Producto'),
-                                items: (TreatmentCatalog.methodToProducts[row.method] ?? [])
+                                items: _productItems(row.method, row.product)
                                     .map((p) => DropdownMenuItem(value: p, child: Text(p)))
                                     .toList(),
                                 onChanged: (v) {

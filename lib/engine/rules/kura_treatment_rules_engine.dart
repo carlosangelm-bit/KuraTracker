@@ -37,7 +37,7 @@ class KuraTreatmentRulesEngine {
     // ---- 1. Limpieza en cada cambio de aposito (siempre) ----
     regimen.add(const RegimenComponente(
       metodo: 'Limpieza de la herida',
-      producto: 'Solucion salina / Prontosan',
+      producto: 'Solución salina / Prontosan',
       justificacion: 'Limpieza en cada cambio de aposito (regla base).',
     ));
 
@@ -57,7 +57,7 @@ class KuraTreatmentRulesEngine {
     } else if (composicionDesbridable >= 15) {
       final metodo = input.entorno == Entorno.clinica
           ? 'Cortante / combinado'
-          : 'Autolitico / enzimatico / mecanico';
+          : 'Autolítico / enzimático / mecánico';
       regimen.add(RegimenComponente(
         metodo: 'Desbridamiento',
         producto: metodo,
@@ -83,8 +83,8 @@ class KuraTreatmentRulesEngine {
     if (input.exudadoCantidad == ExudadoCantidad.moderado ||
         input.exudadoCantidad == ExudadoCantidad.abundante) {
       regimen.add(RegimenComponente(
-        metodo: 'Aposito',
-        producto: 'Espuma con borde adhesivo / alta absorcion',
+        metodo: 'Apósito',
+        producto: 'Espuma con borde adhesivo / alta absorción',
         justificacion: 'Exudado '
             '${input.exudadoCantidad == ExudadoCantidad.moderado ? 'moderado' : 'abundante'}: '
             'requiere aposito secundario absorbente.',
@@ -99,8 +99,8 @@ class KuraTreatmentRulesEngine {
     });
     if (pielRiesgo.isNotEmpty) {
       regimen.add(RegimenComponente(
-        metodo: 'Proteccion de la piel',
-        producto: 'Pelicula barrera / oxido de zinc',
+        metodo: 'Protección de la piel',
+        producto: 'Película barrera / óxido de zinc',
         justificacion:
             'Piel perilesional en riesgo: ${pielRiesgo.map((e) => e.name).join(', ')}.',
       ));
@@ -109,7 +109,7 @@ class KuraTreatmentRulesEngine {
     // ---- 6. Antimicrobiano topico si hay infeccion ----
     if (hayInfeccion) {
       regimen.add(const RegimenComponente(
-        metodo: 'Tratamiento para la infeccion',
+        metodo: 'Tratamiento para la infección',
         producto: 'PHMB / plata',
         justificacion: 'Criterios de infeccion IWII presentes.',
       ));
@@ -121,8 +121,8 @@ class KuraTreatmentRulesEngine {
         input.etiologia == Etiologia.lpp;
     if (necesitaEducacion) {
       regimen.add(RegimenComponente(
-        metodo: 'Educacion al paciente/cuidador',
-        producto: 'Material educativo + demostracion practica',
+        metodo: 'Educación al paciente/cuidador',
+        producto: 'Material educativo + demostración práctica',
         justificacion: [
           if (input.entorno == Entorno.domicilio) 'atencion en domicilio',
           if (input.tieneCuidadorIdentificado) 'cuidador identificado',
@@ -224,7 +224,7 @@ class KuraTreatmentRulesEngine {
     switch (wagner) {
       case WagnerGrade.g0:
       case WagnerGrade.g1:
-        descarga = 'Calzado terapeutico / plantilla de descarga';
+        descarga = 'Calzado terapéutico / plantilla de descarga';
         break;
       case WagnerGrade.g2:
         descarga = 'Bota walker removible (descarga parcial)';
@@ -234,7 +234,7 @@ class KuraTreatmentRulesEngine {
         descarga = 'TCC (Total Contact Cast) o bota walker con descarga total';
         break;
       case WagnerGrade.g5:
-        descarga = 'Descarga total + valoracion quirurgica urgente';
+        descarga = 'Descarga total + valoración quirúrgica urgente';
         break;
     }
     regimen.add(RegimenComponente(
@@ -243,8 +243,8 @@ class KuraTreatmentRulesEngine {
       justificacion: 'Pie diabetico, grado Wagner ${wagner.name.toUpperCase()}.',
     ));
     regimen.add(const RegimenComponente(
-      metodo: 'Manejo neuropatico',
-      producto: 'Evaluacion de sensibilidad + control glucemico estrecho',
+      metodo: 'Manejo neuropático',
+      producto: 'Evaluación de sensibilidad + control glucémico estrecho',
       justificacion: 'Pie diabetico: manejo neuropatico integral.',
     ));
     if (wagner == WagnerGrade.g3 ||
@@ -282,16 +282,16 @@ class KuraTreatmentRulesEngine {
     String nivel;
     switch (categoria) {
       case AbiCategory.high:
-        nivel = 'Compresion fuerte (30-40 mmHg)';
+        nivel = 'Compresión fuerte (30-40 mmHg)';
         break;
       case AbiCategory.mod:
-        nivel = 'Compresion reducida (18-25 mmHg), supervision estrecha';
+        nivel = 'Compresión reducida (18-25 mmHg), supervisión estrecha';
         break;
       case AbiCategory.low:
-        nivel = 'No aplica (isquemia critica)';
+        nivel = 'No aplica (isquemia crítica)';
         break;
       case AbiCategory.na:
-        nivel = 'Compresion moderada (20-30 mmHg) — confirmar ABI antes de iniciar';
+        nivel = 'Compresión moderada (20-30 mmHg) — confirmar ABI antes de iniciar';
         break;
     }
     regimen.add(RegimenComponente(
@@ -311,20 +311,20 @@ class KuraTreatmentRulesEngine {
     String manejo;
     switch (grade) {
       case WuwhsGrade.g1:
-        manejo = 'Vigilancia + cuidado de herida estandar';
+        manejo = 'Vigilancia + cuidado de herida estándar';
         break;
       case WuwhsGrade.g2:
-        manejo = 'Manejo local intensivo + reevaluacion en 48-72h';
+        manejo = 'Manejo local intensivo + reevaluación en 48-72h';
         break;
       case WuwhsGrade.g3:
-        manejo = 'Manejo local intensivo + interconsulta a cirugia';
+        manejo = 'Manejo local intensivo + interconsulta a cirugía';
         break;
       case WuwhsGrade.g4:
-        manejo = 'Manejo urgente: dehiscencia/infeccion grave';
+        manejo = 'Manejo urgente: dehiscencia/infección grave';
         break;
     }
     regimen.add(RegimenComponente(
-      metodo: 'Manejo de herida quirurgica',
+      metodo: 'Manejo de herida quirúrgica',
       producto: manejo,
       justificacion: 'Grado WUWHS ${grade.name.toUpperCase()}.',
     ));
@@ -352,7 +352,7 @@ class KuraTreatmentRulesEngine {
       case AgenteCausal.mordedura:
         regimen.add(const RegimenComponente(
           metodo: 'Manejo de herida por mordedura',
-          producto: 'Profilaxis antibiotica + lavado abundante',
+          producto: 'Profilaxis antibiótica + lavado abundante',
           justificacion: 'Agente causal: mordedura (alto riesgo de infeccion).',
         ));
         interconsultas.add(const Interconsulta(
@@ -363,7 +363,7 @@ class KuraTreatmentRulesEngine {
       case AgenteCausal.armaFuego:
         regimen.add(const RegimenComponente(
           metodo: 'Manejo de herida por arma de fuego',
-          producto: 'Exploracion quirurgica + descarte de lesion profunda',
+          producto: 'Exploración quirúrgica + descarte de lesión profunda',
           justificacion: 'Agente causal: arma de fuego.',
         ));
         interconsultas.add(const Interconsulta(
@@ -375,7 +375,7 @@ class KuraTreatmentRulesEngine {
       case AgenteCausal.aplastamiento:
         regimen.add(const RegimenComponente(
           metodo: 'Manejo de herida por aplastamiento',
-          producto: 'Vigilancia de sindrome compartimental + manejo de tejidos',
+          producto: 'Vigilancia de síndrome compartimental + manejo de tejidos',
           justificacion: 'Agente causal: aplastamiento.',
         ));
         interconsultas.add(const Interconsulta(
@@ -387,14 +387,14 @@ class KuraTreatmentRulesEngine {
       case AgenteCausal.punzocortante:
         regimen.add(const RegimenComponente(
           metodo: 'Manejo de herida punzocortante',
-          producto: 'Exploracion de estructuras profundas + cierre segun caso',
+          producto: 'Exploración de estructuras profundas + cierre según caso',
           justificacion: 'Agente causal: punzocortante.',
         ));
         break;
       case AgenteCausal.otro:
         regimen.add(const RegimenComponente(
-          metodo: 'Manejo de herida traumatica',
-          producto: 'Segun evaluacion clinica del mecanismo de lesion',
+          metodo: 'Manejo de herida traumática',
+          producto: 'Según evaluación clínica del mecanismo de lesión',
           justificacion: 'Agente causal no especificado o categoria otro.',
         ));
         break;

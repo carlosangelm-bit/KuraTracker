@@ -216,7 +216,7 @@ void main() {
         input: input,
         scenario: KuraScenario.a,
       );
-      expect(result.regimen.map((r) => r.metodo), contains('Aposito'));
+      expect(result.regimen.map((r) => r.metodo), contains('Apósito'));
     });
 
     test('infeccion presente sugiere antimicrobiano topico', () {
@@ -238,7 +238,7 @@ void main() {
       );
       expect(
         result.regimen.map((r) => r.metodo),
-        contains('Tratamiento para la infeccion'),
+        contains('Tratamiento para la infección'),
       );
     });
 
@@ -260,7 +260,7 @@ void main() {
       );
       expect(
         result.regimen.map((r) => r.metodo),
-        contains('Educacion al paciente/cuidador'),
+        contains('Educación al paciente/cuidador'),
       );
     });
 
