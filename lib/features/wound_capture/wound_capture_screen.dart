@@ -7,7 +7,6 @@ import 'package:intl/intl.dart';
 
 import '../../core/theme/kura_theme.dart';
 import '../../core/providers/session_provider.dart';
-import '../../models/app_user.dart';
 import '../../engine/models/kura_engine_enums.dart';
 import '../../models/patient.dart';
 import '../../models/wound.dart' as wmodel;
@@ -177,7 +176,6 @@ class _WoundCaptureScreenState extends ConsumerState<WoundCaptureScreen> {
 
   Future<void> _continueToTreatment(BuildContext context, WidgetRef ref) async {
     final repo = await DataRepository.instance();
-    final session = ref.read(sessionProvider);
     final controller = ref.read(woundCaptureControllerProvider(_draftKey).notifier);
     final formState = controller.state;
 
@@ -188,90 +186,98 @@ class _WoundCaptureScreenState extends ConsumerState<WoundCaptureScreen> {
       return;
     }
 
-    // Crea o reutiliza la herida.
     wmodel.Wound wound;
-    if (widget.woundId != null && widget.woundId != 'new') {
-      wound = repo.getWound(widget.woundId!)!;
-    } else {
-      wound = await repo.createWound({
-        'patient_id': widget.patientId,
-        'etiology': formState.etiologia.dbValue,
-        'subtype': formState.subtype,
-        'body_location_primary': formState.bodyLocationPrimary ?? 'no_especificado',
-        'body_location_secondary': formState.bodyLocationSecondary,
-        'onset_date': formState.onsetDate?.toIso8601String().substring(0, 10),
-        'wagner_grade': formState.wagnerGrade?.name,
-        'ceap_class': formState.ceapClass?.name,
-        'wuwhs_grade': formState.wuwhsGrade?.name,
-        'agente_causal': formState.agenteCausal?.name,
-      });
+    String? consultationId;
+    try {
+      // Crea o reutiliza la herida.
+      if (widget.woundId != null && widget.woundId != 'new') {
+        wound = repo.getWound(widget.woundId!)!;
+      } else {
+        wound = await repo.createWound({
+          'patient_id': widget.patientId,
+          'etiology': formState.etiologia.dbValue,
+          'subtype': formState.subtype,
+          'body_location_primary': formState.bodyLocationPrimary ?? 'no_especificado',
+          'body_location_secondary': formState.bodyLocationSecondary,
+          'onset_date': formState.onsetDate?.toIso8601String().substring(0, 10),
+          'wagner_grade': formState.wagnerGrade?.name,
+          'ceap_class': formState.ceapClass?.name,
+          'wuwhs_grade': formState.wuwhsGrade?.name,
+          'agente_causal': formState.agenteCausal?.name,
+        });
+      }
+
+      consultationId = widget.consultationId;
+      if (consultationId != null) {
+        await repo.createAssessment({
+          'consultation_id': consultationId,
+          'wound_id': wound.id,
+          'glucose_mg_dl': formState.glucoseMgDl,
+          'first_assessment_date':
+              formState.firstAssessmentDate?.toIso8601String().substring(0, 10),
+          'edema': formState.edema,
+          'pain': formState.pain,
+          'pain_type': formState.painType,
+          'pain_duration': formState.painDuration,
+          'pain_vas': formState.painVas,
+          'exudate_amount': formState.exudadoCantidad.name,
+          'infection_criteria': formState.infeccionCriterios.map((e) => e.name).toList(),
+          'odor': formState.odor,
+          'wound_edge': formState.woundEdge,
+          'perilesional_skin': formState.perilesionalSkin.map((e) => e.name).toList(),
+        });
+
+        await repo.createMeasurement({
+          'wound_id': wound.id,
+          'consultation_id': consultationId,
+          'measured_at': DateTime.now().toIso8601String().substring(0, 10),
+          'length_cm': formState.lengthCm,
+          'width_cm': formState.widthCm,
+          'area_cm2': formState.areaCm2,
+          'depth_cm': formState.depthCm,
+          'tunneling': formState.tunneling,
+          'undermining': formState.undermining,
+          'granulation_pct': formState.granulacionPct,
+          'slough_pct': formState.esfaceloPct,
+          'necrosis_pct': formState.necrosisPct,
+          'epithelialization_pct': formState.epitelizacionPct,
+          'captured_before_debridement': formState.capturedBeforeDebridement,
+        });
+
+        await repo.upsertPerfusion({
+          'consultation_id': consultationId,
+          'wound_id': wound.id,
+          'abi_right': formState.abiRight,
+          'abi_left': formState.abiLeft,
+          'is_lower_extremity': formState.esExtremidadInferior,
+          'albumin_g_dl': formState.albuminaGdl,
+        });
+        // La bitacora de auditoria de wound_measurements la genera el
+        // trigger AFTER INSERT de Postgres (audit_trigger_fn), no una
+        // llamada manual desde el cliente: asi se garantiza que nadie pueda
+        // falsificarla (no hay politica de INSERT en audit_log).
+      }
+    } catch (e, st) {
+      debugPrint('Error al guardar captura de herida: $e\n$st');
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('No se pudo guardar la captura: $e')),
+        );
+      }
+      return;
     }
 
-    final consultationId = widget.consultationId;
-    if (consultationId != null) {
-      await repo.createAssessment({
-        'consultation_id': consultationId,
-        'wound_id': wound.id,
-        'glucose_mg_dl': formState.glucoseMgDl,
-        'first_assessment_date':
-            formState.firstAssessmentDate?.toIso8601String().substring(0, 10),
-        'edema': formState.edema,
-        'pain': formState.pain,
-        'pain_type': formState.painType,
-        'pain_duration': formState.painDuration,
-        'pain_vas': formState.painVas,
-        'exudate_amount': formState.exudadoCantidad.name,
-        'infection_criteria': formState.infeccionCriterios.map((e) => e.name).toList(),
-        'odor': formState.odor,
-        'wound_edge': formState.woundEdge,
-        'perilesional_skin': formState.perilesionalSkin.map((e) => e.name).toList(),
-      });
-
-      await repo.createMeasurement({
-        'wound_id': wound.id,
-        'consultation_id': consultationId,
-        'measured_at': DateTime.now().toIso8601String().substring(0, 10),
-        'length_cm': formState.lengthCm,
-        'width_cm': formState.widthCm,
-        'area_cm2': formState.areaCm2,
-        'depth_cm': formState.depthCm,
-        'tunneling': formState.tunneling,
-        'undermining': formState.undermining,
-        'granulation_pct': formState.granulacionPct,
-        'slough_pct': formState.esfaceloPct,
-        'necrosis_pct': formState.necrosisPct,
-        'epithelialization_pct': formState.epitelizacionPct,
-        'captured_before_debridement': formState.capturedBeforeDebridement,
-      });
-
-      await repo.upsertPerfusion({
-        'consultation_id': consultationId,
-        'wound_id': wound.id,
-        'abi_right': formState.abiRight,
-        'abi_left': formState.abiLeft,
-        'is_lower_extremity': formState.esExtremidadInferior,
-        'albumin_g_dl': formState.albuminaGdl,
-      });
-
-      await repo.logAudit(
-        actorId: session.user?.id ?? '',
-        actorRole: session.user?.role.dbValue ?? '',
-        action: 'insert',
-        tableName: 'wound_measurements',
-        recordId: wound.id,
-      );
-    }
-
-    if (context.mounted && consultationId != null) {
+    final resolvedConsultationId = consultationId;
+    if (context.mounted && resolvedConsultationId != null) {
       context.go(
-        '/patients/${widget.patientId}/wound/${wound.id}/capture?consultationId=$consultationId',
+        '/patients/${widget.patientId}/wound/${wound.id}/capture?consultationId=$resolvedConsultationId',
       );
       Navigator.of(context).push(
         MaterialPageRoute(
           builder: (_) => TreatmentStepScreen(
             patientId: widget.patientId,
             woundId: wound.id,
-            consultationId: consultationId,
+            consultationId: resolvedConsultationId,
             draftKey: _draftKey,
           ),
         ),

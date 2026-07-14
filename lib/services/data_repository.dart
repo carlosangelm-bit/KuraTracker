@@ -575,14 +575,18 @@ class DataRepository {
       .toList();
 
   // ---------------- Auditoria ----------------
-  // NOTA: en Supabase, la auditoria de patients/wounds/consultations/
-  // measurements/treatment_plans/kura_recommendations/staff/profiles YA se
-  // genera automaticamente via triggers AFTER INSERT/UPDATE/DELETE
-  // (audit_trigger_fn en 0002_triggers_and_functions.sql). Esta llamada
-  // manual queda como registro adicional explicito desde la app (p.ej.
-  // para acciones que no tienen trigger, o en modo local donde no hay
-  // triggers de Postgres). Ver roadmap paso 4 (auditoria completa) para el
-  // trabajo restante de conciliar ambos mecanismos.
+  // En Supabase, la auditoria de patients/wounds/consultations/
+  // measurements/treatment_plans/kura_recommendations/staff/profiles la
+  // genera EXCLUSIVAMENTE el trigger AFTER INSERT/UPDATE/DELETE
+  // (audit_trigger_fn en 0002_triggers_and_functions.sql). Ningun flujo
+  // clinico de la app llama a logAudit(): audit_log solo tiene politica de
+  // SELECT para admin (audit_log_admin_select) y deliberadamente NO tiene
+  // politica de INSERT, para que un cliente no pueda falsificar la
+  // bitacora. Si se necesita registrar una accion sin trigger, se debe
+  // agregar el trigger en Postgres, no una llamada manual desde el cliente.
+  // logAudit()/listAuditLog() se conservan solo para uso en modo local
+  // (LocalStoreDataStore, sin triggers de Postgres) o herramientas internas;
+  // llamarlos contra Supabase fallara por RLS, como es intencional.
   List<Map<String, dynamic>> listAuditLog({int limit = 200}) {
     final list = _store.getAll(Collections.auditLog);
     list.sort((a, b) => (b['occurred_at'] as String).compareTo(a['occurred_at'] as String));

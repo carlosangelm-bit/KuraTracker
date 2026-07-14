@@ -4,7 +4,6 @@ import 'package:speech_to_text/speech_to_text.dart' as stt;
 
 import '../../core/theme/kura_theme.dart';
 import '../../core/providers/session_provider.dart';
-import '../../models/app_user.dart';
 import '../../engine/kura_protocol_engine.dart';
 import '../../engine/models/kura_engine_output.dart';
 import '../../engine/models/kura_engine_enums.dart';
@@ -355,7 +354,6 @@ class _TreatmentStepScreenState extends ConsumerState<TreatmentStepScreen> {
   Future<void> _save(BuildContext context, WoundCaptureController controller) async {
     setState(() => _saving = true);
     final repo = await DataRepository.instance();
-    final session = ref.read(sessionProvider);
 
     final componentsRecords = _components
         .map((c) => TreatmentComponentRecord(
@@ -367,34 +365,42 @@ class _TreatmentStepScreenState extends ConsumerState<TreatmentStepScreen> {
             ))
         .toList();
 
-    final plan = await repo.saveTreatmentPlan(
-      consultationId: widget.consultationId,
-      woundId: widget.woundId,
-      usedKuraProtocol: _useKuraProtocol,
-      finalDescription: _descriptionCtrl.text,
-      components: componentsRecords,
-    );
-
-    if (_useKuraProtocol && _appliedOutput != null) {
-      final hasEdits = _components.any((c) => c.origin == ComponentOrigin.kuraEdited) ||
-          _components.length != _appliedOutput!.regimen.length;
-      await repo.saveKuraRecommendation(
+    try {
+      final plan = await repo.saveTreatmentPlan(
         consultationId: widget.consultationId,
         woundId: widget.woundId,
-        treatmentPlanId: plan.id,
-        output: _appliedOutput!,
-        decision: hasEdits ? ClinicianDecision.editada : ClinicianDecision.aceptada,
+        usedKuraProtocol: _useKuraProtocol,
+        finalDescription: _descriptionCtrl.text,
+        components: componentsRecords,
       );
-    }
 
-    await repo.updateConsultationDraftStatus(widget.consultationId, false);
-    await repo.logAudit(
-      actorId: session.user?.id ?? '',
-      actorRole: session.user?.role.dbValue ?? '',
-      action: 'update',
-      tableName: 'treatment_plans',
-      recordId: plan.id,
-    );
+      if (_useKuraProtocol && _appliedOutput != null) {
+        final hasEdits = _components.any((c) => c.origin == ComponentOrigin.kuraEdited) ||
+            _components.length != _appliedOutput!.regimen.length;
+        await repo.saveKuraRecommendation(
+          consultationId: widget.consultationId,
+          woundId: widget.woundId,
+          treatmentPlanId: plan.id,
+          output: _appliedOutput!,
+          decision: hasEdits ? ClinicianDecision.editada : ClinicianDecision.aceptada,
+        );
+      }
+
+      await repo.updateConsultationDraftStatus(widget.consultationId, false);
+      // La bitacora de auditoria de treatment_plans la genera el trigger
+      // AFTER UPDATE de Postgres (audit_trigger_fn), no una llamada manual
+      // desde el cliente: asi se garantiza que nadie pueda falsificarla (no
+      // hay politica de INSERT en audit_log).
+    } catch (e, st) {
+      debugPrint('Error al guardar plan de tratamiento: $e\n$st');
+      if (context.mounted) {
+        setState(() => _saving = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('No se pudo guardar la consulta: $e')),
+        );
+      }
+      return;
+    }
 
     if (context.mounted) {
       Navigator.of(context).popUntil((route) => route.isFirst);

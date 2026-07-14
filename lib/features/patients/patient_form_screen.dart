@@ -4,8 +4,6 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/theme/kura_theme.dart';
 import '../../core/providers/session_provider.dart';
-import '../../models/app_user.dart';
-import '../../services/data_repository.dart';
 
 class PatientFormScreen extends ConsumerStatefulWidget {
   const PatientFormScreen({super.key});
@@ -197,14 +195,11 @@ class _PatientFormScreenState extends ConsumerState<PatientFormScreen> {
                                   await repo.assignPatientToStaff(
                                       patient.id, session.user!.staffId!);
                                 }
-                                await repo.logAudit(
-                                  actorId: session.user?.id ?? '',
-                                  actorRole: session.user?.role.dbValue ?? '',
-                                  action: 'insert',
-                                  tableName: 'patients',
-                                  recordId: patient.id,
-                                  newData: patient.toJson(),
-                                );
+                                // La bitacora de auditoria la genera el trigger
+                                // AFTER INSERT de Postgres (audit_trigger_fn),
+                                // no una llamada manual desde el cliente: asi
+                                // se garantiza que nadie pueda falsificarla (no
+                                // hay politica de INSERT en audit_log).
                                 if (mounted) {
                                   context.go('/patients/${patient.id}');
                                 }
