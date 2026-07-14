@@ -575,42 +575,17 @@ class DataRepository {
       .toList();
 
   // ---------------- Auditoria ----------------
-  // En Supabase, la auditoria de patients/wounds/consultations/
-  // measurements/treatment_plans/kura_recommendations/staff/profiles la
-  // genera EXCLUSIVAMENTE el trigger AFTER INSERT/UPDATE/DELETE
-  // (audit_trigger_fn en 0002_triggers_and_functions.sql). Ningun flujo
-  // clinico de la app llama a logAudit(): audit_log solo tiene politica de
-  // SELECT para admin (audit_log_admin_select) y deliberadamente NO tiene
-  // politica de INSERT, para que un cliente no pueda falsificar la
-  // bitacora. Si se necesita registrar una accion sin trigger, se debe
-  // agregar el trigger en Postgres, no una llamada manual desde el cliente.
-  // logAudit()/listAuditLog() se conservan solo para uso en modo local
-  // (LocalStoreDataStore, sin triggers de Postgres) o herramientas internas;
-  // llamarlos contra Supabase fallara por RLS, como es intencional.
-  List<Map<String, dynamic>> listAuditLog({int limit = 200}) {
-    final list = _store.getAll(Collections.auditLog);
-    list.sort((a, b) => (b['occurred_at'] as String).compareTo(a['occurred_at'] as String));
-    return list.take(limit).toList();
-  }
-
-  Future<void> logAudit({
-    required String actorId,
-    required String actorRole,
-    required String action,
-    required String tableName,
-    String? recordId,
-    Map<String, dynamic>? oldData,
-    Map<String, dynamic>? newData,
-  }) async {
-    await _store.insertRow(Collections.auditLog, {
-      'actor_id': actorId.isEmpty ? null : actorId,
-      'actor_role': actorRole,
-      'action': action,
-      'table_name': tableName,
-      'record_id': recordId,
-      'old_data': oldData,
-      'new_data': newData,
-      'occurred_at': DateTime.now().toIso8601String(),
-    });
-  }
+  // La auditoria de patients/wounds/consultations/measurements/
+  // treatment_plans/kura_recommendations/staff/profiles la genera
+  // EXCLUSIVAMENTE el trigger AFTER INSERT/UPDATE/DELETE de Postgres
+  // (audit_trigger_fn en 0002_triggers_and_functions.sql), que corre como
+  // SECURITY DEFINER. Ningun flujo clinico de la app debe insertar
+  // manualmente en audit_log: la tabla solo tiene politica de SELECT para
+  // admin (audit_log_admin_select) y deliberadamente NO tiene politica de
+  // INSERT, para que un cliente no pueda falsificar la bitacora. Por eso
+  // se eliminaron los antiguos metodos logAudit()/listAuditLog() de este
+  // repositorio (y sus 3 llamadas desde la UI): un INSERT directo del
+  // cliente a audit_log siempre sera rechazado por RLS con 403. Si se
+  // necesita registrar una accion adicional, se debe agregar/ajustar el
+  // trigger en Postgres, nunca una llamada manual desde el cliente.
 }

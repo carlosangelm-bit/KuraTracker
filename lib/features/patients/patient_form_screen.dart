@@ -177,31 +177,47 @@ class _PatientFormScreenState extends ConsumerState<PatientFormScreen> {
                                 if (!_formKey.currentState!.validate()) return;
                                 setState(() => _saving = true);
                                 final session = ref.read(sessionProvider);
-                                final patient = await repo.createPatient(
-                                  fullName: _nameCtrl.text.trim(),
-                                  birthDate: _birthDate,
-                                  sex: _sex,
-                                  primarySiteId: _siteId,
-                                  mobility: _mobility,
-                                  hasIdentifiedCaregiver: _hasCaregiver,
-                                  caregiverName:
-                                      _hasCaregiver ? _caregiverNameCtrl.text.trim() : null,
-                                  caregiverPhone:
-                                      _hasCaregiver ? _caregiverPhoneCtrl.text.trim() : null,
-                                  fragilePatient: _fragile,
-                                  backgroundNotes: _notesCtrl.text.trim(),
-                                );
-                                if (session.user?.staffId != null) {
-                                  await repo.assignPatientToStaff(
-                                      patient.id, session.user!.staffId!);
-                                }
-                                // La bitacora de auditoria la genera el trigger
-                                // AFTER INSERT de Postgres (audit_trigger_fn),
-                                // no una llamada manual desde el cliente: asi
-                                // se garantiza que nadie pueda falsificarla (no
-                                // hay politica de INSERT en audit_log).
-                                if (mounted) {
-                                  context.go('/patients/${patient.id}');
+                                try {
+                                  final patient = await repo.createPatient(
+                                    fullName: _nameCtrl.text.trim(),
+                                    birthDate: _birthDate,
+                                    sex: _sex,
+                                    primarySiteId: _siteId,
+                                    mobility: _mobility,
+                                    hasIdentifiedCaregiver: _hasCaregiver,
+                                    caregiverName: _hasCaregiver
+                                        ? _caregiverNameCtrl.text.trim()
+                                        : null,
+                                    caregiverPhone: _hasCaregiver
+                                        ? _caregiverPhoneCtrl.text.trim()
+                                        : null,
+                                    fragilePatient: _fragile,
+                                    backgroundNotes: _notesCtrl.text.trim(),
+                                  );
+                                  if (session.user?.staffId != null) {
+                                    await repo.assignPatientToStaff(
+                                        patient.id, session.user!.staffId!);
+                                  }
+                                  // La bitacora de auditoria la genera el
+                                  // trigger AFTER INSERT de Postgres
+                                  // (audit_trigger_fn), no una llamada manual
+                                  // desde el cliente: asi se garantiza que
+                                  // nadie pueda falsificarla (no hay politica
+                                  // de INSERT en audit_log).
+                                  if (mounted) {
+                                    context.go('/patients/${patient.id}');
+                                  }
+                                } catch (e, st) {
+                                  debugPrint('Error al crear paciente: $e\n$st');
+                                  if (mounted) {
+                                    setState(() => _saving = false);
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content:
+                                            Text('No se pudo crear el paciente: $e'),
+                                      ),
+                                    );
+                                  }
                                 }
                               },
                       ),
