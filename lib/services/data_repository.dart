@@ -520,6 +520,84 @@ class DataRepository {
     );
   }
 
+  /// Catalogo base curado (misma precarga que la migracion
+  /// 0010_note_option_catalog.sql y el espejo de DemoSeed) para las 4
+  /// secciones de la nota de seguimiento. Se usa como "punto de partida"
+  /// para un centro nuevo que aun no configuro nada (pantalla vacia, ver
+  /// captura reportada: un centro creado desde Plataforma por el master
+  /// no arrastra ningun concepto -- por diseno, para no imponerle
+  /// contenido sin pedirselo -- pero de ahi la necesidad de este boton).
+  static const List<(NoteOptionField, String)> defaultNoteOptionCatalog = [
+    (NoteOptionField.careType, 'Curación ambulatoria'),
+    (NoteOptionField.careType, 'Visita domiciliaria'),
+    (NoteOptionField.careType, 'Curación en hospitalización'),
+    (NoteOptionField.careType, 'Interconsulta'),
+    (NoteOptionField.careType, 'Desbridamiento programado'),
+    (NoteOptionField.procedureDesc, 'Limpieza con solución salina y cambio de apósito'),
+    (NoteOptionField.procedureDesc, 'Desbridamiento cortante parcial'),
+    (NoteOptionField.procedureDesc, 'Desbridamiento autolítico/enzimático'),
+    (NoteOptionField.procedureDesc, 'Toma de medidas y fotografía de control'),
+    (NoteOptionField.procedureDesc, 'Aplicación de terapia compresiva'),
+    (NoteOptionField.procedureDesc, 'Educación al paciente/cuidador'),
+    (NoteOptionField.materialsUsed, 'Solución salina 0.9%'),
+    (NoteOptionField.materialsUsed, 'Yodopovidona 10%'),
+    (NoteOptionField.materialsUsed, 'Apósito de espuma (foam)'),
+    (NoteOptionField.materialsUsed, 'Apósito de alginato'),
+    (NoteOptionField.materialsUsed, 'Apósito hidrocoloide'),
+    (NoteOptionField.materialsUsed, 'Gasa estéril'),
+    (NoteOptionField.materialsUsed, 'Vendaje de compresión'),
+    (NoteOptionField.evolution, 'Favorable, con reducción de área'),
+    (NoteOptionField.evolution, 'Estable, sin cambios significativos'),
+    (NoteOptionField.evolution, 'Sin avance esperado para la semana de tratamiento'),
+    (NoteOptionField.evolution, 'Signos de infección local'),
+    (NoteOptionField.evolution, 'Mejoría del tejido de granulación'),
+  ];
+
+  /// Carga el catalogo base curado para el centro [organizationId]:
+  /// solo AGREGA los conceptos que aun no existan en ese centro (mismo
+  /// (field, label), comparado sin importar mayusculas/espacios). A
+  /// diferencia de [bulkImportNoteOptions] (pensado para CSV, donde el
+  /// admin edita explicitamente la columna `activo` y por eso SI
+  /// sincroniza el estado activo/inactivo de las filas existentes), este
+  /// metodo NUNCA toca una fila que ya exista -- ni la reactiva ni cambia
+  /// su texto -- para no deshacer una desactivacion deliberada del admin
+  /// solo porque el texto coincide con el catalogo base. Pensado para el
+  /// boton "Cargar catálogo base" de [NoteCatalogTab], util sobre todo
+  /// para un centro nuevo (todo vacio, ver createOrganization() que a
+  /// proposito no siembra catalogo) que quiere arrancar rapido sin
+  /// configurar todo desde cero.
+  Future<NoteOptionImportSummary> seedDefaultNoteOptions({
+    required String organizationId,
+    String? createdByProfileId,
+  }) async {
+    var added = 0;
+
+    final existingLabelsByField = <NoteOptionField, Set<String>>{};
+    for (final field in NoteOptionField.values) {
+      existingLabelsByField[field] = listAllNoteOptions(field, organizationId: organizationId)
+          .map((o) => o.label.trim().toLowerCase())
+          .toSet();
+    }
+
+    for (final entry in defaultNoteOptionCatalog) {
+      final field = entry.$1;
+      final label = entry.$2;
+      final existingLabels = existingLabelsByField[field]!;
+      if (existingLabels.contains(label.trim().toLowerCase())) continue;
+
+      await createNoteOption(
+        field: field,
+        label: label,
+        organizationId: organizationId,
+        createdByProfileId: createdByProfileId,
+      );
+      existingLabels.add(label.trim().toLowerCase());
+      added++;
+    }
+
+    return NoteOptionImportSummary(added: added, updated: 0, skipped: 0, errors: const []);
+  }
+
   List<Patient> listPatientsForStaff(String staffId) {
     final assignments = _store
         .getAll(Collections.staffPatientAssignments)
