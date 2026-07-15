@@ -728,6 +728,39 @@ class NoteCatalogTab extends StatefulWidget {
 class _NoteCatalogTabState extends State<NoteCatalogTab> {
   NoteOptionField _selectedField = NoteOptionField.careType;
   bool _importing = false;
+  bool _loadingDefaults = false;
+
+  /// Carga el catalogo base curado (mismo contenido que la precarga de
+  /// 0010_note_option_catalog.sql) para este centro. Pensado sobre todo
+  /// para un centro nuevo, recien creado desde Plataforma por el master,
+  /// que arranca con las 4 secciones completamente vacias (createOrganization()
+  /// deliberadamente NO siembra catalogo, ver DataRepository) -- este boton
+  /// evita tener que dar de alta uno por uno los conceptos mas comunes.
+  /// Es un merge, no un reemplazo: solo agrega lo que falte, nunca duplica
+  /// ni pisa conceptos ya personalizados o desactivados por el admin.
+  Future<void> _loadDefaultCatalog() async {
+    final organizationId = widget.organizationId;
+    if (organizationId == null) return;
+    setState(() => _loadingDefaults = true);
+    try {
+      final summary = await widget.repo.seedDefaultNoteOptions(organizationId: organizationId);
+      if (mounted) {
+        setState(() {});
+        final msg = summary.added > 0
+            ? 'Se agregaron ${summary.added} conceptos base al catálogo.'
+            : 'El catálogo base ya estaba cargado; no se agregó nada nuevo.';
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('No se pudo cargar el catálogo base: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _loadingDefaults = false);
+    }
+  }
 
   // Alternativa manual (preservada tal cual, sin rehacer): "Nuevo concepto"
   // sigue siendo la unica accion del FAB.
@@ -943,6 +976,17 @@ class _NoteCatalogTabState extends State<NoteCatalogTab> {
                   crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
                     OutlinedButton.icon(
+                      onPressed: _loadingDefaults ? null : _loadDefaultCatalog,
+                      icon: _loadingDefaults
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.playlist_add_check_outlined, size: 18),
+                      label: Text(_loadingDefaults ? 'Cargando…' : 'Cargar catálogo base'),
+                    ),
+                    OutlinedButton.icon(
                       onPressed: _downloadTemplate,
                       icon: const Icon(Icons.download_outlined, size: 18),
                       label: const Text('Descargar plantilla CSV'),
@@ -962,11 +1006,16 @@ class _NoteCatalogTabState extends State<NoteCatalogTab> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'La plantilla incluye las 4 secciones (tipo de atención, '
-                  'descripción, material, evolución) con el catálogo actual '
-                  'del centro. Al cargarla se agregan conceptos nuevos y se '
-                  'actualiza el estado activo/inactivo de los existentes; '
-                  'también puedes seguir agregando uno por uno abajo.',
+                  '"Cargar catálogo base" agrega, en las 4 secciones, los '
+                  'conceptos más comunes (curados por Kura+) que aún no '
+                  'existan en este centro -- útil para arrancar rápido un '
+                  'centro nuevo sin configurar todo desde cero; no duplica '
+                  'ni pisa lo que ya tengas. La plantilla CSV incluye las 4 '
+                  'secciones (tipo de atención, descripción, material, '
+                  'evolución) con el catálogo actual del centro; al cargarla '
+                  'se agregan conceptos nuevos y se actualiza el estado '
+                  'activo/inactivo de los existentes. También puedes seguir '
+                  'agregando uno por uno abajo.',
                   style: TextStyle(fontSize: 11, color: KuraColors.darkText.withOpacity(0.5)),
                 ),
                 const SizedBox(height: 12),
