@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../providers/session_provider.dart';
+import '../../models/app_user.dart';
 import '../../features/auth/login_screen.dart';
 import '../../features/dashboard/dashboard_screen.dart';
 import '../../features/patients/patients_list_screen.dart';
@@ -16,6 +17,7 @@ import '../../features/consultation/consultation_detail_screen.dart';
 import '../../features/reports/reports_screen.dart';
 import '../../features/admin/admin_home_screen.dart';
 import '../../features/import_export/import_export_screen.dart';
+import '../../features/platform/platform_home_screen.dart';
 import 'app_shell.dart';
 
 /// Notificador puente para que GoRouter reaccione a cambios de sesion
@@ -37,10 +39,18 @@ final routerProvider = Provider<GoRouter>((ref) {
     initialLocation: '/login',
     refreshListenable: refreshNotifier,
     redirect: (context, state) {
-      final loggedIn = ref.read(sessionProvider).isAuthenticated;
+      final session = ref.read(sessionProvider);
+      final loggedIn = session.isAuthenticated;
       final goingToLogin = state.matchedLocation == '/login';
       if (!loggedIn && !goingToLogin) return '/login';
-      if (loggedIn && goingToLogin) return '/';
+      // El master (administrador de plataforma) no tiene datos clinicos
+      // propios (dashboard/pacientes/reportes quedarian vacios para el,
+      // ver regla de oro en 0012_master_role.sql): al iniciar sesion (o
+      // si de alguna forma llega a '/') se le manda directo a su area
+      // de trabajo real, '/platform'.
+      final isMaster = session.user?.role == AppRole.master;
+      if (loggedIn && goingToLogin) return isMaster ? '/platform' : '/';
+      if (loggedIn && isMaster && state.matchedLocation == '/') return '/platform';
       return null;
     },
     routes: [
@@ -99,6 +109,10 @@ final routerProvider = Provider<GoRouter>((ref) {
           ),
           GoRoute(path: '/reports', builder: (context, state) => const ReportsScreen()),
           GoRoute(path: '/admin', builder: (context, state) => const AdminHomeScreen()),
+          GoRoute(
+            path: '/platform',
+            builder: (context, state) => const PlatformHomeScreen(),
+          ),
           GoRoute(
             path: '/import-export',
             builder: (context, state) => const ImportExportScreen(),

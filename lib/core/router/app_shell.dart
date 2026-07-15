@@ -16,6 +16,19 @@ class AppShell extends ConsumerWidget {
   const AppShell({super.key, required this.child, required this.currentPath});
 
   List<_NavItem> _itemsFor(AppUser? user) {
+    // El master (administrador de plataforma) es exclusivamente
+    // estructural (organizations/sites/staff/note_option_catalog, ver
+    // 0012_master_role.sql): no tiene pacientes/reportes propios, asi
+    // que se le oculta esa navegacion clinica por completo (mostrarla
+    // solo lo llevaria a pantallas vacias sin ningun proposito) y en su
+    // lugar ve unicamente su area de Plataforma.
+    if (user?.role == AppRole.master) {
+      return const [
+        _NavItem('/platform', Icons.hub_outlined, Icons.hub, 'Plataforma'),
+        _NavItem('/import-export', Icons.sync_alt_outlined, Icons.sync_alt, 'eKare'),
+      ];
+    }
+
     final items = <_NavItem>[
       const _NavItem('/', Icons.dashboard_outlined, Icons.dashboard, 'Inicio'),
       const _NavItem('/patients', Icons.people_outline, Icons.people, 'Pacientes'),

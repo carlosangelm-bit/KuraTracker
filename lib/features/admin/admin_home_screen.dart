@@ -180,7 +180,7 @@ class StaffTab extends StatefulWidget {
 
 class _StaffTabState extends State<StaffTab> {
   Future<void> _openStaffForm({StaffMember? existing}) async {
-    final sites = widget.repo.listSites();
+    final sites = widget.repo.listSites(organizationId: widget.organizationId);
     // Candidatos para vincular profile_id: perfiles sin fila en staff aun,
     // mas -si estamos editando- el profile ya vinculado a este registro
     // (para no desaparecerlo de la lista al abrir el formulario).
@@ -207,7 +207,7 @@ class _StaffTabState extends State<StaffTab> {
 
   @override
   Widget build(BuildContext context) {
-    final staff = widget.repo.listStaff();
+    final staff = widget.repo.listStaff(organizationId: widget.organizationId);
     return Scaffold(
       body: staff.isEmpty
           ? const _EmptyState(
@@ -231,7 +231,21 @@ class _StaffTabState extends State<StaffTab> {
                   child: ListTile(
                     leading: CircleAvatar(
                       backgroundColor: KuraColors.primary.withOpacity(0.12),
-                      child: Text(s.folio.substring(1, 3)),
+                      // Bug encontrado en verificacion E2E de Plataforma
+                      // (master, tarea 9): el folio de un staff de alta
+                      // administrativa (p.ej. el admin de un centro nuevo,
+                      // ver ensureAdminStaffId()/DemoSeed Vitalis) puede ser
+                      // '' (no sigue el patron K<year>-NNNN), y
+                      // .substring(1,3) sobre '' lanza RangeError y tira
+                      // toda la pantalla. Se usa un fallback seguro con las
+                      // iniciales del nombre cuando el folio es muy corto.
+                      child: Text(
+                        s.folio.length >= 3
+                            ? s.folio.substring(1, 3)
+                            : s.fullName.trim().isEmpty
+                                ? '?'
+                                : s.fullName.trim().substring(0, 1).toUpperCase(),
+                      ),
                     ),
                     title: Text(s.fullName),
                     subtitle: Text(
@@ -494,7 +508,7 @@ class _SitesTabState extends State<SitesTab> {
 
   @override
   Widget build(BuildContext context) {
-    final sites = widget.repo.listSites();
+    final sites = widget.repo.listSites(organizationId: widget.organizationId);
     return Scaffold(
       body: sites.isEmpty
           ? const _EmptyState(
@@ -744,7 +758,7 @@ class _NoteCatalogTabState extends State<NoteCatalogTab> {
       ['seccion', 'concepto', 'activo'],
     ];
     for (final field in NoteOptionField.values) {
-      for (final o in widget.repo.listAllNoteOptions(field)) {
+      for (final o in widget.repo.listAllNoteOptions(field, organizationId: widget.organizationId)) {
         rows.add([field.csvSeccion, o.label, o.isActive ? 'true' : 'false']);
       }
     }
@@ -901,7 +915,7 @@ class _NoteCatalogTabState extends State<NoteCatalogTab> {
 
   @override
   Widget build(BuildContext context) {
-    final options = widget.repo.listAllNoteOptions(_selectedField);
+    final options = widget.repo.listAllNoteOptions(_selectedField, organizationId: widget.organizationId);
     return Scaffold(
       body: Column(
         children: [
