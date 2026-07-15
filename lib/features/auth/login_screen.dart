@@ -179,9 +179,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                                     child: Row(
                                       children: [
                                         Icon(
-                                          u.role == AppRole.admin
-                                              ? Icons.admin_panel_settings
-                                              : Icons.medical_services_outlined,
+                                          u.role == AppRole.master
+                                              ? Icons.hub_outlined
+                                              : u.role == AppRole.admin
+                                                  ? Icons.admin_panel_settings
+                                                  : Icons.medical_services_outlined,
                                           size: 18,
                                           color: KuraColors.primary,
                                         ),

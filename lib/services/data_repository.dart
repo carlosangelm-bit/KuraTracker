@@ -4,6 +4,7 @@ import 'package:uuid/uuid.dart';
 import '../core/config/app_config.dart';
 import '../models/app_user.dart';
 import '../models/consultation.dart';
+import '../models/organization.dart';
 import '../models/patient.dart';
 import '../models/note_option_catalog.dart';
 import '../models/site.dart';
@@ -126,10 +127,51 @@ class DataRepository {
     await _store.updateRow(Collections.profiles, userId, {'premium_enabled': premium});
   }
 
+  // ---------------- Organizaciones (centros) ----------------
+  // (organizations, ver 0011_organizations.sql + 0012_master_role.sql).
+  // Solo un usuario `master` puede listar TODAS las organizaciones y
+  // crear/editar/eliminar directamente via REST (RLS de 0012); un admin
+  // normal solo ve la suya (organizations_select_own), consistente con
+  // el resto del panel de administracion.
+
+  List<Organization> listOrganizations() =>
+      _store.getAll(Collections.organizations).map(Organization.fromJson).toList();
+
+  /// Crea una organizacion (centro) nueva. Uso exclusivo del area
+  /// "Plataforma" (solo master, ver PlatformHomeScreen): a diferencia del
+  /// RPC create_organization_with_admin (que ademas promueve al llamador
+  /// a admin de la organizacion nueva), esto es un INSERT directo -- el
+  /// master sigue siendo master, no se vincula automaticamente como admin
+  /// de la organizacion creada.
+  Future<Organization> createOrganization(String name) async {
+    final data = {
+      'id': _uuid.v4(),
+      'name': name,
+      'is_active': true,
+    };
+    final saved = await _store.insertRow(Collections.organizations, data);
+    return Organization.fromJson(saved);
+  }
+
+  Future<void> setOrganizationActive(String organizationId, bool active) async {
+    await _store.updateRow(Collections.organizations, organizationId, {'is_active': active});
+  }
+
   // ---------------- Sitios ----------------
 
-  List<Site> listSites() =>
-      _store.getAll(Collections.sites).map(Site.fromJson).toList();
+  /// Lista los sitios. [organizationId] es un filtro OPCIONAL usado
+  /// exclusivamente por el area de Plataforma (master): para un admin
+  /// normal, se omite (null) y la lista completa ya viene acotada a su
+  /// propia organizacion por RLS (Supabase) o porque hoy solo existe 1
+  /// organizacion en el seed local de demo. Un master, en cambio, ve en
+  /// cache TODAS las organizaciones (RLS de 0012_master_role.sql) y
+  /// necesita este filtro para acotar la vista al centro que eligio en
+  /// el selector.
+  List<Site> listSites({String? organizationId}) => _store
+      .getAll(Collections.sites)
+      .map(Site.fromJson)
+      .where((s) => organizationId == null || s.organizationId == organizationId)
+      .toList();
 
   /// Crea un sitio nuevo del centro. `site.organizationId` es obligatorio en
   /// la practica (columna not null en Supabase, ver 0011_organizations.sql):
@@ -169,8 +211,13 @@ class DataRepository {
 
   // ---------------- Personal sanitario ----------------
 
-  List<StaffMember> listStaff() =>
-      _store.getAll(Collections.staff).map(StaffMember.fromJson).toList();
+  /// [organizationId] es un filtro OPCIONAL, mismo proposito que en
+  /// [listSites]: solo se pasa desde el area de Plataforma (master).
+  List<StaffMember> listStaff({String? organizationId}) => _store
+      .getAll(Collections.staff)
+      .map(StaffMember.fromJson)
+      .where((s) => organizationId == null || s.organizationId == organizationId)
+      .toList();
 
   /// Busca un miembro del personal por id. Devuelve `null` si no existe.
   /// Util para prefills (p.ej. cedula profesional en la nota de
@@ -320,12 +367,17 @@ class DataRepository {
   /// pantallas, y una unica fila corrupta NO debe tumbar toda la lista ni
   /// la pantalla que la muestra (ver bug "pantalla en blanco al crear
   /// concepto de catalogo", 2026-07-15).
-  List<NoteOptionCatalogItem> listNoteOptions(NoteOptionField field) {
+  /// [organizationId] es un filtro OPCIONAL, mismo proposito que en
+  /// [listSites]: solo se pasa desde el area de Plataforma (master).
+  List<NoteOptionCatalogItem> listNoteOptions(NoteOptionField field, {String? organizationId}) {
     return _store
         .getAll(Collections.noteOptionCatalog)
         .map(NoteOptionCatalogItem.fromJsonOrNull)
         .whereType<NoteOptionCatalogItem>()
-        .where((o) => o.field == field && o.isActive)
+        .where((o) =>
+            o.field == field &&
+            o.isActive &&
+            (organizationId == null || o.organizationId == organizationId))
         .toList();
   }
 
@@ -339,12 +391,16 @@ class DataRepository {
   /// `setState()` tras un alta exitosa en `_addOption()`), por lo que es
   /// el punto exacto donde una fila cacheada malformada causaba la
   /// pantalla en blanco reportada.
-  List<NoteOptionCatalogItem> listAllNoteOptions(NoteOptionField field) {
+  /// [organizationId] es un filtro OPCIONAL, mismo proposito que en
+  /// [listSites]: solo se pasa desde el area de Plataforma (master).
+  List<NoteOptionCatalogItem> listAllNoteOptions(NoteOptionField field, {String? organizationId}) {
     return _store
         .getAll(Collections.noteOptionCatalog)
         .map(NoteOptionCatalogItem.fromJsonOrNull)
         .whereType<NoteOptionCatalogItem>()
-        .where((o) => o.field == field)
+        .where((o) =>
+            o.field == field &&
+            (organizationId == null || o.organizationId == organizationId))
         .toList();
   }
 
@@ -405,7 +461,7 @@ class DataRepository {
     // (field, label) dentro de esta misma organizacion.
     final existingByFieldLabel = <String, NoteOptionCatalogItem>{};
     for (final field in NoteOptionField.values) {
-      for (final o in listAllNoteOptions(field)) {
+      for (final o in listAllNoteOptions(field, organizationId: organizationId)) {
         existingByFieldLabel['${field.dbValue}::${o.label.trim().toLowerCase()}'] = o;
       }
     }
