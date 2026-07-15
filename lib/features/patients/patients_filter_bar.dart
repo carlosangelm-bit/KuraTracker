@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/theme/kura_theme.dart';
 import '../../engine/models/kura_engine_enums.dart';
+import '../../engine/sheehan_decision_style.dart';
 import '../../models/site.dart';
 import 'patients_view_preferences.dart';
 
@@ -20,6 +21,10 @@ class PatientsFilterBar extends StatefulWidget {
   final List<Site> sites;
   final String? siteId;
   final ValueChanged<String?> onSiteChanged;
+  // "Estatus de avance" (semaforo de trayectoria, checkpoint de Sheehan):
+  // multi-seleccion, independiente del filtro statusFilter de arriba.
+  final Set<ProgressStatus> selectedProgressStatuses;
+  final ValueChanged<Set<ProgressStatus>> onProgressStatusesChanged;
   final VoidCallback onClearFilters;
   final bool hasActiveFilters;
 
@@ -34,6 +39,8 @@ class PatientsFilterBar extends StatefulWidget {
     required this.sites,
     required this.siteId,
     required this.onSiteChanged,
+    required this.selectedProgressStatuses,
+    required this.onProgressStatusesChanged,
     required this.onClearFilters,
     required this.hasActiveFilters,
   });
@@ -112,6 +119,26 @@ class _PatientsFilterBarState extends State<PatientsFilterBar> {
                     },
                     selectedColor: KuraColors.primary.withOpacity(0.16),
                     checkmarkColor: KuraColors.primary,
+                  ),
+                  const SizedBox(width: 8),
+                ],
+                for (final progressStatus in ProgressStatus.values) ...[
+                  FilterChip(
+                    avatar: Icon(progressStatus.icon,
+                        size: 16, color: progressStatus.color),
+                    label: Text(progressStatus.shortLabel),
+                    selected: widget.selectedProgressStatuses.contains(progressStatus),
+                    onSelected: (selected) {
+                      final next = Set<ProgressStatus>.from(widget.selectedProgressStatuses);
+                      if (selected) {
+                        next.add(progressStatus);
+                      } else {
+                        next.remove(progressStatus);
+                      }
+                      widget.onProgressStatusesChanged(next);
+                    },
+                    selectedColor: progressStatus.color.withOpacity(0.16),
+                    checkmarkColor: progressStatus.color,
                   ),
                   const SizedBox(width: 8),
                 ],

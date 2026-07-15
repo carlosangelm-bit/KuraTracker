@@ -9,6 +9,7 @@ import '../../models/patient.dart';
 import '../../models/wound.dart';
 import '../../services/data_repository.dart';
 import '../patients/patient_list_tile.dart';
+import '../patients/patient_progress_status.dart';
 import '../patients/patient_wound_summary.dart';
 
 class DashboardScreen extends ConsumerWidget {
@@ -114,11 +115,14 @@ class DashboardScreen extends ConsumerWidget {
                         // solo un resumen, la pantalla completa de
                         // Pacientes es donde se actua.
                         final summary = PatientWoundSummary.compute(repo, patient.id);
+                        final progressStatus = PatientProgressStatus.compute(
+                            repo, summary.activeWounds);
                         return Padding(
                           padding: const EdgeInsets.only(bottom: 10),
                           child: PatientListTile(
                             patient: patient,
                             summary: summary,
+                            progressStatus: progressStatus,
                             onTap: () => context.go('/patients/${patient.id}'),
                           ),
                         );
