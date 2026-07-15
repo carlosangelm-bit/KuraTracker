@@ -7,11 +7,13 @@ import 'package:go_router/go_router.dart';
 import '../../core/theme/kura_theme.dart';
 import '../../core/providers/session_provider.dart';
 import '../../engine/models/kura_engine_enums.dart';
+import '../../engine/sheehan_decision_style.dart';
 import '../../models/app_user.dart';
 import '../../models/patient.dart';
 import '../../services/data_repository.dart';
 import 'patient_grid_card.dart';
 import 'patient_list_tile.dart';
+import 'patient_progress_status.dart';
 import 'patient_wound_summary.dart';
 import 'patients_filter_bar.dart';
 import 'patients_view_preferences.dart';
@@ -72,6 +74,7 @@ class PatientsListScreenState extends ConsumerState<PatientsListScreen> {
     List<Patient> patients,
     DataRepository repo,
     Map<String, PatientWoundSummary> summaries,
+    Map<String, PatientProgressStatus> progressStatuses,
   ) {
     var result = patients;
 
@@ -100,6 +103,13 @@ class PatientsListScreenState extends ConsumerState<PatientsListScreen> {
       result = result.where((p) {
         final etiologies = summaries[p.id]?.etiologies ?? const <Etiologia>[];
         return etiologies.any(_prefs.etiologies.contains);
+      }).toList();
+    }
+
+    if (_prefs.progressStatuses.isNotEmpty) {
+      result = result.where((p) {
+        final worst = progressStatuses[p.id]?.worst ?? ProgressStatus.noData;
+        return _prefs.progressStatuses.contains(worst);
       }).toList();
     }
 
@@ -157,7 +167,14 @@ class PatientsListScreenState extends ConsumerState<PatientsListScreen> {
                   for (final p in allPatients) p.id: PatientWoundSummary.compute(repo, p.id),
                 };
 
-                final patients = _applyFilters(allPatients, repo, summaries);
+                final progressStatuses = <String, PatientProgressStatus>{
+                  for (final p in allPatients)
+                    p.id: PatientProgressStatus.compute(
+                        repo, summaries[p.id]!.activeWounds),
+                };
+
+                final patients =
+                    _applyFilters(allPatients, repo, summaries, progressStatuses);
                 final sites = repo.listSites();
 
                 return Column(
@@ -173,6 +190,9 @@ class PatientsListScreenState extends ConsumerState<PatientsListScreen> {
                       sites: sites,
                       siteId: _prefs.siteId,
                       onSiteChanged: (v) => _updatePrefs((p) => p.copyWith(siteId: v)),
+                      selectedProgressStatuses: _prefs.progressStatuses,
+                      onProgressStatusesChanged: (v) =>
+                          _updatePrefs((p) => p.copyWith(progressStatuses: v)),
                       onClearFilters: () => _updatePrefs((p) => const PatientsViewPreferences()
                           .copyWith(viewMode: p.viewMode, query: p.query)),
                       hasActiveFilters: _prefs.hasActiveFilters,
@@ -184,6 +204,7 @@ class PatientsListScreenState extends ConsumerState<PatientsListScreen> {
                               ? _PatientsListView(
                                   patients: patients,
                                   summaries: summaries,
+                                  progressStatuses: progressStatuses,
                                   onOpenPatient: (id) => context.go('/patients/$id'),
                                   onValoracion: _goToValoracion,
                                   onSeguimiento: (id) => _goToSeguimiento(repo, id),
@@ -191,6 +212,7 @@ class PatientsListScreenState extends ConsumerState<PatientsListScreen> {
                               : _PatientsGridView(
                                   patients: patients,
                                   summaries: summaries,
+                                  progressStatuses: progressStatuses,
                                   onOpenPatient: (id) => context.go('/patients/$id'),
                                   onValoracion: _goToValoracion,
                                   onSeguimiento: (id) => _goToSeguimiento(repo, id),
@@ -236,6 +258,7 @@ class _ViewModeToggle extends StatelessWidget {
 class _PatientsListView extends StatelessWidget {
   final List<Patient> patients;
   final Map<String, PatientWoundSummary> summaries;
+  final Map<String, PatientProgressStatus> progressStatuses;
   final ValueChanged<String> onOpenPatient;
   final ValueChanged<String> onValoracion;
   final ValueChanged<String> onSeguimiento;
@@ -243,6 +266,7 @@ class _PatientsListView extends StatelessWidget {
   const _PatientsListView({
     required this.patients,
     required this.summaries,
+    required this.progressStatuses,
     required this.onOpenPatient,
     required this.onValoracion,
     required this.onSeguimiento,
@@ -261,6 +285,7 @@ class _PatientsListView extends StatelessWidget {
         return PatientListTile(
           patient: p,
           summary: summary,
+          progressStatus: progressStatuses[p.id]!,
           onTap: () => onOpenPatient(p.id),
           onValoracion: () => onValoracion(p.id),
           onSeguimiento: () => onSeguimiento(p.id),
@@ -273,6 +298,7 @@ class _PatientsListView extends StatelessWidget {
 class _PatientsGridView extends StatelessWidget {
   final List<Patient> patients;
   final Map<String, PatientWoundSummary> summaries;
+  final Map<String, PatientProgressStatus> progressStatuses;
   final ValueChanged<String> onOpenPatient;
   final ValueChanged<String> onValoracion;
   final ValueChanged<String> onSeguimiento;
@@ -280,6 +306,7 @@ class _PatientsGridView extends StatelessWidget {
   const _PatientsGridView({
     required this.patients,
     required this.summaries,
+    required this.progressStatuses,
     required this.onOpenPatient,
     required this.onValoracion,
     required this.onSeguimiento,
@@ -314,6 +341,7 @@ class _PatientsGridView extends StatelessWidget {
             return PatientGridCard(
               patient: p,
               summary: summary,
+              progressStatus: progressStatuses[p.id]!,
               onTap: () => onOpenPatient(p.id),
               onValoracion: () => onValoracion(p.id),
               onSeguimiento: () => onSeguimiento(p.id),

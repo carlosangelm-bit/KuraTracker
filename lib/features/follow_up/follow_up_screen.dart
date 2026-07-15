@@ -8,6 +8,7 @@ import '../../core/theme/kura_theme.dart';
 import '../../core/providers/session_provider.dart';
 import '../../engine/kura_sheehan_checkpoint.dart';
 import '../../engine/models/kura_engine_enums.dart';
+import '../../engine/sheehan_decision_style.dart';
 import '../../models/treatment_plan.dart';
 import '../../models/wound.dart';
 import '../../services/photo_upload_service.dart';
@@ -283,19 +284,19 @@ class FollowUpScreen extends ConsumerWidget {
                           Container(
                             padding: const EdgeInsets.all(12),
                             decoration: BoxDecoration(
-                              color: _decisionColor(checkpoint.decision).withOpacity(0.1),
+                              color: checkpoint.decision.toProgressStatus.color.withOpacity(0.1),
                               borderRadius: BorderRadius.circular(10),
                             ),
                             child: Row(
                               children: [
-                                Icon(Icons.flag, color: _decisionColor(checkpoint.decision)),
+                                Icon(Icons.flag, color: checkpoint.decision.toProgressStatus.color),
                                 const SizedBox(width: 8),
                                 Expanded(
                                   child: Text(
                                     checkpoint.decision.label,
                                     style: TextStyle(
                                       fontWeight: FontWeight.w700,
-                                      color: _decisionColor(checkpoint.decision),
+                                      color: checkpoint.decision.toProgressStatus.color,
                                     ),
                                   ),
                                 ),
@@ -373,17 +374,6 @@ class FollowUpScreen extends ConsumerWidget {
     );
   }
 
-  Color _decisionColor(SheehanDecision d) {
-    switch (d) {
-      case SheehanDecision.confirmarCierre:
-        return KuraColors.success;
-      case SheehanDecision.extenderObservacion:
-        return KuraColors.warning;
-      case SheehanDecision.reclasificarC:
-        return KuraColors.danger;
-    }
-  }
-
   Widget _buildGauge(SheehanCheckpointResult checkpoint) {
     // El gauge refleja el % ajustado (con penalizaciones), que es el valor
     // real usado para tomar la decision — no el bruto.
@@ -394,7 +384,7 @@ class FollowUpScreen extends ConsumerWidget {
         value: pct.toDouble(),
         minHeight: 16,
         backgroundColor: KuraColors.chipBg,
-        color: _decisionColor(checkpoint.decision),
+        color: checkpoint.decision.toProgressStatus.color,
       ),
     );
   }

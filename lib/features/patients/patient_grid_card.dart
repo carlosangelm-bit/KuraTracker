@@ -3,7 +3,9 @@ import 'package:flutter/material.dart';
 import '../../core/theme/kura_theme.dart';
 import '../../engine/models/kura_engine_enums.dart';
 import '../../models/patient.dart';
+import 'patient_progress_status.dart';
 import 'patient_wound_summary.dart';
+import 'progress_status_indicator.dart';
 
 /// Tarjeta de paciente para la vista Tarjeta (GridView) de
 /// [PatientsListScreen] (punto 3 del rediseno): nombre, folio, numero de
@@ -13,6 +15,7 @@ import 'patient_wound_summary.dart';
 class PatientGridCard extends StatelessWidget {
   final Patient patient;
   final PatientWoundSummary summary;
+  final PatientProgressStatus progressStatus;
   final VoidCallback onTap;
   final VoidCallback onValoracion;
   final VoidCallback onSeguimiento;
@@ -21,6 +24,7 @@ class PatientGridCard extends StatelessWidget {
     super.key,
     required this.patient,
     required this.summary,
+    required this.progressStatus,
     required this.onTap,
     required this.onValoracion,
     required this.onSeguimiento,
@@ -74,6 +78,11 @@ class PatientGridCard extends StatelessWidget {
                       child: Icon(Icons.priority_high, color: KuraColors.warning, size: 18),
                     ),
                 ],
+              ),
+              const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: ProgressStatusIndicator(status: progressStatus),
               ),
               const SizedBox(height: 10),
               Chip(

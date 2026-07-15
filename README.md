@@ -329,18 +329,43 @@ flutter pub get
 # Ejecutar pruebas del motor (deben pasar 42/42)
 flutter test test/engine/
 
-# Ejecutar toda la suite (deben pasar 58/58)
+# Ejecutar toda la suite
 flutter test
 
 # Analizar código (debe salir limpio de errores)
 flutter analyze --no-fatal-infos --no-fatal-warnings
+```
 
-# Compilar build web de producción
-flutter build web --release
+### ⚠️ Build-gate de verificación vs. build de producción — NUNCA usar `flutter build web --release` a secas
 
-# Servir el build (ejemplo con PM2, ver ecosystem.config.cjs)
+Este repo sirve **dos builds distintos** desde `build/` vía PM2 (ver `ecosystem.config.cjs`):
+
+| Directorio | PM2 app | Puerto | Contenido |
+|---|---|---|---|
+| `build/web` | `kuratracker-web` | 3000 | **Producción** — compilado CON `--dart-define=SUPABASE_URL/ANON_KEY` reales |
+| `build/web-demo` | `kuratracker-web-demo` | 3001 | **Demo** — compilado SIN esas credenciales (modo local/sintético) |
+
+`flutter build web --release` sin `-o` sobrescribe **siempre** `build/web` por default. Correrlo como mero chequeo de "¿compila?" (sin las credenciales reales) **rompe producción silenciosamente** (la deja en modo demo) — esto ya pasó una vez en este proyecto.
+
+**Por eso, para verificar que el build compila (paso de un build-gate, antes de pedir merge), usar siempre:**
+```bash
+./scripts/build_gate.sh
+```
+Este script compila a `build/web-gate/` (desechable, ignorado por git) y **nunca** toca `build/web` ni `build/web-demo`. También corre `flutter analyze` y `flutter test` antes del build.
+
+**Para reconstruir producción de verdad** (después de cambios que deban llegar a `build/web`):
+```bash
+export SUPABASE_URL="https://<project-ref>.supabase.co"
+export SUPABASE_ANON_KEY="<anon-key>"
+./scripts/build_prod.sh
+```
+Este script compila con `--dart-define`, verifica con `grep` que el bundle contiene la URL real y NO el fingerprint de modo demo, reinicia `pm2 kuratracker-web` y confirma con `curl`.
+
+```bash
+# Servir los builds (PM2, ver ecosystem.config.cjs)
 pm2 start ecosystem.config.cjs
-curl http://localhost:3000/
+curl http://localhost:3000/   # producción
+curl http://localhost:3001/   # demo
 ```
 
 Para aplicar el esquema SQL a un proyecto Supabase real (cuando esté provisionado):

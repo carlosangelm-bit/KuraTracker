@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../engine/models/kura_engine_enums.dart';
+import '../../engine/sheehan_decision_style.dart';
 
 /// Vista de la pantalla de pacientes: Lista (default, la original) o
 /// Tarjeta (nueva, GridView responsivo).
@@ -23,6 +24,11 @@ class PatientsViewPreferences {
   final Set<Etiologia> etiologies;
   final PatientsStatusFilter statusFilter;
   final String? siteId;
+  // "Estatus de avance" (semaforo de trayectoria, seccion checkpoint de
+  // Sheehan): filtro multi-seleccion INDEPENDIENTE de statusFilter (ese es
+  // "tiene/no tiene heridas activas"; este es "como va" la trayectoria de
+  // cierre de las heridas activas). Vacio = sin filtrar por este criterio.
+  final Set<ProgressStatus> progressStatuses;
 
   const PatientsViewPreferences({
     this.viewMode = PatientsViewMode.list,
@@ -30,6 +36,7 @@ class PatientsViewPreferences {
     this.etiologies = const {},
     this.statusFilter = PatientsStatusFilter.all,
     this.siteId,
+    this.progressStatuses = const {},
   });
 
   PatientsViewPreferences copyWith({
@@ -38,6 +45,7 @@ class PatientsViewPreferences {
     Set<Etiologia>? etiologies,
     PatientsStatusFilter? statusFilter,
     Object? siteId = _unset,
+    Set<ProgressStatus>? progressStatuses,
   }) {
     return PatientsViewPreferences(
       viewMode: viewMode ?? this.viewMode,
@@ -45,11 +53,15 @@ class PatientsViewPreferences {
       etiologies: etiologies ?? this.etiologies,
       statusFilter: statusFilter ?? this.statusFilter,
       siteId: siteId == _unset ? this.siteId : siteId as String?,
+      progressStatuses: progressStatuses ?? this.progressStatuses,
     );
   }
 
   bool get hasActiveFilters =>
-      etiologies.isNotEmpty || statusFilter != PatientsStatusFilter.all || siteId != null;
+      etiologies.isNotEmpty ||
+      statusFilter != PatientsStatusFilter.all ||
+      siteId != null ||
+      progressStatuses.isNotEmpty;
 
   Map<String, dynamic> toJson() => {
         'viewMode': viewMode.name,
@@ -57,6 +69,7 @@ class PatientsViewPreferences {
         'etiologies': etiologies.map((e) => e.name).toList(),
         'statusFilter': statusFilter.name,
         'siteId': siteId,
+        'progressStatuses': progressStatuses.map((e) => e.name).toList(),
       };
 
   factory PatientsViewPreferences.fromJson(Map<String, dynamic> json) {
@@ -81,6 +94,12 @@ class PatientsViewPreferences {
         orElse: () => PatientsStatusFilter.all,
       ),
       siteId: json['siteId'] as String?,
+      progressStatuses: ((json['progressStatuses'] as List?) ?? const [])
+          .map((s) => ProgressStatus.values.firstWhere(
+                (e) => e.name == s,
+                orElse: () => ProgressStatus.noData,
+              ))
+          .toSet(),
     );
   }
 }

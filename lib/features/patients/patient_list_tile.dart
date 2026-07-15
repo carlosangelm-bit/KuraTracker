@@ -3,7 +3,9 @@ import 'package:flutter/material.dart';
 import '../../core/theme/kura_theme.dart';
 import '../../engine/models/kura_engine_enums.dart';
 import '../../models/patient.dart';
+import 'patient_progress_status.dart';
 import 'patient_wound_summary.dart';
+import 'progress_status_indicator.dart';
 
 /// Tile de paciente para la vista Lista de [PatientsListScreen] --
 /// reutilizado tambien por [DashboardScreen] ("Pacientes recientes") para
@@ -17,6 +19,11 @@ import 'patient_wound_summary.dart';
 class PatientListTile extends StatelessWidget {
   final Patient patient;
   final PatientWoundSummary summary;
+  // Semaforo de avance (peor trayectoria entre las heridas activas del
+  // paciente, checkpoint de Sheehan). Requerido, igual que `summary`, para
+  // que la señal siempre este presente y consistente entre Dashboard y
+  // PatientsListScreen.
+  final PatientProgressStatus progressStatus;
   final VoidCallback onTap;
   final VoidCallback? onValoracion;
   final VoidCallback? onSeguimiento;
@@ -25,6 +32,7 @@ class PatientListTile extends StatelessWidget {
     super.key,
     required this.patient,
     required this.summary,
+    required this.progressStatus,
     required this.onTap,
     this.onValoracion,
     this.onSeguimiento,
@@ -61,6 +69,8 @@ class PatientListTile extends StatelessWidget {
                     ),
                     const SizedBox(height: 6),
                     _EtiologyChipsRow(summary: summary),
+                    const SizedBox(height: 6),
+                    ProgressStatusIndicator(status: progressStatus),
                   ],
                 ),
               ),
