@@ -13,7 +13,9 @@ EHR (expediente clínico electrónico) especializado en **cuidado avanzado de he
 | Motor Protocolo Kura+ (8.1–8.5) | ✅ Completo, 42/42 tests pasando, paridad numérica validada contra referencia Python (tolerancia 1e-8/1e-9) |
 | App Flutter (Web/iOS/Android desde una sola base) | ✅ Compila sin errores (`flutter analyze` limpio), build web exitoso |
 | Flujo de captura de heridas (rediseñado) | ✅ Completo — inventario clínico original conservado |
-| Esquema Supabase (SQL: tablas, RLS, triggers, storage) | ✅ Diseñado, versionado en `supabase/migrations/` **y aplicado en su totalidad** (0001→0010, incl. `low_adherence`, campos de protocolo de seguimiento, enum `visit_type='cierre'` y catálogo de conceptos de nota) al proyecto Supabase real del cliente; admin creado y promovido (ver sección 5) |
+| Modelo Centro → Sitios → Personal (multi-tenant) | ✅ Completo en código y migración (`0011_organizations.sql`, ver sección 5.3). **⚠️ Migración 0011 NO aplicada aún** al proyecto Supabase real del cliente — es el único paso manual pendiente antes de que el aislamiento por organización tome efecto en producción |
+| Catálogo de notas: alta manual + import/export CSV | ✅ Completo — descarga de plantilla CSV, carga con merge en bloque (agregar/actualizar/omitir) y resumen de importación, además de la alta manual ya existente (ver sección 3.4) |
+| Esquema Supabase (SQL: tablas, RLS, triggers, storage) | ✅ Diseñado, versionado en `supabase/migrations/` — **0001→0010 aplicadas y confirmadas en producción**; `0011_organizations.sql` está lista y versionada pero pendiente de aplicar (ver sección 5.3) |
 | Persistencia real / multiusuario / RLS en vivo | ✅ Migraciones 0001-0007 aplicadas y **smoke-test end-to-end completado contra Supabase real** (login → paciente → captura → tratamiento con sugerencia Kura+ → seguimiento con checkpoint Sheehan → datos listos para reporte), incl. bug de `search_path` corregido y validado en producción; verificación formal de RLS con prueba negativa (segundo usuario clínico sin asignaciones) sigue diferida hasta antes de cargar datos reales, por decisión del cliente — se avanza con datos sintéticos |
 | Registro de seguimiento (visitas subsecuentes) | ✅ **Alineado con protocolos clínicos Kura+ (Prioridad 1) y refinado (UX/fidelidad clínica)** — formulario "Registrar seguimiento" captura reevaluación integral (edema/dolor+EVA/exudado/olor/borde/piel perilesional/infección IWII/adherencia), medición 2D + 3D (volumen en heridas profundas) + nota de medición manual para socavamiento/tunelización. **Las 2 fotografías obligatorias ahora se piden en su momento clínico real** (después de limpiar, ANTES de composición del lecho; con medición, INMEDIATAMENTE DESPUÉS de medir), no al final. La **nota de seguimiento** (tipo de atención/procedimiento/material/evolución) usa chips desde un **catálogo configurable por el admin** (`note_option_catalog`, migración 0010) con opción "Otro" (persistible al catálogo solo por admin). **Firma y cédula profesional se autocompletan de solo lectura** desde el registro `staff` del profesional logueado (aviso si falta cédula, en vez de pedirla en la nota). Persiste todo en Supabase (`visit_type='seguimiento'`). Tablero de seguimiento 100% derivado de la serie real, sin datos de ejemplo, y ahora incluye **alerta de "sin avance en 2–4 semanas → considerar referir a especialista"** (Protocolo de Desbridamiento §13) (ver sección 3.4) |
 | Detalle de consulta (solo lectura) desde el historial | ✅ Completo — historial de consultas del paciente es tappable y navega a `ConsultationDetailScreen` (ver sección 3.5) |
@@ -22,6 +24,8 @@ EHR (expediente clínico electrónico) especializado en **cuidado avanzado de he
 | Bitácora de auditoría | ⚠️ Parcial — cubre creación de paciente/medición/plan de tratamiento vía trigger SQL; faltan updates/deletes. `wound_assessments`/`wound_photos` no están en la lista de tablas auditadas (por diseño del trigger existente) |
 | Import/Export CSV (eKare) | ✅ Demo funcional (mapeo configurable en UI); persistencia real de `import_batches` pendiente |
 | Generación de PDF (reportes) | ✅ Funcional en cliente vía `pdf`/`printing` |
+| Aislamiento de pacientes por organización (crítico) | ✅ Corregido — antes cualquier admin veía TODOS los pacientes de la base; ahora ve solo los de su organización (ver sección 5.3) |
+| Fix admin-clínico (licencia individual) | ✅ Corregido — un admin sin fila `staff` ya puede registrar consultas: `DataRepository.ensureAdminStaffId()` crea la fila de forma perezosa en login/alta de consulta (ver sección 5.3) |
 
 **Conclusión:** el proyecto es una **demo funcional local-first completa y navegable**, con el motor clínico 100% probado y el esquema de base de datos listo para desplegar. Para pasar de *demo* a *piloto* clínico real, lo no negociable es: (1) conectar un proyecto Supabase real con RLS activo y persistencia multiusuario, y (2) subir fotos reales al bucket de storage. Ver sección 9 (Roadmap).
 
@@ -97,9 +101,17 @@ Pantallas en `lib/features/wound_capture/`. Conserva los 3 pasos clínicos origi
 `lib/features/reports/reports_screen.dart`: selección múltiple de pacientes, filtros (consultas/seguimientos/antecedentes/evidencias — todas o primera/última), botón de generación de PDF.
 
 ### 3.6 Roles y administración
-- **Administrador**: gestiona personal (alta con folio automático), sitios, pacientes, y activa función premium por usuario.
-- **Personal sanitario/clínico**: solo ve pacientes que le fueron asignados (`staff_patient_assignments`).
-- Pantalla `lib/features/admin/admin_home_screen.dart` con pestañas Usuarios / Personal / Sitios.
+- **Administrador**: gestiona personal (alta con folio automático), sitios, pacientes, catálogo de la nota de seguimiento, y activa función premium por usuario. El administrador **pertenece a un centro (organización)** y solo ve/gestiona personal, sitios, pacientes y catálogo de SU organización.
+- **Personal sanitario/clínico**: solo ve pacientes que le fueron asignados (`staff_patient_assignments`); puede operar en TODOS los sitios del centro al que pertenece (no está restringido a un `primary_site_id`, que queda solo como valor por defecto opcional al crear una consulta).
+- **Admin sin ficha de personal (licencia individual)**: si el administrador de un centro nuevo aún no tiene una fila en `staff` (p. ej. porque se dio de alta directamente como admin), el sistema le crea una de forma automática y transparente la primera vez que la necesita (login o alta de consulta), para que pueda registrar consultas y que los pacientes que da de alta se le auto-asignen como a cualquier otro miembro del personal — ver sección 5.3, ajuste #3.
+- Pantalla `lib/features/admin/admin_home_screen.dart` con pestañas Usuarios / Personal / Sitios / Catálogo de notas.
+
+### 3.4b Catálogo de la nota de seguimiento: alta manual + import/export CSV
+`lib/features/admin/admin_home_screen.dart` (`_NoteCatalogTab`). El admin configura, por cada una de las 4 secciones (tipo de atención, descripción de procedimiento, material utilizado, evolución), los conceptos que el personal clínico ve como chips al capturar una nota de seguimiento (`follow_up_capture_screen.dart`).
+- **Alta manual**: botón flotante "Nuevo concepto" (`_addOption()`/`_promptForLabel()`), sin cambios respecto a versiones anteriores.
+- **Descargar plantilla CSV**: botón que exporta las 4 secciones del catálogo actual del centro en un CSV con columnas `seccion,concepto,activo` (`_downloadTemplate()`), pensado para editarse en Excel/Sheets y volver a cargarse.
+- **Cargar CSV**: botón que permite seleccionar un archivo CSV (mismas columnas) y hace un **merge en bloque** de las 4 secciones a la vez (`DataRepository.bulkImportNoteOptions`): valida sección/concepto, agrega los conceptos nuevos, actualiza el estado activo/inactivo de los existentes, y omite filas inválidas o sin cambios. Al finalizar muestra un diálogo con el **resumen de importación** (agregados/actualizados/omitidos, con detalle de errores si los hubo).
+- Ambas rutas (manual y CSV) están siempre disponibles y coexisten; todo queda **scoped al `organization_id`** del centro del admin, y solo el rol admin puede escribir en el catálogo (RLS `is_admin()`).
 
 ### 3.7 Marca visual
 `lib/core/theme/kura_theme.dart`: magenta/rojo `#EC0244`, texto oscuro `#211813`, fondo claro `#FBF5EC`, tipografía Nunito (vía `google_fonts`).
@@ -142,16 +154,35 @@ Definidas en `lib/core/router/app_router.dart` (GoRouter):
 - `0008_follow_up_protocol_fields.sql` — alineación Prioridad 1 (protocolos clínicos Kura+): `wound_measurements.volume_cm3` (medición 3D, heridas profundas) + `wound_measurements.manual_measurement_note` (socavamiento/tunelización/circunferencial/irregular); `wound_photos.photo_stage` (`antes_limpiar`/`despues_limpiar`/`con_medicion`/`cierre`, Protocolo de Fotografías §1.2); `consultations.follow_up_care_type`/`follow_up_procedure_desc`/`follow_up_materials_used`/`follow_up_evolution`/`follow_up_signed_by`/`follow_up_signed_license` (nota de seguimiento obligatoria, Instructivo de Archivo); `staff.cedula_profesional` (catálogo para prellenar la firma).
 - `0009_visit_type_cierre.sql` — agrega el valor `'cierre'` al enum Postgres `visit_type`.
 - `0010_note_option_catalog.sql` — tabla `note_option_catalog` (field/label/is_active/created_by) que alimenta los chips de la nota de seguimiento, configurable por el admin del centro. RLS: SELECT para todo el personal autenticado; INSERT/UPDATE/DELETE solo admin (`is_admin()`). Precargada con 23 conceptos base (5 tipo de atención, 6 descripción de procedimiento, 7 material utilizado, 5 evolución). No se audita (catálogo administrativo, no dato clínico de paciente).
+- `0011_organizations.sql` — **modelo Centro (organización) → Sitios → Personal** (ver detalle en sección 5.3). ✅ Escrita, versionada y verificada localmente (analyze/test/build); **⚠️ NO aplicada aún** al proyecto Supabase real del cliente — es el único paso manual pendiente (`supabase db push` o SQL Editor) antes de que el aislamiento por organización, en particular la corrección crítica de aislamiento de pacientes, tome efecto en producción.
 
-**✅ Migraciones `0008`, `0009` y `0010` aplicadas y confirmadas por el cliente contra el proyecto Supabase real** — el flujo de seguimiento refinado (fotos en secuencia, catálogo de conceptos, firma/cédula) ya cuenta con su esquema en producción.
+**✅ Migraciones `0008`, `0009` y `0010` aplicadas y confirmadas por el cliente contra el proyecto Supabase real** — el flujo de seguimiento refinado (fotos en secuencia, catálogo de conceptos, firma/cédula) ya cuenta con su esquema en producción. **`0011` está pendiente de aplicar** (ver sección 9, paso 0).
 
 ### 5.2 Almacenamiento actual (modo demo local-first)
-`lib/services/local_db/local_store.dart`: `SharedPreferences` usado como almacén de documentos JSON; `Collections` define nombres de colección que son espejo exacto de las tablas SQL anteriores. `demo_seed.dart` siembra automáticamente, en el primer arranque:
-- 3 sitios, 3 perfiles (1 admin + 2 clínicos), 2 personal sanitario.
-- 5 pacientes cubriendo las 4 etiologías + un caso de **isquemia crítica** (ABI 0.38) usado como caso de prueba de la regla de seguridad "no desbridar".
+`lib/services/local_db/local_store.dart`: `SharedPreferences` usado como almacén de documentos JSON; `Collections` define nombres de colección que son espejo exacto de las tablas SQL anteriores (incluye ahora `organizations`). `demo_seed.dart` siembra automáticamente, en el primer arranque:
+- 1 organización ("Kura+") + 4 sitios (Clínica CDMX, Clínica GDL, Domicilio CDMX, Domicilio GDL), 3 perfiles (1 admin + 2 clínicos), 3 personal sanitario (incluye la fila de `staff` del admin, para reflejar el fix del ajuste #3 también en modo demo).
+- 5 pacientes cubriendo las 4 etiologías + un caso de **isquemia crítica** (ABI 0.38) usado como caso de prueba de la regla de seguridad "no desbridar". Todos con `organization_id` de Kura+.
 - Comorbilidades, heridas, consultas (incluye seguimientos para graficar tendencia), evaluaciones, mediciones seriadas, datos de perfusión/nutrición y un plan de tratamiento de ejemplo.
 
 **Importante**: hoy no hay sincronización real entre dispositivos ni multiusuario concurrente — cada instancia del navegador/app tiene su propio almacén local. Esto es intencional para la fase de demo, y es el primer punto del roadmap hacia piloto (sección 9).
+
+### 5.3 Modelo Centro (organización) → Sitios → Personal + aislamiento crítico de pacientes
+
+Migración `0011_organizations.sql` introduce el tenant `organizations` (el centro, p. ej. "Kura+") y lo enlaza a las tablas que antes eran de facto globales:
+
+- **`organizations`**: nueva tabla raíz (`id`, `name`, `is_active`, `created_at`). Backfill automático: se crea una organización "Kura+" y se le asignan todas las filas existentes.
+- **`sites.organization_id`** (not null): un centro tiene 1→N sitios. El personal puede operar en **todos** los sitios de su centro — `staff.primary_site_id` sigue existiendo solo como valor por defecto opcional al crear una consulta, nunca como límite.
+- **`profiles.organization_id`** (not null): fuente de verdad que usa el helper `current_organization_id()` (SECURITY DEFINER, mismo patrón que `is_admin()`/`current_staff_id()`) para resolver la organización del usuario autenticado.
+- **`staff.organization_id`** (not null, columna explícita, no solo derivada vía `profile_id`): necesaria para dar soporte a personal administrativo **sin cuenta de acceso** (`profile_id` NULL), que de otra forma no tendría organización resoluble.
+- **`note_option_catalog.organization_id`** (not null): el catálogo de conceptos de nota de seguimiento pasa de ser global a **configurable por centro** (uniqueness ahora es `(organization_id, field, label)`).
+- **`patients.organization_id`** (not null) — **la corrección crítica**: antes, la política `patients_select` le daba a *cualquier* admin (de cualquier organización) `SELECT` de *todos* los pacientes de la base — un bug de aislamiento multi-tenant grave. La política se reescribe para que un admin vea/edite solo pacientes de **su** organización; un clínico sigue viendo solo los que tiene asignados (`staff_patient_assignments`), asignación que ya queda transitivamente acotada a la organización porque tanto `staff` como `patients` llevan `organization_id` verificado. Las 9 tablas descendientes (`wounds`, `wound_assessments`, `wound_measurements`, `perfusion_nutrition_data`, `wound_photos`, `treatment_plans`, `treatment_components`, `kura_recommendations`, `sheehan_checkpoints`) **no necesitan columna `organization_id` propia**: heredan el aislamiento por FK transitiva hacia `patients` (ya estaban escritas así en `0003_row_level_security.sql`), sin tocar esas 9 tablas.
+- **`create_organization_with_admin(p_organization_name, p_admin_full_name)`**: RPC para el flujo de alta de un centro nuevo — crea la organización, promueve el perfil que la invoca a admin y le crea su fila de `staff` correspondiente, en una sola transacción.
+- **Fix admin-clínico (licencia individual)**: para el caso de un admin que **ya existía** antes de `0011` (o al que no se le creó `staff` vía el RPC anterior), `DataRepository.ensureAdminStaffId(AppUser adminUser)` busca su fila de `staff` por `profile_id` y, si no existe, la crea de forma perezosa (folio `''`, `role_title: 'Administrador'`). Se ejecuta automáticamente:
+  - En `SessionController.login()`/`_restoreSupabaseSession()` (vía `_ensureStaffIdForAdmin()`), de forma transparente en cada inicio de sesión.
+  - Como *fallback* redundante directamente en `consultation_hub_screen.dart` y `follow_up_capture_screen.dart`, para no bloquear el registro de una consulta si por algún motivo (p. ej. falla de red durante el login) la provisión a nivel de sesión no se completó.
+  - Una vez resuelto el `staffId`, el auto-asignado de pacientes al personal que los registra (código ya existente) funciona igual para el admin que para cualquier clínico.
+
+**Pendiente manual**: la migración `0011` está completa, versionada y verificada localmente, pero **debe aplicarse al proyecto Supabase real del cliente** (`supabase db push` o SQL Editor, ver sección 9) para que el aislamiento de pacientes y el resto del modelo tomen efecto en producción — mientras no se aplique, producción sigue en el comportamiento anterior a `0011`.
 
 ---
 
@@ -168,7 +199,7 @@ Definidas en `lib/core/router/app_router.dart` (GoRouter):
 6. Desde el detalle de una herida existente, abrir **Seguimiento** para ver la gráfica de tendencia de área y el checkpoint Sheehan. Usar **Registrar seguimiento** (botón en el AppBar) para capturar una nueva visita subsecuente — al guardarla, la gráfica, el checkpoint y la foto "actual" se actualizan automáticamente con el dato recién creado.
 7. Desde el detalle de un paciente, tocar cualquier ítem del **historial de consultas** para ver el detalle completo (solo lectura) de esa visita: mediciones, evaluación, recomendación Kura+, tratamiento y fotos.
 8. `/reports` permite seleccionar pacientes y generar un PDF de reporte.
-9. `/admin` (solo visible para el usuario admin) permite gestionar personal, sitios y activar premium por usuario.
+9. `/admin` (solo visible para el usuario admin) permite gestionar personal, sitios, el catálogo de la nota de seguimiento (alta manual, o descarga/carga de CSV en bloque — ver sección 3.4b) y activar premium por usuario.
 10. `/import-export` permite previsualizar una importación CSV con mapeo de columnas y exportar mediciones a CSV.
 
 ---
@@ -205,9 +236,13 @@ El usuario del proyecto definió el criterio de priorización: **si el destino e
 
 **Orden de trabajo acordado:**
 
+0. **⚠️ Aplicar la migración `0011_organizations.sql` al proyecto Supabase real** (paso manual pendiente, prioridad alta por incluir la corrección crítica de aislamiento de pacientes):
+   - Revisar el contenido de `supabase/migrations/0011_organizations.sql` (organizations + organization_id en sites/profiles/staff/note_option_catalog/patients + backfill a "Kura+" + `current_organization_id()` + RLS reescrita de `patients`/`sites`/`staff`/`note_option_catalog`/`organizations`).
+   - Aplicarla con `supabase db push` (o pegándola en el SQL Editor del proyecto) — es idempotente respecto al resto del esquema, no modifica las 9 tablas descendientes de `patients`.
+   - Verificar tras aplicar: un admin de la organización "Kura+" solo debe ver pacientes con `organization_id` = Kura+; si en el futuro se crea una segunda organización, sus admins no deben ver pacientes de Kura+ ni viceversa.
 1. **Conectar un proyecto Supabase real** — 📖 runbook detallado en [`SUPABASE_SETUP.md`](./SUPABASE_SETUP.md)
-   - Provisionar proyecto (dueño: el cliente/usuario final, nunca esta cuenta de desarrollo), aplicar las migraciones SQL existentes (`supabase/migrations/`) **en orden estricto 0001→0010** (cada una depende de objetos creados por la anterior).
-   - **Las 10 migraciones (`0001`→`0010`) están aplicadas y confirmadas contra el proyecto Supabase real del cliente**, incluyendo `0007_wound_assessment_adherence.sql` (columna `low_adherence`), `0008_follow_up_protocol_fields.sql` (protocolo de seguimiento), `0009_visit_type_cierre.sql` (enum `visit_type='cierre'`) y `0010_note_option_catalog.sql` (catálogo de conceptos de nota configurable por admin).
+   - Provisionar proyecto (dueño: el cliente/usuario final, nunca esta cuenta de desarrollo), aplicar las migraciones SQL existentes (`supabase/migrations/`) **en orden estricto 0001→0011** (cada una depende de objetos creados por la anterior).
+   - **Las 10 migraciones (`0001`→`0010`) están aplicadas y confirmadas contra el proyecto Supabase real del cliente**, incluyendo `0007_wound_assessment_adherence.sql` (columna `low_adherence`), `0008_follow_up_protocol_fields.sql` (protocolo de seguimiento), `0009_visit_type_cierre.sql` (enum `visit_type='cierre'`) y `0010_note_option_catalog.sql` (catálogo de conceptos de nota configurable por admin). **`0011_organizations.sql` está lista pero pendiente de aplicar** (ver paso 0 arriba).
    - Arquitectura de cliente **ya implementada** (`lib/services/remote/data_store.dart` + `supabase_data_store.dart` + `supabase_bootstrap.dart`): abstrae el origen de datos vía un `DataStore`; usa Supabase real cuando `AppConfig.isSupabaseConfigured` es `true` (URL + anon key inyectadas por `--dart-define`), y cae a `LocalStore` (modo demo local) cuando no hay credenciales — así el modo offline/demo sigue funcionando sin backend.
    - Verificar RLS en vivo **antes** de conectar la app (ver sección 4 de `SUPABASE_SETUP.md`): login autenticado + lectura de `/rest/v1/patients` confirmando que un clínico sin asignaciones no ve pacientes de otros.
    - Seed de datos sintéticos para el piloto: `supabase/seed/seed_synthetic_patients.sql` — 6 pacientes ficticios (2×escenario A, 2×B, 2×C; 5 etiologías distintas), idempotente, se corre desde el SQL Editor **después** de aplicar las migraciones y de verificar RLS.
@@ -231,6 +266,9 @@ flutter pub get
 
 # Ejecutar pruebas del motor (deben pasar 42/42)
 flutter test test/engine/
+
+# Ejecutar toda la suite (deben pasar 52/52)
+flutter test
 
 # Analizar código (debe salir limpio de errores)
 flutter analyze --no-fatal-infos --no-fatal-warnings
@@ -273,13 +311,15 @@ assets/
 test/
   engine/          # 42 tests: paridad, casos límite, reglas de seguridad, Sheehan
 supabase/
-  migrations/      # 10 migraciones SQL (esquema, triggers, RLS, storage, WIFI/Braden/HbA1c,
+  migrations/      # 11 migraciones SQL (esquema, triggers, RLS, storage, WIFI/Braden/HbA1c,
                    # hardening RLS profiles, low_adherence, alineacion protocolo seguimiento,
-                   # enum visit_type='cierre', catalogo de conceptos de nota) —
-                   # 0001-0010 aplicadas y confirmadas contra producción
+                   # enum visit_type='cierre', catalogo de conceptos de nota,
+                   # modelo Centro->Sitios->Personal + aislamiento critico de pacientes) —
+                   # 0001-0010 aplicadas y confirmadas contra producción;
+                   # 0011 lista y versionada, PENDIENTE de aplicar (ver seccion 9, paso 0)
   functions/kura-protocol-engine/  # carpeta reservada para la Edge Function TS (pendiente)
 ```
 
 ---
 
-*Última actualización: Refinamiento UX/fidelidad clínica del formulario de seguimiento (Prioridad 1) — (1) las 2 fotografías obligatorias ahora se solicitan en su momento clínico real dentro del flujo (después de limpiar ANTES de composición del lecho; con medición INMEDIATAMENTE DESPUÉS de medir), no al final; (2) la nota de seguimiento (tipo de atención/procedimiento/material/evolución) pasa de texto libre a chips desde un catálogo configurable por el admin del centro (`note_option_catalog`, migración 0010, RLS admin-only para escritura) con opción "Otro" (persistible al catálogo solo si quien firma es admin); (3) firma (nombre) y cédula profesional se autocompletan de solo lectura desde el registro `staff` del profesional logueado, con aviso si falta cédula en vez de pedirla en cada nota. **Migraciones `0008`/`0009`/`0010` aplicadas y confirmadas por el cliente contra el Supabase real** — el esquema completo (0001→0010) ya está en producción. Build/analyze (0 errores)/tests (52/52) verificados, demo desplegada en sandbox de desarrollo. Pendiente: Prioridades 2–7 de la alineación original (foto/medición por tipo de visita, consentimientos, interconsultas, eventos adversos, alineación de tratamiento) — no tocadas en este refinamiento.*
+*Última actualización: Modelo Centro (organización) → Sitios → Personal + catálogo de notas con import/export CSV + corrección crítica de aislamiento de pacientes. (1) Nueva migración `0011_organizations.sql`: tabla `organizations` (tenant raíz) + `organization_id` en `sites`/`profiles`/`staff`/`note_option_catalog`/`patients`, con backfill a "Kura+"; el personal puede operar en todos los sitios de su centro (no se restringe por `primary_site_id`); **corrección crítica**: un admin ahora ve/edita solo pacientes de su propia organización (antes veía todos los pacientes de la base, sin importar el centro) — las 9 tablas descendientes de `patients` heredan el aislamiento por FK transitiva sin cambios de esquema. (2) `staff.organization_id` explícito para soportar personal sin cuenta de acceso. (3) Fix admin-clínico (licencia individual): `DataRepository.ensureAdminStaffId()` crea de forma perezosa la fila de `staff` del admin si falta, ejecutado automáticamente en login/restauración de sesión, con fallback redundante en las pantallas de alta de consulta. (4) Catálogo de la nota de seguimiento: se agrega descarga de plantilla CSV y carga con merge en bloque (agregar/actualizar/omitir + resumen de importación) junto a la alta manual ya existente, todo scoped a `organization_id` y editable solo por admin. `demo_seed.dart` reescrito para reflejar el nuevo modelo (1 organización + 4 sitios, `organization_id` en todas las colecciones relevantes, fila de `staff` del admin agregada). **Migraciones `0008`/`0009`/`0010` aplicadas y confirmadas por el cliente contra el Supabase real; `0011` está lista y versionada pero PENDIENTE de aplicar** (paso manual, ver sección 9 paso 0) — hasta entonces producción sigue en el comportamiento anterior a `0011`, incluyendo el bug de aislamiento de pacientes entre organizaciones. Build/analyze (0 errores)/tests (52/52) verificados, demo redesplegada en sandbox de desarrollo, push a GitHub y clon fresco verificados.*
