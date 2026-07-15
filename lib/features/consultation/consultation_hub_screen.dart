@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 
 import '../../core/theme/kura_theme.dart';
 import '../../core/providers/session_provider.dart';
+import '../../models/app_user.dart';
 import '../../models/consultation.dart';
 import '../../services/data_repository.dart';
 
@@ -131,9 +132,31 @@ class _ConsultationHubScreenState extends ConsumerState<ConsultationHubScreen> {
                           ? null
                           : () async {
                               setState(() => _creating = true);
-                              final staffId = session.user?.staffId;
+                              // Fix admin-clinico (ajuste obligatorio #3): el
+                              // staffId de un admin ya se resuelve de forma
+                              // perezosa en SessionController (login/restore,
+                              // ver ensureAdminStaffId), por lo que a esta
+                              // altura session.user.staffId deberia estar
+                              // resuelto tanto para clinico como para admin.
+                              // Si por algun motivo aun no lo esta (p.ej. fallo
+                              // de red durante el aprovisionamiento), se
+                              // reintenta aqui mismo en vez de bloquear
+                              // silenciosamente el flujo.
+                              var staffId = session.user?.staffId;
+                              if (staffId == null && session.user?.role == AppRole.admin) {
+                                staffId = await repo.ensureAdminStaffId(session.user!);
+                              }
                               if (staffId == null) {
                                 setState(() => _creating = false);
+                                if (mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                        'No se encontró personal sanitario vinculado a tu cuenta.',
+                                      ),
+                                    ),
+                                  );
+                                }
                                 return;
                               }
                               final consultation = await repo.createConsultation(

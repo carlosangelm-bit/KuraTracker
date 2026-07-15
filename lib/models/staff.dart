@@ -10,6 +10,12 @@ class StaffMember {
   // Numero de cedula profesional; usado para prellenar la firma de la nota
   // de seguimiento obligatoria (Instructivo de Archivo).
   final String? cedulaProfesional;
+  // Centro (organizacion) al que pertenece este personal. Se guarda de
+  // forma explicita (no solo derivada via profileId) porque puede haber
+  // personal administrativo SIN cuenta de acceso vinculada (profileId
+  // null) que igualmente debe quedar resoluble a una organizacion. Ver
+  // 0011_organizations.sql: staff.organization_id (not null).
+  final String? organizationId;
 
   const StaffMember({
     required this.id,
@@ -21,6 +27,7 @@ class StaffMember {
     this.isActive = true,
     required this.createdAt,
     this.cedulaProfesional,
+    this.organizationId,
   });
 
   factory StaffMember.fromJson(Map<String, dynamic> json) => StaffMember(
@@ -33,6 +40,7 @@ class StaffMember {
         isActive: json['is_active'] as bool? ?? true,
         createdAt: DateTime.parse(json['created_at'] as String),
         cedulaProfesional: json['cedula_profesional'] as String?,
+        organizationId: json['organization_id'] as String?,
       );
 
   Map<String, dynamic> toJson() => {
@@ -45,5 +53,6 @@ class StaffMember {
         'is_active': isActive,
         'created_at': createdAt.toIso8601String(),
         'cedula_profesional': cedulaProfesional,
+        'organization_id': organizationId,
       };
 }

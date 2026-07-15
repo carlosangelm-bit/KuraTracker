@@ -758,6 +758,7 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
                           await repo.createNoteOption(
                             field: field,
                             label: label,
+                            organizationId: session.user?.organizationId,
                             createdByProfileId: session.user?.id,
                           );
                           if (mounted) {
@@ -884,7 +885,14 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
   Future<void> _save(BuildContext context, SessionState session) async {
     setState(() => _saving = true);
     final repo = await DataRepository.instance();
-    final staffId = session.user?.staffId;
+    // Fix admin-clinico (ajuste obligatorio #3): ver comentario equivalente
+    // en consultation_hub_screen.dart -- el staffId de un admin ya se
+    // resuelve de forma perezosa en SessionController; aqui se reintenta
+    // como red de seguridad en vez de bloquear directamente el guardado.
+    var staffId = session.user?.staffId;
+    if (staffId == null && session.user?.role == AppRole.admin) {
+      staffId = await repo.ensureAdminStaffId(session.user!);
+    }
     if (staffId == null) {
       setState(() => _saving = false);
       if (context.mounted) {

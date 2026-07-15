@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:collection/collection.dart';
+import 'package:csv/csv.dart';
+import 'package:file_picker/file_picker.dart';
 
 import '../../core/theme/kura_theme.dart';
 import '../../core/providers/session_provider.dart';
@@ -8,6 +10,7 @@ import '../../models/app_user.dart';
 import '../../models/note_option_catalog.dart';
 import '../../models/site.dart';
 import '../../models/staff.dart';
+import '../../services/csv_download.dart';
 import '../../services/data_repository.dart';
 
 /// Panel de administración: gestión de personal sanitario, sitios y
@@ -51,6 +54,12 @@ class _AdminHomeScreenState extends ConsumerState<AdminHomeScreen>
   @override
   Widget build(BuildContext context) {
     final repoAsync = ref.watch(dataRepositoryProvider);
+    // organizationId del admin en sesion: se pasa explicitamente a cada tab
+    // para que las altas (staff/sitio/concepto de catalogo) queden
+    // correctamente acotadas al centro del admin (columnas not null en
+    // Supabase, ver 0011_organizations.sql), en vez de derivarlo de forma
+    // implicita dentro de cada dialogo.
+    final organizationId = ref.watch(sessionProvider).user?.organizationId;
 
     return Scaffold(
       appBar: AppBar(
@@ -72,11 +81,11 @@ class _AdminHomeScreenState extends ConsumerState<AdminHomeScreen>
         data: (repo) {
           switch (_tab) {
             case 1:
-              return _StaffTab(repo: repo);
+              return _StaffTab(repo: repo, organizationId: organizationId);
             case 2:
-              return _SitesTab(repo: repo);
+              return _SitesTab(repo: repo, organizationId: organizationId);
             case 3:
-              return _NoteCatalogTab(repo: repo);
+              return _NoteCatalogTab(repo: repo, organizationId: organizationId);
             default:
               return _UsersTab(repo: repo);
           }
@@ -162,7 +171,8 @@ class _UsersTabState extends State<_UsersTab> {
 
 class _StaffTab extends StatefulWidget {
   final DataRepository repo;
-  const _StaffTab({required this.repo});
+  final String? organizationId;
+  const _StaffTab({required this.repo, required this.organizationId});
 
   @override
   State<_StaffTab> createState() => _StaffTabState();
@@ -189,6 +199,7 @@ class _StaffTabState extends State<_StaffTab> {
         existing: existing,
         sites: sites,
         profileCandidates: candidates,
+        organizationId: widget.organizationId,
       ),
     );
     if (saved == true && mounted) setState(() {});
@@ -266,12 +277,14 @@ class _StaffFormDialog extends StatefulWidget {
   final StaffMember? existing;
   final List<Site> sites;
   final List<AppUser> profileCandidates;
+  final String? organizationId;
 
   const _StaffFormDialog({
     required this.repo,
     required this.existing,
     required this.sites,
     required this.profileCandidates,
+    required this.organizationId,
   });
 
   @override
@@ -318,6 +331,7 @@ class _StaffFormDialogState extends State<_StaffFormDialog> {
         await widget.repo.createStaff(
           fullName: _nameCtrl.text.trim(),
           roleTitle: _roleCtrl.text.trim().isEmpty ? 'Kurador' : _roleCtrl.text.trim(),
+          organizationId: widget.organizationId,
           primarySiteId: _siteId,
           profileId: _profileId,
           cedulaProfesional: cedula.isEmpty ? null : cedula,
@@ -458,7 +472,8 @@ class _StaffFormDialogState extends State<_StaffFormDialog> {
 
 class _SitesTab extends StatefulWidget {
   final DataRepository repo;
-  const _SitesTab({required this.repo});
+  final String? organizationId;
+  const _SitesTab({required this.repo, required this.organizationId});
 
   @override
   State<_SitesTab> createState() => _SitesTabState();
@@ -468,7 +483,11 @@ class _SitesTabState extends State<_SitesTab> {
   Future<void> _openSiteForm({Site? existing}) async {
     final saved = await showDialog<bool>(
       context: context,
-      builder: (_) => _SiteFormDialog(repo: widget.repo, existing: existing),
+      builder: (_) => _SiteFormDialog(
+        repo: widget.repo,
+        existing: existing,
+        organizationId: widget.organizationId,
+      ),
     );
     if (saved == true && mounted) setState(() {});
   }
@@ -549,7 +568,12 @@ String _kindLabel(String kind) {
 class _SiteFormDialog extends StatefulWidget {
   final DataRepository repo;
   final Site? existing;
-  const _SiteFormDialog({required this.repo, required this.existing});
+  final String? organizationId;
+  const _SiteFormDialog({
+    required this.repo,
+    required this.existing,
+    required this.organizationId,
+  });
 
   @override
   State<_SiteFormDialog> createState() => _SiteFormDialogState();
@@ -586,6 +610,7 @@ class _SiteFormDialogState extends State<_SiteFormDialog> {
           name: _nameCtrl.text.trim(),
           kind: _kind,
           address: address.isEmpty ? null : address,
+          organizationId: widget.organizationId,
         ));
       } else {
         await widget.repo.updateSite(
@@ -679,7 +704,8 @@ class _SiteFormDialogState extends State<_SiteFormDialog> {
 /// chips al capturar una nota (ver follow_up_capture_screen.dart).
 class _NoteCatalogTab extends StatefulWidget {
   final DataRepository repo;
-  const _NoteCatalogTab({required this.repo});
+  final String? organizationId;
+  const _NoteCatalogTab({required this.repo, required this.organizationId});
 
   @override
   State<_NoteCatalogTab> createState() => _NoteCatalogTabState();
@@ -687,12 +713,19 @@ class _NoteCatalogTab extends StatefulWidget {
 
 class _NoteCatalogTabState extends State<_NoteCatalogTab> {
   NoteOptionField _selectedField = NoteOptionField.careType;
+  bool _importing = false;
 
+  // Alternativa manual (preservada tal cual, sin rehacer): "Nuevo concepto"
+  // sigue siendo la unica accion del FAB.
   Future<void> _addOption() async {
     final label = await _promptForLabel(context, title: 'Nuevo concepto');
     if (label == null || label.trim().isEmpty) return;
     try {
-      await widget.repo.createNoteOption(field: _selectedField, label: label.trim());
+      await widget.repo.createNoteOption(
+        field: _selectedField,
+        label: label.trim(),
+        organizationId: widget.organizationId,
+      );
       if (mounted) setState(() {});
     } catch (e) {
       if (mounted) {
@@ -700,6 +733,109 @@ class _NoteCatalogTabState extends State<_NoteCatalogTab> {
           SnackBar(content: Text('No se pudo agregar: $e')),
         );
       }
+    }
+  }
+
+  /// Descarga la plantilla CSV (columnas seccion,concepto,activo) con el
+  /// catalogo ACTUAL del centro (las 4 secciones), para que el admin la
+  /// edite en Excel/Sheets y luego la vuelva a cargar.
+  Future<void> _downloadTemplate() async {
+    final rows = <List<String>>[
+      ['seccion', 'concepto', 'activo'],
+    ];
+    for (final field in NoteOptionField.values) {
+      for (final o in widget.repo.listAllNoteOptions(field)) {
+        rows.add([field.csvSeccion, o.label, o.isActive ? 'true' : 'false']);
+      }
+    }
+    final csvContent = const ListToCsvConverter().convert(rows);
+    try {
+      await downloadCsv('catalogo_notas_seguimiento.csv', csvContent);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('No se pudo descargar la plantilla: $e')),
+        );
+      }
+    }
+  }
+
+  /// Carga un CSV (mismas columnas de la plantilla) y hace merge en bloque
+  /// de las 4 secciones via DataRepository.bulkImportNoteOptions.
+  Future<void> _uploadCsv() async {
+    final organizationId = widget.organizationId;
+    if (organizationId == null) return;
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['csv'],
+      withData: true,
+    );
+    if (result == null || result.files.isEmpty) return;
+    final bytes = result.files.first.bytes;
+    if (bytes == null) return;
+
+    setState(() => _importing = true);
+    try {
+      final content = String.fromCharCodes(bytes);
+      final rawRows = const CsvToListConverter(eol: '\n').convert(content);
+      if (rawRows.isEmpty) {
+        throw StateError('El archivo está vacío.');
+      }
+      // Se descarta el encabezado (fila 0); se acepta el orden
+      // seccion,concepto,activo tal cual lo produce _downloadTemplate().
+      final dataRows = rawRows.skip(1);
+      final parsed = <NoteOptionImportRow>[];
+      for (final r in dataRows) {
+        if (r.isEmpty || r.every((c) => c.toString().trim().isEmpty)) continue;
+        final seccion = r.isNotEmpty ? r[0].toString() : '';
+        final concepto = r.length > 1 ? r[1].toString() : '';
+        final activoRaw = r.length > 2 ? r[2].toString().trim().toLowerCase() : 'true';
+        final activo = activoRaw == 'true' || activoRaw == '1' || activoRaw == 'si' || activoRaw == 'sí';
+        parsed.add(NoteOptionImportRow(seccion: seccion, concepto: concepto, activo: activo));
+      }
+
+      final summary = await widget.repo.bulkImportNoteOptions(
+        parsed,
+        organizationId: organizationId,
+      );
+
+      if (mounted) {
+        setState(() {});
+        await showDialog<void>(
+          context: context,
+          builder: (_) => AlertDialog(
+            title: const Text('Resumen de importación'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Agregados: ${summary.added}'),
+                Text('Actualizados: ${summary.updated}'),
+                Text('Omitidos: ${summary.skipped}'),
+                if (summary.errors.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  const Text('Detalle:', style: TextStyle(fontWeight: FontWeight.w600)),
+                  ...summary.errors.take(10).map((e) => Text('• $e', style: const TextStyle(fontSize: 12))),
+                ],
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cerrar'),
+              ),
+            ],
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('No se pudo importar el CSV: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _importing = false);
     }
   }
 
@@ -738,6 +874,39 @@ class _NoteCatalogTabState extends State<_NoteCatalogTab> {
                   'una vez para todo el centro; desactivar no borra el '
                   'historial de notas que ya los usaron.',
                   style: TextStyle(fontSize: 12, color: KuraColors.darkText.withOpacity(0.6)),
+                ),
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    OutlinedButton.icon(
+                      onPressed: _downloadTemplate,
+                      icon: const Icon(Icons.download_outlined, size: 18),
+                      label: const Text('Descargar plantilla CSV'),
+                    ),
+                    OutlinedButton.icon(
+                      onPressed: _importing ? null : _uploadCsv,
+                      icon: _importing
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.upload_outlined, size: 18),
+                      label: Text(_importing ? 'Importando…' : 'Cargar CSV'),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'La plantilla incluye las 4 secciones (tipo de atención, '
+                  'descripción, material, evolución) con el catálogo actual '
+                  'del centro. Al cargarla se agregan conceptos nuevos y se '
+                  'actualiza el estado activo/inactivo de los existentes; '
+                  'también puedes seguir agregando uno por uno abajo.',
+                  style: TextStyle(fontSize: 11, color: KuraColors.darkText.withOpacity(0.5)),
                 ),
                 const SizedBox(height: 12),
                 Wrap(

@@ -180,6 +180,7 @@ class _PatientFormScreenState extends ConsumerState<PatientFormScreen> {
                                 try {
                                   final patient = await repo.createPatient(
                                     fullName: _nameCtrl.text.trim(),
+                                    organizationId: session.user?.organizationId,
                                     birthDate: _birthDate,
                                     sex: _sex,
                                     primarySiteId: _siteId,

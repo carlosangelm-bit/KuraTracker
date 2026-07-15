@@ -154,6 +154,7 @@ class LocalStoreDataStore implements DataStore {
 
 /// Nombres de colecciones (equivalentes a las tablas SQL de Supabase).
 class Collections {
+  static const organizations = 'organizations';
   static const profiles = 'profiles';
   static const sites = 'sites';
   static const staff = 'staff';
@@ -179,6 +180,7 @@ class Collections {
   /// datos clinicos). El orden no importa para SELECT (a diferencia de las
   /// migraciones SQL, que si tienen dependencias de FK en INSERT/CREATE).
   static const List<String> all = [
+    organizations,
     profiles,
     sites,
     staff,

@@ -25,29 +25,58 @@ class DemoSeed {
     String iso(DateTime d) => d.toIso8601String();
     String isoDate(DateTime d) => d.toIso8601String().substring(0, 10);
 
+    // ---------------- Organizacion (centro) ----------------
+    // 0011_organizations.sql: el centro es el tenant raiz; sitios, personal,
+    // pacientes y catalogo de notas quedan aislados por organizationId.
+    final organizationId = _uuid.v4();
+
+    await store.saveAll(Collections.organizations, [
+      {
+        'id': organizationId,
+        'name': 'Kura+',
+        'is_active': true,
+        'created_at': iso(now.subtract(const Duration(days: 400))),
+      },
+    ]);
+
     // ---------------- Sitios ----------------
-    final siteClinicaCentro = _uuid.v4();
-    final siteClinicaNorte = _uuid.v4();
-    final siteDomicilio = _uuid.v4();
+    // El centro Kura+ tiene 1->N sitios; el personal puede operar en TODOS
+    // los sitios de su organizacion (no se restringe por primary_site_id,
+    // ver Part A del modelo Centro -> Sitios -> Personal).
+    final siteClinicaCdmx = _uuid.v4();
+    final siteClinicaGdl = _uuid.v4();
+    final siteDomicilioCdmx = _uuid.v4();
+    final siteDomicilioGdl = _uuid.v4();
 
     await store.saveAll(Collections.sites, [
       {
-        'id': siteClinicaCentro,
-        'name': 'Kura+ Clinica Centro',
+        'id': siteClinicaCdmx,
+        'organization_id': organizationId,
+        'name': 'Kura+ Clinica CDMX',
         'kind': 'clinica',
         'address': 'Av. Reforma 123, CDMX',
         'is_active': true,
       },
       {
-        'id': siteClinicaNorte,
-        'name': 'Kura+ Clinica Norte',
+        'id': siteClinicaGdl,
+        'organization_id': organizationId,
+        'name': 'Kura+ Clinica GDL',
         'kind': 'clinica',
-        'address': 'Blvd. Norte 456, Monterrey',
+        'address': 'Av. Vallarta 456, Guadalajara',
         'is_active': true,
       },
       {
-        'id': siteDomicilio,
-        'name': 'Atencion a domicilio',
+        'id': siteDomicilioCdmx,
+        'organization_id': organizationId,
+        'name': 'Atencion a domicilio CDMX',
+        'kind': 'domicilio',
+        'address': null,
+        'is_active': true,
+      },
+      {
+        'id': siteDomicilioGdl,
+        'organization_id': organizationId,
+        'name': 'Atencion a domicilio GDL',
         'kind': 'domicilio',
         'address': null,
         'is_active': true,
@@ -62,6 +91,7 @@ class DemoSeed {
     await store.saveAll(Collections.profiles, [
       {
         'id': adminProfileId,
+        'organization_id': organizationId,
         'role': 'admin',
         'full_name': 'Administrador Procomsa',
         'email': 'admin@curamas.mx',
@@ -70,6 +100,7 @@ class DemoSeed {
       },
       {
         'id': clinico1ProfileId,
+        'organization_id': organizationId,
         'role': 'clinico',
         'full_name': 'Dra. Ana Martinez',
         'email': 'ana.martinez@curamas.mx',
@@ -78,6 +109,7 @@ class DemoSeed {
       },
       {
         'id': clinico2ProfileId,
+        'organization_id': organizationId,
         'role': 'clinico',
         'full_name': 'Lic. Carlos Ramirez',
         'email': 'carlos.ramirez@curamas.mx',
@@ -87,27 +119,48 @@ class DemoSeed {
     ]);
 
     // ---------------- Personal sanitario ----------------
+    // adminStaffId: fila de staff para el administrador (Adjuste #3 -
+    // admin-clinico con licencia individual). En produccion la crea
+    // create_organization_with_admin()/ensureAdminStaffId() de forma
+    // perezosa; aqui se siembra directamente para que el modo demo ya
+    // refleje el mismo esquema (el admin puede registrar consultas y
+    // se le auto-asignan los pacientes que da de alta, igual que
+    // cualquier otro miembro del personal).
+    final adminStaffId = _uuid.v4();
     final staff1Id = _uuid.v4();
     final staff2Id = _uuid.v4();
 
     await store.saveAll(Collections.staff, [
       {
+        'id': adminStaffId,
+        'organization_id': organizationId,
+        'profile_id': adminProfileId,
+        'folio': '',
+        'full_name': 'Administrador Procomsa',
+        'role_title': 'Administrador',
+        'primary_site_id': siteClinicaCdmx,
+        'is_active': true,
+        'created_at': iso(now.subtract(const Duration(days: 400))),
+      },
+      {
         'id': staff1Id,
+        'organization_id': organizationId,
         'profile_id': clinico1ProfileId,
         'folio': 'K2024-0001',
         'full_name': 'Dra. Ana Martinez',
         'role_title': 'Kuradora / Medico',
-        'primary_site_id': siteClinicaCentro,
+        'primary_site_id': siteClinicaCdmx,
         'is_active': true,
         'created_at': iso(now.subtract(const Duration(days: 400))),
       },
       {
         'id': staff2Id,
+        'organization_id': organizationId,
         'profile_id': clinico2ProfileId,
         'folio': 'K2024-0002',
         'full_name': 'Lic. Carlos Ramirez',
         'role_title': 'Kurador',
-        'primary_site_id': siteClinicaNorte,
+        'primary_site_id': siteClinicaGdl,
         'is_active': true,
         'created_at': iso(now.subtract(const Duration(days: 250))),
       },
@@ -123,11 +176,12 @@ class DemoSeed {
     await store.saveAll(Collections.patients, [
       {
         'id': p1Id,
+        'organization_id': organizationId,
         'folio': 'EXP2025-0001',
         'full_name': 'Roberto Sanchez Lopez',
         'birth_date': isoDate(DateTime(1958, 3, 12)),
         'sex': 'M',
-        'primary_site_id': siteClinicaCentro,
+        'primary_site_id': siteClinicaCdmx,
         'mobility': 'ambulatorio',
         'has_identified_caregiver': true,
         'caregiver_name': 'Maria Sanchez (hija)',
@@ -141,11 +195,12 @@ class DemoSeed {
       },
       {
         'id': p2Id,
+        'organization_id': organizationId,
         'folio': 'EXP2025-0002',
         'full_name': 'Guadalupe Torres Ibarra',
         'birth_date': isoDate(DateTime(1940, 7, 5)),
         'sex': 'F',
-        'primary_site_id': siteDomicilio,
+        'primary_site_id': siteDomicilioCdmx,
         'mobility': 'encamado',
         'has_identified_caregiver': true,
         'caregiver_name': 'Jose Torres (esposo)',
@@ -159,11 +214,12 @@ class DemoSeed {
       },
       {
         'id': p3Id,
+        'organization_id': organizationId,
         'folio': 'EXP2025-0003',
         'full_name': 'Fernando Castillo Vega',
         'birth_date': isoDate(DateTime(1952, 11, 20)),
         'sex': 'M',
-        'primary_site_id': siteClinicaCentro,
+        'primary_site_id': siteClinicaCdmx,
         'mobility': 'ambulatorio',
         'has_identified_caregiver': false,
         'fragile_patient': false,
@@ -175,11 +231,12 @@ class DemoSeed {
       },
       {
         'id': p4Id,
+        'organization_id': organizationId,
         'folio': 'EXP2025-0004',
         'full_name': 'Patricia Nunez Reyes',
         'birth_date': isoDate(DateTime(1975, 2, 18)),
         'sex': 'F',
-        'primary_site_id': siteClinicaNorte,
+        'primary_site_id': siteClinicaGdl,
         'mobility': 'ambulatorio',
         'has_identified_caregiver': false,
         'fragile_patient': false,
@@ -191,11 +248,12 @@ class DemoSeed {
       },
       {
         'id': p5Id,
+        'organization_id': organizationId,
         'folio': 'PA2026-0005',
         'full_name': 'Miguel Angel Duran',
         'birth_date': isoDate(DateTime(1990, 9, 30)),
         'sex': 'M',
-        'primary_site_id': siteClinicaNorte,
+        'primary_site_id': siteClinicaGdl,
         'mobility': 'ambulatorio',
         'has_identified_caregiver': false,
         'fragile_patient': false,
@@ -340,7 +398,7 @@ class DemoSeed {
         'id': c1Id,
         'patient_id': p1Id,
         'staff_id': staff1Id,
-        'site_id': siteClinicaCentro,
+        'site_id': siteClinicaCdmx,
         'visit_type': 'valoracion',
         'visit_date': isoDate(now.subtract(const Duration(days: 45))),
         'vital_signs': {'ta': '130/85', 'fc': 76, 'temp': 36.6},
@@ -351,7 +409,7 @@ class DemoSeed {
         'id': c1bId,
         'patient_id': p1Id,
         'staff_id': staff1Id,
-        'site_id': siteClinicaCentro,
+        'site_id': siteClinicaCdmx,
         'visit_type': 'seguimiento',
         'visit_date': isoDate(now.subtract(const Duration(days: 31))),
         'vital_signs': {'ta': '128/82', 'fc': 74, 'temp': 36.5},
@@ -362,7 +420,7 @@ class DemoSeed {
         'id': c1cId,
         'patient_id': p1Id,
         'staff_id': staff1Id,
-        'site_id': siteClinicaCentro,
+        'site_id': siteClinicaCdmx,
         'visit_type': 'seguimiento',
         'visit_date': isoDate(now.subtract(const Duration(days: 17))),
         'vital_signs': {'ta': '125/80', 'fc': 72, 'temp': 36.4},
@@ -373,7 +431,7 @@ class DemoSeed {
         'id': c2Id,
         'patient_id': p2Id,
         'staff_id': staff1Id,
-        'site_id': siteDomicilio,
+        'site_id': siteDomicilioCdmx,
         'visit_type': 'valoracion',
         'visit_date': isoDate(now.subtract(const Duration(days: 60))),
         'vital_signs': {'ta': '110/70', 'fc': 82, 'temp': 36.8},
@@ -384,7 +442,7 @@ class DemoSeed {
         'id': c3Id,
         'patient_id': p3Id,
         'staff_id': staff1Id,
-        'site_id': siteClinicaCentro,
+        'site_id': siteClinicaCdmx,
         'visit_type': 'valoracion',
         'visit_date': isoDate(now.subtract(const Duration(days: 30))),
         'vital_signs': {'ta': '145/90', 'fc': 88, 'temp': 36.7},
@@ -395,7 +453,7 @@ class DemoSeed {
         'id': c4Id,
         'patient_id': p4Id,
         'staff_id': staff2Id,
-        'site_id': siteClinicaNorte,
+        'site_id': siteClinicaGdl,
         'visit_type': 'valoracion',
         'visit_date': isoDate(now.subtract(const Duration(days: 12))),
         'vital_signs': {'ta': '118/76', 'fc': 80, 'temp': 37.1},
@@ -406,7 +464,7 @@ class DemoSeed {
         'id': c5Id,
         'patient_id': p5Id,
         'staff_id': staff2Id,
-        'site_id': siteClinicaNorte,
+        'site_id': siteClinicaGdl,
         'visit_type': 'valoracion',
         'visit_date': isoDate(now.subtract(const Duration(days: 8))),
         'vital_signs': {'ta': '120/78', 'fc': 70, 'temp': 36.5},
@@ -721,6 +779,7 @@ class DemoSeed {
     void noteOption(String field, String label) {
       noteOptionRows.add({
         'id': _uuid.v4(),
+        'organization_id': organizationId,
         'field': field,
         'label': label,
         'is_active': true,

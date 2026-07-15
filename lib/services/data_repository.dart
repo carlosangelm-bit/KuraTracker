@@ -131,6 +131,10 @@ class DataRepository {
   List<Site> listSites() =>
       _store.getAll(Collections.sites).map(Site.fromJson).toList();
 
+  /// Crea un sitio nuevo del centro. `site.organizationId` es obligatorio en
+  /// la practica (columna not null en Supabase, ver 0011_organizations.sql):
+  /// el llamador (pantalla de Administracion) debe construir el [Site] con
+  /// `organizationId: session.user!.organizationId`.
   Future<Site> createSite(Site site) async {
     final data = site.toJson();
     if ((data['id'] as String?)?.isEmpty ?? true) data['id'] = _uuid.v4();
@@ -178,9 +182,15 @@ class DataRepository {
     return null;
   }
 
+  /// Crea un registro de personal sanitario. [organizationId] es requerido
+  /// (staff.organization_id not null, ver 0011_organizations.sql): el
+  /// llamador siempre debe pasar `session.user!.organizationId` (el centro
+  /// del admin que da de alta al personal), nunca el del profile vinculado
+  /// (que puede ser null si es alta administrativa sin cuenta).
   Future<StaffMember> createStaff({
     required String fullName,
     required String roleTitle,
+    required String? organizationId,
     String? primarySiteId,
     String? profileId,
     String? cedulaProfesional,
@@ -202,6 +212,7 @@ class DataRepository {
       'is_active': true,
       'created_at': DateTime.now().toIso8601String(),
       'cedula_profesional': cedulaProfesional,
+      'organization_id': organizationId,
     };
     final saved = await _store.insertRow(Collections.staff, data);
     return StaffMember.fromJson(saved);
@@ -262,6 +273,37 @@ class DataRepository {
     return listUsers().where((u) => !linkedProfileIds.contains(u.id)).toList();
   }
 
+  /// Fix admin-clinico (licencia individual, ajuste obligatorio #3): un
+  /// admin que NUNCA recibio una fila de `staff` (p.ej. el admin del seed
+  /// de demo, o un admin creado antes de esta funcion / sin pasar por
+  /// create_organization_with_admin en Supabase) no puede crear una
+  /// consulta porque consultations.staff_id es NOT NULL. En vez de
+  /// bloquear el flujo clinico (como hacian antes ConsultationHubScreen y
+  /// FollowUpCaptureScreen con `if (staffId == null) return`), se
+  /// aprovisiona SU staff de forma perezosa (lazy) la primera vez que se
+  /// necesita: si ya existe una fila de staff vinculada a este profile_id,
+  /// se devuelve su id; si no, se crea una (folio '' -- igual que hace el
+  /// RPC create_organization_with_admin en Postgres, ver
+  /// 0011_organizations.sql secc. 5) y se devuelve el id nuevo.
+  ///
+  /// Se usa desde SessionController (refreshUser/login/restore) para que
+  /// `session.user.staffId` quede resuelto ANTES de que la UI lo lea, sin
+  /// que cada pantalla clinica tenga que conocer este detalle.
+  Future<String> ensureAdminStaffId(AppUser adminUser) async {
+    final existing = _store
+        .getAll(Collections.staff)
+        .where((s) => s['profile_id'] == adminUser.id);
+    if (existing.isNotEmpty) return existing.first['id'] as String;
+
+    final created = await createStaff(
+      fullName: adminUser.fullName,
+      roleTitle: 'Administrador',
+      organizationId: adminUser.organizationId,
+      profileId: adminUser.id,
+    );
+    return created.id;
+  }
+
   // ---------------- Catalogo de conceptos de nota de seguimiento ----------------
   // (note_option_catalog, ver 0010_note_option_catalog.sql). Configurable
   // por el centro (admin) desde el panel de Configuracion; el personal
@@ -298,6 +340,7 @@ class DataRepository {
   Future<NoteOptionCatalogItem> createNoteOption({
     required NoteOptionField field,
     required String label,
+    required String? organizationId,
     String? createdByProfileId,
   }) async {
     final data = {
@@ -306,6 +349,7 @@ class DataRepository {
       'label': label,
       'is_active': true,
       'created_by': createdByProfileId,
+      'organization_id': organizationId,
     };
     final saved = await _store.insertRow(Collections.noteOptionCatalog, data);
     return NoteOptionCatalogItem.fromJson(saved);
@@ -313,6 +357,85 @@ class DataRepository {
 
   Future<void> setNoteOptionActive(String id, bool active) async {
     await _store.updateRow(Collections.noteOptionCatalog, id, {'is_active': active});
+  }
+
+  /// Resultado de una importacion masiva del catalogo desde CSV (pantalla
+  /// de Configuracion): cuantos conceptos se agregaron (no existian),
+  /// cuantos se actualizaron (existian con `activo` distinto al de la
+  /// fila del CSV) y cuantos se omitieron (fila invalida: seccion
+  /// desconocida o concepto vacio).
+  Future<NoteOptionImportSummary> bulkImportNoteOptions(
+    List<NoteOptionImportRow> rows, {
+    required String organizationId,
+    String? createdByProfileId,
+  }) async {
+    var added = 0;
+    var updated = 0;
+    var skipped = 0;
+    final errors = <String>[];
+
+    // Todos los conceptos actuales del centro (activos e inactivos), para
+    // poder decidir merge (agregar vs actualizar) sin duplicar por
+    // (field, label) dentro de esta misma organizacion.
+    final existingByFieldLabel = <String, NoteOptionCatalogItem>{};
+    for (final field in NoteOptionField.values) {
+      for (final o in listAllNoteOptions(field)) {
+        existingByFieldLabel['${field.dbValue}::${o.label.trim().toLowerCase()}'] = o;
+      }
+    }
+
+    for (var i = 0; i < rows.length; i++) {
+      final row = rows[i];
+      final rowNum = i + 2; // +1 encabezado, +1 base-1 para el usuario
+      final field = NoteOptionFieldDb.fromCsvSeccion(row.seccion);
+      final label = row.concepto.trim();
+      if (field == null) {
+        skipped++;
+        errors.add('Fila $rowNum: sección "${row.seccion}" no reconocida (omitida).');
+        continue;
+      }
+      if (label.isEmpty) {
+        skipped++;
+        errors.add('Fila $rowNum: concepto vacío (omitida).');
+        continue;
+      }
+
+      final key = '${field.dbValue}::${label.toLowerCase()}';
+      final existing = existingByFieldLabel[key];
+      if (existing == null) {
+        final created = await createNoteOption(
+          field: field,
+          label: label,
+          organizationId: organizationId,
+          createdByProfileId: createdByProfileId,
+        );
+        existingByFieldLabel[key] = created;
+        added++;
+      } else if (existing.isActive != row.activo) {
+        await setNoteOptionActive(existing.id, row.activo);
+        existingByFieldLabel[key] = NoteOptionCatalogItem(
+          id: existing.id,
+          field: existing.field,
+          label: existing.label,
+          isActive: row.activo,
+          createdBy: existing.createdBy,
+          organizationId: existing.organizationId,
+        );
+        updated++;
+      }
+      // Si existe y `activo` ya coincide: no-op (no cuenta como agregado
+      // ni actualizado; se refleja en skipped=false pero tampoco se
+      // reporta como error, simplemente no incrementa ningun contador
+      // "de cambio" -- el resumen final solo informa added/updated/skipped
+      // donde skipped es exclusivamente filas invalidas).
+    }
+
+    return NoteOptionImportSummary(
+      added: added,
+      updated: updated,
+      skipped: skipped,
+      errors: errors,
+    );
   }
 
   List<Patient> listPatientsForStaff(String staffId) {
@@ -334,8 +457,13 @@ class DataRepository {
     return match.isEmpty ? null : Patient.fromJson(match.first);
   }
 
+  /// Crea un expediente de paciente. [organizationId] es requerido
+  /// (patients.organization_id not null, ver 0011_organizations.sql --
+  /// aislamiento critico de pacientes entre centros): el llamador siempre
+  /// debe pasar `session.user!.organizationId`.
   Future<Patient> createPatient({
     required String fullName,
+    required String? organizationId,
     DateTime? birthDate,
     String? sex,
     String? primarySiteId,
@@ -370,6 +498,7 @@ class DataRepository {
       'ekare_external_id': null,
       'is_active': true,
       'created_at': DateTime.now().toIso8601String(),
+      'organization_id': organizationId,
     };
     final saved = await _store.insertRow(Collections.patients, data);
     return Patient.fromJson(saved);
@@ -675,4 +804,36 @@ class DataRepository {
   // cliente a audit_log siempre sera rechazado por RLS con 403. Si se
   // necesita registrar una accion adicional, se debe agregar/ajustar el
   // trigger en Postgres, nunca una llamada manual desde el cliente.
+}
+
+/// Una fila cruda del CSV de importacion del catalogo (Configuracion >
+/// catalogo de la nota de seguimiento). `activo` ya viene parseado a bool
+/// (columna CSV "activo" con valores "true"/"false"/"1"/"0"/"si"/"no"; el
+/// parseo tolerante vive en la pantalla que lee el archivo, no aqui).
+class NoteOptionImportRow {
+  final String seccion;
+  final String concepto;
+  final bool activo;
+
+  const NoteOptionImportRow({
+    required this.seccion,
+    required this.concepto,
+    required this.activo,
+  });
+}
+
+/// Resumen de una importacion masiva (bulkImportNoteOptions), mostrado al
+/// admin en un dialogo tras cargar el CSV.
+class NoteOptionImportSummary {
+  final int added;
+  final int updated;
+  final int skipped;
+  final List<String> errors;
+
+  const NoteOptionImportSummary({
+    required this.added,
+    required this.updated,
+    required this.skipped,
+    required this.errors,
+  });
 }

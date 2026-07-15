@@ -44,6 +44,37 @@ extension NoteOptionFieldDb on NoteOptionField {
         return null;
     }
   }
+
+  /// Identificador de columna "seccion" usado en la plantilla CSV de
+  /// importacion/exportacion del catalogo (pantalla de Configuracion).
+  /// Deliberadamente DISTINTO de [dbValue]: el CSV esta pensado para que
+  /// lo edite el admin del centro en Excel/Sheets, con nombres en espanol
+  /// mas cortos y legibles que los identificadores de columna SQL.
+  String get csvSeccion {
+    switch (this) {
+      case NoteOptionField.careType:
+        return 'tipo_atencion';
+      case NoteOptionField.procedureDesc:
+        return 'descripcion';
+      case NoteOptionField.materialsUsed:
+        return 'material';
+      case NoteOptionField.evolution:
+        return 'evolucion';
+    }
+  }
+
+  /// Resuelve un [NoteOptionField] a partir del valor de la columna
+  /// "seccion" de un CSV cargado por el admin. Acepta el valor tal cual
+  /// (case/espacios-insensitive) y retorna null si no coincide con
+  /// ninguna de las 4 secciones validas (fila a rechazar en la
+  /// validacion de importacion).
+  static NoteOptionField? fromCsvSeccion(String? s) {
+    final normalized = s?.trim().toLowerCase();
+    for (final f in NoteOptionField.values) {
+      if (f.csvSeccion == normalized) return f;
+    }
+    return null;
+  }
 }
 
 /// Concepto configurable por el centro (admin) para uno de los campos de
@@ -54,6 +85,12 @@ class NoteOptionCatalogItem {
   final String label;
   final bool isActive;
   final String? createdBy;
+  // Centro (organizacion) dueno de este concepto. Ver 0011_organizations.sql:
+  // note_option_catalog.organization_id (not null). El catalogo es
+  // configurable por centro: dos organizaciones pueden tener conceptos con
+  // el mismo texto sin colisionar (unicidad ahora es por
+  // (organization_id, field, label)).
+  final String? organizationId;
 
   const NoteOptionCatalogItem({
     required this.id,
@@ -61,6 +98,7 @@ class NoteOptionCatalogItem {
     required this.label,
     this.isActive = true,
     this.createdBy,
+    this.organizationId,
   });
 
   factory NoteOptionCatalogItem.fromJson(Map<String, dynamic> json) =>
@@ -71,6 +109,7 @@ class NoteOptionCatalogItem {
         label: json['label'] as String,
         isActive: json['is_active'] as bool? ?? true,
         createdBy: json['created_by'] as String?,
+        organizationId: json['organization_id'] as String?,
       );
 
   Map<String, dynamic> toJson() => {
@@ -79,5 +118,6 @@ class NoteOptionCatalogItem {
         'label': label,
         'is_active': isActive,
         'created_by': createdBy,
+        'organization_id': organizationId,
       };
 }

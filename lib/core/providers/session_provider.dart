@@ -39,8 +39,9 @@ class SessionController extends StateNotifier<SessionState> {
     try {
       final repo = await DataRepository.instance();
       await repo.hydrateAfterLogin();
-      final user = repo.findUserByEmail(authUser.email ?? '');
+      var user = repo.findUserByEmail(authUser.email ?? '');
       if (user != null && user.isActive) {
+        user = await _ensureStaffIdForAdmin(repo, user);
         state = SessionState(user: user, isLoading: false);
         return;
       }
@@ -49,6 +50,28 @@ class SessionController extends StateNotifier<SessionState> {
       // login manual.
     }
     state = state.copyWith(isLoading: false);
+  }
+
+  /// Fix admin-clinico (ajuste obligatorio #3): si el usuario es admin y NO
+  /// tiene staffId resuelto (p.ej. el admin del seed de demo, o cualquier
+  /// admin creado antes de esta funcion / sin pasar por
+  /// create_organization_with_admin en Supabase), le aprovisiona su fila de
+  /// `staff` de forma perezosa aqui mismo -- una sola vez, de forma
+  /// transparente -- para que ConsultationHubScreen/FollowUpCaptureScreen
+  /// vean `session.user.staffId` ya resuelto y no necesiten bloquear el
+  /// flujo ni conocer este detalle de aprovisionamiento.
+  Future<AppUser> _ensureStaffIdForAdmin(DataRepository repo, AppUser user) async {
+    if (user.role != AppRole.admin || user.staffId != null) return user;
+    try {
+      final staffId = await repo.ensureAdminStaffId(user);
+      await repo.hydrateAfterLogin();
+      return repo.findUserByEmail(user.email) ?? user.copyWith(staffId: staffId);
+    } catch (_) {
+      // Si el aprovisionamiento falla (p.ej. RLS/red), se continua sin
+      // staffId: el admin simplemente no podra crear consultas hasta que
+      // se resuelva, pero el resto de la sesion sigue siendo utilizable.
+      return user;
+    }
   }
 
   /// Login. En modo Supabase (produccion) valida email+password real
@@ -71,8 +94,9 @@ class SessionController extends StateNotifier<SessionState> {
 
       final repo = await DataRepository.instance();
       await repo.hydrateAfterLogin();
-      final user = repo.findUserByEmail(email);
+      var user = repo.findUserByEmail(email);
       if (user != null && user.isActive) {
+        user = await _ensureStaffIdForAdmin(repo, user);
         state = SessionState(user: user, isLoading: false);
         return true;
       }
@@ -86,9 +110,10 @@ class SessionController extends StateNotifier<SessionState> {
 
     // Modo demo local (sin credenciales de Supabase configuradas).
     final repo = await DataRepository.instance();
-    final user = repo.findUserByEmail(email);
+    var user = repo.findUserByEmail(email);
     await Future.delayed(const Duration(milliseconds: 400));
     if (user != null && user.isActive) {
+      user = await _ensureStaffIdForAdmin(repo, user);
       state = SessionState(user: user, isLoading: false);
       return true;
     }

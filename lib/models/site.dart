@@ -4,6 +4,11 @@ class Site {
   final String kind; // clinica | domicilio | hospital | otro
   final String? address;
   final bool isActive;
+  // Centro (organizacion) dueno de este sitio. Ver
+  // 0011_organizations.sql: sites.organization_id (not null). El personal
+  // de esa organizacion puede operar en CUALQUIERA de sus sitios (no solo
+  // en su primary_site_id, que es solo un default opcional).
+  final String? organizationId;
 
   const Site({
     required this.id,
@@ -11,6 +16,7 @@ class Site {
     required this.kind,
     this.address,
     this.isActive = true,
+    this.organizationId,
   });
 
   factory Site.fromJson(Map<String, dynamic> json) => Site(
@@ -19,6 +25,7 @@ class Site {
         kind: json['kind'] as String? ?? 'clinica',
         address: json['address'] as String?,
         isActive: json['is_active'] as bool? ?? true,
+        organizationId: json['organization_id'] as String?,
       );
 
   Map<String, dynamic> toJson() => {
@@ -27,5 +34,6 @@ class Site {
         'kind': kind,
         'address': address,
         'is_active': isActive,
+        'organization_id': organizationId,
       };
 }

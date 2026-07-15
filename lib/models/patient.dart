@@ -16,6 +16,10 @@ class Patient {
   final String? ekareExternalId;
   final bool isActive;
   final DateTime createdAt;
+  // Centro (organizacion) dueno del expediente. Ver 0011_organizations.sql:
+  // patients.organization_id (not null) -- aisla el expediente entre
+  // centros distintos (RLS: un admin solo ve pacientes de SU organizacion).
+  final String? organizationId;
 
   const Patient({
     required this.id,
@@ -33,6 +37,7 @@ class Patient {
     this.ekareExternalId,
     this.isActive = true,
     required this.createdAt,
+    this.organizationId,
   });
 
   int? get age {
@@ -64,6 +69,7 @@ class Patient {
         ekareExternalId: json['ekare_external_id'] as String?,
         isActive: json['is_active'] as bool? ?? true,
         createdAt: DateTime.parse(json['created_at'] as String),
+        organizationId: json['organization_id'] as String?,
       );
 
   Map<String, dynamic> toJson() => {
@@ -82,6 +88,7 @@ class Patient {
         'ekare_external_id': ekareExternalId,
         'is_active': isActive,
         'created_at': createdAt.toIso8601String(),
+        'organization_id': organizationId,
       };
 }
 

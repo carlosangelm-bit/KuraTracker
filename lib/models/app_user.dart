@@ -24,6 +24,10 @@ class AppUser {
   final bool isActive;
   final bool premiumEnabled;
   final String? staffId; // vinculo a staff.id si role == clinico
+  // Centro (organizacion) al que pertenece este usuario. Ver
+  // 0011_organizations.sql: profiles.organization_id (not null); es la
+  // fuente de verdad que usa current_organization_id() en RLS.
+  final String? organizationId;
 
   const AppUser({
     required this.id,
@@ -33,6 +37,7 @@ class AppUser {
     this.isActive = true,
     this.premiumEnabled = false,
     this.staffId,
+    this.organizationId,
   });
 
   factory AppUser.fromJson(Map<String, dynamic> json) => AppUser(
@@ -43,6 +48,7 @@ class AppUser {
         isActive: json['is_active'] as bool? ?? true,
         premiumEnabled: json['premium_enabled'] as bool? ?? false,
         staffId: json['staff_id'] as String?,
+        organizationId: json['organization_id'] as String?,
       );
 
   Map<String, dynamic> toJson() => {
@@ -53,15 +59,17 @@ class AppUser {
         'is_active': isActive,
         'premium_enabled': premiumEnabled,
         'staff_id': staffId,
+        'organization_id': organizationId,
       };
 
-  AppUser copyWith({bool? premiumEnabled, bool? isActive}) => AppUser(
+  AppUser copyWith({bool? premiumEnabled, bool? isActive, String? staffId}) => AppUser(
         id: id,
         role: role,
         fullName: fullName,
         email: email,
         isActive: isActive ?? this.isActive,
         premiumEnabled: premiumEnabled ?? this.premiumEnabled,
-        staffId: staffId,
+        staffId: staffId ?? this.staffId,
+        organizationId: organizationId,
       );
 }
