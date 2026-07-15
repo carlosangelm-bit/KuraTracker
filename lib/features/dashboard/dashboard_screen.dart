@@ -8,6 +8,8 @@ import '../../models/app_user.dart';
 import '../../models/patient.dart';
 import '../../models/wound.dart';
 import '../../services/data_repository.dart';
+import '../patients/patient_list_tile.dart';
+import '../patients/patient_wound_summary.dart';
 
 class DashboardScreen extends ConsumerWidget {
   const DashboardScreen({super.key});
@@ -105,12 +107,18 @@ class DashboardScreen extends ConsumerWidget {
                     delegate: SliverChildBuilderDelegate(
                       (context, index) {
                         final patient = patients[index];
-                        final wounds = repo.listWoundsForPatient(patient.id);
+                        // Mismo componente que la vista Lista de
+                        // PatientsListScreen (rediseno): consistencia de
+                        // chips de etiologia entre Dashboard y Pacientes.
+                        // Sin acciones rapidas aqui a proposito -- este es
+                        // solo un resumen, la pantalla completa de
+                        // Pacientes es donde se actua.
+                        final summary = PatientWoundSummary.compute(repo, patient.id);
                         return Padding(
                           padding: const EdgeInsets.only(bottom: 10),
-                          child: _PatientTile(
+                          child: PatientListTile(
                             patient: patient,
-                            activeWounds: wounds.where((w) => w.isActive).length,
+                            summary: summary,
                             onTap: () => context.go('/patients/${patient.id}'),
                           ),
                         );
@@ -198,39 +206,4 @@ class _StatCard extends StatelessWidget {
   }
 }
 
-class _PatientTile extends StatelessWidget {
-  final Patient patient;
-  final int activeWounds;
-  final VoidCallback onTap;
 
-  const _PatientTile({
-    required this.patient,
-    required this.activeWounds,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      child: ListTile(
-        onTap: onTap,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        leading: CircleAvatar(
-          backgroundColor: KuraColors.primary.withOpacity(0.12),
-          child: Text(
-            patient.fullName.isNotEmpty ? patient.fullName[0] : '?',
-            style: const TextStyle(color: KuraColors.primary, fontWeight: FontWeight.w800),
-          ),
-        ),
-        title: Text(patient.fullName, style: const TextStyle(fontWeight: FontWeight.w600)),
-        subtitle: Text('${patient.folio} · ${patient.age ?? '?'} años'),
-        trailing: Chip(
-          label: Text('$activeWounds herida${activeWounds == 1 ? '' : 's'}'),
-          backgroundColor: activeWounds > 0
-              ? KuraColors.primary.withOpacity(0.1)
-              : KuraColors.chipBg,
-        ),
-      ),
-    );
-  }
-}

@@ -10,6 +10,7 @@ import '../../features/patients/patients_list_screen.dart';
 import '../../features/patients/patient_detail_screen.dart';
 import '../../features/patients/patient_form_screen.dart';
 import '../../features/consultation/consultation_hub_screen.dart';
+import '../../models/consultation.dart';
 import '../../features/wound_capture/wound_capture_screen.dart';
 import '../../features/follow_up/follow_up_screen.dart';
 import '../../features/follow_up/follow_up_capture_screen.dart';
@@ -91,8 +92,17 @@ final routerProvider = Provider<GoRouter>((ref) {
           ),
           GoRoute(
             path: '/patients/:patientId/consultation/new',
-            builder: (context, state) =>
-                ConsultationHubScreen(patientId: state.pathParameters['patientId']!),
+            builder: (context, state) {
+              final visitTypeParam = state.uri.queryParameters['visitType'];
+              final visitType = VisitType.values.firstWhere(
+                (v) => v.name == visitTypeParam,
+                orElse: () => VisitType.valoracion,
+              );
+              return ConsultationHubScreen(
+                patientId: state.pathParameters['patientId']!,
+                initialVisitType: visitType,
+              );
+            },
           ),
           GoRoute(
             path: '/patients/:patientId/wound/:woundId/capture',
