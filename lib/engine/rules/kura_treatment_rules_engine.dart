@@ -15,7 +15,7 @@ import '../models/kura_engine_output.dart';
 /// interconsulta urgente a angiología. Esta regla se aplica sin
 /// excepciones, independientemente del escenario pronosticado.
 class KuraTreatmentRulesEngine {
-  static const String rulesVersion = 'kura_rules_v1';
+  static const String rulesVersion = 'kura_rules_v2';
 
   /// Genera el régimen completo de tratamiento + interconsultas + alertas.
   static ({
@@ -31,7 +31,11 @@ class KuraTreatmentRulesEngine {
     final alertas = <String>[];
 
     final isquemiaCritica = input.isquemiaCritica;
-    final hayInfeccion = input.hayInfeccion;
+    // kura_rules_v2: la infeccion se escalona en dos niveles.
+    // - sospechaInfeccionLocal: >=2 factores locales significativos.
+    // - infeccionPropagada: eritema >2cm, celulitis, fiebre o malestar general.
+    final sospechaInfeccionLocal = input.sospechaInfeccionLocal;
+    final infeccionPropagada = input.infeccionPropagada;
     final composicionDesbridable = input.necrosisPct + input.esfaceloPct;
 
     // ---- 1. Limpieza en cada cambio de aposito (siempre) ----
@@ -106,12 +110,37 @@ class KuraTreatmentRulesEngine {
       ));
     }
 
-    // ---- 6. Antimicrobiano topico si hay infeccion ----
-    if (hayInfeccion) {
+    // ---- 6. Tratamiento escalonado de infeccion (kura_rules_v2) ----
+    // Regla clinica final:
+    // - sospechaInfeccionLocal && !infeccionPropagada -> regimen local +
+    //   antimicrobiano topico (PHMB/plata).
+    // - infeccionPropagada -> interconsulta urgente + tratamiento sistemico /
+    //   referencia hospitalaria; el topico NO se recomienda para propagacion
+    //   (no resuelve infeccion propagada).
+    // - <2 factores locales o solo aumento de exudado -> no hay infeccion ->
+    //   no se agrega antimicrobiano.
+    if (infeccionPropagada) {
       regimen.add(const RegimenComponente(
         metodo: 'Tratamiento para la infección',
-        producto: 'PHMB / plata',
-        justificacion: 'Criterios de infeccion IWII presentes.',
+        producto: 'Tratamiento sistémico / referencia hospitalaria',
+        justificacion: 'Infeccion propagada (eritema >2cm, celulitis, fiebre '
+            'o malestar general). Requiere manejo sistemico; el '
+            'antimicrobiano topico no resuelve infeccion propagada.',
+      ));
+      interconsultas.add(const Interconsulta(
+        especialidad: 'Infectologia / Cirugia',
+        motivo: 'Infeccion propagada: eritema >2cm, celulitis, fiebre o '
+            'malestar general. Se requiere tratamiento sistemico y '
+            'valoracion hospitalaria.',
+        esUrgente: true,
+      ));
+    } else if (sospechaInfeccionLocal) {
+      regimen.add(RegimenComponente(
+        metodo: 'Tratamiento para la infección',
+        producto: 'PHMB / plata (antimicrobiano tópico)',
+        justificacion: 'Sospecha de infeccion local: '
+            '${input.nFactoresLocalesInfeccion} factores locales '
+            'significativos presentes (>=2).',
       ));
     }
 
@@ -145,7 +174,7 @@ class KuraTreatmentRulesEngine {
         _applyVascularRules(
           input: input,
           isquemiaCritica: isquemiaCritica,
-          hayInfeccion: hayInfeccion,
+          hayInfeccionActiva: sospechaInfeccionLocal || infeccionPropagada,
           regimen: regimen,
           interconsultas: interconsultas,
           alertas: alertas,
@@ -172,23 +201,21 @@ class KuraTreatmentRulesEngine {
     }
 
     // ---- 9. Interconsultas automaticas generales ----
+    // NOTA: la interconsulta urgente de infeccion propagada ya se agrega en
+    // el paso 6 (Infectologia/Cirugia). Aqui se mantiene una interconsulta
+    // adicional a Cirugia por necrosis extensa y/o propagacion, ya que ambos
+    // escenarios pueden requerir valoracion quirurgica independiente de la
+    // infectologica.
     final necrosisExtensa = input.necrosisPct >= 30;
-    final infeccionSistemica = input.infeccionCriterios.contains(
-          InfeccionCriterioIwii.fiebre,
-        ) ||
-        input.infeccionCriterios.contains(
-          InfeccionCriterioIwii.malestarGeneral,
-        ) ||
-        input.infeccionCriterios.contains(InfeccionCriterioIwii.celulitis);
-    if (necrosisExtensa || infeccionSistemica) {
+    if (necrosisExtensa || infeccionPropagada) {
       interconsultas.add(Interconsulta(
         especialidad: 'Cirugia',
-        motivo: necrosisExtensa && infeccionSistemica
-            ? 'Necrosis extensa (>=30%) e infeccion sistemica.'
+        motivo: necrosisExtensa && infeccionPropagada
+            ? 'Necrosis extensa (>=30%) e infeccion propagada.'
             : necrosisExtensa
                 ? 'Necrosis extensa (>=30%).'
-                : 'Infeccion sistemica (criterios IWII sistemicos).',
-        esUrgente: infeccionSistemica,
+                : 'Infeccion propagada (criterios IWII de propagacion).',
+        esUrgente: infeccionPropagada,
       ));
     }
 
@@ -261,7 +288,7 @@ class KuraTreatmentRulesEngine {
   static void _applyVascularRules({
     required KuraEngineInput input,
     required bool isquemiaCritica,
-    required bool hayInfeccion,
+    required bool hayInfeccionActiva,
     required List<RegimenComponente> regimen,
     required List<Interconsulta> interconsultas,
     required List<String> alertas,
@@ -272,9 +299,10 @@ class KuraTreatmentRulesEngine {
       );
       return;
     }
-    if (hayInfeccion) {
+    if (hayInfeccionActiva) {
       alertas.add(
-        'Compresion graduada diferida hasta controlar la infeccion activa.',
+        'Compresion graduada diferida hasta controlar la infeccion activa '
+        '(sospecha local o propagada).',
       );
       return;
     }

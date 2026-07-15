@@ -558,7 +558,7 @@ class _WoundCaptureScreenState extends ConsumerState<WoundCaptureScreen> {
                 children: InfeccionCriterioIwii.values.map((c) {
                   final selected = formState.infeccionCriterios.contains(c);
                   return FilterChip(
-                    label: Text(c.name, style: const TextStyle(fontSize: 12)),
+                    label: Text(c.label, style: const TextStyle(fontSize: 12)),
                     selected: selected,
                     selectedColor: KuraColors.danger.withOpacity(0.15),
                     onSelected: (v) => update(() {

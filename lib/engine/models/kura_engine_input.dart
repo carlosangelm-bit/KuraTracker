@@ -102,7 +102,35 @@ class KuraEngineInput {
     return AlbCategory.low;
   }
 
-  bool get hayInfeccion => infeccionCriterios.isNotEmpty;
+  /// Factores locales significativos de infeccion (kura_rules_v2), segun
+  /// criterios finales clinicos. NOTA: "aumento de exudado" (exudadoAumentado)
+  /// NO es un factor local valido por si mismo y queda excluido a proposito.
+  static const Set<InfeccionCriterioIwii> _factoresLocalesSignificativos = {
+    InfeccionCriterioIwii.exudadoPurulento, // exudado purulento/seropurulento
+    InfeccionCriterioIwii.eritemaPerilesional, // eritema local (<=2 cm)
+    InfeccionCriterioIwii.calorLocal, // aumento de temperatura / calor local
+    InfeccionCriterioIwii.tejidoFriable, // tejido friable
+    InfeccionCriterioIwii.induracion, // induracion
+    InfeccionCriterioIwii.dolorAumentado, // sensibilidad/dolor aumentado
+    InfeccionCriterioIwii.olorAumentado, // olor
+  };
+
+  /// Numero de factores locales significativos presentes.
+  int get nFactoresLocalesInfeccion =>
+      infeccionCriterios.intersection(_factoresLocalesSignificativos).length;
+
+  /// Sospecha de infeccion LOCAL (kura_rules_v2): dos o mas factores locales
+  /// significativos presentes. Reemplaza al antiguo
+  /// `hayInfeccion = infeccionCriterios.isNotEmpty`.
+  bool get sospechaInfeccionLocal => nFactoresLocalesInfeccion >= 2;
+
+  /// Infeccion PROPAGADA (kura_rules_v2): cualquier signo sistemico o de
+  /// extension mas alla del lecho/borde local.
+  bool get infeccionPropagada =>
+      infeccionCriterios.contains(InfeccionCriterioIwii.eritemaMayor2cm) ||
+      infeccionCriterios.contains(InfeccionCriterioIwii.celulitis) ||
+      infeccionCriterios.contains(InfeccionCriterioIwii.fiebre) ||
+      infeccionCriterios.contains(InfeccionCriterioIwii.malestarGeneral);
 
   bool get isquemiaCritica => abiCategory == AbiCategory.low;
 
