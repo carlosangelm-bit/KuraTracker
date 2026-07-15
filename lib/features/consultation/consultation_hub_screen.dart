@@ -14,7 +14,16 @@ import '../../services/data_repository.dart';
 /// Reduce friccion: 1 pantalla en lugar de encabezado + 3 pasos separados.
 class ConsultationHubScreen extends ConsumerStatefulWidget {
   final String patientId;
-  const ConsultationHubScreen({super.key, required this.patientId});
+  // Preseleccion del tipo de visita (rediseno de PatientsListScreen: el
+  // boton rapido "Valoración" de la tarjeta/lista navega aqui). El default
+  // ya es VisitType.valoracion, pero se acepta explicito via query param
+  // para no depender solo del default si este cambia en el futuro.
+  final VisitType initialVisitType;
+  const ConsultationHubScreen({
+    super.key,
+    required this.patientId,
+    this.initialVisitType = VisitType.valoracion,
+  });
 
   @override
   ConsumerState<ConsultationHubScreen> createState() => _ConsultationHubScreenState();
@@ -22,7 +31,7 @@ class ConsultationHubScreen extends ConsumerStatefulWidget {
 
 class _ConsultationHubScreenState extends ConsumerState<ConsultationHubScreen> {
   DateTime _visitDate = DateTime.now();
-  VisitType _visitType = VisitType.valoracion;
+  late VisitType _visitType = widget.initialVisitType;
   String? _siteId;
   bool _creating = false;
 
