@@ -3,7 +3,7 @@ module.exports = {
     {
       name: 'kuratracker-web',
       script: 'python3',
-      args: '-m http.server 3000 --directory build/web',
+      args: 'serve_spa.py',
       watch: false,
       instances: 1,
       exec_mode: 'fork'
