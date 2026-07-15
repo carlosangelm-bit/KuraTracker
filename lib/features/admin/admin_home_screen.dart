@@ -803,7 +803,7 @@ class _NoteCatalogTabState extends State<_NoteCatalogTab> {
         setState(() {});
         await showDialog<void>(
           context: context,
-          builder: (_) => AlertDialog(
+          builder: (dialogCtx) => AlertDialog(
             title: const Text('Resumen de importación'),
             content: Column(
               mainAxisSize: MainAxisSize.min,
@@ -821,7 +821,7 @@ class _NoteCatalogTabState extends State<_NoteCatalogTab> {
             ),
             actions: [
               TextButton(
-                onPressed: () => Navigator.pop(context),
+                onPressed: () => Navigator.pop(dialogCtx),
                 child: const Text('Cerrar'),
               ),
             ],
@@ -976,7 +976,7 @@ Future<String?> _promptForLabel(BuildContext context, {required String title}) {
   final ctrl = TextEditingController();
   return showDialog<String>(
     context: context,
-    builder: (_) => AlertDialog(
+    builder: (dialogCtx) => AlertDialog(
       title: Text(title),
       content: TextField(
         controller: ctrl,
@@ -985,11 +985,11 @@ Future<String?> _promptForLabel(BuildContext context, {required String title}) {
       ),
       actions: [
         TextButton(
-          onPressed: () => Navigator.pop(context),
+          onPressed: () => Navigator.pop(dialogCtx),
           child: const Text('Cancelar'),
         ),
         FilledButton(
-          onPressed: () => Navigator.pop(context, ctrl.text),
+          onPressed: () => Navigator.pop(dialogCtx, ctrl.text),
           style: FilledButton.styleFrom(backgroundColor: KuraColors.primary),
           child: const Text('Guardar'),
         ),

@@ -69,14 +69,14 @@ class _ImportExportScreenState extends State<ImportExportScreen> {
     if (mounted) {
       showDialog(
         context: context,
-        builder: (_) => AlertDialog(
+        builder: (dialogCtx) => AlertDialog(
           title: const Text('Exportación CSV generada'),
           content: SizedBox(
             width: 500,
             child: SingleChildScrollView(child: Text(csv)),
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cerrar')),
+            TextButton(onPressed: () => Navigator.pop(dialogCtx), child: const Text('Cerrar')),
           ],
         ),
       );
