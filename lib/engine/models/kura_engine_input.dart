@@ -132,6 +132,16 @@ class KuraEngineInput {
       infeccionCriterios.contains(InfeccionCriterioIwii.fiebre) ||
       infeccionCriterios.contains(InfeccionCriterioIwii.malestarGeneral);
 
+  /// Infeccion SISTEMICA (kura_rules_v2): subconjunto de infeccionPropagada
+  /// confirmado clinicamente (celulitis incluida). Rige EXCLUSIVAMENTE la
+  /// suspension de la compresion venosa graduada; NO se usa para el
+  /// tratamiento topico-vs-sistemico (eso sigue usando infeccionPropagada
+  /// completo, que incluye eritemaMayor2cm).
+  bool get infeccionSistemica =>
+      infeccionCriterios.contains(InfeccionCriterioIwii.celulitis) ||
+      infeccionCriterios.contains(InfeccionCriterioIwii.fiebre) ||
+      infeccionCriterios.contains(InfeccionCriterioIwii.malestarGeneral);
+
   bool get isquemiaCritica => abiCategory == AbiCategory.low;
 
   Map<String, dynamic> toJson() => {

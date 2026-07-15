@@ -36,6 +36,10 @@ class KuraTreatmentRulesEngine {
     // - infeccionPropagada: eritema >2cm, celulitis, fiebre o malestar general.
     final sospechaInfeccionLocal = input.sospechaInfeccionLocal;
     final infeccionPropagada = input.infeccionPropagada;
+    // kura_rules_v2 (correccion): infeccionSistemica es el subconjunto de
+    // infeccionPropagada confirmado clinicamente (celulitis/fiebre/malestar).
+    // Rige EXCLUSIVAMENTE la suspension de la compresion venosa graduada.
+    final infeccionSistemica = input.infeccionSistemica;
     final composicionDesbridable = input.necrosisPct + input.esfaceloPct;
 
     // ---- 1. Limpieza en cada cambio de aposito (siempre) ----
@@ -174,7 +178,7 @@ class KuraTreatmentRulesEngine {
         _applyVascularRules(
           input: input,
           isquemiaCritica: isquemiaCritica,
-          hayInfeccionActiva: sospechaInfeccionLocal || infeccionPropagada,
+          infeccionSistemica: infeccionSistemica,
           regimen: regimen,
           interconsultas: interconsultas,
           alertas: alertas,
@@ -288,7 +292,7 @@ class KuraTreatmentRulesEngine {
   static void _applyVascularRules({
     required KuraEngineInput input,
     required bool isquemiaCritica,
-    required bool hayInfeccionActiva,
+    required bool infeccionSistemica,
     required List<RegimenComponente> regimen,
     required List<Interconsulta> interconsultas,
     required List<String> alertas,
@@ -299,12 +303,25 @@ class KuraTreatmentRulesEngine {
       );
       return;
     }
-    if (hayInfeccionActiva) {
+    // kura_rules_v2 (correccion): la compresion solo se SUSPENDE ante
+    // infeccion sistemica confirmada (celulitis, fiebre o malestar general).
+    if (infeccionSistemica) {
       alertas.add(
-        'Compresion graduada diferida hasta controlar la infeccion activa '
-        '(sospecha local o propagada).',
+        'Compresion graduada SUSPENDIDA hasta controlar la infeccion '
+        'sistemica (celulitis, fiebre o malestar general).',
       );
       return;
+    }
+    // Sospecha de infeccion local o eritema >2cm aislado (sin
+    // celulitis/fiebre/malestar general): la compresion CONTINUA con
+    // vigilancia estrecha. En este punto infeccionSistemica ya es false, por
+    // lo que input.infeccionPropagada solo puede provenir de eritemaMayor2cm.
+    if (input.sospechaInfeccionLocal || input.infeccionPropagada) {
+      alertas.add(
+        'Compresion graduada CONTINUA con vigilancia estrecha: sospecha de '
+        'infeccion local o eritema >2cm aislado, sin criterios de infeccion '
+        'sistemica (celulitis/fiebre/malestar general).',
+      );
     }
     final categoria = input.abiCategory;
     String nivel;
