@@ -29,6 +29,14 @@ class DemoSeed {
     // 0011_organizations.sql: el centro es el tenant raiz; sitios, personal,
     // pacientes y catalogo de notas quedan aislados por organizationId.
     final organizationId = _uuid.v4();
+    // Segundo centro (0012_master_role.sql): existe UNICAMENTE para poder
+    // demostrar/probar en el modo demo local que el rol master ve y
+    // administra estructura de TODOS los centros, no solo de Kura+. No
+    // tiene pacientes propios (fuera del alcance de master, ver regla de
+    // oro), solo un sitio y un miembro de personal minimos para que el
+    // selector de centro en PlatformHomeScreen tenga algo real que
+    // mostrar al cambiar de organizacion.
+    final organizationId2 = _uuid.v4();
 
     await store.saveAll(Collections.organizations, [
       {
@@ -36,6 +44,12 @@ class DemoSeed {
         'name': 'Kura+',
         'is_active': true,
         'created_at': iso(now.subtract(const Duration(days: 400))),
+      },
+      {
+        'id': organizationId2,
+        'name': 'Clínica Vitalis',
+        'is_active': true,
+        'created_at': iso(now.subtract(const Duration(days: 30))),
       },
     ]);
 
@@ -47,6 +61,7 @@ class DemoSeed {
     final siteClinicaGdl = _uuid.v4();
     final siteDomicilioCdmx = _uuid.v4();
     final siteDomicilioGdl = _uuid.v4();
+    final siteVitalisMty = _uuid.v4();
 
     await store.saveAll(Collections.sites, [
       {
@@ -81,12 +96,33 @@ class DemoSeed {
         'address': null,
         'is_active': true,
       },
+      // Sitio del segundo centro (Clinica Vitalis), ver comentario en
+      // organizationId2 mas arriba.
+      {
+        'id': siteVitalisMty,
+        'organization_id': organizationId2,
+        'name': 'Vitalis Clinica Monterrey',
+        'kind': 'clinica',
+        'address': 'Av. Constitucion 789, Monterrey',
+        'is_active': true,
+      },
     ]);
 
     // ---------------- Usuarios / Perfiles ----------------
     final adminProfileId = _uuid.v4();
     final clinico1ProfileId = _uuid.v4();
     final clinico2ProfileId = _uuid.v4();
+    // Usuario master (administrador de plataforma, ver
+    // 0012_master_role.sql): NO pertenece a ninguna organizacion en
+    // particular (organization_id null) -- administra estructura de
+    // TODOS los centros via el area "Plataforma", nunca a traves del
+    // panel de Administracion (que sigue acotado por organizacion para
+    // el rol admin normal).
+    final masterProfileId = _uuid.v4();
+    // Admin propio del segundo centro (Clinica Vitalis), para poder
+    // verificar en la demo que un admin normal de OTRO centro sigue sin
+    // ver nada de Kura+ (y viceversa), mientras que el master ve ambos.
+    final adminVitalisProfileId = _uuid.v4();
 
     await store.saveAll(Collections.profiles, [
       {
@@ -116,6 +152,24 @@ class DemoSeed {
         'is_active': true,
         'premium_enabled': false,
       },
+      {
+        'id': masterProfileId,
+        'organization_id': null,
+        'role': 'master',
+        'full_name': 'Master KuraTracker',
+        'email': 'master@kuratracker.mx',
+        'is_active': true,
+        'premium_enabled': false,
+      },
+      {
+        'id': adminVitalisProfileId,
+        'organization_id': organizationId2,
+        'role': 'admin',
+        'full_name': 'Administradora Vitalis',
+        'email': 'admin@vitalis.mx',
+        'is_active': true,
+        'premium_enabled': false,
+      },
     ]);
 
     // ---------------- Personal sanitario ----------------
@@ -129,6 +183,7 @@ class DemoSeed {
     final adminStaffId = _uuid.v4();
     final staff1Id = _uuid.v4();
     final staff2Id = _uuid.v4();
+    final adminVitalisStaffId = _uuid.v4();
 
     await store.saveAll(Collections.staff, [
       {
@@ -163,6 +218,19 @@ class DemoSeed {
         'primary_site_id': siteClinicaGdl,
         'is_active': true,
         'created_at': iso(now.subtract(const Duration(days: 250))),
+      },
+      // Staff del admin de Clinica Vitalis (segundo centro, ver
+      // organizationId2 mas arriba) -- mismo patron que adminStaffId.
+      {
+        'id': adminVitalisStaffId,
+        'organization_id': organizationId2,
+        'profile_id': adminVitalisProfileId,
+        'folio': '',
+        'full_name': 'Administradora Vitalis',
+        'role_title': 'Administrador',
+        'primary_site_id': siteVitalisMty,
+        'is_active': true,
+        'created_at': iso(now.subtract(const Duration(days: 30))),
       },
     ]);
 

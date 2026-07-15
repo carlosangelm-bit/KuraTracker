@@ -1,4 +1,10 @@
-enum AppRole { admin, clinico }
+// `master`: administrador de plataforma (ver 0012_master_role.sql). A
+// diferencia de `admin` (acotado a su propia organizacion via RLS), un
+// master administra estructura (organizations/sites/staff/
+// note_option_catalog) de TODOS los centros. NO tiene acceso a datos
+// clinicos de pacientes ajenos -- esas policies (0003/0011) no le dan
+// ninguna excepcion.
+enum AppRole { admin, clinico, master }
 
 extension AppRoleLabel on AppRole {
   String get label {
@@ -7,10 +13,14 @@ extension AppRoleLabel on AppRole {
         return 'Administrador';
       case AppRole.clinico:
         return 'Personal sanitario';
+      case AppRole.master:
+        return 'Administrador de plataforma';
     }
   }
 
   String get dbValue => name;
+
+  bool get isMaster => this == AppRole.master;
 
   static AppRole fromDb(String s) =>
       AppRole.values.firstWhere((e) => e.name == s, orElse: () => AppRole.clinico);
@@ -39,6 +49,14 @@ class AppUser {
     this.staffId,
     this.organizationId,
   });
+
+  /// true si este usuario es el administrador de plataforma (rol
+  /// `master`, ver 0012_master_role.sql). No confundir con `admin`
+  /// (administrador de UNA organizacion): un master no esta atado a una
+  /// sola organizacion y las pantallas de administracion deben ofrecerle
+  /// un selector de centro en vez de auto-filtrar por su
+  /// organizationId (que ademas puede ser null para un master).
+  bool get isMaster => role == AppRole.master;
 
   factory AppUser.fromJson(Map<String, dynamic> json) => AppUser(
         id: json['id'] as String,

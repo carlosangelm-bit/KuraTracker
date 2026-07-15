@@ -81,11 +81,11 @@ class _AdminHomeScreenState extends ConsumerState<AdminHomeScreen>
         data: (repo) {
           switch (_tab) {
             case 1:
-              return _StaffTab(repo: repo, organizationId: organizationId);
+              return StaffTab(repo: repo, organizationId: organizationId);
             case 2:
-              return _SitesTab(repo: repo, organizationId: organizationId);
+              return SitesTab(repo: repo, organizationId: organizationId);
             case 3:
-              return _NoteCatalogTab(repo: repo, organizationId: organizationId);
+              return NoteCatalogTab(repo: repo, organizationId: organizationId);
             default:
               return _UsersTab(repo: repo);
           }
@@ -169,18 +169,18 @@ class _UsersTabState extends State<_UsersTab> {
   }
 }
 
-class _StaffTab extends StatefulWidget {
+class StaffTab extends StatefulWidget {
   final DataRepository repo;
   final String? organizationId;
-  const _StaffTab({required this.repo, required this.organizationId});
+  const StaffTab({required this.repo, required this.organizationId});
 
   @override
-  State<_StaffTab> createState() => _StaffTabState();
+  State<StaffTab> createState() => _StaffTabState();
 }
 
-class _StaffTabState extends State<_StaffTab> {
+class _StaffTabState extends State<StaffTab> {
   Future<void> _openStaffForm({StaffMember? existing}) async {
-    final sites = widget.repo.listSites();
+    final sites = widget.repo.listSites(organizationId: widget.organizationId);
     // Candidatos para vincular profile_id: perfiles sin fila en staff aun,
     // mas -si estamos editando- el profile ya vinculado a este registro
     // (para no desaparecerlo de la lista al abrir el formulario).
@@ -207,7 +207,7 @@ class _StaffTabState extends State<_StaffTab> {
 
   @override
   Widget build(BuildContext context) {
-    final staff = widget.repo.listStaff();
+    final staff = widget.repo.listStaff(organizationId: widget.organizationId);
     return Scaffold(
       body: staff.isEmpty
           ? const _EmptyState(
@@ -231,7 +231,21 @@ class _StaffTabState extends State<_StaffTab> {
                   child: ListTile(
                     leading: CircleAvatar(
                       backgroundColor: KuraColors.primary.withOpacity(0.12),
-                      child: Text(s.folio.substring(1, 3)),
+                      // Bug encontrado en verificacion E2E de Plataforma
+                      // (master, tarea 9): el folio de un staff de alta
+                      // administrativa (p.ej. el admin de un centro nuevo,
+                      // ver ensureAdminStaffId()/DemoSeed Vitalis) puede ser
+                      // '' (no sigue el patron K<year>-NNNN), y
+                      // .substring(1,3) sobre '' lanza RangeError y tira
+                      // toda la pantalla. Se usa un fallback seguro con las
+                      // iniciales del nombre cuando el folio es muy corto.
+                      child: Text(
+                        s.folio.length >= 3
+                            ? s.folio.substring(1, 3)
+                            : s.fullName.trim().isEmpty
+                                ? '?'
+                                : s.fullName.trim().substring(0, 1).toUpperCase(),
+                      ),
                     ),
                     title: Text(s.fullName),
                     subtitle: Text(
@@ -470,16 +484,16 @@ class _StaffFormDialogState extends State<_StaffFormDialog> {
   }
 }
 
-class _SitesTab extends StatefulWidget {
+class SitesTab extends StatefulWidget {
   final DataRepository repo;
   final String? organizationId;
-  const _SitesTab({required this.repo, required this.organizationId});
+  const SitesTab({required this.repo, required this.organizationId});
 
   @override
-  State<_SitesTab> createState() => _SitesTabState();
+  State<SitesTab> createState() => _SitesTabState();
 }
 
-class _SitesTabState extends State<_SitesTab> {
+class _SitesTabState extends State<SitesTab> {
   Future<void> _openSiteForm({Site? existing}) async {
     final saved = await showDialog<bool>(
       context: context,
@@ -494,7 +508,7 @@ class _SitesTabState extends State<_SitesTab> {
 
   @override
   Widget build(BuildContext context) {
-    final sites = widget.repo.listSites();
+    final sites = widget.repo.listSites(organizationId: widget.organizationId);
     return Scaffold(
       body: sites.isEmpty
           ? const _EmptyState(
@@ -702,16 +716,16 @@ class _SiteFormDialogState extends State<_SiteFormDialog> {
 /// Agregar/editar/desactivar aquí es lo único que persiste conceptos al
 /// catálogo del centro; el personal clínico solo los selecciona como
 /// chips al capturar una nota (ver follow_up_capture_screen.dart).
-class _NoteCatalogTab extends StatefulWidget {
+class NoteCatalogTab extends StatefulWidget {
   final DataRepository repo;
   final String? organizationId;
-  const _NoteCatalogTab({required this.repo, required this.organizationId});
+  const NoteCatalogTab({required this.repo, required this.organizationId});
 
   @override
-  State<_NoteCatalogTab> createState() => _NoteCatalogTabState();
+  State<NoteCatalogTab> createState() => _NoteCatalogTabState();
 }
 
-class _NoteCatalogTabState extends State<_NoteCatalogTab> {
+class _NoteCatalogTabState extends State<NoteCatalogTab> {
   NoteOptionField _selectedField = NoteOptionField.careType;
   bool _importing = false;
 
@@ -744,7 +758,7 @@ class _NoteCatalogTabState extends State<_NoteCatalogTab> {
       ['seccion', 'concepto', 'activo'],
     ];
     for (final field in NoteOptionField.values) {
-      for (final o in widget.repo.listAllNoteOptions(field)) {
+      for (final o in widget.repo.listAllNoteOptions(field, organizationId: widget.organizationId)) {
         rows.add([field.csvSeccion, o.label, o.isActive ? 'true' : 'false']);
       }
     }
@@ -860,7 +874,7 @@ class _NoteCatalogTabState extends State<_NoteCatalogTab> {
   //
   // IMPORTANTE (bug #8, pantalla en blanco): el dialogo de confirmacion
   // usa builder: (dialogCtx) => ... y Navigator.pop(dialogCtx, ...) -- el
-  // context propio del dialogo, no el context externo de _NoteCatalogTab.
+  // context propio del dialogo, no el context externo de NoteCatalogTab.
   // La app usa ShellRoute (navegador anidado): reutilizar el context
   // externo en el pop cierra la ruta de fondo en vez del dialogo, dejando
   // la pantalla en blanco sin ninguna excepcion de Dart capturable.
@@ -901,7 +915,7 @@ class _NoteCatalogTabState extends State<_NoteCatalogTab> {
 
   @override
   Widget build(BuildContext context) {
-    final options = widget.repo.listAllNoteOptions(_selectedField);
+    final options = widget.repo.listAllNoteOptions(_selectedField, organizationId: widget.organizationId);
     return Scaffold(
       body: Column(
         children: [

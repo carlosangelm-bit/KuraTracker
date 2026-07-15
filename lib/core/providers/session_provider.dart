@@ -16,6 +16,7 @@ class SessionState {
 
   bool get isAuthenticated => user != null;
   bool get isAdmin => user?.role == AppRole.admin;
+  bool get isMaster => user?.role == AppRole.master;
 
   SessionState copyWith({AppUser? user, bool? isLoading}) => SessionState(
         user: user ?? this.user,
