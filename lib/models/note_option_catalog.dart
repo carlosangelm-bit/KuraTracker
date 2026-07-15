@@ -112,6 +112,51 @@ class NoteOptionCatalogItem {
         organizationId: json['organization_id'] as String?,
       );
 
+  /// Variante tolerante a filas malformadas (`id`/`label` nulos o de tipo
+  /// inesperado). Devuelve `null` en vez de lanzar, para que un listado
+  /// que mezcla muchas filas (p.ej. `DataRepository.listAllNoteOptions()`,
+  /// leido SIN try/catch desde `build()`) pueda descartar la fila
+  /// invalida sin tumbar toda la pantalla.
+  ///
+  /// Bug corregido (2026-07-15, "pantalla en blanco al crear concepto de
+  /// catalogo"): una fila de `note_option_catalog` con `id` o `label` nulo
+  /// -ya presente en cache antes del alta nueva, no necesariamente la fila
+  /// recien insertada- hacia que `fromJson()` lanzara un TypeError de cast
+  /// no capturado durante el rebuild post-`setState()` de
+  /// `_NoteCatalogTabState._addOption()`, es decir FUERA del try/catch que
+  /// solo envuelve el `await createNoteOption(...)`. En Flutter Web
+  /// release eso se traducia en una pantalla en blanco sin SnackBar (el
+  /// ErrorWidget por defecto es casi invisible), exactamente el sintoma
+  /// reportado. Ver tambien `main.dart` (ErrorWidget.builder global) para
+  /// que, si volviera a ocurrir un caso no cubierto por esta funcion, se
+  /// muestre un mensaje de diagnostico en vez de pantalla en blanco.
+  static NoteOptionCatalogItem? fromJsonOrNull(Map<String, dynamic> json) {
+    final id = json['id'];
+    final label = json['label'];
+    final field = json['field'];
+    final createdBy = json['created_by'];
+    final organizationId = json['organization_id'];
+    final isActive = json['is_active'];
+    // Cada campo se valida por tipo real (`is`) en vez de forzar un cast
+    // (`as`), precisamente porque un cast fallido es lo que causaba el
+    // TypeError no capturado que este metodo existe para evitar.
+    if (id is! String || id.isEmpty) return null;
+    if (label is! String) return null;
+    if (field != null && field is! String) return null;
+    if (createdBy != null && createdBy is! String) return null;
+    if (organizationId != null && organizationId is! String) return null;
+    if (isActive != null && isActive is! bool) return null;
+    return NoteOptionCatalogItem(
+      id: id,
+      field: NoteOptionFieldDb.fromDb(field as String?) ??
+          NoteOptionField.careType,
+      label: label,
+      isActive: isActive as bool? ?? true,
+      createdBy: createdBy as String?,
+      organizationId: organizationId as String?,
+    );
+  }
+
   Map<String, dynamic> toJson() => {
         'id': id,
         'field': field.dbValue,

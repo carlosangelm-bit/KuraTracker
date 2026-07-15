@@ -313,10 +313,18 @@ class DataRepository {
 
   /// Conceptos activos para un campo dado, en el orden en que fueron
   /// creados (los precargados por la migracion 0010 primero).
+  ///
+  /// Usa `fromJsonOrNull` (no `fromJson`) y descarta silenciosamente
+  /// cualquier fila malformada (id/label nulo o de tipo inesperado): este
+  /// metodo se invoca sin try/catch desde codigo de build() en varias
+  /// pantallas, y una unica fila corrupta NO debe tumbar toda la lista ni
+  /// la pantalla que la muestra (ver bug "pantalla en blanco al crear
+  /// concepto de catalogo", 2026-07-15).
   List<NoteOptionCatalogItem> listNoteOptions(NoteOptionField field) {
     return _store
         .getAll(Collections.noteOptionCatalog)
-        .map(NoteOptionCatalogItem.fromJson)
+        .map(NoteOptionCatalogItem.fromJsonOrNull)
+        .whereType<NoteOptionCatalogItem>()
         .where((o) => o.field == field && o.isActive)
         .toList();
   }
@@ -324,10 +332,18 @@ class DataRepository {
   /// Todos los conceptos (activos e inactivos) de un campo, para la
   /// pantalla de Configuracion del admin, donde tambien se pueden
   /// reactivar conceptos previamente desactivados.
+  ///
+  /// Ver nota de `listNoteOptions()` sobre `fromJsonOrNull`: este metodo en
+  /// particular es el que `_NoteCatalogTabState.build()` llama sin
+  /// try/catch en cada rebuild (incluido el rebuild disparado por
+  /// `setState()` tras un alta exitosa en `_addOption()`), por lo que es
+  /// el punto exacto donde una fila cacheada malformada causaba la
+  /// pantalla en blanco reportada.
   List<NoteOptionCatalogItem> listAllNoteOptions(NoteOptionField field) {
     return _store
         .getAll(Collections.noteOptionCatalog)
-        .map(NoteOptionCatalogItem.fromJson)
+        .map(NoteOptionCatalogItem.fromJsonOrNull)
+        .whereType<NoteOptionCatalogItem>()
         .where((o) => o.field == field)
         .toList();
   }
