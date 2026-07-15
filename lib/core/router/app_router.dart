@@ -43,14 +43,30 @@ final routerProvider = Provider<GoRouter>((ref) {
       final loggedIn = session.isAuthenticated;
       final goingToLogin = state.matchedLocation == '/login';
       if (!loggedIn && !goingToLogin) return '/login';
+
       // El master (administrador de plataforma) no tiene datos clinicos
       // propios (dashboard/pacientes/reportes quedarian vacios para el,
-      // ver regla de oro en 0012_master_role.sql): al iniciar sesion (o
-      // si de alguna forma llega a '/') se le manda directo a su area
-      // de trabajo real, '/platform'.
+      // ver regla de oro en 0012_master_role.sql): al iniciar sesion se le
+      // manda directo a su area de trabajo real, '/platform'.
       final isMaster = session.user?.role == AppRole.master;
       if (loggedIn && goingToLogin) return isMaster ? '/platform' : '/';
-      if (loggedIn && isMaster && state.matchedLocation == '/') return '/platform';
+
+      final location = state.matchedLocation;
+      if (loggedIn && isMaster) {
+        // Si el master cae en cualquier ruta clinica (tecleada a mano,
+        // bookmark antiguo, etc.) se le redirige a su area real: esas
+        // pantallas no tienen datos utiles para el (misma regla de oro).
+        final isClinicalRoute =
+            location == '/' || location.startsWith('/patients') || location == '/reports';
+        if (isClinicalRoute) return '/platform';
+      } else if (loggedIn && location.startsWith('/platform')) {
+        // Hardening (no es hueco de datos: la RLS is_master() de 0012 ya le
+        // niega todo a un no-master; esto solo pule la UX): un admin/clinico
+        // que teclee '/platform' a mano no debe quedarse ahi -- se le manda
+        // a su dashboard normal.
+        return '/';
+      }
+
       return null;
     },
     routes: [
