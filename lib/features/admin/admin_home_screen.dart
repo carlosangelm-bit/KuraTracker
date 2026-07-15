@@ -852,6 +852,53 @@ class _NoteCatalogTabState extends State<_NoteCatalogTab> {
     }
   }
 
+  /// Borra un concepto del catalogo, previa confirmacion. Borrar solo
+  /// quita el concepto de las opciones futuras (chips al capturar una
+  /// nota); las notas de seguimiento ya guardadas conservan el texto
+  /// del concepto tal cual, no una referencia a esta fila, asi que el
+  /// historial no se ve afectado.
+  //
+  // IMPORTANTE (bug #8, pantalla en blanco): el dialogo de confirmacion
+  // usa builder: (dialogCtx) => ... y Navigator.pop(dialogCtx, ...) -- el
+  // context propio del dialogo, no el context externo de _NoteCatalogTab.
+  // La app usa ShellRoute (navegador anidado): reutilizar el context
+  // externo en el pop cierra la ruta de fondo en vez del dialogo, dejando
+  // la pantalla en blanco sin ninguna excepcion de Dart capturable.
+  Future<void> _deleteOption(NoteOptionCatalogItem item) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        title: const Text('Borrar concepto'),
+        content: const Text(
+          '¿Borrar este concepto? No afecta las notas ya guardadas.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogCtx, false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogCtx, true),
+            style: FilledButton.styleFrom(backgroundColor: KuraColors.danger),
+            child: const Text('Borrar'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    try {
+      await widget.repo.deleteNoteOption(item.id);
+      if (mounted) setState(() {});
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('No se pudo borrar: $e')),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final options = widget.repo.listAllNoteOptions(_selectedField);
@@ -950,10 +997,23 @@ class _NoteCatalogTabState extends State<_NoteCatalogTab> {
                                   : KuraColors.darkText.withOpacity(0.5),
                             ),
                           ),
-                          trailing: Switch(
-                            value: o.isActive,
-                            activeColor: KuraColors.primary,
-                            onChanged: (_) => _toggleActive(o),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              IconButton(
+                                icon: const Icon(
+                                  Icons.delete_outline,
+                                  color: KuraColors.danger,
+                                ),
+                                tooltip: 'Borrar concepto',
+                                onPressed: () => _deleteOption(o),
+                              ),
+                              Switch(
+                                value: o.isActive,
+                                activeColor: KuraColors.primary,
+                                onChanged: (_) => _toggleActive(o),
+                              ),
+                            ],
                           ),
                         ),
                       );

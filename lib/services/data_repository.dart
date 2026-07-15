@@ -375,6 +375,16 @@ class DataRepository {
     await _store.updateRow(Collections.noteOptionCatalog, id, {'is_active': active});
   }
 
+  /// Borra un concepto del catalogo (pantalla de Configuracion). La
+  /// politica RLS `note_option_catalog_admin_delete` (migracion 0011)
+  /// ya restringe esto a admins de la misma organizacion; aqui solo se
+  /// delega el DELETE. No afecta el historial: las notas de seguimiento
+  /// ya guardadas persisten el texto del concepto, no una referencia a
+  /// esta fila, asi que borrar solo lo quita de las opciones futuras.
+  Future<void> deleteNoteOption(String id) async {
+    await _store.deleteRow(Collections.noteOptionCatalog, id);
+  }
+
   /// Resultado de una importacion masiva del catalogo desde CSV (pantalla
   /// de Configuracion): cuantos conceptos se agregaron (no existian),
   /// cuantos se actualizaron (existian con `activo` distinto al de la
