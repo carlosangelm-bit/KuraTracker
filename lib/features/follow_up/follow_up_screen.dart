@@ -9,6 +9,7 @@ import '../../core/providers/session_provider.dart';
 import '../../engine/kura_sheehan_checkpoint.dart';
 import '../../engine/models/kura_engine_enums.dart';
 import '../../engine/sheehan_decision_style.dart';
+import '../../engine/wound_deterioration_evaluator.dart';
 import '../../models/treatment_plan.dart';
 import '../../models/wound.dart';
 import '../../services/photo_upload_service.dart';
@@ -60,34 +61,60 @@ class FollowUpScreen extends ConsumerWidget {
           final baseline = measurements.first;
           final current = measurements.last;
           final hasFollowUps = measurements.length > 1;
+          // Consulta inmediatamente anterior a la actual (NO la basal),
+          // usada exclusivamente para el deterioro de trayectoria
+          // (kura_rules_v2). Si solo hay 2 mediciones, "previous" coincide
+          // con "baseline".
+          final previous = hasFollowUps ? measurements[measurements.length - 2] : null;
 
           final weeksSinceBaseline =
               current.measuredAt.difference(baseline.measuredAt).inDays ~/ 7;
 
-          // Evaluacion clinica de la visita mas reciente (la misma consulta
-          // de `current`), para alimentar los flags de penalizacion del
-          // checkpoint. Se empata por consultationId cuando es posible; si
-          // no hay match directo (dato legado sin consultation_id), se cae
-          // a la evaluacion cuya consulta tenga la fecha mas reciente.
+          // Evaluacion clinica de una medicion dada (misma consulta). Se
+          // empata por consultationId cuando es posible; si no hay match
+          // directo (dato legado sin consultation_id), se cae a la
+          // evaluacion cuya consulta tenga la fecha mas reciente. Mismo
+          // criterio que WoundCheckpointDeriver.
+          WoundAssessment? matchAssessment(
+              List<WoundAssessment> assessments, WoundMeasurement measurement) {
+            final matching = assessments
+                .where((a) => a.consultationId == measurement.consultationId)
+                .toList();
+            if (matching.isNotEmpty) return matching.first;
+            if (assessments.isEmpty) return null;
+            final withDates = assessments
+                .map((a) => (
+                      assessment: a,
+                      date: repo.getConsultation(a.consultationId)?.visitDate ??
+                          DateTime.fromMillisecondsSinceEpoch(0),
+                    ))
+                .toList()
+              ..sort((x, y) => x.date.compareTo(y.date));
+            return withDates.last.assessment;
+          }
+
           WoundAssessment? latestAssessment;
+          WoundAssessment? previousAssessment;
           if (hasFollowUps) {
             final assessments = repo.listAssessmentsForWound(woundId);
-            final matching =
-                assessments.where((a) => a.consultationId == current.consultationId).toList();
-            if (matching.isNotEmpty) {
-              latestAssessment = matching.first;
-            } else if (assessments.isNotEmpty) {
-              final withDates = assessments
-                  .map((a) => (
-                        assessment: a,
-                        date: repo.getConsultation(a.consultationId)?.visitDate ??
-                            DateTime.fromMillisecondsSinceEpoch(0),
-                      ))
-                  .toList()
-                ..sort((x, y) => x.date.compareTo(y.date));
-              latestAssessment = withDates.last.assessment;
+            latestAssessment = matchAssessment(assessments, current);
+            if (previous != null) {
+              previousAssessment = matchAssessment(assessments, previous);
             }
           }
+
+          // Deterioro objetivo de trayectoria (kura_rules_v2): compara la
+          // consulta actual contra la INMEDIATAMENTE ANTERIOR (no la
+          // basal). Ver WoundDeteriorationEvaluator para el detalle de
+          // cada criterio.
+          final deterioro = previous != null
+              ? WoundDeteriorationEvaluator.evaluate(
+                  current: current,
+                  previous: previous,
+                  currentAssessment: latestAssessment,
+                  previousAssessment: previousAssessment,
+                )
+              : WoundDeteriorationResult.none;
 
           final checkpoint = hasFollowUps
               ? KuraSheehanCheckpoint.evaluate(
@@ -102,10 +129,11 @@ class FollowUpScreen extends ConsumerWidget {
                   // vs. 3 niveles de severidad). Proxy actual: cualquier
                   // criterio de infeccion marcado en la evaluacion.
                   infeccionActiva: latestAssessment?.infectionCriteria.isNotEmpty ?? false,
-                  // TODO(clinico): deterioroDelLecho y aumentoDeExudado
-                  // requieren una regla comparativa (actual vs. evaluacion
-                  // anterior) todavia no definida. No se inventa la regla;
-                  // se dejan en false (default) hasta que se defina.
+                  // Definitivo (kura_rules_v2): deterioro objetivo del
+                  // lecho y aumento de exudado, ambos comparados contra la
+                  // consulta inmediatamente anterior.
+                  deterioroDelLecho: deterioro.deterioroDelLecho,
+                  aumentoDeExudado: deterioro.aumentoDeExudado,
                 )
               : null;
 

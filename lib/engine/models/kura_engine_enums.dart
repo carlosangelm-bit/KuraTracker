@@ -180,6 +180,15 @@ enum WuwhsGrade { g1, g2, g3, g4 }
 enum AgenteCausal { mordedura, armaFuego, aplastamiento, punzocortante, otro }
 
 /// Criterios IWII de infeccion (multiseleccion).
+///
+/// `eritemaPerilesional` se entiende como eritema LOCAL (<=2 cm). Si el
+/// eritema se propaga mas alla de ese margen, se debe marcar en su lugar
+/// (o ademas) `eritemaMayor2cm`, que es un criterio de infeccion PROPAGADA
+/// (ver kura_rules_v2 / KuraEngineInput.infeccionPropagada).
+///
+/// `induracion` se agrega como factor local significativo (kura_rules_v2)
+/// para completar el listado clinico de "criterios finales" de infeccion
+/// local; no existia representacion previa de este signo en el modelo.
 enum InfeccionCriterioIwii {
   dolorAumentado,
   eritemaPerilesional,
@@ -189,10 +198,51 @@ enum InfeccionCriterioIwii {
   exudadoAumentado,
   olorAumentado,
   tejidoFriable,
+  induracion,
   retrasoDeCicatrizacion,
   socavamiento,
   dehiscencia,
   celulitis,
   fiebre,
   malestarGeneral,
+  eritemaMayor2cm,
+}
+
+extension InfeccionCriterioIwiiLabel on InfeccionCriterioIwii {
+  String get label {
+    switch (this) {
+      case InfeccionCriterioIwii.dolorAumentado:
+        return 'Dolor / sensibilidad aumentado';
+      case InfeccionCriterioIwii.eritemaPerilesional:
+        return 'Eritema perilesional (<=2 cm, local)';
+      case InfeccionCriterioIwii.edemaLocal:
+        return 'Edema local';
+      case InfeccionCriterioIwii.calorLocal:
+        return 'Aumento de temperatura / calor local';
+      case InfeccionCriterioIwii.exudadoPurulento:
+        return 'Exudado purulento / seropurulento';
+      case InfeccionCriterioIwii.exudadoAumentado:
+        return 'Aumento de exudado';
+      case InfeccionCriterioIwii.olorAumentado:
+        return 'Olor';
+      case InfeccionCriterioIwii.tejidoFriable:
+        return 'Tejido friable';
+      case InfeccionCriterioIwii.induracion:
+        return 'Induracion';
+      case InfeccionCriterioIwii.retrasoDeCicatrizacion:
+        return 'Retraso de cicatrizacion';
+      case InfeccionCriterioIwii.socavamiento:
+        return 'Socavamiento';
+      case InfeccionCriterioIwii.dehiscencia:
+        return 'Dehiscencia';
+      case InfeccionCriterioIwii.celulitis:
+        return 'Celulitis (propagacion)';
+      case InfeccionCriterioIwii.fiebre:
+        return 'Fiebre (propagacion)';
+      case InfeccionCriterioIwii.malestarGeneral:
+        return 'Malestar general (propagacion)';
+      case InfeccionCriterioIwii.eritemaMayor2cm:
+        return 'Eritema >2 cm (propagación)';
+    }
+  }
 }
