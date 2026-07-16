@@ -14,6 +14,29 @@ import '../../models/treatment_plan.dart';
 import '../../models/wound.dart';
 import '../../services/photo_upload_service.dart';
 
+/// Calcula, para una medicion dada, las 4 sumas acumuladas normalizadas
+/// (0-100) de composicion del lecho en el orden granulacion / +esfacelo /
+/// +necrosis / +epitelizacion, usadas para el grafico de lineas apiladas
+/// al 100% en [FollowUpScreen]. Se normaliza dividiendo por
+/// [WoundMeasurement.bedCompositionSum] porque la captura del dato no
+/// garantiza que los 4 porcentajes sumen exactamente 100 (ver
+/// `canSave` en follow_up_capture_screen.dart, que no valida la suma).
+/// Si la suma original es 0 (dato incompleto/no capturado), se devuelve
+/// [0, 0, 0, 0] en vez de forzar un 100% que no fue realmente medido.
+List<double> bedCompositionCumulative(WoundMeasurement m) {
+  final sum = m.bedCompositionSum;
+  if (sum <= 0.0001) return [0.0, 0.0, 0.0, 0.0];
+  final g = m.granulationPct / sum * 100;
+  final s = m.sloughPct / sum * 100;
+  final n = m.necrosisPct / sum * 100;
+  final e = m.epithelializationPct / sum * 100;
+  final c0 = g;
+  final c1 = c0 + s;
+  final c2 = c1 + n;
+  final c3 = (c2 + e).clamp(0.0, 100.0);
+  return [c0, c1, c2, c3];
+}
+
 /// Vista de seguimiento comparativa (seccion 6.1): grafica de tendencia de
 /// area en el tiempo + checkpoint de Sheehan integrado, derivados 100% de
 /// la serie real de wound_measurements/wound_photos (sin datos de ejemplo
@@ -582,12 +605,19 @@ class FollowUpScreen extends ConsumerWidget {
     );
   }
 
-  /// Grafica de composicion del lecho (tejido) en el tiempo
-  /// (feat/volume-kundin-charts): granulacion/esfacelo/necrosis/
-  /// epitelizacion, una linea por componente, misma serie de visitas que
-  /// la grafica de area (todas las mediciones tienen estos 4 campos, con
-  /// default 0, nunca null). Lectura como "progreso": lo ideal es
-  /// granulacion/epitelizacion subiendo y esfacelo/necrosis bajando.
+  /// Grafica de composicion del lecho (tejido) en el tiempo, como un
+  /// grafico de lineas 100% apiladas: en cada visita las 4 bandas
+  /// (granulacion/esfacelo/necrosis/epitelizacion, de abajo hacia arriba)
+  /// siempre suman el 100% del alto del grafico, mostrando la proporcion
+  /// real de cada clasificacion respecto del total del tejido.
+  ///
+  /// Tecnica (fl_chart no tiene un tipo "stacked" nativo para LineChart):
+  /// se normalizan los 4 porcentajes de cada medicion para que sumen 100
+  /// (por si la captura original no suma exactamente 100), se calculan 4
+  /// lineas de suma acumulada (c0..c3, mas una linea base en 0) y se
+  /// rellenan las 4 franjas entre lineas consecutivas con `betweenBarsData`.
+  /// Lectura como "progreso": lo ideal es que la banda de
+  /// granulacion/epitelizacion crezca y la de esfacelo/necrosis se reduzca.
   Widget _buildTissueCompositionCard(List<WoundMeasurement> measurements, DateFormat dateFmt) {
     Widget legendDot(Color color, String label) => Row(
           mainAxisSize: MainAxisSize.min,
@@ -600,6 +630,32 @@ class FollowUpScreen extends ConsumerWidget {
             const SizedBox(width: 4),
             Text(label, style: const TextStyle(fontSize: 11)),
           ],
+        );
+
+    // Suma acumulada normalizada (0-100) por visita: [c0, c1, c2, c3] =
+    // [granulacion, +esfacelo, +necrosis, +epitelizacion].
+    final cumulative = <List<double>>[
+      for (final m in measurements) bedCompositionCumulative(m),
+    ];
+
+    List<FlSpot> spotsFor(double Function(List<double> c) pick) => [
+          for (var i = 0; i < measurements.length; i++) FlSpot(i.toDouble(), pick(cumulative[i])),
+        ];
+
+    LineChartBarData boundaryLine(List<FlSpot> spots) => LineChartBarData(
+          spots: spots,
+          isCurved: false,
+          color: Colors.white.withOpacity(0.7),
+          barWidth: 1,
+          dotData: FlDotData(
+            show: true,
+            getDotPainter: (spot, percent, bar, index) => FlDotCirclePainter(
+              radius: 2.5,
+              color: Colors.white,
+              strokeColor: Colors.black.withOpacity(0.15),
+              strokeWidth: 1,
+            ),
+          ),
         );
 
     return Card(
@@ -657,56 +713,59 @@ class FollowUpScreen extends ConsumerWidget {
                   borderData: FlBorderData(show: false),
                   lineTouchData: LineTouchData(
                     touchTooltipData: LineTouchTooltipData(
+                      // Se muestra un solo tooltip consolidado (con los 4
+                      // valores REALES, no acumulados) anclado al primer
+                      // punto tocado; el resto de los puntos tocados en la
+                      // misma visita devuelven null para no repetir el
+                      // tooltip 4 veces sobre la misma visita.
                       getTooltipItems: (touchedSpots) => [
-                        for (final spot in touchedSpots)
-                          LineTooltipItem(
-                            '${spot.y.toStringAsFixed(0)}%',
-                            const TextStyle(color: Colors.white, fontSize: 11),
-                          ),
+                        for (var i = 0; i < touchedSpots.length; i++)
+                          if (i != 0)
+                            null
+                          else
+                            () {
+                              final idx = touchedSpots[i].spotIndex;
+                              if (idx < 0 || idx >= measurements.length) return null;
+                              final m = measurements[idx];
+                              final lines = <String>[
+                                dateFmt.format(m.measuredAt),
+                                'Granulación: ${m.granulationPct.toStringAsFixed(0)}%',
+                                'Esfacelo: ${m.sloughPct.toStringAsFixed(0)}%',
+                                'Necrosis: ${m.necrosisPct.toStringAsFixed(0)}%',
+                                'Epitelización: ${m.epithelializationPct.toStringAsFixed(0)}%',
+                              ];
+                              return LineTooltipItem(
+                                lines.join('\n'),
+                                const TextStyle(color: Colors.white, fontSize: 11),
+                              );
+                            }(),
                       ],
                     ),
                   ),
                   lineBarsData: [
+                    // idx 0: linea base en 0, oculta (solo referencia
+                    // inferior para el relleno de la primera franja).
                     LineChartBarData(
-                      spots: [
-                        for (var i = 0; i < measurements.length; i++)
-                          FlSpot(i.toDouble(), measurements[i].granulationPct),
-                      ],
-                      isCurved: true,
-                      color: KuraColors.success,
-                      barWidth: 2.5,
-                      dotData: const FlDotData(show: true),
+                      spots: spotsFor((c) => 0),
+                      isCurved: false,
+                      color: Colors.transparent,
+                      barWidth: 0,
+                      dotData: const FlDotData(show: false),
+                      show: false,
                     ),
-                    LineChartBarData(
-                      spots: [
-                        for (var i = 0; i < measurements.length; i++)
-                          FlSpot(i.toDouble(), measurements[i].sloughPct),
-                      ],
-                      isCurved: true,
-                      color: KuraColors.warning,
-                      barWidth: 2.5,
-                      dotData: const FlDotData(show: true),
-                    ),
-                    LineChartBarData(
-                      spots: [
-                        for (var i = 0; i < measurements.length; i++)
-                          FlSpot(i.toDouble(), measurements[i].necrosisPct),
-                      ],
-                      isCurved: true,
-                      color: KuraColors.danger,
-                      barWidth: 2.5,
-                      dotData: const FlDotData(show: true),
-                    ),
-                    LineChartBarData(
-                      spots: [
-                        for (var i = 0; i < measurements.length; i++)
-                          FlSpot(i.toDouble(), measurements[i].epithelializationPct),
-                      ],
-                      isCurved: true,
-                      color: KuraColors.infoBlue,
-                      barWidth: 2.5,
-                      dotData: const FlDotData(show: true),
-                    ),
+                    // idx 1..4: lineas de suma acumulada (limites entre
+                    // franjas). Permanecen "show: true" (con trazo fino y
+                    // sutil) para conservar el tooltip táctil en cada una.
+                    boundaryLine(spotsFor((c) => c[0])),
+                    boundaryLine(spotsFor((c) => c[1])),
+                    boundaryLine(spotsFor((c) => c[2])),
+                    boundaryLine(spotsFor((c) => c[3])),
+                  ],
+                  betweenBarsData: [
+                    BetweenBarsData(fromIndex: 0, toIndex: 1, color: KuraColors.success),
+                    BetweenBarsData(fromIndex: 1, toIndex: 2, color: KuraColors.warning),
+                    BetweenBarsData(fromIndex: 2, toIndex: 3, color: KuraColors.danger),
+                    BetweenBarsData(fromIndex: 3, toIndex: 4, color: KuraColors.infoBlue),
                   ],
                 ),
               ),
