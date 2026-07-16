@@ -230,6 +230,9 @@ class _WoundCaptureScreenState extends ConsumerState<WoundCaptureScreen> {
           'odor': formState.odor,
           'wound_edge': formState.woundEdge,
           'perilesional_skin': formState.perilesionalSkin.map((e) => e.name).toList(),
+          'clinical_notes': (formState.clinicalNotes?.trim().isEmpty ?? true)
+              ? null
+              : formState.clinicalNotes!.trim(),
         });
 
         await repo.createMeasurement({
@@ -625,6 +628,18 @@ class _WoundCaptureScreenState extends ConsumerState<WoundCaptureScreen> {
                     }),
                   );
                 }).toList(),
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                initialValue: formState.clinicalNotes,
+                maxLines: 4,
+                minLines: 3,
+                decoration: const InputDecoration(
+                  labelText: 'Notas clínicas / Observaciones (opcional)',
+                  hintText: 'Observaciones adicionales de la visita…',
+                  alignLabelWithHint: true,
+                ),
+                onChanged: (v) => update(() => formState.clinicalNotes = v),
               ),
             ],
           ),

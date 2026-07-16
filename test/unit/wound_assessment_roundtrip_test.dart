@@ -68,5 +68,49 @@ void main() {
         expect(roundTripped.exudateType, tipo);
       });
     }
+
+    // feat/clinical-free-notes: clinicalNotes es opcional (String?), aplica
+    // tanto a valoracion como a seguimiento; debe sobrevivir el round-trip
+    // toJson -> fromJson igual que el resto de campos, y no debe romper nada
+    // cuando esta ausente/null.
+    test('preserva clinicalNotes cuando esta presente', () {
+      final original = WoundAssessment(
+        id: 'a4',
+        consultationId: 'c4',
+        woundId: 'w4',
+        clinicalNotes: 'Paciente reporta mejora del dolor tras cambio de aposito.',
+      );
+
+      final roundTripped = WoundAssessment.fromJson(original.toJson());
+
+      expect(roundTripped.clinicalNotes,
+          'Paciente reporta mejora del dolor tras cambio de aposito.');
+    });
+
+    test('clinicalNotes null se preserva como null (campo opcional)', () {
+      final original = WoundAssessment(
+        id: 'a5',
+        consultationId: 'c5',
+        woundId: 'w5',
+        clinicalNotes: null,
+      );
+
+      final roundTripped = WoundAssessment.fromJson(original.toJson());
+
+      expect(roundTripped.clinicalNotes, isNull);
+    });
+
+    test('clinicalNotes ausente en el json (p.ej. filas anteriores a la '
+        'migracion 0014) no lanza y se lee como null', () {
+      final json = <String, dynamic>{
+        'id': 'a6',
+        'consultation_id': 'c6',
+        'wound_id': 'w6',
+      };
+
+      final assessment = WoundAssessment.fromJson(json);
+
+      expect(assessment.clinicalNotes, isNull);
+    });
   });
 }

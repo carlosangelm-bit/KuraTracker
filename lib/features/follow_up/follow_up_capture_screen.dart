@@ -103,6 +103,7 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
   final _depthCtrl = TextEditingController(text: '0');
   final _volumeCtrl = TextEditingController();
   final _manualMeasurementCtrl = TextEditingController();
+  final _clinicalNotesCtrl = TextEditingController();
   bool _tunneling = false;
   bool _undermining = false;
 
@@ -268,6 +269,7 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
     _depthCtrl.dispose();
     _volumeCtrl.dispose();
     _manualMeasurementCtrl.dispose();
+    _clinicalNotesCtrl.dispose();
     _careTypeOtherCtrl.dispose();
     _procedureDescOtherCtrl.dispose();
     _materialsUsedOtherCtrl.dispose();
@@ -659,6 +661,17 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
                     style: TextStyle(fontSize: 13),
                   ),
                   onChanged: (v) => setState(() => _lowAdherence = v ?? false),
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _clinicalNotesCtrl,
+                  maxLines: 4,
+                  minLines: 3,
+                  decoration: const InputDecoration(
+                    labelText: 'Notas clínicas / Observaciones (opcional)',
+                    hintText: 'Observaciones adicionales de la visita…',
+                    alignLabelWithHint: true,
+                  ),
                 ),
 
                 const SizedBox(height: 24),
@@ -1373,6 +1386,9 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
         'wound_edge': _woundEdge,
         'perilesional_skin': _perilesionalSkin.map((e) => e.name).toList(),
         'low_adherence': _lowAdherence,
+        'clinical_notes': _clinicalNotesCtrl.text.trim().isEmpty
+            ? null
+            : _clinicalNotesCtrl.text.trim(),
       });
 
       // 2 fotografias de seguimiento (Protocolo de Fotografias y Medicion):
