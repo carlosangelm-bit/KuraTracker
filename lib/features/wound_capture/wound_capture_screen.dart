@@ -45,10 +45,58 @@ class _WoundCaptureScreenState extends ConsumerState<WoundCaptureScreen> {
   bool _initialized = false;
   final _picker = ImagePicker();
 
+  // Volumen (feat/volume-kundin-charts): controller propio porque el valor
+  // debe re-sincronizarse programaticamente con el auto-calculo de Kundin
+  // cada vez que cambia largo/ancho/profundidad, ademas de ser editable a
+  // mano por el clinico. _volumeAutoFollowing decide si el campo debe
+  // seguir el auto-calculo (true, estado por defecto) o ya fue sobrescrito
+  // manualmente (false, hasta que el clinico borre el campo).
+  final _volumeCtrl = TextEditingController();
+  bool _volumeAutoFollowing = true;
+
   @override
   void initState() {
     super.initState();
     _draftKey = widget.consultationId ?? 'draft-${widget.patientId}';
+  }
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    _volumeCtrl.dispose();
+    super.dispose();
+  }
+
+  /// Mantiene _volumeCtrl sincronizado con el auto-calculo de Kundin
+  /// mientras el clinico no lo haya sobrescrito a mano (_volumeAutoFollowing).
+  /// Se llama en cada build tras cualquier cambio de largo/ancho/profundidad.
+  void _syncVolumeController(WoundCaptureFormState formState) {
+    // Herida vuelta superficial (profundidad 0/null): el volumen 3D no
+    // aplica, sin importar si antes se habia editado a mano.
+    if (!formState.isDeepWound) {
+      _volumeAutoFollowing = true;
+      formState.volumeCm3 = null;
+      if (_volumeCtrl.text.isNotEmpty) _volumeCtrl.text = '';
+      return;
+    }
+    if (!_volumeAutoFollowing) return;
+    final auto = formState.autoVolumeCm3;
+    formState.volumeCm3 = auto;
+    final text = auto == null ? '' : auto.toStringAsFixed(2);
+    if (_volumeCtrl.text != text) {
+      _volumeCtrl.text = text;
+    }
+  }
+
+  void _onVolumeFieldChanged(WoundCaptureFormState formState, String v) {
+    if (v.trim().isEmpty) {
+      // Campo vaciado por el clinico: vuelve a seguir el auto-calculo.
+      _volumeAutoFollowing = true;
+      formState.volumeCm3 = formState.autoVolumeCm3;
+      return;
+    }
+    _volumeAutoFollowing = false;
+    formState.volumeCm3 = double.tryParse(v.replaceAll(',', '.'));
   }
 
   void _scheduleRecompute() {
@@ -250,6 +298,8 @@ class _WoundCaptureScreenState extends ConsumerState<WoundCaptureScreen> {
           'necrosis_pct': formState.necrosisPct,
           'epithelialization_pct': formState.epitelizacionPct,
           'captured_before_debridement': formState.capturedBeforeDebridement,
+          'volume_cm3': formState.volumeCm3,
+          'volume_manual': formState.isVolumeManuallyOverridden,
         });
 
         await repo.upsertPerfusion({
@@ -305,6 +355,12 @@ class _WoundCaptureScreenState extends ConsumerState<WoundCaptureScreen> {
       controller.touch();
       _scheduleRecompute();
     }
+
+    // Mantiene el campo de volumen sincronizado con el auto-calculo de
+    // Kundin tras cualquier cambio de largo/ancho/profundidad (ver
+    // _syncVolumeController), a menos que el clinico lo haya sobrescrito
+    // a mano en este borrador.
+    _syncVolumeController(formState);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -702,6 +758,49 @@ class _WoundCaptureScreenState extends ConsumerState<WoundCaptureScreen> {
                   ],
                 ),
               ),
+              if (formState.isDeepWound) ...[
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: KuraColors.chipBg,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Herida profunda: volumen (fórmula de Kundin)',
+                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                      ),
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: _volumeCtrl,
+                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                        decoration: const InputDecoration(
+                          labelText: 'Volumen (cm³)',
+                          helperText: 'Auto-calculado: Largo × Ancho × Profundidad × 0.327',
+                        ),
+                        onChanged: (v) => update(() => _onVolumeFieldChanged(formState, v)),
+                      ),
+                      if (formState.isVolumeManuallyOverridden) ...[
+                        const SizedBox(height: 6),
+                        Row(
+                          children: [
+                            Icon(Icons.edit_note, size: 16, color: KuraColors.warning),
+                            const SizedBox(width: 4),
+                            Text('✎ Volumen ajustado manualmente',
+                                style: TextStyle(
+                                    fontSize: 11,
+                                    color: KuraColors.warning,
+                                    fontWeight: FontWeight.w600)),
+                          ],
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
               const SizedBox(height: 12),
               Row(
                 children: [

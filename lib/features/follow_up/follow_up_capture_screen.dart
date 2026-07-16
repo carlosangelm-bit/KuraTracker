@@ -8,6 +8,7 @@ import 'package:intl/intl.dart';
 
 import '../../core/providers/session_provider.dart';
 import '../../core/theme/kura_theme.dart';
+import '../../core/utils/wound_volume.dart';
 import '../../engine/kura_protocol_engine.dart';
 import '../../engine/models/kura_engine_enums.dart';
 import '../../engine/models/kura_engine_input.dart';
@@ -102,6 +103,13 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
   final _widthCtrl = TextEditingController(text: '0');
   final _depthCtrl = TextEditingController(text: '0');
   final _volumeCtrl = TextEditingController();
+  // Volumen (feat/volume-kundin-charts): _volumeCtrl ya existia (modo 3D
+  // manual); ahora se pre-llena y re-sincroniza con el auto-calculo de
+  // Kundin (L x A x P x 0.327) cada vez que cambian largo/ancho/profundidad,
+  // mientras el clinico no lo haya sobrescrito a mano. _volumeAutoFollowing
+  // decide si el campo debe seguir el auto-calculo (true, por defecto) o ya
+  // fue editado manualmente (false, hasta que el clinico borre el campo).
+  bool _volumeAutoFollowing = true;
   final _manualMeasurementCtrl = TextEditingController();
   final _clinicalNotesCtrl = TextEditingController();
   bool _tunneling = false;
@@ -181,6 +189,20 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
   // Herida profunda (Protocolo de Fotografias/Medicion): a mayor profundidad
   // se activa el modo de medicion 3D (volumen) ademas del 2D.
   bool get _isDeepWound => _depthCm >= 0.5;
+  // Volumen auto-calculado por Kundin a partir de las medidas actuales
+  // (feat/volume-kundin-charts). null si la herida es superficial
+  // (depthCm <= 0): el volumen 3D no aplica.
+  double? get _autoVolumeCm3 => WoundVolumeCalculator.kundin(
+        lengthCm: _lengthCm,
+        widthCm: _widthCm,
+        depthCm: _depthCm,
+      );
+  // true si el valor actualmente en _volumeCtrl difiere del auto-calculo de
+  // Kundin para las medidas actuales (el clinico lo sobrescribio a mano).
+  bool get _isVolumeManuallyOverridden => WoundVolumeCalculator.isManualOverride(
+        storedVolumeCm3: _volumeCm3,
+        autoCalculatedCm3: _autoVolumeCm3,
+      );
 
   String get _careTypeFinal =>
       _careTypeSelected == kOtherOptionValue ? _careTypeOtherCtrl.text.trim() : (_careTypeSelected ?? '');
@@ -275,6 +297,35 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
     _materialsUsedOtherCtrl.dispose();
     _evolutionOtherCtrl.dispose();
     super.dispose();
+  }
+
+  /// Mantiene _volumeCtrl sincronizado con el auto-calculo de Kundin
+  /// mientras el clinico no lo haya sobrescrito a mano (_volumeAutoFollowing).
+  /// Se llama tras cualquier cambio de largo/ancho/profundidad
+  /// (feat/volume-kundin-charts).
+  void _syncVolumeField() {
+    // Herida vuelta superficial (profundidad 0/null): el volumen 3D no
+    // aplica, sin importar si antes se habia editado a mano.
+    if (!_isDeepWound) {
+      _volumeAutoFollowing = true;
+      if (_volumeCtrl.text.isNotEmpty) _volumeCtrl.text = '';
+      return;
+    }
+    if (!_volumeAutoFollowing) return;
+    final auto = _autoVolumeCm3;
+    final text = auto == null ? '' : auto.toStringAsFixed(2);
+    if (_volumeCtrl.text != text) {
+      _volumeCtrl.text = text;
+    }
+  }
+
+  void _onVolumeFieldChanged(String v) {
+    if (v.trim().isEmpty) {
+      // Campo vaciado por el clinico: vuelve a seguir el auto-calculo.
+      setState(() => _volumeAutoFollowing = true);
+      return;
+    }
+    setState(() => _volumeAutoFollowing = false);
   }
 
   @override
@@ -377,7 +428,7 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
                         controller: _lengthCtrl,
                         keyboardType: const TextInputType.numberWithOptions(decimal: true),
                         decoration: const InputDecoration(labelText: 'Largo (cm) *'),
-                        onChanged: (_) => setState(() {}),
+                        onChanged: (_) => setState(_syncVolumeField),
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -386,7 +437,7 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
                         controller: _widthCtrl,
                         keyboardType: const TextInputType.numberWithOptions(decimal: true),
                         decoration: const InputDecoration(labelText: 'Ancho (cm) *'),
-                        onChanged: (_) => setState(() {}),
+                        onChanged: (_) => setState(_syncVolumeField),
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -395,7 +446,7 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
                         controller: _depthCtrl,
                         keyboardType: const TextInputType.numberWithOptions(decimal: true),
                         decoration: const InputDecoration(labelText: 'Profundidad (cm)'),
-                        onChanged: (_) => setState(() {}),
+                        onChanged: (_) => setState(_syncVolumeField),
                       ),
                     ),
                   ],
@@ -415,15 +466,33 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         const Text(
-                          'Herida profunda: medición 3D (Protocolo de Fotografías/Medición)',
+                          'Herida profunda: volumen (fórmula de Kundin)',
                           style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
                         ),
                         const SizedBox(height: 8),
                         TextField(
                           controller: _volumeCtrl,
                           keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                          decoration: const InputDecoration(labelText: 'Volumen (cm³)'),
+                          decoration: const InputDecoration(
+                            labelText: 'Volumen (cm³)',
+                            helperText: 'Auto-calculado: Largo × Ancho × Profundidad × 0.327',
+                          ),
+                          onChanged: (v) => _onVolumeFieldChanged(v),
                         ),
+                        if (_isVolumeManuallyOverridden) ...[
+                          const SizedBox(height: 6),
+                          Row(
+                            children: [
+                              Icon(Icons.edit_note, size: 16, color: KuraColors.warning),
+                              const SizedBox(width: 4),
+                              Text('✎ Volumen ajustado manualmente',
+                                  style: TextStyle(
+                                      fontSize: 11,
+                                      color: KuraColors.warning,
+                                      fontWeight: FontWeight.w600)),
+                            ],
+                          ),
+                        ],
                       ],
                     ),
                   ),
@@ -1366,6 +1435,7 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
         'epithelialization_pct': _epitelizacion,
         'captured_before_debridement': _capturedBeforeDebridement,
         'volume_cm3': _isDeepWound ? _volumeCm3 : null,
+        'volume_manual': _isDeepWound ? _isVolumeManuallyOverridden : false,
         'manual_measurement_note': _manualMeasurementCtrl.text.trim().isEmpty
             ? null
             : _manualMeasurementCtrl.text.trim(),

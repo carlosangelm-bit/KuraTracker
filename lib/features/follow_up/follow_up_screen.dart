@@ -239,6 +239,19 @@ class FollowUpScreen extends ConsumerWidget {
                   ),
                 ),
                 const SizedBox(height: 20),
+                // Volumen (feat/volume-kundin-charts): additive, no toca la
+                // grafica de area existente. Heridas superficiales sin
+                // profundidad tienen volumeCm3 == null (no aplica) y se
+                // omiten de la serie sin romper el eje X (que sigue
+                // alineado por indice/fecha con measurements, igual que la
+                // grafica de area) para poder comparar visitas.
+                _buildVolumeCard(measurements, dateFmt),
+                const SizedBox(height: 20),
+                // Composicion de tejido en el tiempo (granulacion / esfacelo
+                // / necrosis / epitelizacion), misma serie que la grafica de
+                // area (additive).
+                _buildTissueCompositionCard(measurements, dateFmt),
+                const SizedBox(height: 20),
                 if (checkpoint == null)
                   Card(
                     child: Padding(
@@ -413,6 +426,293 @@ class FollowUpScreen extends ConsumerWidget {
         minHeight: 16,
         backgroundColor: KuraColors.chipBg,
         color: checkpoint.decision.toProgressStatus.color,
+      ),
+    );
+  }
+
+  /// Grafica de volumen en el tiempo (feat/volume-kundin-charts). Solo
+  /// incluye en la serie las visitas con volumeCm3 != null (heridas
+  /// profundas medidas en 3D); las superficiales se omiten sin romper el
+  /// eje X, que sigue alineado por indice/fecha con la lista completa de
+  /// `measurements` (mismo criterio que la grafica de area) para poder
+  /// leer "en que visita" cae cada punto. Si NINGUNA visita tiene volumen
+  /// (herida siempre superficial), se muestra un placeholder explicito en
+  /// vez de una grafica vacia.
+  Widget _buildVolumeCard(List<WoundMeasurement> measurements, DateFormat dateFmt) {
+    final volumePoints = <MapEntry<int, WoundMeasurement>>[
+      for (var i = 0; i < measurements.length; i++)
+        if (measurements[i].volumeCm3 != null) MapEntry(i, measurements[i]),
+    ];
+
+    if (volumePoints.isEmpty) {
+      return Card(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Tendencia de volumen (cm³)',
+                  style: TextStyle(fontWeight: FontWeight.w700)),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Icon(Icons.inbox_outlined, size: 20, color: KuraColors.darkText.withOpacity(0.4)),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Sin mediciones de volumen (herida superficial: no se activa '
+                      'la medición 3D).',
+                      style: TextStyle(fontSize: 12, color: KuraColors.darkText.withOpacity(0.6)),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Tendencia de volumen (cm³)', style: TextStyle(fontWeight: FontWeight.w700)),
+            const SizedBox(height: 4),
+            Text(
+              'Fórmula de Kundin: Largo × Ancho × Profundidad × 0.327',
+              style: TextStyle(fontSize: 11, color: KuraColors.darkText.withOpacity(0.5)),
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              height: 220,
+              child: LineChart(
+                LineChartData(
+                  gridData: const FlGridData(show: true),
+                  titlesData: FlTitlesData(
+                    bottomTitles: AxisTitles(
+                      sideTitles: SideTitles(
+                        showTitles: true,
+                        getTitlesWidget: (value, meta) {
+                          final idx = value.toInt();
+                          if (idx < 0 || idx >= measurements.length) {
+                            return const SizedBox.shrink();
+                          }
+                          return Padding(
+                            padding: const EdgeInsets.only(top: 6),
+                            child: Text(
+                              dateFmt.format(measurements[idx].measuredAt),
+                              style: const TextStyle(fontSize: 10),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                    leftTitles: const AxisTitles(
+                      sideTitles: SideTitles(showTitles: true, reservedSize: 36),
+                    ),
+                    rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                    topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                  ),
+                  borderData: FlBorderData(show: false),
+                  lineTouchData: LineTouchData(
+                    touchTooltipData: LineTouchTooltipData(
+                      getTooltipItems: (touchedSpots) => [
+                        for (final spot in touchedSpots)
+                          () {
+                            final m = volumePoints[spot.spotIndex].value;
+                            final lines = <String>[
+                              '${dateFmt.format(m.measuredAt)} · ${m.volumeCm3!.toStringAsFixed(2)} cm³',
+                              if (m.volumeManual) '✎ Volumen ajustado manualmente',
+                            ];
+                            return LineTooltipItem(
+                              lines.join('\n'),
+                              const TextStyle(color: Colors.white, fontSize: 11),
+                            );
+                          }(),
+                      ],
+                    ),
+                  ),
+                  lineBarsData: [
+                    LineChartBarData(
+                      spots: [
+                        for (final e in volumePoints) FlSpot(e.key.toDouble(), e.value.volumeCm3!),
+                      ],
+                      isCurved: true,
+                      color: KuraColors.infoBlue,
+                      barWidth: 3,
+                      dotData: FlDotData(
+                        show: true,
+                        getDotPainter: (spot, percent, bar, index) {
+                          final manual = volumePoints[index].value.volumeManual;
+                          return FlDotCirclePainter(
+                            radius: manual ? 5 : 3.5,
+                            color: manual ? KuraColors.warning : KuraColors.infoBlue,
+                            strokeColor: KuraColors.infoBlue,
+                            strokeWidth: manual ? 1.5 : 0,
+                          );
+                        },
+                      ),
+                      belowBarData: BarAreaData(
+                        show: true,
+                        color: KuraColors.infoBlue.withOpacity(0.1),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            if (volumePoints.any((e) => e.value.volumeManual)) ...[
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Icon(Icons.edit_note, size: 14, color: KuraColors.warning),
+                  const SizedBox(width: 4),
+                  Text('✎ Punto(s) con volumen ajustado manualmente',
+                      style: TextStyle(
+                          fontSize: 11, color: KuraColors.warning, fontWeight: FontWeight.w600)),
+                ],
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Grafica de composicion del lecho (tejido) en el tiempo
+  /// (feat/volume-kundin-charts): granulacion/esfacelo/necrosis/
+  /// epitelizacion, una linea por componente, misma serie de visitas que
+  /// la grafica de area (todas las mediciones tienen estos 4 campos, con
+  /// default 0, nunca null). Lectura como "progreso": lo ideal es
+  /// granulacion/epitelizacion subiendo y esfacelo/necrosis bajando.
+  Widget _buildTissueCompositionCard(List<WoundMeasurement> measurements, DateFormat dateFmt) {
+    Widget legendDot(Color color, String label) => Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 10,
+              height: 10,
+              decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+            ),
+            const SizedBox(width: 4),
+            Text(label, style: const TextStyle(fontSize: 11)),
+          ],
+        );
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Composición del lecho en el tiempo (%)',
+                style: TextStyle(fontWeight: FontWeight.w700)),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 12,
+              runSpacing: 4,
+              children: [
+                legendDot(KuraColors.success, 'Granulación'),
+                legendDot(KuraColors.warning, 'Esfacelo'),
+                legendDot(KuraColors.danger, 'Necrosis'),
+                legendDot(KuraColors.infoBlue, 'Epitelización'),
+              ],
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              height: 220,
+              child: LineChart(
+                LineChartData(
+                  minY: 0,
+                  maxY: 100,
+                  gridData: const FlGridData(show: true),
+                  titlesData: FlTitlesData(
+                    bottomTitles: AxisTitles(
+                      sideTitles: SideTitles(
+                        showTitles: true,
+                        getTitlesWidget: (value, meta) {
+                          final idx = value.toInt();
+                          if (idx < 0 || idx >= measurements.length) {
+                            return const SizedBox.shrink();
+                          }
+                          return Padding(
+                            padding: const EdgeInsets.only(top: 6),
+                            child: Text(
+                              dateFmt.format(measurements[idx].measuredAt),
+                              style: const TextStyle(fontSize: 10),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                    leftTitles: const AxisTitles(
+                      sideTitles: SideTitles(showTitles: true, reservedSize: 32),
+                    ),
+                    rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                    topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                  ),
+                  borderData: FlBorderData(show: false),
+                  lineTouchData: LineTouchData(
+                    touchTooltipData: LineTouchTooltipData(
+                      getTooltipItems: (touchedSpots) => [
+                        for (final spot in touchedSpots)
+                          LineTooltipItem(
+                            '${spot.y.toStringAsFixed(0)}%',
+                            const TextStyle(color: Colors.white, fontSize: 11),
+                          ),
+                      ],
+                    ),
+                  ),
+                  lineBarsData: [
+                    LineChartBarData(
+                      spots: [
+                        for (var i = 0; i < measurements.length; i++)
+                          FlSpot(i.toDouble(), measurements[i].granulationPct),
+                      ],
+                      isCurved: true,
+                      color: KuraColors.success,
+                      barWidth: 2.5,
+                      dotData: const FlDotData(show: true),
+                    ),
+                    LineChartBarData(
+                      spots: [
+                        for (var i = 0; i < measurements.length; i++)
+                          FlSpot(i.toDouble(), measurements[i].sloughPct),
+                      ],
+                      isCurved: true,
+                      color: KuraColors.warning,
+                      barWidth: 2.5,
+                      dotData: const FlDotData(show: true),
+                    ),
+                    LineChartBarData(
+                      spots: [
+                        for (var i = 0; i < measurements.length; i++)
+                          FlSpot(i.toDouble(), measurements[i].necrosisPct),
+                      ],
+                      isCurved: true,
+                      color: KuraColors.danger,
+                      barWidth: 2.5,
+                      dotData: const FlDotData(show: true),
+                    ),
+                    LineChartBarData(
+                      spots: [
+                        for (var i = 0; i < measurements.length; i++)
+                          FlSpot(i.toDouble(), measurements[i].epithelializationPct),
+                      ],
+                      isCurved: true,
+                      color: KuraColors.infoBlue,
+                      barWidth: 2.5,
+                      dotData: const FlDotData(show: true),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
