@@ -244,6 +244,10 @@ class WoundAssessment {
   // (reportado por el clinico en visitas de seguimiento). Alimenta el
   // parametro bajaAdherencia de KuraSheehanCheckpoint.evaluate().
   final bool lowAdherence;
+  // Notas clinicas / observaciones libres de la visita (opcional).
+  // Complementa los campos estructurados de arriba; aplica tanto a
+  // valoracion como a seguimiento (feat/clinical-free-notes).
+  final String? clinicalNotes;
 
   const WoundAssessment({
     required this.id,
@@ -265,6 +269,7 @@ class WoundAssessment {
     this.woundEdge,
     this.perilesionalSkin = const {},
     this.lowAdherence = false,
+    this.clinicalNotes,
   });
 
   factory WoundAssessment.fromJson(Map<String, dynamic> json) => WoundAssessment(
@@ -301,6 +306,7 @@ class WoundAssessment {
             .map((s) => PielPerilesionalEstado.values.firstWhere((e) => e.name == s))
             .toSet(),
         lowAdherence: json['low_adherence'] as bool? ?? false,
+        clinicalNotes: json['clinical_notes'] as String?,
       );
 
   Map<String, dynamic> toJson() => {
@@ -323,6 +329,7 @@ class WoundAssessment {
         'wound_edge': woundEdge,
         'perilesional_skin': perilesionalSkin.map((e) => e.name).toList(),
         'low_adherence': lowAdherence,
+        'clinical_notes': clinicalNotes,
       };
 }
 

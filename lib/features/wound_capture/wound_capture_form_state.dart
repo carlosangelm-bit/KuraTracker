@@ -44,6 +44,9 @@ class WoundCaptureFormState {
   String odor = 'ninguno';
   String woundEdge = 'definido';
   Set<PielPerilesionalEstado> perilesionalSkin = {};
+  // Notas clinicas / observaciones libres de la visita (opcional).
+  // No bloquea el guardado si esta vacio (feat/clinical-free-notes).
+  String? clinicalNotes;
 
   // ---- Medicion ----
   double lengthCm = 0;

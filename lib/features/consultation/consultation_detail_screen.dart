@@ -362,6 +362,13 @@ class _WoundSection extends StatelessWidget {
                 .toList(),
           ),
         ],
+        if (a.clinicalNotes != null && a.clinicalNotes!.trim().isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Text('Notas clínicas / Observaciones',
+              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+          const SizedBox(height: 4),
+          Text(a.clinicalNotes!.trim(), style: const TextStyle(fontSize: 13)),
+        ],
         const SizedBox(height: 16),
       ];
 
