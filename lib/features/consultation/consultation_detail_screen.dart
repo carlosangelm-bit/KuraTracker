@@ -286,10 +286,28 @@ class _WoundSection extends StatelessWidget {
             _MiniStat(label: 'Ancho', value: '${m.widthCm} cm'),
             _MiniStat(label: 'Área', value: '${m.areaCm2.toStringAsFixed(1)} cm²'),
             _MiniStat(label: 'Profundidad', value: '${m.depthCm} cm'),
+            // Volumen (feat/volume-kundin-charts): solo se muestra si hay
+            // dato (heridas superficiales sin profundidad no lo tienen; no
+            // se fuerza un valor con "N/A" fuera de contexto en el Wrap).
+            if (m.volumeCm3 != null)
+              _MiniStat(label: 'Volumen', value: '${m.volumeCm3!.toStringAsFixed(2)} cm³'),
             if (m.tunneling) _MiniStat(label: 'Tunelización', value: 'Sí'),
             if (m.undermining) _MiniStat(label: 'Socavamiento', value: 'Sí'),
           ],
         ),
+        if (m.volumeCm3 != null && m.volumeManual) ...[
+          const SizedBox(height: 6),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.edit_note, size: 14, color: KuraColors.warning),
+              const SizedBox(width: 4),
+              Text('✎ Volumen ajustado manualmente',
+                  style: TextStyle(
+                      fontSize: 11, color: KuraColors.warning, fontWeight: FontWeight.w600)),
+            ],
+          ),
+        ],
         const SizedBox(height: 10),
         Text('Composición del lecho', style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
         const SizedBox(height: 6),

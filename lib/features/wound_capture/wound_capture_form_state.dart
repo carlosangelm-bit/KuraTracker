@@ -1,3 +1,4 @@
+import '../../core/utils/wound_volume.dart';
 import '../../engine/models/kura_engine_enums.dart';
 import '../../engine/models/kura_engine_input.dart';
 
@@ -52,6 +53,15 @@ class WoundCaptureFormState {
   double lengthCm = 0;
   double widthCm = 0;
   double depthCm = 0;
+  // Volumen (cm3): auto-calculado por Kundin (L x A x P x 0.327) cada vez
+  // que cambia largo/ancho/profundidad, pero editable: el clinico puede
+  // sobrescribirlo (feat/volume-kundin-charts). null si depthCm es 0
+  // (herida superficial, sin medicion 3D).
+  // NOTA: no se guarda un flag "volumeManual" mutable aqui; el flag
+  // persistido (volume_manual) se deriva en vivo del getter
+  // isVolumeManuallyOverridden (comparando volumeCm3 vs autoVolumeCm3) al
+  // momento de guardar, ver _continueToTreatment en wound_capture_screen.
+  double? volumeCm3;
   bool tunneling = false;
   bool undermining = false;
   double granulacionPct = 100;
@@ -78,6 +88,23 @@ class WoundCaptureFormState {
   List<String> photoPaths = [];
 
   double get areaCm2 => lengthCm * widthCm;
+
+  /// Volumen auto-calculado por Kundin a partir de las medidas actuales
+  /// (largo/ancho/profundidad). null si la herida es superficial
+  /// (depthCm <= 0): el volumen 3D no aplica.
+  double? get autoVolumeCm3 =>
+      WoundVolumeCalculator.kundin(lengthCm: lengthCm, widthCm: widthCm, depthCm: depthCm);
+
+  /// true si el valor actualmente en volumeCm3 difiere del auto-calculo de
+  /// Kundin para las medidas actuales (el clinico lo sobrescribio a mano).
+  bool get isVolumeManuallyOverridden => WoundVolumeCalculator.isManualOverride(
+        storedVolumeCm3: volumeCm3,
+        autoCalculatedCm3: autoVolumeCm3,
+      );
+
+  /// Herida profunda (mismo umbral que follow_up_capture_screen): a mayor
+  /// profundidad se activa el bloque de medicion 3D (volumen) ademas del 2D.
+  bool get isDeepWound => depthCm >= 0.5;
 
   bool get isLowerExtremityLocation {
     final loc = bodyLocationPrimary ?? '';

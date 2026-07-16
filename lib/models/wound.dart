@@ -149,7 +149,14 @@ class WoundMeasurement {
   final bool capturedBeforeDebridement;
   // Medicion 3D (heridas profundas): volumen en cm3. NULL si solo se midio
   // en 2D (largo/ancho/area). Protocolo de Fotografias y Medicion (P1/P2).
+  // Auto-calculado con la formula de Kundin (V = L x A x P x 0.327,
+  // feat/volume-kundin-charts) cuando depthCm > 0; el clinico puede
+  // sobrescribirlo (ver volumeManual).
   final double? volumeCm3;
+  // true si el valor persistido en volumeCm3 fue editado manualmente por
+  // el clinico (difiere del auto-calculo de Kundin al momento de guardar).
+  // Migracion 0015 (feat/volume-kundin-charts).
+  final bool volumeManual;
   // Nota de medicion manual (hisopo/regla) para socavamiento, tunelizacion,
   // heridas circunferenciales o de geometria irregular.
   final String? manualMeasurementNote;
@@ -171,6 +178,7 @@ class WoundMeasurement {
     this.epithelializationPct = 0,
     this.capturedBeforeDebridement = true,
     this.volumeCm3,
+    this.volumeManual = false,
     this.manualMeasurementNote,
   });
 
@@ -194,6 +202,7 @@ class WoundMeasurement {
         epithelializationPct: (json['epithelialization_pct'] as num?)?.toDouble() ?? 0,
         capturedBeforeDebridement: json['captured_before_debridement'] as bool? ?? true,
         volumeCm3: (json['volume_cm3'] as num?)?.toDouble(),
+        volumeManual: json['volume_manual'] as bool? ?? false,
         manualMeasurementNote: json['manual_measurement_note'] as String?,
       );
 
@@ -214,6 +223,7 @@ class WoundMeasurement {
         'epithelialization_pct': epithelializationPct,
         'captured_before_debridement': capturedBeforeDebridement,
         'volume_cm3': volumeCm3,
+        'volume_manual': volumeManual,
         'manual_measurement_note': manualMeasurementNote,
       };
 }
