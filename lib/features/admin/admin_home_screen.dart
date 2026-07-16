@@ -899,6 +899,24 @@ class _NoteCatalogTabState extends State<NoteCatalogTab> {
     }
   }
 
+  /// Cambia la etiqueta kura_tag de un concepto (dropdown "Sin etiqueta" +
+  /// las 9 categorias del motor Protocolo Kura+, ver
+  /// 0013_note_option_catalog_kura_tag.sql). Es el puente que permite, mas
+  /// adelante, que el toggle premium de la nota de seguimiento pre-marque
+  /// este concepto cuando su etiqueta coincida con el regimen sugerido.
+  Future<void> _setKuraTag(NoteOptionCatalogItem item, KuraTag? tag) async {
+    try {
+      await widget.repo.setNoteOptionKuraTag(item.id, tag);
+      if (mounted) setState(() {});
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('No se pudo actualizar la etiqueta: $e')),
+        );
+      }
+    }
+  }
+
   /// Borra un concepto del catalogo, previa confirmacion. Borrar solo
   /// quita el concepto de las opciones futuras (chips al capturar una
   /// nota); las notas de seguimiento ya guardadas conservan el texto
@@ -1050,19 +1068,54 @@ class _NoteCatalogTabState extends State<NoteCatalogTab> {
                       final o = options[i];
                       return Card(
                         color: o.isActive ? null : KuraColors.chipBg,
-                        child: ListTile(
-                          title: Text(
-                            o.label,
-                            style: TextStyle(
-                              decoration: o.isActive ? null : TextDecoration.lineThrough,
-                              color: o.isActive
-                                  ? null
-                                  : KuraColors.darkText.withOpacity(0.5),
-                            ),
-                          ),
-                          trailing: Row(
-                            mainAxisSize: MainAxisSize.min,
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 4, 8, 4),
+                          child: Row(
                             children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Padding(
+                                      padding: const EdgeInsets.symmetric(vertical: 8),
+                                      child: Text(
+                                        o.label,
+                                        style: TextStyle(
+                                          decoration: o.isActive ? null : TextDecoration.lineThrough,
+                                          color: o.isActive
+                                              ? null
+                                              : KuraColors.darkText.withOpacity(0.5),
+                                        ),
+                                      ),
+                                    ),
+                                    // Etiqueta kura_tag (puente hacia el motor Protocolo
+                                    // Kura+): opcional, "Sin etiqueta" permitido y por
+                                    // defecto -- ver 0013_note_option_catalog_kura_tag.sql.
+                                    DropdownButton<KuraTag?>(
+                                      value: o.kuraTag,
+                                      isDense: true,
+                                      underline: const SizedBox.shrink(),
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: KuraColors.darkText.withOpacity(0.7),
+                                      ),
+                                      items: [
+                                        const DropdownMenuItem<KuraTag?>(
+                                          value: null,
+                                          child: Text('Sin etiqueta'),
+                                        ),
+                                        ...KuraTag.values.map(
+                                          (t) => DropdownMenuItem<KuraTag?>(
+                                            value: t,
+                                            child: Text(t.label),
+                                          ),
+                                        ),
+                                      ],
+                                      onChanged: (t) => _setKuraTag(o, t),
+                                    ),
+                                  ],
+                                ),
+                              ),
                               IconButton(
                                 icon: const Icon(
                                   Icons.delete_outline,

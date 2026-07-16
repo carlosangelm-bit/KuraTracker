@@ -414,6 +414,7 @@ class DataRepository {
     required String label,
     required String? organizationId,
     String? createdByProfileId,
+    KuraTag? kuraTag,
   }) async {
     final data = {
       'id': _uuid.v4(),
@@ -422,6 +423,7 @@ class DataRepository {
       'is_active': true,
       'created_by': createdByProfileId,
       'organization_id': organizationId,
+      'kura_tag': kuraTag?.dbValue,
     };
     final saved = await _store.insertRow(Collections.noteOptionCatalog, data);
     return NoteOptionCatalogItem.fromJson(saved);
@@ -429,6 +431,13 @@ class DataRepository {
 
   Future<void> setNoteOptionActive(String id, bool active) async {
     await _store.updateRow(Collections.noteOptionCatalog, id, {'is_active': active});
+  }
+
+  /// Actualiza SOLO la etiqueta kura_tag de un concepto existente (dropdown
+  /// de NoteCatalogTab en Administracion). `null` limpia la etiqueta
+  /// ("Sin etiqueta"). No toca ningun otro campo del concepto.
+  Future<void> setNoteOptionKuraTag(String id, KuraTag? kuraTag) async {
+    await _store.updateRow(Collections.noteOptionCatalog, id, {'kura_tag': kuraTag?.dbValue});
   }
 
   /// Borra un concepto del catalogo (pantalla de Configuracion). La
@@ -502,6 +511,7 @@ class DataRepository {
           isActive: row.activo,
           createdBy: existing.createdBy,
           organizationId: existing.organizationId,
+          kuraTag: existing.kuraTag,
         );
         updated++;
       }
@@ -527,30 +537,37 @@ class DataRepository {
   /// captura reportada: un centro creado desde Plataforma por el master
   /// no arrastra ningun concepto -- por diseno, para no imponerle
   /// contenido sin pedirselo -- pero de ahi la necesidad de este boton).
-  static const List<(NoteOptionField, String)> defaultNoteOptionCatalog = [
-    (NoteOptionField.careType, 'Curación ambulatoria'),
-    (NoteOptionField.careType, 'Visita domiciliaria'),
-    (NoteOptionField.careType, 'Curación en hospitalización'),
-    (NoteOptionField.careType, 'Interconsulta'),
-    (NoteOptionField.careType, 'Desbridamiento programado'),
-    (NoteOptionField.procedureDesc, 'Limpieza con solución salina y cambio de apósito'),
-    (NoteOptionField.procedureDesc, 'Desbridamiento cortante parcial'),
-    (NoteOptionField.procedureDesc, 'Desbridamiento autolítico/enzimático'),
-    (NoteOptionField.procedureDesc, 'Toma de medidas y fotografía de control'),
-    (NoteOptionField.procedureDesc, 'Aplicación de terapia compresiva'),
-    (NoteOptionField.procedureDesc, 'Educación al paciente/cuidador'),
-    (NoteOptionField.materialsUsed, 'Solución salina 0.9%'),
-    (NoteOptionField.materialsUsed, 'Yodopovidona 10%'),
-    (NoteOptionField.materialsUsed, 'Apósito de espuma (foam)'),
-    (NoteOptionField.materialsUsed, 'Apósito de alginato'),
-    (NoteOptionField.materialsUsed, 'Apósito hidrocoloide'),
-    (NoteOptionField.materialsUsed, 'Gasa estéril'),
-    (NoteOptionField.materialsUsed, 'Vendaje de compresión'),
-    (NoteOptionField.evolution, 'Favorable, con reducción de área'),
-    (NoteOptionField.evolution, 'Estable, sin cambios significativos'),
-    (NoteOptionField.evolution, 'Sin avance esperado para la semana de tratamiento'),
-    (NoteOptionField.evolution, 'Signos de infección local'),
-    (NoteOptionField.evolution, 'Mejoría del tejido de granulación'),
+  /// Tercer elemento (kuraTag): etiqueta de mapeo al motor Protocolo Kura+
+  /// (ver 0013_note_option_catalog_kura_tag.sql) sembrada por defecto para
+  /// los conceptos base curados cuya correspondencia con un metodo del
+  /// motor es clara y no ambigua. Los conceptos sin correspondencia clara
+  /// (p.ej. "Interconsulta", evolucion, la mayoria de materiales sueltos)
+  /// quedan en null ("Sin etiqueta") a proposito -- etiquetar de mas seria
+  /// forzar auto-selecciones que no reflejan realmente ese metodo.
+  static const List<(NoteOptionField, String, KuraTag?)> defaultNoteOptionCatalog = [
+    (NoteOptionField.careType, 'Curación ambulatoria', null),
+    (NoteOptionField.careType, 'Visita domiciliaria', null),
+    (NoteOptionField.careType, 'Curación en hospitalización', null),
+    (NoteOptionField.careType, 'Interconsulta', null),
+    (NoteOptionField.careType, 'Desbridamiento programado', KuraTag.desbridamiento),
+    (NoteOptionField.procedureDesc, 'Limpieza con solución salina y cambio de apósito', KuraTag.limpieza),
+    (NoteOptionField.procedureDesc, 'Desbridamiento cortante parcial', KuraTag.desbridamiento),
+    (NoteOptionField.procedureDesc, 'Desbridamiento autolítico/enzimático', KuraTag.desbridamiento),
+    (NoteOptionField.procedureDesc, 'Toma de medidas y fotografía de control', null),
+    (NoteOptionField.procedureDesc, 'Aplicación de terapia compresiva', KuraTag.compresion),
+    (NoteOptionField.procedureDesc, 'Educación al paciente/cuidador', KuraTag.educacion),
+    (NoteOptionField.materialsUsed, 'Solución salina 0.9%', KuraTag.limpieza),
+    (NoteOptionField.materialsUsed, 'Yodopovidona 10%', KuraTag.antimicrobiano),
+    (NoteOptionField.materialsUsed, 'Apósito de espuma (foam)', KuraTag.aposito),
+    (NoteOptionField.materialsUsed, 'Apósito de alginato', KuraTag.aposito),
+    (NoteOptionField.materialsUsed, 'Apósito hidrocoloide', KuraTag.aposito),
+    (NoteOptionField.materialsUsed, 'Gasa estéril', KuraTag.aposito),
+    (NoteOptionField.materialsUsed, 'Vendaje de compresión', KuraTag.compresion),
+    (NoteOptionField.evolution, 'Favorable, con reducción de área', null),
+    (NoteOptionField.evolution, 'Estable, sin cambios significativos', null),
+    (NoteOptionField.evolution, 'Sin avance esperado para la semana de tratamiento', null),
+    (NoteOptionField.evolution, 'Signos de infección local', null),
+    (NoteOptionField.evolution, 'Mejoría del tejido de granulación', null),
   ];
 
   /// Carga el catalogo base curado para el centro [organizationId]:
@@ -582,6 +599,7 @@ class DataRepository {
     for (final entry in defaultNoteOptionCatalog) {
       final field = entry.$1;
       final label = entry.$2;
+      final kuraTag = entry.$3;
       final existingLabels = existingLabelsByField[field]!;
       if (existingLabels.contains(label.trim().toLowerCase())) continue;
 
@@ -590,6 +608,7 @@ class DataRepository {
         label: label,
         organizationId: organizationId,
         createdByProfileId: createdByProfileId,
+        kuraTag: kuraTag,
       );
       existingLabels.add(label.trim().toLowerCase());
       added++;

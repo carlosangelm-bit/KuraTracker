@@ -8,10 +8,13 @@ import 'package:intl/intl.dart';
 
 import '../../core/providers/session_provider.dart';
 import '../../core/theme/kura_theme.dart';
+import '../../engine/kura_protocol_engine.dart';
 import '../../engine/models/kura_engine_enums.dart';
+import '../../engine/models/kura_engine_input.dart';
 import '../../models/app_user.dart';
 import '../../models/consultation.dart';
 import '../../models/note_option_catalog.dart';
+import '../../models/site.dart';
 import '../../models/treatment_plan.dart';
 import '../../services/data_repository.dart';
 import '../../services/photo_upload_service.dart';
@@ -41,6 +44,33 @@ import '../wound_capture/widgets/bed_composition_sliders.dart';
 ///      tomadas del registro `staff` del profesional en sesion — nunca se
 ///      piden como campos editables en cada nota.
 ///
+/// Lookup metodo del regimen (RegimenComponente.metodo, tal cual lo emite
+/// KuraTreatmentRulesEngine, kura_rules_v2) -> KuraTag del catalogo (Parte
+/// D, toggle premium "Utilizar protocolo Kura+"). Solo los metodos con un
+/// concepto de catalogo claramente equivalente tienen tag; los metodos de
+/// manejo especializado por tipo de herida traumatica/quirurgica/neuropatica
+/// (sin equivalente 1:1 generico en el catalogo) mapean a `null` a
+/// proposito, para que NUNCA se auto-seleccione nada en esos casos (los
+/// conceptos sin etiqueta o personalizados jamas se auto-seleccionan).
+const Map<String, KuraTag?> kKuraMethodToTag = {
+  'Limpieza de la herida': KuraTag.limpieza,
+  'Desbridamiento': KuraTag.desbridamiento,
+  'Relleno de cavidad': KuraTag.rellenoCavidad,
+  'Apósito': KuraTag.aposito,
+  'Protección de la piel': KuraTag.proteccionPiel,
+  'Tratamiento para la infección': KuraTag.antimicrobiano,
+  'Educación al paciente/cuidador': KuraTag.educacion,
+  'Dispositivo de descarga': KuraTag.descarga,
+  'Terapia compresiva': KuraTag.compresion,
+  'Manejo neuropático': null,
+  'Manejo de herida quirúrgica': null,
+  'Manejo de herida por mordedura': null,
+  'Manejo de herida por arma de fuego': null,
+  'Manejo de herida por aplastamiento': null,
+  'Manejo de herida punzocortante': null,
+  'Manejo de herida traumática': null,
+};
+
 /// Persiste, en este orden:
 ///   1. consultations (visit_type='seguimiento' + nota de seguimiento)
 ///   2. wound_measurements (2D/3D, composicion del lecho, nota manual)
@@ -109,14 +139,31 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
 
   // ---- Nota de seguimiento obligatoria (conceptos desde catalogo del
   // centro; "Otro" como texto libre por campo) ----
+  // "Tipo de atencion" y "Evolucion" siguen single-select (una unica
+  // opcion o "Otro"). "Descripcion del procedimiento" y "Material
+  // utilizado" son multi-seleccion (Parte A, feat/followup-protocol-suggest):
+  // el clinico puede marcar varios conceptos a la vez; se concatenan con
+  // "; " al guardar (ver _procedureDescFinal/_materialsUsedFinal). El
+  // sentinela kOtherOptionValue puede convivir como UN elemento mas del
+  // Set junto a otros conceptos ya elegidos.
   String? _careTypeSelected;
   final _careTypeOtherCtrl = TextEditingController();
-  String? _procedureDescSelected;
+  final Set<String> _procedureDescSelected = {};
   final _procedureDescOtherCtrl = TextEditingController();
-  String? _materialsUsedSelected;
+  final Set<String> _materialsUsedSelected = {};
   final _materialsUsedOtherCtrl = TextEditingController();
   String? _evolutionSelected;
   final _evolutionOtherCtrl = TextEditingController();
+
+  // Marca (Parte D, toggle premium "Utilizar protocolo Kura+"): true si
+  // alguno de los conceptos actualmente marcados en procedureDesc/
+  // materialsUsed proviene de la pre-seleccion automatica del motor (para
+  // mostrar la nota discreta "Sugerido por Protocolo Kura+ · editable").
+  // Se limpia tan pronto el clinico toca manualmente un chip (todo sigue
+  // siendo editable/quitable, esto es solo informativo).
+  bool _kuraProtocolSuggestionActive = false;
+  bool _useKuraProtocol = false;
+  bool _kuraProtocolLoading = false;
 
   // Firma/cedula: solo lectura, resueltas desde el staff de la sesion (no
   // se piden como campos editables en cada nota).
@@ -136,19 +183,46 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
 
   String get _careTypeFinal =>
       _careTypeSelected == kOtherOptionValue ? _careTypeOtherCtrl.text.trim() : (_careTypeSelected ?? '');
-  String get _procedureDescFinal => _procedureDescSelected == kOtherOptionValue
-      ? _procedureDescOtherCtrl.text.trim()
-      : (_procedureDescSelected ?? '');
-  String get _materialsUsedFinal => _materialsUsedSelected == kOtherOptionValue
-      ? _materialsUsedOtherCtrl.text.trim()
-      : (_materialsUsedSelected ?? '');
+
+  /// Concatena (separador "; ") los conceptos elegidos en un campo
+  /// multi-seleccion (Parte A). Si "Otro" esta activo (presente en el
+  /// Set), combina su texto libre junto con el resto de los conceptos
+  /// elegidos, en el mismo orden en que aparecen los chips del catalogo
+  /// (mas "Otro" al final si esta activo), para que el texto persistido
+  /// sea legible y predecible.
+  String _joinMultiSelect(Set<String> selected, TextEditingController otherCtrl) {
+    final parts = <String>[
+      ...selected.where((s) => s != kOtherOptionValue),
+      if (selected.contains(kOtherOptionValue) && otherCtrl.text.trim().isNotEmpty)
+        otherCtrl.text.trim(),
+    ];
+    return parts.join('; ');
+  }
+
+  String get _procedureDescFinal => _joinMultiSelect(_procedureDescSelected, _procedureDescOtherCtrl);
+  String get _materialsUsedFinal => _joinMultiSelect(_materialsUsedSelected, _materialsUsedOtherCtrl);
+
   String get _evolutionFinal =>
       _evolutionSelected == kOtherOptionValue ? _evolutionOtherCtrl.text.trim() : (_evolutionSelected ?? '');
 
+  /// Validacion por campo multi-seleccion: >=1 concepto marcado, y si
+  /// "Otro" es el UNICO elegido, su texto libre no puede estar vacio
+  /// (mismo criterio que antes exigia para el single-select).
+  bool _multiSelectComplete(Set<String> selected, TextEditingController otherCtrl) {
+    if (selected.isEmpty) return false;
+    final hasNonOther = selected.any((s) => s != kOtherOptionValue);
+    if (hasNonOther) return true;
+    // Solo "Otro" esta marcado: exige texto no vacio.
+    return otherCtrl.text.trim().isNotEmpty;
+  }
+
+  bool get _procedureDescComplete => _multiSelectComplete(_procedureDescSelected, _procedureDescOtherCtrl);
+  bool get _materialsUsedComplete => _multiSelectComplete(_materialsUsedSelected, _materialsUsedOtherCtrl);
+
   bool get _followUpNoteComplete =>
       _careTypeFinal.isNotEmpty &&
-      _procedureDescFinal.isNotEmpty &&
-      _materialsUsedFinal.isNotEmpty &&
+      _procedureDescComplete &&
+      _materialsUsedComplete &&
       _evolutionFinal.isNotEmpty;
 
   Future<void> _pickPhoto({required bool withMeasurement}) async {
@@ -606,22 +680,45 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
                     onSelected: (v) => setState(() => _careTypeSelected = v),
                   ),
                   const SizedBox(height: 16),
-                  _noteFieldChips(
+                  // Toggle premium "Utilizar protocolo Kura+" (Parte D): solo
+                  // visible si session.user?.premiumEnabled == true. Se
+                  // muestra justo antes de los 2 campos multi-seleccion que
+                  // pre-selecciona (procedimiento/material), para que la
+                  // relacion causa->efecto sea obvia en la UI.
+                  if (session.user?.premiumEnabled == true) ...[
+                    _kuraProtocolToggle(repo: repo, session: session),
+                    const SizedBox(height: 16),
+                  ],
+                  _noteFieldChipsMulti(
                     repo: repo,
                     session: session,
                     field: NoteOptionField.procedureDesc,
                     selected: _procedureDescSelected,
                     otherCtrl: _procedureDescOtherCtrl,
-                    onSelected: (v) => setState(() => _procedureDescSelected = v),
+                    onToggle: (label, isSelected) => setState(() {
+                      _kuraProtocolSuggestionActive = false;
+                      if (isSelected) {
+                        _procedureDescSelected.add(label);
+                      } else {
+                        _procedureDescSelected.remove(label);
+                      }
+                    }),
                   ),
                   const SizedBox(height: 16),
-                  _noteFieldChips(
+                  _noteFieldChipsMulti(
                     repo: repo,
                     session: session,
                     field: NoteOptionField.materialsUsed,
                     selected: _materialsUsedSelected,
                     otherCtrl: _materialsUsedOtherCtrl,
-                    onSelected: (v) => setState(() => _materialsUsedSelected = v),
+                    onToggle: (label, isSelected) => setState(() {
+                      _kuraProtocolSuggestionActive = false;
+                      if (isSelected) {
+                        _materialsUsedSelected.add(label);
+                      } else {
+                        _materialsUsedSelected.remove(label);
+                      }
+                    }),
                   ),
                   const SizedBox(height: 16),
                   _noteFieldChips(
@@ -781,6 +878,313 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
         ],
       ],
     );
+  }
+
+  /// Variante multi-seleccion (Parte A, feat/followup-protocol-suggest) de
+  /// [_noteFieldChips]: usa FilterChip en modo toggle add/remove sobre un
+  /// Set<String> en vez de reemplazar un unico valor seleccionado. Misma
+  /// logica de "Otro" (texto libre + alta al catalogo si es admin) que
+  /// [_noteFieldChips], salvo que aqui "Otro" es un elemento mas del Set
+  /// (puede convivir marcado junto a otros conceptos del catalogo).
+  ///
+  /// Si [_kuraProtocolSuggestionActive] esta activo, muestra debajo de los
+  /// chips la nota discreta "Sugerido por Protocolo Kura+ · editable"
+  /// (Parte D): el clinico puede seguir quitando/agregando chips con total
+  /// libertad, esta nota es solo informativa.
+  Widget _noteFieldChipsMulti({
+    required DataRepository repo,
+    required SessionState session,
+    required NoteOptionField field,
+    required Set<String> selected,
+    required TextEditingController otherCtrl,
+    required void Function(String label, bool isSelected) onToggle,
+  }) {
+    final options = repo.listNoteOptions(field);
+    final isAdmin = session.user?.role == AppRole.admin;
+    final otherSelected = selected.contains(kOtherOptionValue);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('${field.label} *', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            ...options.map((o) {
+              final isSelected = selected.contains(o.label);
+              return FilterChip(
+                label: Text(o.label, style: const TextStyle(fontSize: 12)),
+                selected: isSelected,
+                selectedColor: KuraColors.primary.withOpacity(0.15),
+                onSelected: (v) => onToggle(o.label, v),
+              );
+            }),
+            FilterChip(
+              label: const Text('Otro', style: TextStyle(fontSize: 12)),
+              selected: otherSelected,
+              selectedColor: KuraColors.warning.withOpacity(0.2),
+              onSelected: (v) => onToggle(kOtherOptionValue, v),
+            ),
+          ],
+        ),
+        if (_kuraProtocolSuggestionActive && selected.isNotEmpty) ...[
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              const Icon(Icons.auto_awesome, size: 14, color: KuraColors.primary),
+              const SizedBox(width: 4),
+              const Text(
+                'Sugerido por Protocolo Kura+ · editable',
+                style: TextStyle(fontSize: 11, fontStyle: FontStyle.italic, color: KuraColors.primary),
+              ),
+            ],
+          ),
+        ],
+        if (otherSelected) ...[
+          const SizedBox(height: 8),
+          TextField(
+            controller: otherCtrl,
+            decoration: InputDecoration(
+              labelText: 'Especifica "${field.label}"',
+              hintText: isAdmin
+                  ? 'Al guardar se ofrecerá agregarlo al catálogo del centro.'
+                  : 'Se usará solo en esta nota (no se agrega al catálogo).',
+            ),
+            onChanged: (_) => setState(() {}),
+          ),
+          if (isAdmin) ...[
+            const SizedBox(height: 4),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                icon: const Icon(Icons.playlist_add, size: 16),
+                label: const Text('Guardar este concepto en el catálogo', style: TextStyle(fontSize: 12)),
+                onPressed: otherCtrl.text.trim().isEmpty
+                    ? null
+                    : () async {
+                        final label = otherCtrl.text.trim();
+                        try {
+                          await repo.createNoteOption(
+                            field: field,
+                            label: label,
+                            organizationId: session.user?.organizationId,
+                            createdByProfileId: session.user?.id,
+                          );
+                          if (mounted) {
+                            setState(() {
+                              selected.remove(kOtherOptionValue);
+                              selected.add(label);
+                              otherCtrl.clear();
+                            });
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('"$label" agregado al catálogo de ${field.label}.')),
+                            );
+                          }
+                        } catch (e) {
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('No se pudo agregar al catálogo: $e')),
+                            );
+                          }
+                        }
+                      },
+              ),
+            ),
+          ],
+        ],
+      ],
+    );
+  }
+
+  /// Toggle premium "Utilizar protocolo Kura+" (Parte D). Solo se renderiza
+  /// si `session.user?.premiumEnabled == true` (chequeado por el llamador
+  /// en build()). Al activarlo:
+  ///   1. Construye un KuraEngineInput con la valoracion ACTUAL de este
+  ///      seguimiento (mediciones/tejido/exudado/infeccion/piel de esta
+  ///      visita) + contexto de la herida (etiologia/Wagner/CEAP/WUWHS/
+  ///      agente causal via repo.getWound), comorbilidades del paciente
+  ///      (repo.listComorbidities) y perfusion/nutricion mas reciente
+  ///      (repo.getPerfusionForWound). `entorno` se deriva del `kind` del
+  ///      sitio principal del paciente (domicilio si kind=='domicilio',
+  ///      clinica en cualquier otro caso) -- no hay un campo de entorno
+  ///      propio en el formulario de seguimiento.
+  ///   2. Corre KuraProtocolEngine.load()+.run() (mismo orquestador que
+  ///      wound_capture_controller.dart) para obtener el regimen sugerido,
+  ///      consistente con el resto de la app.
+  ///   3. Mapea cada RegimenComponente.metodo a su KuraTag via
+  ///      kKuraMethodToTag y pre-selecciona (sin reemplazar lo ya marcado)
+  ///      los conceptos activos del catalogo cuyo kuraTag coincida, en
+  ///      procedureDesc/materialsUsed. Metodos sin tag (null) o conceptos
+  ///      sin etiqueta NUNCA se auto-seleccionan.
+  /// Desactivar el toggle NO quita las pre-selecciones ya hechas (son
+  /// editables como cualquier otro chip); solo detiene nuevas corridas.
+  Widget _kuraProtocolToggle({required DataRepository repo, required SessionState session}) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: KuraColors.primary.withOpacity(0.06),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: KuraColors.primary.withOpacity(0.25)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.auto_awesome, size: 18, color: KuraColors.primary),
+              const SizedBox(width: 8),
+              const Expanded(
+                child: Text(
+                  'Utilizar protocolo Kura+',
+                  style: TextStyle(fontWeight: FontWeight.w700),
+                ),
+              ),
+              if (_kuraProtocolLoading)
+                const SizedBox(
+                  height: 18,
+                  width: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              else
+                Switch(
+                  value: _useKuraProtocol,
+                  activeColor: KuraColors.primary,
+                  onChanged: (v) => _onKuraProtocolToggleChanged(v, repo, session),
+                ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            'Sugiere procedimiento/material segun el regimen del motor clinico '
+            'para la valoracion de esta visita. Todo queda editable.',
+            style: TextStyle(fontSize: 11, color: KuraColors.darkText),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _onKuraProtocolToggleChanged(
+    bool value,
+    DataRepository repo,
+    SessionState session,
+  ) async {
+    setState(() => _useKuraProtocol = value);
+    if (!value) return;
+
+    setState(() => _kuraProtocolLoading = true);
+    try {
+      final wound = repo.getWound(widget.woundId);
+      if (wound == null) {
+        throw StateError('Herida no encontrada.');
+      }
+      final comorbMap = <Comorbilidad, ComorbilidadEstado>{
+        for (final c in repo.listComorbidities(widget.patientId)) c.code: c.status,
+      };
+      final perfusion = repo.getPerfusionForWound(widget.woundId);
+      final patient = repo.getPatient(widget.patientId);
+      final sites = repo.listSites();
+      Site? primarySite;
+      if (patient?.primarySiteId != null) {
+        for (final s in sites) {
+          if (s.id == patient!.primarySiteId) {
+            primarySite = s;
+            break;
+          }
+        }
+      }
+      final entorno = primarySite?.kind == 'domicilio' ? Entorno.domicilio : Entorno.clinica;
+
+      final input = KuraEngineInput(
+        etiologia: wound.etiology,
+        entorno: entorno,
+        areaCm2: _areaCm2,
+        depthCm: _depthCm,
+        necrosisPct: _necrosis,
+        esfaceloPct: _esfacelo,
+        granulacionPct: _granulacion,
+        epitelizacionPct: _epitelizacion,
+        comorbilidades: comorbMap,
+        abiPieDerecho: perfusion?.abiRight,
+        abiPieIzquierdo: perfusion?.abiLeft,
+        esExtremidadInferior: perfusion?.isLowerExtremity ?? false,
+        albuminaGdl: perfusion?.albuminGdl,
+        tunelizacionOSocavamiento: _tunneling || _undermining,
+        exudadoCantidad: _exudadoCantidad,
+        pielPerilesional: _perilesionalSkin,
+        infeccionCriterios: _infeccionCriterios,
+        tieneCuidadorIdentificado: patient?.hasIdentifiedCaregiver ?? false,
+        pacienteFragil: patient?.fragilePatient ?? false,
+        wagnerGrade: wound.wagnerGrade,
+        ceapClass: wound.ceapClass,
+        wuwhsGrade: wound.wuwhsGrade,
+        agenteCausal: wound.agenteCausal,
+      );
+
+      final engine = await KuraProtocolEngine.load();
+      final output = engine.run(input);
+
+      // Mapea cada metodo del regimen a su KuraTag y pre-selecciona los
+      // conceptos activos del catalogo cuyo kuraTag coincida. Metodos sin
+      // tag (kKuraMethodToTag[metodo] == null, incluyendo metodos
+      // desconocidos ausentes del mapa) nunca aportan pre-seleccion.
+      final tagsSugeridos = output.regimen
+          .map((r) => kKuraMethodToTag[r.metodo])
+          .whereType<KuraTag>()
+          .toSet();
+
+      if (tagsSugeridos.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Protocolo Kura+ no encontró conceptos etiquetados para esta valoración; '
+                'selecciona manualmente.',
+              ),
+            ),
+          );
+        }
+        return;
+      }
+
+      final procedureOptions = repo.listNoteOptions(NoteOptionField.procedureDesc);
+      final materialsOptions = repo.listNoteOptions(NoteOptionField.materialsUsed);
+
+      var addedAny = false;
+      setState(() {
+        for (final o in procedureOptions) {
+          if (o.kuraTag != null && tagsSugeridos.contains(o.kuraTag)) {
+            if (_procedureDescSelected.add(o.label)) addedAny = true;
+          }
+        }
+        for (final o in materialsOptions) {
+          if (o.kuraTag != null && tagsSugeridos.contains(o.kuraTag)) {
+            if (_materialsUsedSelected.add(o.label)) addedAny = true;
+          }
+        }
+        if (addedAny) _kuraProtocolSuggestionActive = true;
+      });
+
+      if (mounted && !addedAny) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'El régimen sugerido no tiene conceptos etiquetados en el catálogo del '
+              'centro; pídele al administrador que asigne etiquetas kura_tag.',
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('No se pudo calcular el protocolo Kura+: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _kuraProtocolLoading = false);
+    }
   }
 
   Widget _signatureReadOnlyCard() {
