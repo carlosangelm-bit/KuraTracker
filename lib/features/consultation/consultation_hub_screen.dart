@@ -8,6 +8,8 @@ import '../../core/providers/session_provider.dart';
 import '../../models/app_user.dart';
 import '../../models/consultation.dart';
 import '../../services/data_repository.dart';
+import '../patients/patient_wound_summary.dart';
+import '../patients/wound_picker_sheet.dart';
 
 /// Encabezado rapido de consulta (fecha, sitio, tipo de visita) — luego
 /// entra directo al flujo unificado de captura de herida (foto-primero).
@@ -131,57 +133,23 @@ class _ConsultationHubScreenState extends ConsumerState<ConsultationHubScreen> {
                               child:
                                   CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                             )
-                          : const Icon(Icons.camera_alt_outlined),
-                      label: Text(_creating ? 'Creando...' : 'Continuar: capturar herida'),
+                          : Icon(_visitType == VisitType.seguimiento
+                              ? Icons.update
+                              : Icons.camera_alt_outlined),
+                      label: Text(_creating
+                          ? 'Creando...'
+                          : _visitType == VisitType.seguimiento
+                              ? 'Continuar: registrar seguimiento'
+                              : 'Continuar: capturar herida'),
                       style: FilledButton.styleFrom(
                         backgroundColor: KuraColors.primary,
                         padding: const EdgeInsets.symmetric(vertical: 14),
                       ),
                       onPressed: _creating || _siteId == null
                           ? null
-                          : () async {
-                              setState(() => _creating = true);
-                              // Fix admin-clinico (ajuste obligatorio #3): el
-                              // staffId de un admin ya se resuelve de forma
-                              // perezosa en SessionController (login/restore,
-                              // ver ensureAdminStaffId), por lo que a esta
-                              // altura session.user.staffId deberia estar
-                              // resuelto tanto para clinico como para admin.
-                              // Si por algun motivo aun no lo esta (p.ej. fallo
-                              // de red durante el aprovisionamiento), se
-                              // reintenta aqui mismo en vez de bloquear
-                              // silenciosamente el flujo.
-                              var staffId = session.user?.staffId;
-                              if (staffId == null && session.user?.role == AppRole.admin) {
-                                staffId = await repo.ensureAdminStaffId(session.user!);
-                              }
-                              if (staffId == null) {
-                                setState(() => _creating = false);
-                                if (mounted) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                      content: Text(
-                                        'No se encontró personal sanitario vinculado a tu cuenta.',
-                                      ),
-                                    ),
-                                  );
-                                }
-                                return;
-                              }
-                              final consultation = await repo.createConsultation(
-                                patientId: widget.patientId,
-                                staffId: staffId,
-                                siteId: _siteId!,
-                                visitType: _visitType,
-                                visitDate: _visitDate,
-                                isDraft: true,
-                              );
-                              if (mounted) {
-                                context.go(
-                                  '/patients/${widget.patientId}/wound/new/capture?consultationId=${consultation.id}',
-                                );
-                              }
-                            },
+                          : () => _visitType == VisitType.seguimiento
+                              ? _continueSeguimiento(repo)
+                              : _continueNuevaHerida(repo, session),
                     ),
                     const SizedBox(height: 8),
                     Text(
@@ -200,5 +168,77 @@ class _ConsultationHubScreenState extends ConsumerState<ConsultationHubScreen> {
         },
       ),
     );
+  }
+
+  /// Flujo original (valoracion inicial / otros tipos que capturan una
+  /// herida NUEVA): crea la consulta borrador y navega directo al formulario
+  /// unificado de captura de herida.
+  Future<void> _continueNuevaHerida(DataRepository repo, SessionState session) async {
+    setState(() => _creating = true);
+    // Fix admin-clinico (ajuste obligatorio #3): el staffId de un admin ya
+    // se resuelve de forma perezosa en SessionController (login/restore,
+    // ver ensureAdminStaffId), por lo que a esta altura session.user.staffId
+    // deberia estar resuelto tanto para clinico como para admin. Si por
+    // algun motivo aun no lo esta (p.ej. fallo de red durante el
+    // aprovisionamiento), se reintenta aqui mismo en vez de bloquear
+    // silenciosamente el flujo.
+    var staffId = session.user?.staffId;
+    if (staffId == null && session.user?.role == AppRole.admin) {
+      staffId = await repo.ensureAdminStaffId(session.user!);
+    }
+    if (staffId == null) {
+      setState(() => _creating = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No se encontró personal sanitario vinculado a tu cuenta.'),
+          ),
+        );
+      }
+      return;
+    }
+    final consultation = await repo.createConsultation(
+      patientId: widget.patientId,
+      staffId: staffId,
+      siteId: _siteId!,
+      visitType: _visitType,
+      visitDate: _visitDate,
+      isDraft: true,
+    );
+    if (mounted) {
+      context.go(
+        '/patients/${widget.patientId}/wound/new/capture?consultationId=${consultation.id}',
+      );
+    }
+  }
+
+  /// Fix (bug reportado): "Seguimiento" NO debe crear una consulta borrador
+  /// ni ir a captura de herida nueva -- una visita de seguimiento se hace
+  /// SIEMPRE sobre una herida ACTIVA ya existente (misma logica ya probada
+  /// en PatientsListScreen._goToSeguimiento). El formulario real de
+  /// seguimiento (FollowUpCaptureScreen) crea su propia Consultation
+  /// completa al guardar, asi que aqui NO se debe llamar createConsultation:
+  /// hacerlo dejaria un borrador huerfano sin ningun dato de seguimiento.
+  Future<void> _continueSeguimiento(DataRepository repo) async {
+    final summary = PatientWoundSummary.compute(repo, widget.patientId);
+    if (!summary.hasActiveWounds) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Este paciente no tiene heridas activas para dar seguimiento.'),
+        ),
+      );
+      return;
+    }
+    String woundId;
+    if (summary.activeCount == 1) {
+      woundId = summary.activeWounds.first.id;
+    } else {
+      final chosen = await showWoundPickerSheet(context, summary.activeWounds);
+      if (chosen == null || !mounted) return;
+      woundId = chosen.id;
+    }
+    if (mounted) {
+      context.go('/patients/${widget.patientId}/wound/$woundId/follow-up/new');
+    }
   }
 }
