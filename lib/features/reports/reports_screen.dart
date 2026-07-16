@@ -46,10 +46,16 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                   ? repo.listPatientsForStaff(session.user!.staffId!)
                   : <Patient>[]);
 
+          // Cuadro de pacientes con altura acotada (no Expanded): ~40% del
+          // alto de pantalla, siempre entre 220 y 380 px, para que sea
+          // usable tanto en viewports cortos de movil como en escritorio.
+          final screenHeight = MediaQuery.of(context).size.height;
+          final patientsBoxHeight = (screenHeight * 0.4).clamp(220.0, 380.0);
+
           return Center(
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 720),
-              child: Padding(
+              child: SingleChildScrollView(
                 padding: const EdgeInsets.all(20),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -60,26 +66,41 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                             .titleMedium
                             ?.copyWith(fontWeight: FontWeight.w700)),
                     const SizedBox(height: 8),
-                    Expanded(
+                    ConstrainedBox(
+                      constraints: BoxConstraints(
+                        minHeight: 220,
+                        maxHeight: patientsBoxHeight,
+                      ),
                       child: Card(
-                        child: ListView.builder(
-                          itemCount: patients.length,
-                          itemBuilder: (context, i) {
-                            final p = patients[i];
-                            return CheckboxListTile(
-                              value: _selectedPatientIds.contains(p.id),
-                              title: Text(p.fullName),
-                              subtitle: Text(p.folio),
-                              onChanged: (v) => setState(() {
-                                if (v == true) {
-                                  _selectedPatientIds.add(p.id);
-                                } else {
-                                  _selectedPatientIds.remove(p.id);
-                                }
-                              }),
-                            );
-                          },
-                        ),
+                        child: patients.isEmpty
+                            ? const Center(
+                                child: Padding(
+                                  padding: EdgeInsets.all(24),
+                                  child: Text(
+                                    'No hay pacientes disponibles',
+                                    style: TextStyle(color: Colors.black54),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                ),
+                              )
+                            : ListView.builder(
+                                itemCount: patients.length,
+                                itemBuilder: (context, i) {
+                                  final p = patients[i];
+                                  return CheckboxListTile(
+                                    value: _selectedPatientIds.contains(p.id),
+                                    title: Text(p.fullName),
+                                    subtitle: Text(p.folio),
+                                    onChanged: (v) => setState(() {
+                                      if (v == true) {
+                                        _selectedPatientIds.add(p.id);
+                                      } else {
+                                        _selectedPatientIds.remove(p.id);
+                                      }
+                                    }),
+                                  );
+                                },
+                              ),
                       ),
                     ),
                     const SizedBox(height: 16),
