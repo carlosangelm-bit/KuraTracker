@@ -2,6 +2,89 @@
 /// catalogo (`note_option_catalog`, ver 0010_note_option_catalog.sql).
 enum NoteOptionField { careType, procedureDesc, materialsUsed, evolution }
 
+/// Etiqueta de mapeo entre un concepto libre del catalogo del centro y
+/// una categoria de metodo del motor "Protocolo Kura+" (kura_rules_v2,
+/// ver 0013_note_option_catalog_kura_tag.sql). Es el puente que permite
+/// pre-seleccionar (nunca forzar) conceptos del catalogo cuando un
+/// usuario premium activa el toggle "Utilizar protocolo Kura+" en la
+/// nota de seguimiento: cada componente del regimen sugerido por el
+/// motor (`RegimenComponente.metodo`) se mapea a uno de estos valores
+/// (ver `kKuraMethodToTag` en follow_up_capture_screen.dart), y solo los
+/// conceptos del catalogo cuyo `kuraTag` coincida se pre-marcan.
+enum KuraTag {
+  limpieza,
+  desbridamiento,
+  rellenoCavidad,
+  aposito,
+  proteccionPiel,
+  antimicrobiano,
+  compresion,
+  descarga,
+  educacion,
+}
+
+extension KuraTagDb on KuraTag {
+  String get dbValue {
+    switch (this) {
+      case KuraTag.limpieza:
+        return 'limpieza';
+      case KuraTag.desbridamiento:
+        return 'desbridamiento';
+      case KuraTag.rellenoCavidad:
+        return 'relleno_cavidad';
+      case KuraTag.aposito:
+        return 'aposito';
+      case KuraTag.proteccionPiel:
+        return 'proteccion_piel';
+      case KuraTag.antimicrobiano:
+        return 'antimicrobiano';
+      case KuraTag.compresion:
+        return 'compresion';
+      case KuraTag.descarga:
+        return 'descarga';
+      case KuraTag.educacion:
+        return 'educacion';
+    }
+  }
+
+  /// Etiqueta legible (dropdown de NoteCatalogTab en Administracion).
+  String get label {
+    switch (this) {
+      case KuraTag.limpieza:
+        return 'Limpieza';
+      case KuraTag.desbridamiento:
+        return 'Desbridamiento';
+      case KuraTag.rellenoCavidad:
+        return 'Relleno de cavidad';
+      case KuraTag.aposito:
+        return 'Apósito';
+      case KuraTag.proteccionPiel:
+        return 'Protección de la piel';
+      case KuraTag.antimicrobiano:
+        return 'Antimicrobiano';
+      case KuraTag.compresion:
+        return 'Compresión';
+      case KuraTag.descarga:
+        return 'Descarga (dispositivo)';
+      case KuraTag.educacion:
+        return 'Educación';
+    }
+  }
+
+  /// Resuelve un [KuraTag] desde el valor de columna `kura_tag`. Devuelve
+  /// `null` para NULL/vacio/valor no reconocido (concepto "Sin etiqueta"),
+  /// nunca lanza -- un valor desconocido en la fila (p.ej. una etiqueta
+  /// vieja renombrada) simplemente se trata como sin etiqueta, jamas
+  /// tumba el listado ni auto-selecciona nada por error.
+  static KuraTag? fromDb(String? s) {
+    if (s == null || s.isEmpty) return null;
+    for (final t in KuraTag.values) {
+      if (t.dbValue == s) return t;
+    }
+    return null;
+  }
+}
+
 extension NoteOptionFieldDb on NoteOptionField {
   String get dbValue {
     switch (this) {
@@ -91,6 +174,10 @@ class NoteOptionCatalogItem {
   // el mismo texto sin colisionar (unicidad ahora es por
   // (organization_id, field, label)).
   final String? organizationId;
+  // Etiqueta de mapeo al motor Protocolo Kura+ (ver
+  // 0013_note_option_catalog_kura_tag.sql). Null = "Sin etiqueta" (nunca
+  // se auto-selecciona al activar el toggle premium).
+  final KuraTag? kuraTag;
 
   const NoteOptionCatalogItem({
     required this.id,
@@ -99,6 +186,7 @@ class NoteOptionCatalogItem {
     this.isActive = true,
     this.createdBy,
     this.organizationId,
+    this.kuraTag,
   });
 
   factory NoteOptionCatalogItem.fromJson(Map<String, dynamic> json) =>
@@ -110,6 +198,7 @@ class NoteOptionCatalogItem {
         isActive: json['is_active'] as bool? ?? true,
         createdBy: json['created_by'] as String?,
         organizationId: json['organization_id'] as String?,
+        kuraTag: KuraTagDb.fromDb(json['kura_tag'] as String?),
       );
 
   /// Variante tolerante a filas malformadas (`id`/`label` nulos o de tipo
@@ -137,6 +226,7 @@ class NoteOptionCatalogItem {
     final createdBy = json['created_by'];
     final organizationId = json['organization_id'];
     final isActive = json['is_active'];
+    final kuraTagRaw = json['kura_tag'];
     // Cada campo se valida por tipo real (`is`) en vez de forzar un cast
     // (`as`), precisamente porque un cast fallido es lo que causaba el
     // TypeError no capturado que este metodo existe para evitar.
@@ -146,6 +236,7 @@ class NoteOptionCatalogItem {
     if (createdBy != null && createdBy is! String) return null;
     if (organizationId != null && organizationId is! String) return null;
     if (isActive != null && isActive is! bool) return null;
+    if (kuraTagRaw != null && kuraTagRaw is! String) return null;
     return NoteOptionCatalogItem(
       id: id,
       field: NoteOptionFieldDb.fromDb(field as String?) ??
@@ -154,6 +245,7 @@ class NoteOptionCatalogItem {
       isActive: isActive as bool? ?? true,
       createdBy: createdBy as String?,
       organizationId: organizationId as String?,
+      kuraTag: KuraTagDb.fromDb(kuraTagRaw as String?),
     );
   }
 
@@ -164,5 +256,6 @@ class NoteOptionCatalogItem {
         'is_active': isActive,
         'created_by': createdBy,
         'organization_id': organizationId,
+        'kura_tag': kuraTag?.dbValue,
       };
 }
