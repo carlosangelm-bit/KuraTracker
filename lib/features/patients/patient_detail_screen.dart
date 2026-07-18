@@ -64,11 +64,13 @@ class _PatientDetailScreenState extends ConsumerState<PatientDetailScreen> {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text('Heridas',
-                            style: Theme.of(context)
-                                .textTheme
-                                .titleLarge
-                                ?.copyWith(fontWeight: FontWeight.w700)),
+                        Flexible(
+                          child: Text('Heridas',
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .titleLarge
+                                  ?.copyWith(fontWeight: FontWeight.w700)),
+                        ),
                         FilledButton.tonalIcon(
                           icon: const Icon(Icons.add, size: 18),
                           label: const Text('Registrar herida'),
@@ -326,7 +328,11 @@ class _WoundCard extends StatelessWidget {
               ),
             ],
             const SizedBox(height: 10),
-            Row(
+            // Wrap (no Row): en telefonos angostos los dos botones etiquetados
+            // se reacomodan a otra linea en vez de desbordar horizontalmente.
+            Wrap(
+              spacing: 8,
+              runSpacing: 4,
               children: [
                 TextButton.icon(
                   icon: const Icon(Icons.show_chart, size: 18),
@@ -334,7 +340,6 @@ class _WoundCard extends StatelessWidget {
                   onPressed: () =>
                       context.go('/patients/$patientId/wound/${wound.id}/follow-up'),
                 ),
-                const SizedBox(width: 8),
                 TextButton.icon(
                   icon: const Icon(Icons.edit_note, size: 18),
                   label: const Text('Nueva valoración'),
