@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../design/tokens.dart';
 import '../router/app_shell.dart' show kFloatingNavBarHeight;
-import '../theme/kura_theme.dart';
 
 /// FAB de accion principal de la app ("Nuevo paciente"): rojo de marca Kura
 /// SOLIDO con icono y texto en BLANCO (contraste claro sobre cualquier fondo)
@@ -28,27 +28,17 @@ class KuraPrimaryFab extends StatelessWidget {
     // del sistema, asi que una elevacion constante sirve en web y en movil.
     // (kFloatingNavBarHeight 64 + margen inferior de la barra 12 - margen por
     // defecto del FAB 16 + holgura 12 ≈ 72.)
+    final t = BrandTokens.of(context);
     return Padding(
       padding: const EdgeInsets.only(bottom: kFloatingNavBarHeight + 8),
       child: DecoratedBox(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(28),
-        boxShadow: [
-          BoxShadow(
-            color: KuraColors.primary.withOpacity(0.30),
-            blurRadius: 8,
-            offset: const Offset(0, 3),
-          ),
-          BoxShadow(
-            color: KuraColors.primary.withOpacity(0.22),
-            blurRadius: 22,
-            offset: const Offset(0, 12),
-          ),
-        ],
-      ),
-      child: FloatingActionButton.extended(
-        backgroundColor: KuraColors.primary,
-        foregroundColor: Colors.white,
+        decoration: const BoxDecoration(
+          borderRadius: AppRadii.pillR,
+          boxShadow: AppShadows.brandFab,
+        ),
+        child: FloatingActionButton.extended(
+          backgroundColor: t.brandPrimary,
+          foregroundColor: Colors.white,
         // Solo las sombras en capas de arriba (elevation 0 en todos los
         // estados) para que la profundidad sea consistente.
         elevation: 0,

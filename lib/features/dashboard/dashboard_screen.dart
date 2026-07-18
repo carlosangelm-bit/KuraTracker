@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../core/theme/kura_theme.dart';
+import '../../core/design/tokens.dart';
 import '../../core/providers/session_provider.dart';
 import '../../core/router/app_shell.dart' show kFloatingNavBarHeight;
 import '../../core/widgets/kura_glass_card.dart';
@@ -78,9 +78,10 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     final session = ref.watch(sessionProvider);
     final repoAsync = ref.watch(dataRepositoryProvider);
     final user = session.user;
+    final tokens = BrandTokens.of(context);
 
     return Scaffold(
-      backgroundColor: KuraColors.lightBg,
+      backgroundColor: tokens.background,
       // Fondo con color (degradado + blobs) para que el vidrio de las
       // tarjetas tenga algo que refractar detras.
       body: Stack(
@@ -141,7 +142,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
               const SizedBox(height: 4),
               Text(
                 'Tu tablero de hoy · lo que necesita atención va primero',
-                style: TextStyle(color: KuraColors.darkText.withOpacity(0.6)),
+                style: TextStyle(color: tokens.textSecondary),
               ),
               const SizedBox(height: 20),
 
@@ -164,7 +165,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                   icon: Icons.priority_high_rounded,
                   title: 'Requieren atención',
                   count: attention.length,
-                  color: dangerCount > 0 ? KuraColors.danger : KuraColors.warning,
+                  color: dangerCount > 0 ? tokens.statusDanger : tokens.statusWarning,
                 ),
                 const SizedBox(height: 12),
                 if (attention.isEmpty)
@@ -179,13 +180,15 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                   icon: Icons.people_alt_outlined,
                   title: 'Recientes',
                   count: rest.length,
-                  color: KuraColors.primary,
+                  // Sección neutra/informativa: NO usa el acento de marca
+                  // (reservado a acciones).
+                  color: tokens.info,
                 ),
                 const SizedBox(height: 12),
                 if (rest.isEmpty)
                   Text(
                     'Nada más por ahora.',
-                    style: TextStyle(color: KuraColors.darkText.withOpacity(0.5)),
+                    style: TextStyle(color: tokens.textSecondary),
                   )
                 else ...[
                   ...rest.take(_recentLimit).map((t) => _tile(repo, t)),
@@ -286,6 +289,7 @@ class _MetricsGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final t = BrandTokens.of(context);
     return LayoutBuilder(
       builder: (context, constraints) {
         final w = constraints.maxWidth;
@@ -302,26 +306,28 @@ class _MetricsGrid extends StatelessWidget {
           spacing: 12,
           runSpacing: 12,
           children: [
+            // Métricas informativas en tonos calmados (neutro/azul); NO usan el
+            // acento de marca. Las de estado clínico (rojo/ámbar) resaltan solas.
             _StatCard(
               width: itemW,
               icon: Icons.people,
               label: 'Pacientes activos',
               value: '$activePatients',
-              color: KuraColors.primary,
+              color: t.textSecondary,
             ),
             _StatCard(
               width: itemW,
               icon: Icons.healing,
               label: 'Heridas en tratamiento',
               value: '$activeWounds',
-              color: KuraColors.infoBlue,
+              color: t.info,
             ),
             _StatCard(
               width: itemW,
               icon: Icons.report_gmailerrorred_rounded,
               label: 'Requieren atención',
               value: '$dangerCount',
-              color: KuraColors.danger,
+              color: t.statusDanger,
               emphasize: dangerCount > 0,
               onTap: onTapDanger,
             ),
@@ -330,7 +336,7 @@ class _MetricsGrid extends StatelessWidget {
               icon: Icons.error_outline,
               label: 'Con reservas',
               value: '$warningCount',
-              color: KuraColors.warning,
+              color: t.statusWarning,
               emphasize: warningCount > 0,
               onTap: onTapWarning,
             ),
@@ -364,34 +370,34 @@ class _StatCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final t = BrandTokens.of(context);
     final content = Padding(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(AppSpacing.lg),
       child: Row(
         children: [
           Container(
-            padding: const EdgeInsets.all(10),
+            padding: const EdgeInsets.all(AppSpacing.sm),
             decoration: BoxDecoration(
               color: color.withOpacity(0.16),
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: AppRadii.mdR,
             ),
             child: Icon(icon, color: color),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: AppSpacing.md),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(value,
-                    style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800)),
+                    style: const TextStyle(
+                        fontSize: AppType.headline, fontWeight: AppType.extrabold)),
                 Text(label,
-                    style: TextStyle(
-                        fontSize: 12, color: KuraColors.darkText.withOpacity(0.7))),
+                    style: TextStyle(fontSize: AppType.label, color: t.textSecondary)),
               ],
             ),
           ),
           if (onTap != null)
-            Icon(Icons.chevron_right,
-                size: 18, color: KuraColors.darkText.withOpacity(0.35)),
+            Icon(Icons.chevron_right, size: 18, color: t.textDisabled),
         ],
       ),
     );
@@ -476,25 +482,23 @@ class _AttentionEmpty extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final t = BrandTokens.of(context);
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: AppSpacing.xl),
       decoration: BoxDecoration(
-        color: KuraColors.success.withOpacity(0.08),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: KuraColors.success.withOpacity(0.25)),
+        color: t.statusSuccess.withOpacity(0.08),
+        borderRadius: AppRadii.mdR,
+        border: Border.all(color: t.statusSuccess.withOpacity(0.25)),
       ),
       child: Row(
         children: [
-          const Icon(Icons.check_circle, color: KuraColors.success),
-          const SizedBox(width: 12),
+          Icon(Icons.check_circle, color: t.statusSuccess),
+          const SizedBox(width: AppSpacing.md),
           Expanded(
             child: Text(
               'Sin pacientes que requieran atención por ahora ✅',
-              style: TextStyle(
-                fontWeight: FontWeight.w600,
-                color: KuraColors.darkText.withOpacity(0.8),
-              ),
+              style: TextStyle(fontWeight: FontWeight.w600, color: t.textPrimary),
             ),
           ),
         ],
@@ -510,30 +514,31 @@ class _EmptyDashboard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final t = BrandTokens.of(context);
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(24),
+      padding: const EdgeInsets.all(AppSpacing.xl),
       decoration: BoxDecoration(
-        color: KuraColors.chipBg.withOpacity(0.4),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: KuraColors.borderSubtle),
+        color: t.surface.withOpacity(0.5),
+        borderRadius: AppRadii.mdR,
+        border: Border.all(color: t.border),
       ),
       child: Column(
         children: [
-          Icon(Icons.people_outline, size: 44, color: KuraColors.darkText.withOpacity(0.25)),
-          const SizedBox(height: 12),
+          Icon(Icons.people_outline, size: 44, color: t.textDisabled),
+          const SizedBox(height: AppSpacing.md),
           Text(
             isAdmin
                 ? 'Aún no hay pacientes en el centro.'
                 : 'Aún no tienes pacientes asignados.',
             textAlign: TextAlign.center,
-            style: TextStyle(color: KuraColors.darkText.withOpacity(0.6)),
+            style: TextStyle(color: t.textSecondary),
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: AppSpacing.xs),
           Text(
             'Usa "Nuevo paciente" para registrar el primero.',
             textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 12, color: KuraColors.darkText.withOpacity(0.45)),
+            style: TextStyle(fontSize: AppType.label, color: t.textDisabled),
           ),
         ],
       ),
@@ -551,22 +556,26 @@ class _DashboardBackground extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final t = BrandTokens.of(context);
     return DecoratedBox(
       decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
           colors: [
-            KuraColors.lightBg,
-            Color.alphaBlend(KuraColors.primary.withOpacity(0.05), KuraColors.lightBg),
+            t.background,
+            // "Un toque del acento Kura muy tenue" como ambiente (no acción).
+            Color.alphaBlend(t.brandPrimary.withOpacity(0.05), t.background),
           ],
         ),
       ),
-      child: const Stack(
+      // Blobs ambientales en tonos de marca/informativo (nunca colores de
+      // estado clínico, que no son decorativos).
+      child: Stack(
         children: [
-          Positioned(top: -80, left: -60, child: _Blob(KuraColors.primary, 260, 0.10)),
-          Positioned(top: 160, right: -90, child: _Blob(KuraColors.infoBlue, 300, 0.08)),
-          Positioned(bottom: -70, left: -30, child: _Blob(KuraColors.warning, 240, 0.07)),
+          Positioned(top: -80, left: -60, child: _Blob(t.brandPrimary, 260, 0.08)),
+          Positioned(top: 160, right: -90, child: _Blob(t.info, 300, 0.07)),
+          Positioned(bottom: -70, left: -30, child: _Blob(t.info, 240, 0.05)),
         ],
       ),
     );

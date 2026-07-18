@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../core/theme/kura_theme.dart';
+import '../core/design/tokens.dart';
 import 'kura_sheehan_checkpoint.dart';
 
 /// Semaforo de avance (trayectoria): las 3 decisiones del checkpoint de
@@ -30,15 +30,17 @@ extension ProgressStatusStyle on ProgressStatus {
   /// reclasificarC -> rojo (KuraColors.danger)
   /// sin datos -> gris/neutral (no se fuerza un color del semaforo).
   Color get color {
+    // Estado CLÍNICO desde los tokens (no la marca). Ver lib/core/design.
+    const t = BrandTokens.kura;
     switch (this) {
       case ProgressStatus.good:
-        return KuraColors.success;
+        return t.statusSuccess;
       case ProgressStatus.warning:
-        return KuraColors.warning;
+        return t.statusWarning;
       case ProgressStatus.danger:
-        return KuraColors.danger;
+        return t.statusDanger;
       case ProgressStatus.noData:
-        return KuraColors.darkText.withOpacity(0.38);
+        return t.statusNeutral;
     }
   }
 
