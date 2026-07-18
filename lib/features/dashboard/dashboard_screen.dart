@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/theme/kura_theme.dart';
 import '../../core/providers/session_provider.dart';
+import '../../core/widgets/kura_glass_card.dart';
 import '../../engine/sheehan_decision_style.dart';
 import '../../models/app_user.dart';
 import '../../models/patient.dart';
@@ -77,10 +78,17 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     final user = session.user;
 
     return Scaffold(
-      body: repoAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, st) => Center(child: Text('Error: $e')),
-        data: (repo) {
+      backgroundColor: KuraColors.lightBg,
+      // Fondo con color (degradado + blobs) para que el vidrio de las
+      // tarjetas tenga algo que refractar detras.
+      body: Stack(
+        children: [
+          const Positioned.fill(child: _DashboardBackground()),
+          Positioned.fill(
+            child: repoAsync.when(
+              loading: () => const Center(child: CircularProgressIndicator()),
+              error: (e, st) => Center(child: Text('Error: $e')),
+              data: (repo) {
           // Aislamiento por rol (igual que PatientsListScreen): clinico ve
           // sus pacientes; admin los del centro. El master no llega aqui
           // (va a /platform).
@@ -184,19 +192,45 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                 ],
               ],
             ],
-          );
-        },
+                );
+              },
+            ),
+          ),
+        ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        backgroundColor: KuraColors.primary,
-        onPressed: () => context.go('/patients/new'),
-        icon: const Icon(Icons.person_add),
-        label: const Text('Nuevo paciente'),
+      // FAB solido (accion principal) con sombra EN CAPAS para darle
+      // profundidad sin volverlo translucido.
+      floatingActionButton: DecoratedBox(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(28),
+          boxShadow: [
+            BoxShadow(
+              color: KuraColors.primary.withOpacity(0.30),
+              blurRadius: 8,
+              offset: const Offset(0, 3),
+            ),
+            BoxShadow(
+              color: KuraColors.primary.withOpacity(0.22),
+              blurRadius: 22,
+              offset: const Offset(0, 12),
+            ),
+          ],
+        ),
+        child: FloatingActionButton.extended(
+          backgroundColor: KuraColors.primary,
+          elevation: 0,
+          highlightElevation: 0,
+          onPressed: () => context.go('/patients/new'),
+          icon: const Icon(Icons.person_add),
+          label: const Text('Nuevo paciente'),
+        ),
       ),
     );
   }
 
-  // Tile reutilizado (mismo componente y acciones que PatientsListScreen).
+  // Tile reutilizado (mismo componente y acciones que PatientsListScreen),
+  // con superficie "glass-lite": KuraGlassCard SIN BackdropFilter, para que
+  // el scroll de la lista no cargue un blur real por fila (fluidez).
   Widget _tile(DataRepository repo, _Triage t) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
@@ -207,6 +241,12 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
         onTap: () => context.go('/patients/${t.patient.id}'),
         onValoracion: () => _goToValoracion(t.patient.id),
         onSeguimiento: () => _goToSeguimiento(repo, t.patient.id),
+        surfaceBuilder: (child) => KuraGlassCard(
+          blur: false,
+          borderRadius: 18,
+          padding: EdgeInsets.zero,
+          child: child,
+        ),
       ),
     );
   }
@@ -337,22 +377,14 @@ class _StatCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final card = Container(
-      width: width,
+    final content = Padding(
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: emphasize ? color.withOpacity(0.08) : KuraColors.surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: emphasize ? color.withOpacity(0.35) : KuraColors.borderSubtle,
-        ),
-      ),
       child: Row(
         children: [
           Container(
             padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
-              color: color.withOpacity(0.12),
+              color: color.withOpacity(0.16),
               borderRadius: BorderRadius.circular(12),
             ),
             child: Icon(icon, color: color),
@@ -366,20 +398,31 @@ class _StatCard extends StatelessWidget {
                     style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800)),
                 Text(label,
                     style: TextStyle(
-                        fontSize: 12, color: KuraColors.darkText.withOpacity(0.6))),
+                        fontSize: 12, color: KuraColors.darkText.withOpacity(0.7))),
               ],
             ),
           ),
           if (onTap != null)
-            Icon(Icons.chevron_right, size: 18, color: KuraColors.darkText.withOpacity(0.3)),
+            Icon(Icons.chevron_right,
+                size: 18, color: KuraColors.darkText.withOpacity(0.35)),
         ],
       ),
     );
-    if (onTap == null) return card;
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(16),
-      child: card,
+    return SizedBox(
+      width: width,
+      child: KuraGlassCard(
+        borderRadius: 20,
+        padding: EdgeInsets.zero,
+        // Tinte del vidrio cuando la metrica urgente tiene casos.
+        tint: emphasize ? color : null,
+        child: onTap == null
+            ? content
+            : InkWell(
+                onTap: onTap,
+                borderRadius: BorderRadius.circular(20),
+                child: content,
+              ),
+      ),
     );
   }
 }
@@ -400,12 +443,15 @@ class _SectionHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
+    return KuraGlassCard(
+      borderRadius: 18,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      child: Row(
       children: [
         Container(
           padding: const EdgeInsets.all(6),
           decoration: BoxDecoration(
-            color: color.withOpacity(0.12),
+            color: color.withOpacity(0.16),
             borderRadius: BorderRadius.circular(10),
           ),
           child: Icon(icon, color: color, size: 20),
@@ -432,6 +478,7 @@ class _SectionHeader extends StatelessWidget {
           ),
         ),
       ],
+      ),
     );
   }
 }
@@ -502,6 +549,62 @@ class _EmptyDashboard extends StatelessWidget {
             style: TextStyle(fontSize: 12, color: KuraColors.darkText.withOpacity(0.45)),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Fondo del dashboard: un degradado crema muy sutil (con un toque del
+/// acento Kura) mas 2-3 "blobs" de color difuso detras del contenido. Le da
+/// algo que refractar al vidrio de las tarjetas sin saturar la pantalla.
+/// Los blobs usan RadialGradient (bordes suaves, sin BackdropFilter) para
+/// ser baratos de pintar; el Stack recorta lo que se sale de pantalla.
+class _DashboardBackground extends StatelessWidget {
+  const _DashboardBackground();
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            KuraColors.lightBg,
+            Color.alphaBlend(KuraColors.primary.withOpacity(0.05), KuraColors.lightBg),
+          ],
+        ),
+      ),
+      child: const Stack(
+        children: [
+          Positioned(top: -80, left: -60, child: _Blob(KuraColors.primary, 260, 0.10)),
+          Positioned(top: 160, right: -90, child: _Blob(KuraColors.infoBlue, 300, 0.08)),
+          Positioned(bottom: -70, left: -30, child: _Blob(KuraColors.warning, 240, 0.07)),
+        ],
+      ),
+    );
+  }
+}
+
+class _Blob extends StatelessWidget {
+  final Color color;
+  final double size;
+  final double opacity;
+
+  const _Blob(this.color, this.size, this.opacity);
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      child: Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          gradient: RadialGradient(
+            colors: [color.withOpacity(opacity), color.withOpacity(0)],
+          ),
+        ),
       ),
     );
   }
