@@ -4,7 +4,15 @@ import 'package:go_router/go_router.dart';
 
 import '../providers/session_provider.dart';
 import '../theme/kura_theme.dart';
+import '../widgets/kura_glass_card.dart';
 import '../../models/app_user.dart';
+
+/// Alto del contenido de la barra de navegacion flotante. Las pantallas
+/// scrolleables del shell suman esto (mas el inset inferior del sistema) a su
+/// padding inferior para que el ultimo elemento no quede tapado por la barra.
+/// Con `extendBody: true`, el Scaffold ya expone este alto en
+/// `MediaQuery.of(context).padding.bottom` del body.
+const double kFloatingNavBarHeight = 64;
 
 /// Shell de navegacion principal: NavigationRail en pantallas anchas,
 /// BottomNavigationBar en moviles. Los items disponibles dependen del rol
@@ -77,6 +85,10 @@ class AppShell extends ConsumerWidget {
     void onSelect(int index) => context.go(items[index].path);
 
     return Scaffold(
+      // El contenido pasa por DEBAJO de la barra flotante (para que el vidrio
+      // lo refracte). Las pantallas scrolleables compensan con padding inferior
+      // (ver kFloatingNavBarHeight / MediaQuery.padding.bottom).
+      extendBody: true,
       appBar: isWide
           ? null
           : AppBar(
@@ -110,12 +122,57 @@ class AppShell extends ConsumerWidget {
               ],
             )
           : child,
+      // Barra de navegacion FLOTANTE estilo "liquid glass": no pegada a los
+      // bordes (margen + esquinas casi pildora), acabado de vidrio consistente
+      // con KuraGlassCard y sombra en capas para verse despegada del fondo.
       bottomNavigationBar: isWide
           ? null
-          : NavigationBar(
-              selectedIndex: selectedIndex,
-              onDestinationSelected: onSelect,
-              destinations: destinationsBottom,
+          : SafeArea(
+              top: false,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                child: KuraGlassCard(
+                  borderRadius: 30,
+                  padding: EdgeInsets.zero,
+                  child: NavigationBarTheme(
+                    data: NavigationBarThemeData(
+                      backgroundColor: Colors.transparent,
+                      elevation: 0,
+                      surfaceTintColor: Colors.transparent,
+                      // "Pill" del acento Kura detras del item activo.
+                      indicatorColor: KuraColors.primary.withOpacity(0.16),
+                      labelTextStyle: WidgetStateProperty.resolveWith((states) {
+                        final selected = states.contains(WidgetState.selected);
+                        return TextStyle(
+                          fontSize: 11,
+                          fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                          color: selected
+                              ? KuraColors.primary
+                              : KuraColors.darkText.withOpacity(0.55),
+                        );
+                      }),
+                      iconTheme: WidgetStateProperty.resolveWith((states) {
+                        final selected = states.contains(WidgetState.selected);
+                        return IconThemeData(
+                          size: 24,
+                          color: selected
+                              ? KuraColors.primary
+                              : KuraColors.darkText.withOpacity(0.55),
+                        );
+                      }),
+                    ),
+                    child: NavigationBar(
+                      selectedIndex: selectedIndex,
+                      onDestinationSelected: onSelect,
+                      destinations: destinationsBottom,
+                      backgroundColor: Colors.transparent,
+                      elevation: 0,
+                      height: kFloatingNavBarHeight,
+                      labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+                    ),
+                  ),
+                ),
+              ),
             ),
     );
   }

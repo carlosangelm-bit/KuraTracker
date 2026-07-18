@@ -4,7 +4,9 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/theme/kura_theme.dart';
 import '../../core/providers/session_provider.dart';
+import '../../core/router/app_shell.dart' show kFloatingNavBarHeight;
 import '../../core/widgets/kura_glass_card.dart';
+import '../../core/widgets/kura_primary_fab.dart';
 import '../../engine/sheehan_decision_style.dart';
 import '../../models/app_user.dart';
 import '../../models/patient.dart';
@@ -120,7 +122,14 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
           final warningCount = triage.where((t) => t.worst == ProgressStatus.warning).length;
 
           return ListView(
-            padding: const EdgeInsets.fromLTRB(16, 20, 16, 40),
+            // Espacio inferior para que el ultimo elemento no quede tapado por
+            // la barra de navegacion flotante (bar + margen + inset del sistema).
+            padding: EdgeInsets.fromLTRB(
+              16,
+              20,
+              16,
+              MediaQuery.of(context).viewPadding.bottom + kFloatingNavBarHeight + 32,
+            ),
             children: [
               Text(
                 'Hola, ${user?.fullName.split(' ').first ?? ''} 👋',
@@ -198,32 +207,10 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
           ),
         ],
       ),
-      // FAB solido (accion principal) con sombra EN CAPAS para darle
-      // profundidad sin volverlo translucido.
-      floatingActionButton: DecoratedBox(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(28),
-          boxShadow: [
-            BoxShadow(
-              color: KuraColors.primary.withOpacity(0.30),
-              blurRadius: 8,
-              offset: const Offset(0, 3),
-            ),
-            BoxShadow(
-              color: KuraColors.primary.withOpacity(0.22),
-              blurRadius: 22,
-              offset: const Offset(0, 12),
-            ),
-          ],
-        ),
-        child: FloatingActionButton.extended(
-          backgroundColor: KuraColors.primary,
-          elevation: 0,
-          highlightElevation: 0,
-          onPressed: () => context.go('/patients/new'),
-          icon: const Icon(Icons.person_add),
-          label: const Text('Nuevo paciente'),
-        ),
+      floatingActionButton: KuraPrimaryFab(
+        onPressed: () => context.go('/patients/new'),
+        icon: Icons.person_add,
+        label: 'Nuevo paciente',
       ),
     );
   }
