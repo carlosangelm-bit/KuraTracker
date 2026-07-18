@@ -309,8 +309,10 @@ class FollowUpScreen extends ConsumerWidget {
                             children: [
                               const Icon(Icons.timeline, color: KuraColors.primary),
                               const SizedBox(width: 8),
-                              Text('Checkpoint de Sheehan · Semana ${checkpoint.semana}',
-                                  style: const TextStyle(fontWeight: FontWeight.w800)),
+                              Expanded(
+                                child: Text('Checkpoint de Sheehan · Semana ${checkpoint.semana}',
+                                    style: const TextStyle(fontWeight: FontWeight.w800)),
+                              ),
                             ],
                           ),
                           const SizedBox(height: 12),
@@ -593,9 +595,11 @@ class FollowUpScreen extends ConsumerWidget {
                 children: [
                   Icon(Icons.edit_note, size: 14, color: KuraColors.warning),
                   const SizedBox(width: 4),
-                  Text('✎ Punto(s) con volumen ajustado manualmente',
-                      style: TextStyle(
-                          fontSize: 11, color: KuraColors.warning, fontWeight: FontWeight.w600)),
+                  Expanded(
+                    child: Text('✎ Punto(s) con volumen ajustado manualmente',
+                        style: TextStyle(
+                            fontSize: 11, color: KuraColors.warning, fontWeight: FontWeight.w600)),
+                  ),
                 ],
               ),
             ],

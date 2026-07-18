@@ -341,7 +341,9 @@ class _OrganizationFormDialogState extends State<_OrganizationFormDialog> {
     return AlertDialog(
       title: const Text('Nuevo centro (organización)'),
       content: SizedBox(
-        width: 380,
+        // Responsivo: en pantallas angostas llena el ancho disponible (lo acota
+        // el AlertDialog) en vez de forzar 380px y desbordar en movil.
+        width: MediaQuery.sizeOf(context).width < 460 ? double.maxFinite : 380,
         child: Form(
           key: _formKey,
           child: Column(

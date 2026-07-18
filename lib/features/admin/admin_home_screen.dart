@@ -378,7 +378,9 @@ class _StaffFormDialogState extends State<_StaffFormDialog> {
     return AlertDialog(
       title: Text(isEdit ? 'Editar personal sanitario' : 'Nuevo personal sanitario'),
       content: SizedBox(
-        width: 420,
+        // Responsivo: en pantallas angostas llena el ancho disponible (lo acota
+        // el AlertDialog) en vez de forzar 420px y desbordar en movil.
+        width: MediaQuery.sizeOf(context).width < 500 ? double.maxFinite : 420,
         child: Form(
           key: _formKey,
           child: SingleChildScrollView(
@@ -650,7 +652,9 @@ class _SiteFormDialogState extends State<_SiteFormDialog> {
     return AlertDialog(
       title: Text(isEdit ? 'Editar sitio' : 'Nuevo sitio'),
       content: SizedBox(
-        width: 420,
+        // Responsivo: en pantallas angostas llena el ancho disponible (lo acota
+        // el AlertDialog) en vez de forzar 420px y desbordar en movil.
+        width: MediaQuery.sizeOf(context).width < 500 ? double.maxFinite : 420,
         child: Form(
           key: _formKey,
           child: SingleChildScrollView(
@@ -968,7 +972,12 @@ class _NoteCatalogTabState extends State<NoteCatalogTab> {
   Widget build(BuildContext context) {
     final options = widget.repo.listAllNoteOptions(_selectedField, organizationId: widget.organizationId);
     return Scaffold(
-      body: Column(
+      // ListView (no Column): toda la pantalla desplaza como una sola lista.
+      // En movil el encabezado fijo era mas alto que el body disponible (dos
+      // AppBar apiladas + TabBar + NavigationBar), asi que desbordaba: los
+      // ChoiceChip de seccion quedaban recortados ("menus no navegables") y la
+      // lista se quedaba con ~0px ("el slider/Switch no funciona").
+      body: ListView(
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
@@ -1054,13 +1063,16 @@ class _NoteCatalogTabState extends State<NoteCatalogTab> {
             ),
           ),
           const Divider(height: 1),
-          Expanded(
-            child: options.isEmpty
+          options.isEmpty
                 ? const _EmptyState(
                     icon: Icons.list_alt_outlined,
                     message: 'Sin conceptos configurados aún para este campo.',
                   )
                 : ListView.separated(
+                    // shrinkWrap + NeverScrollable: esta lista NO scrollea sola;
+                    // el scroll lo lleva el ListView externo (toda la pantalla).
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
                     padding: const EdgeInsets.fromLTRB(16, 12, 16, 88),
                     itemCount: options.length,
                     separatorBuilder: (_, __) => const SizedBox(height: 6),
@@ -1135,7 +1147,6 @@ class _NoteCatalogTabState extends State<NoteCatalogTab> {
                       );
                     },
                   ),
-          ),
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(

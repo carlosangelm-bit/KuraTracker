@@ -72,7 +72,9 @@ class _ImportExportScreenState extends State<ImportExportScreen> {
         builder: (dialogCtx) => AlertDialog(
           title: const Text('Exportación CSV generada'),
           content: SizedBox(
-            width: 500,
+            // Responsivo: en pantallas angostas llena el ancho disponible (lo
+            // acota el AlertDialog) en vez de forzar 500px y desbordar en movil.
+            width: MediaQuery.sizeOf(context).width < 560 ? double.maxFinite : 500,
             child: SingleChildScrollView(child: Text(csv)),
           ),
           actions: [

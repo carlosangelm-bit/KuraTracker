@@ -1286,7 +1286,9 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
             children: [
               const Icon(Icons.badge_outlined, size: 16, color: KuraColors.darkText),
               const SizedBox(width: 6),
-              Text(_signedByReadOnly ?? 'Sin resolver', style: const TextStyle(fontWeight: FontWeight.w600)),
+              Expanded(
+                child: Text(_signedByReadOnly ?? 'Sin resolver', style: const TextStyle(fontWeight: FontWeight.w600)),
+              ),
             ],
           ),
           const SizedBox(height: 4),
@@ -1294,11 +1296,13 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
             children: [
               const Icon(Icons.badge_outlined, size: 16, color: KuraColors.darkText),
               const SizedBox(width: 6),
-              Text(
-                hasLicense ? 'Cédula profesional: $_signedLicenseReadOnly' : 'Cédula profesional: sin registrar',
-                style: TextStyle(
-                  fontWeight: FontWeight.w600,
-                  color: hasLicense ? null : KuraColors.danger,
+              Expanded(
+                child: Text(
+                  hasLicense ? 'Cédula profesional: $_signedLicenseReadOnly' : 'Cédula profesional: sin registrar',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    color: hasLicense ? null : KuraColors.danger,
+                  ),
                 ),
               ),
             ],
