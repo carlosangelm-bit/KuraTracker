@@ -4,8 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../core/theme/kura_theme.dart';
 import '../../core/providers/session_provider.dart';
+import '../../core/router/app_shell.dart' show kFloatingNavBarHeight;
+import '../../core/widgets/kura_primary_fab.dart';
 import '../../engine/models/kura_engine_enums.dart';
 import '../../engine/sheehan_decision_style.dart';
 import '../../models/app_user.dart';
@@ -222,11 +223,10 @@ class PatientsListScreenState extends ConsumerState<PatientsListScreen> {
                 );
               },
             ),
-      floatingActionButton: FloatingActionButton.extended(
-        backgroundColor: KuraColors.primary,
+      floatingActionButton: KuraPrimaryFab(
         onPressed: () => context.go('/patients/new'),
-        icon: const Icon(Icons.person_add),
-        label: const Text('Nuevo paciente'),
+        icon: Icons.person_add,
+        label: 'Nuevo paciente',
       ),
     );
   }
@@ -276,7 +276,12 @@ class _PatientsListView extends StatelessWidget {
   Widget build(BuildContext context) {
     return ListView.separated(
       key: const Key('patients_list_view'),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      padding: EdgeInsets.fromLTRB(
+        16,
+        4,
+        16,
+        MediaQuery.of(context).viewPadding.bottom + kFloatingNavBarHeight + 24,
+      ),
       itemCount: patients.length,
       separatorBuilder: (_, __) => const SizedBox(height: 8),
       itemBuilder: (context, i) {
@@ -327,7 +332,12 @@ class _PatientsGridView extends StatelessWidget {
                     ? 3
                     : 4;
         return GridView.builder(
-          padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+          padding: EdgeInsets.fromLTRB(
+            16,
+            4,
+            16,
+            MediaQuery.of(context).viewPadding.bottom + kFloatingNavBarHeight + 24,
+          ),
           gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: crossAxisCount,
             mainAxisSpacing: 12,

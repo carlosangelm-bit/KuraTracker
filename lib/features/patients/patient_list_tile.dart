@@ -28,6 +28,13 @@ class PatientListTile extends StatelessWidget {
   final VoidCallback? onValoracion;
   final VoidCallback? onSeguimiento;
 
+  /// Superficie externa opcional. Por defecto (null) el tile usa un [Card],
+  /// como en [PatientsListScreen]. El [DashboardScreen] pasa aqui un
+  /// KuraGlassCard(blur: false) para el acabado "glass-lite" sin duplicar el
+  /// contenido del tile. Recibe el contenido interno (InkWell) y devuelve la
+  /// superficie que lo envuelve.
+  final Widget Function(Widget child)? surfaceBuilder;
+
   const PatientListTile({
     super.key,
     required this.patient,
@@ -36,16 +43,16 @@ class PatientListTile extends StatelessWidget {
     required this.onTap,
     this.onValoracion,
     this.onSeguimiento,
+    this.surfaceBuilder,
   });
 
   @override
   Widget build(BuildContext context) {
     final activeWounds = summary.activeCount;
-    return Card(
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(16),
-        child: Padding(
+    final inner = InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(16),
+      child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
           child: Row(
             children: [
@@ -126,8 +133,8 @@ class PatientListTile extends StatelessWidget {
             ],
           ),
         ),
-      ),
     );
+    return surfaceBuilder != null ? surfaceBuilder!(inner) : Card(child: inner);
   }
 }
 
