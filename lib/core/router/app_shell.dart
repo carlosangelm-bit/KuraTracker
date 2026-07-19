@@ -41,6 +41,7 @@ class AppShell extends ConsumerWidget {
     final items = <_NavItem>[
       const _NavItem('/', Icons.dashboard_outlined, Icons.dashboard, 'Inicio'),
       const _NavItem('/patients', Icons.people_outline, Icons.people, 'Pacientes'),
+      const _NavItem('/agenda', Icons.event_outlined, Icons.event, 'Agenda'),
       const _NavItem('/reports', Icons.description_outlined, Icons.description, 'Reportes'),
     ];
     if (user?.role == AppRole.admin) {
