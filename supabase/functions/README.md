@@ -63,7 +63,28 @@ POST /webhooks {"event":"appointment.changed",     "target":"<URL>"}
 ## 5. Mapear cada Kurador a su calendario de Acuity
 
 Para que "cada profesional vea SU agenda", cada `staff` debe tener su
-`acuity_calendar_id` (de `GET /calendars` en Acuity):
+`acuity_calendar_id`. Dos opciones:
+
+### 5a. Automático por EMAIL (recomendado — no necesitas los IDs)
+
+`acuity-sync-calendars` lee `GET /calendars` (cada calendario trae su email) y
+setea `acuity_calendar_id` casando el email del calendario con el email del
+perfil del Kurador en KuraTracker:
+
+```
+supabase functions deploy acuity-sync-calendars
+curl -X POST 'https://<PROJECT_REF>.supabase.co/functions/v1/acuity-sync-calendars' \
+     -H "Authorization: Bearer <SERVICE_ROLE_KEY>"
+# -> {"matched":[...], "unmatched":[...]}
+```
+
+Requisito: el email del calendario en Acuity debe coincidir con el email del
+perfil del Kurador (profiles.email). Los que salgan en `unmatched` son correos
+de Acuity que aún no existen como Kurador con cuenta en KuraTracker (candidatos
+a "crear usuario", ver Nivel 2 abajo). Reejecuta esta función cada que agregues
+calendarios o personal.
+
+### 5b. Manual (si algún email no coincide)
 
 ```sql
 update public.staff set acuity_calendar_id = <ID_ACUITY>
@@ -71,8 +92,7 @@ where id = '<staff_uuid>';
 ```
 
 El webhook usa ese mapeo para resolver `staff_id`/`organization_id` de cada
-cita. Citas de calendarios no mapeados quedan con `staff_id = null` (visibles
-solo para admin/master del centro correspondiente si tienen org, o sin dueño).
+cita. Citas de calendarios no mapeados quedan con `staff_id = null`.
 
 ## 6. Backfill inicial (citas ya existentes)
 
