@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../../core/theme/kura_theme.dart';
+import '../../core/design/tokens.dart';
 import '../../engine/models/kura_engine_enums.dart';
 import '../../engine/sheehan_decision_style.dart';
 import 'patient_progress_status.dart';
@@ -34,6 +34,7 @@ class ProgressStatusIndicator extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final style = status.worst;
+    final t = BrandTokens.of(context);
     return Tooltip(
       message: _tooltipMessage(),
       child: Container(
@@ -53,8 +54,8 @@ class ProgressStatusIndicator extends StatelessWidget {
               style: TextStyle(
                 fontSize: 11,
                 fontWeight: FontWeight.w700,
-                color: style.color == KuraColors.warning
-                    ? KuraColors.darkText // texto oscuro sobre amarillo: contraste
+                color: style == ProgressStatus.warning
+                    ? t.textPrimary // texto oscuro sobre amarillo: contraste
                     : style.color,
               ),
             ),

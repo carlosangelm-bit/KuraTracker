@@ -1,38 +1,50 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
-/// Paleta y tipografia de marca Kura+ (seccion 9).
+import '../design/tokens.dart';
+
+/// Compatibilidad hacia atrás: `KuraColors` es ahora un ALIAS DELGADO sobre los
+/// tokens semánticos ([BrandTokens]/[KuraPalette], ver lib/core/design). No se
+/// borra para no migrar de golpe todas las pantallas; el código nuevo debería
+/// consumir `BrandTokens.of(context)` en vez de estas constantes.
+///
+/// Nota de disciplina de color: `primary` es el ACENTO DE MARCA y su uso
+/// legítimo son las acciones (CTA/FAB/nav activo), no superficies ni
+/// decoración. `success/warning/danger` son ESTADO CLÍNICO (semáforo).
 class KuraColors {
-  static const Color primary = Color(0xFFEC0244); // magenta/rojo
-  static const Color darkText = Color(0xFF211813);
-  static const Color lightBg = Color(0xFFFBF5EC);
-  static const Color surface = Colors.white;
+  static const Color primary = KuraPalette.brandPrimary;
+  static const Color darkText = KuraPalette.textPrimary;
+  static const Color lightBg = KuraPalette.background;
+  static const Color surface = KuraPalette.surface;
 
-  // Escenarios pronosticos
-  static const Color scenarioA = Color(0xFF1B8A5A); // verde - cierre rapido
-  static const Color scenarioB = Color(0xFFE8A93A); // ambar - cierre asistido
-  static const Color scenarioC = Color(0xFFC0392B); // rojo - no cierre
+  // Escenarios pronósticos == estado clínico (mismos colores del semáforo).
+  static const Color scenarioA = KuraPalette.statusSuccess;
+  static const Color scenarioB = KuraPalette.statusWarning;
+  static const Color scenarioC = KuraPalette.statusDanger;
 
-  static const Color success = Color(0xFF1B8A5A);
-  static const Color warning = Color(0xFFE8A93A);
-  static const Color danger = Color(0xFFC0392B);
-  static const Color infoBlue = Color(0xFF2E6E9E);
+  static const Color success = KuraPalette.statusSuccess;
+  static const Color warning = KuraPalette.statusWarning;
+  static const Color danger = KuraPalette.statusDanger;
+  static const Color infoBlue = KuraPalette.info;
 
-  static const Color borderSubtle = Color(0xFFE4D9C9);
-  static const Color chipBg = Color(0xFFF3E9DA);
+  static const Color borderSubtle = KuraPalette.border;
+  static const Color chipBg = KuraPalette.chipBg;
 }
 
 class KuraTheme {
   static ThemeData get light {
+    const tokens = BrandTokens.kura;
     final base = ThemeData(
       useMaterial3: true,
       colorScheme: ColorScheme.fromSeed(
-        seedColor: KuraColors.primary,
-        primary: KuraColors.primary,
-        surface: KuraColors.surface,
+        seedColor: tokens.brandPrimary,
+        primary: tokens.brandPrimary,
+        surface: tokens.surface,
         brightness: Brightness.light,
       ),
-      scaffoldBackgroundColor: KuraColors.lightBg,
+      scaffoldBackgroundColor: tokens.background,
+      // Tokens semánticos disponibles vía BrandTokens.of(context).
+      extensions: const <ThemeExtension<dynamic>>[tokens],
     );
 
     final textTheme = GoogleFonts.nunitoTextTheme(base.textTheme).apply(

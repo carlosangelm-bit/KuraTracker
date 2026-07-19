@@ -8,16 +8,24 @@ const _uuid = Uuid();
 /// Se ejecuta una sola vez (marca 'seeded' en LocalStore) para permitir
 /// una demo navegable inmediata.
 class DemoSeed {
+  // Flag VERSIONADO: al enriquecer el set de demo, se re-siembra limpio una
+  // sola vez en instalaciones demo previas (que tenían 'seeded' v1), evitando
+  // duplicados y datos viejos. Solo aplica al modo demo local (SharedPreferences);
+  // producción usa Supabase y nunca llama a este seed.
+  static const String _seedFlag = 'seeded_v2';
+
   static Future<void> ensureSeeded(LocalStore store) async {
-    if (store.getBool('seeded')) return;
+    if (store.getBool(_seedFlag)) return;
+    // Limpia una posible siembra anterior (v1) para no duplicar filas.
+    await store.wipeAll();
     await _seed(store);
-    await store.setBool('seeded', true);
+    await store.setBool(_seedFlag, true);
   }
 
   static Future<void> resetAndReseed(LocalStore store) async {
     await store.wipeAll();
     await _seed(store);
-    await store.setBool('seeded', true);
+    await store.setBool(_seedFlag, true);
   }
 
   static Future<void> _seed(LocalStore store) async {
@@ -883,5 +891,311 @@ class DemoSeed {
     noteOption('evolution', 'Signos de infección local');
     noteOption('evolution', 'Mejoría del tejido de granulación');
     await store.saveAll(Collections.noteOptionCatalog, noteOptionRows);
+
+    // ================================================================
+    // Datos de demo ADICIONALES: trayectorias variadas (verde/ámbar/rojo/
+    // sin datos) en varios cuadros diagnósticos, para que el tablero y las
+    // gráficas de evolución luzcan en la demo. Se AGREGA con getAll+saveAll
+    // (saveAll sobrescribe la colección; por eso se re-lee antes de guardar).
+    // Las series de área están calibradas al checkpoint de Sheehan (sem. 4:
+    // ≥50% cierre / ≥30% observación / <30% no avanza).
+    // ================================================================
+    Future<void> appendRows(String c, List<Map<String, dynamic>> rows) async {
+      await store.saveAll(c, [...store.getAll(c), ...rows]);
+    }
+
+    Map<String, dynamic> meas(String woundId, String consultId, DateTime d,
+        double area, int gran, int slough, int necr, int epi, double depth) {
+      return {
+        'id': _uuid.v4(),
+        'wound_id': woundId,
+        'consultation_id': consultId,
+        'measured_at': isoDate(d),
+        'length_cm': double.parse((area / 2).toStringAsFixed(1)),
+        'width_cm': 2.0,
+        'area_cm2': area,
+        'depth_cm': depth,
+        'tunneling': false,
+        'undermining': false,
+        'granulation_pct': gran,
+        'slough_pct': slough,
+        'necrosis_pct': necr,
+        'epithelialization_pct': epi,
+        'captured_before_debridement': true,
+      };
+    }
+
+    Map<String, dynamic> consulta(String id, String pid, String staffId,
+        String siteId, String visitType, DateTime d) {
+      return {
+        'id': id,
+        'patient_id': pid,
+        'staff_id': staffId,
+        'site_id': siteId,
+        'visit_type': visitType,
+        'visit_date': isoDate(d),
+        'vital_signs': {'ta': '120/80', 'fc': 75, 'temp': 36.5},
+        'is_draft': false,
+        'created_at': iso(d),
+      };
+    }
+
+    // ---- Seguimientos que dan trayectoria a pacientes ya existentes ----
+    // p4 (quirúrgica): mejora franca -> verde.
+    final c4bId = _uuid.v4();
+    final c4cId = _uuid.v4();
+    await appendRows(Collections.consultations, [
+      consulta(c4bId, p4Id, staff2Id, siteClinicaGdl, 'seguimiento',
+          now.subtract(const Duration(days: 6))),
+      consulta(c4cId, p4Id, staff2Id, siteClinicaGdl, 'seguimiento', now),
+    ]);
+    await appendRows(Collections.woundMeasurements, [
+      meas(w4Id, c4bId, now.subtract(const Duration(days: 6)), 8.0, 45, 25, 5, 25, 0.9),
+      meas(w4Id, c4cId, now, 5.0, 60, 15, 0, 25, 0.6),
+    ]);
+
+    // p2 (LPP): estancada -> rojo (no avanza).
+    final c2bId = _uuid.v4();
+    final c2cId = _uuid.v4();
+    await appendRows(Collections.consultations, [
+      consulta(c2bId, p2Id, staff1Id, siteDomicilioCdmx, 'seguimiento',
+          now.subtract(const Duration(days: 30))),
+      consulta(c2cId, p2Id, staff1Id, siteDomicilioCdmx, 'seguimiento', now),
+    ]);
+    await appendRows(Collections.woundMeasurements, [
+      meas(w2Id, c2bId, now.subtract(const Duration(days: 30)), 20.0, 28, 38, 24, 10, 1.7),
+      meas(w2Id, c2cId, now, 19.0, 30, 36, 22, 12, 1.6),
+    ]);
+
+    // p3 (vascular isquémica): empeora -> rojo.
+    final c3bId = _uuid.v4();
+    final c3cId = _uuid.v4();
+    await appendRows(Collections.consultations, [
+      consulta(c3bId, p3Id, staff1Id, siteClinicaCdmx, 'seguimiento',
+          now.subtract(const Duration(days: 15))),
+      consulta(c3cId, p3Id, staff1Id, siteClinicaCdmx, 'seguimiento', now),
+    ]);
+    await appendRows(Collections.woundMeasurements, [
+      meas(w3Id, c3bId, now.subtract(const Duration(days: 15)), 3.4, 8, 32, 48, 12, 0.6),
+      meas(w3Id, c3cId, now, 3.8, 6, 34, 50, 10, 0.7),
+    ]);
+
+    // ---- Pacientes NUEVOS (cuadros y evoluciones variados) ----
+    var folioSeq = 6;
+    Future<void> addCase({
+      required String name,
+      required DateTime birth,
+      required String sex,
+      required String siteId,
+      required String staffId,
+      required String etiology,
+      required String subtype,
+      required String location,
+      required String background,
+      required List<List<String>> comorbid,
+      required List<double> areas, // [basal, media, actual]
+      int baselineDaysAgo = 28,
+      bool fragile = false,
+      Map<String, dynamic> woundExtra = const {},
+    }) async {
+      final pid = _uuid.v4();
+      final wid = _uuid.v4();
+      final cBase = _uuid.v4();
+      final cMid = _uuid.v4();
+      final cCur = _uuid.v4();
+      final base = now.subtract(Duration(days: baselineDaysAgo));
+      final mid = now.subtract(Duration(days: baselineDaysAgo ~/ 2));
+      final folio = 'EXP2025-00${folioSeq.toString().padLeft(2, '0')}';
+      folioSeq++;
+      final improving = areas.last < areas.first;
+
+      await appendRows(Collections.patients, [
+        {
+          'id': pid,
+          'organization_id': organizationId,
+          'folio': folio,
+          'full_name': name,
+          'birth_date': isoDate(birth),
+          'sex': sex,
+          'primary_site_id': siteId,
+          'mobility': fragile ? 'encamado' : 'ambulatorio',
+          'has_identified_caregiver': fragile,
+          'fragile_patient': fragile,
+          'background_notes': background,
+          'ekare_external_id': null,
+          'is_active': true,
+          'created_at': iso(base),
+        }
+      ]);
+      await appendRows(
+          Collections.patientComorbidities,
+          comorbid
+              .map((c) => {
+                    'id': _uuid.v4(),
+                    'patient_id': pid,
+                    'code': c[0],
+                    'status': c[1],
+                  })
+              .toList());
+      await appendRows(Collections.wounds, [
+        {
+          'id': wid,
+          'patient_id': pid,
+          'etiology': etiology,
+          'subtype': subtype,
+          'body_location_primary': location,
+          'body_location_secondary': null,
+          'onset_date': isoDate(base.subtract(const Duration(days: 10))),
+          'wagner_grade': woundExtra['wagner_grade'],
+          'ceap_class': woundExtra['ceap_class'],
+          'wuwhs_grade': woundExtra['wuwhs_grade'],
+          'agente_causal': woundExtra['agente_causal'],
+          'is_active': true,
+          'closed_at': null,
+          'created_at': iso(base),
+        }
+      ]);
+      await appendRows(Collections.consultations, [
+        consulta(cBase, pid, staffId, siteId, 'valoracion', base),
+        consulta(cMid, pid, staffId, siteId, 'seguimiento', mid),
+        consulta(cCur, pid, staffId, siteId, 'seguimiento', now),
+      ]);
+      await appendRows(Collections.woundAssessments, [
+        {
+          'id': _uuid.v4(),
+          'consultation_id': cBase,
+          'wound_id': wid,
+          'glucose_mg_dl': null,
+          'first_assessment_date': isoDate(base),
+          'edema': 'leve',
+          'pain': true,
+          'pain_type': 'nociceptivo',
+          'pain_duration': 'cronico',
+          'pain_vas': 4,
+          'exudate_amount': 'moderado',
+          'infection_criteria': <String>[],
+          'odor': 'leve',
+          'wound_edge': 'definido',
+          'perilesional_skin': ['normal'],
+        }
+      ]);
+      final cB = improving ? [40, 35, 10, 15] : [30, 35, 25, 10];
+      final cM = improving ? [55, 22, 5, 18] : [28, 36, 26, 10];
+      final cC = improving ? [70, 12, 0, 18] : [25, 38, 27, 10];
+      await appendRows(Collections.woundMeasurements, [
+        meas(wid, cBase, base, areas[0], cB[0], cB[1], cB[2], cB[3], 0.6),
+        meas(wid, cMid, mid, areas[1], cM[0], cM[1], cM[2], cM[3], 0.5),
+        meas(wid, cCur, now, areas[2], cC[0], cC[1], cC[2], cC[3], 0.4),
+      ]);
+      await appendRows(Collections.staffPatientAssignments, [
+        {'id': _uuid.v4(), 'staff_id': staffId, 'patient_id': pid},
+      ]);
+    }
+
+    // Verde (avanza): venosa mejorando.
+    await addCase(
+      name: 'Laura Jiménez Ruiz',
+      birth: DateTime(1963, 4, 22),
+      sex: 'F',
+      siteId: siteClinicaGdl,
+      staffId: staff1Id,
+      etiology: 'vascular',
+      subtype: 'Úlcera venosa',
+      location: 'pierna_derecha_tercio_distal',
+      background: 'Insuficiencia venosa crónica; buena adherencia a compresión.',
+      comorbid: [
+        ['obesidad', 'presente'],
+        ['diabetes_mellitus', 'negado'],
+      ],
+      areas: [12.0, 8.0, 4.5],
+      woundExtra: {'ceap_class': 'c6'},
+    );
+    // Ámbar (con reservas): pie diabético estancándose.
+    await addCase(
+      name: 'José Herrera Campos',
+      birth: DateTime(1955, 8, 3),
+      sex: 'M',
+      siteId: siteClinicaCdmx,
+      staffId: staff2Id,
+      etiology: 'pie_diabetico',
+      subtype: 'Úlcera neuropática plantar',
+      location: 'pie_izquierdo_planta',
+      background: 'DM2 con neuropatía; adherencia irregular al descargo.',
+      comorbid: [
+        ['diabetes_mellitus', 'presente'],
+        ['movilidad_reducida', 'no_evaluado'],
+      ],
+      areas: [9.0, 7.2, 5.9],
+      woundExtra: {'wagner_grade': 'g2'},
+    );
+    // Rojo (no avanza): arterial empeorando.
+    await addCase(
+      name: 'Rosa Delgado Mora',
+      birth: DateTime(1948, 12, 15),
+      sex: 'F',
+      siteId: siteClinicaCdmx,
+      staffId: staff1Id,
+      etiology: 'vascular',
+      subtype: 'Úlcera arterial',
+      location: 'pie_derecho_dorso',
+      background: 'Enfermedad arterial periférica; dolor isquémico en reposo.',
+      comorbid: [
+        ['enfermedad_arterial_periferica', 'presente'],
+        ['tabaquismo_activo', 'presente'],
+      ],
+      areas: [6.0, 6.6, 7.2],
+    );
+    // Ámbar (con reservas): LPP con avance lento.
+    await addCase(
+      name: 'Antonio Ríos Peña',
+      birth: DateTime(1938, 1, 9),
+      sex: 'M',
+      siteId: siteDomicilioGdl,
+      staffId: staff2Id,
+      etiology: 'lpp',
+      subtype: 'LPP categoría II',
+      location: 'talon_derecho',
+      background: 'Movilidad reducida, atención domiciliaria.',
+      comorbid: [
+        ['movilidad_reducida', 'presente'],
+        ['malnutricion', 'presente'],
+      ],
+      areas: [8.0, 6.6, 5.3],
+      fragile: true,
+    );
+    // Verde (avanza): quirúrgica cerrando bien.
+    await addCase(
+      name: 'Carmen Solís Vega',
+      birth: DateTime(1980, 6, 27),
+      sex: 'F',
+      siteId: siteClinicaCdmx,
+      staffId: adminStaffId,
+      etiology: 'quirurgica',
+      subtype: 'Herida quirúrgica (cierre por 2a intención)',
+      location: 'abdomen_bajo',
+      background: 'Postoperatorio de cesárea, sin datos de infección.',
+      comorbid: [
+        ['obesidad', 'presente'],
+      ],
+      areas: [7.0, 4.0, 2.4],
+      baselineDaysAgo: 21,
+    );
+    // Rojo (no avanza): herida de etiología mixta estancada.
+    await addCase(
+      name: 'Héctor Navarro Luna',
+      birth: DateTime(1969, 10, 2),
+      sex: 'M',
+      siteId: siteClinicaGdl,
+      staffId: staff1Id,
+      etiology: 'otra',
+      subtype: 'Úlcera de etiología mixta',
+      location: 'pierna_izquierda',
+      background: 'Úlcera crónica de etiología mixta en estudio.',
+      comorbid: [
+        ['diabetes_mellitus', 'presente'],
+        ['enfermedad_arterial_periferica', 'presente'],
+      ],
+      areas: [10.0, 9.4, 8.8],
+    );
   }
 }

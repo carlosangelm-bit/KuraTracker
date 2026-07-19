@@ -1,12 +1,15 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../core/theme/kura_theme.dart';
+import '../../core/design/tokens.dart';
 import '../../core/providers/session_provider.dart';
 import '../../core/router/app_shell.dart' show kFloatingNavBarHeight;
 import '../../core/widgets/kura_glass_card.dart';
 import '../../core/widgets/kura_primary_fab.dart';
+import '../../engine/models/kura_engine_enums.dart';
 import '../../engine/sheehan_decision_style.dart';
 import '../../models/app_user.dart';
 import '../../models/patient.dart';
@@ -34,11 +37,36 @@ class DashboardScreen extends ConsumerStatefulWidget {
   ConsumerState<DashboardScreen> createState() => _DashboardScreenState();
 }
 
+/// Ventana temporal para los indicadores de actividad del admin. El resto de
+/// datos (estatus, etiologías, KPIs) se analizan siempre en tiempo real.
+enum _Period { mes, d30, d14, d7 }
+
+extension _PeriodX on _Period {
+  String get label => switch (this) {
+        _Period.mes => 'Mes actual',
+        _Period.d30 => '30 días',
+        _Period.d14 => '14 días',
+        _Period.d7 => '7 días',
+      };
+
+  DateTime cutoff(DateTime now) => switch (this) {
+        _Period.mes => DateTime(now.year, now.month, 1),
+        _Period.d30 => now.subtract(const Duration(days: 30)),
+        _Period.d14 => now.subtract(const Duration(days: 14)),
+        _Period.d7 => now.subtract(const Duration(days: 7)),
+      };
+}
+
 class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   // Cuantos pacientes "recientes" (no urgentes) se muestran antes de
   // ofrecer "Ver todos": el tablero debe leerse en segundos, no ser la
   // lista completa (esa vive en /patients).
   static const int _recentLimit = 6;
+
+  // Filtro de temporalidad (solo para los indicadores de actividad del admin:
+  // "por sitio" y "carga por Kurador"). Por defecto, el mes actual.
+  _Period _sitePeriod = _Period.mes;
+  _Period _kuradorPeriod = _Period.mes;
 
   // Accion rapida "Valoracion": misma ruta y query que PatientsListScreen.
   void _goToValoracion(String patientId) {
@@ -78,9 +106,10 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     final session = ref.watch(sessionProvider);
     final repoAsync = ref.watch(dataRepositoryProvider);
     final user = session.user;
+    final tokens = BrandTokens.of(context);
 
     return Scaffold(
-      backgroundColor: KuraColors.lightBg,
+      backgroundColor: tokens.background,
       // Fondo con color (degradado + blobs) para que el vidrio de las
       // tarjetas tenga algo que refractar detras.
       body: Stack(
@@ -91,116 +120,36 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
               loading: () => const Center(child: CircularProgressIndicator()),
               error: (e, st) => Center(child: Text('Error: $e')),
               data: (repo) {
-          // Aislamiento por rol (igual que PatientsListScreen): clinico ve
-          // sus pacientes; admin los del centro. El master no llega aqui
-          // (va a /platform).
-          final patients = user?.role == AppRole.admin
-              ? repo.listAllPatients()
-              : (user?.staffId != null
-                  ? repo.listPatientsForStaff(user!.staffId!)
-                  : <Patient>[]);
-
-          // Un solo computo del semaforo por paciente, reutilizado por las
-          // metricas y por ambas secciones.
-          final triage = patients.map((p) {
-            final summary = PatientWoundSummary.compute(repo, p.id);
-            final progress = PatientProgressStatus.compute(repo, summary.activeWounds);
-            return _Triage(patient: p, summary: summary, progress: progress);
-          }).toList();
-
-          final attention = triage
-              .where((t) => t.worst == ProgressStatus.danger || t.worst == ProgressStatus.warning)
-              .toList()
-            ..sort((a, b) => _severityRank(a.worst).compareTo(_severityRank(b.worst)));
-          final rest = triage
-              .where((t) => t.worst == ProgressStatus.good || t.worst == ProgressStatus.noData)
-              .toList();
-
-          final activePatients = patients.where((p) => p.isActive).length;
-          final activeWounds = triage.fold<int>(0, (n, t) => n + t.summary.activeCount);
-          final dangerCount = triage.where((t) => t.worst == ProgressStatus.danger).length;
-          final warningCount = triage.where((t) => t.worst == ProgressStatus.warning).length;
-
-          return ListView(
-            // Espacio inferior para que el ultimo elemento no quede tapado por
-            // la barra de navegacion flotante (bar + margen + inset del sistema).
-            padding: EdgeInsets.fromLTRB(
-              16,
-              20,
-              16,
-              MediaQuery.of(context).viewPadding.bottom + kFloatingNavBarHeight + 32,
-            ),
-            children: [
-              Text(
-                'Hola, ${user?.fullName.split(' ').first ?? ''} 👋',
-                style: Theme.of(context)
-                    .textTheme
-                    .headlineSmall
-                    ?.copyWith(fontWeight: FontWeight.w800),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                'Tu tablero de hoy · lo que necesita atención va primero',
-                style: TextStyle(color: KuraColors.darkText.withOpacity(0.6)),
-              ),
-              const SizedBox(height: 20),
-
-              // Metricas accionables.
-              _MetricsGrid(
-                activePatients: activePatients,
-                activeWounds: activeWounds,
-                dangerCount: dangerCount,
-                warningCount: warningCount,
-                onTapDanger: () => _openPatients(status: ProgressStatus.danger),
-                onTapWarning: () => _openPatients(status: ProgressStatus.warning),
-              ),
-              const SizedBox(height: 28),
-
-              if (patients.isEmpty)
-                _EmptyDashboard(isAdmin: user?.role == AppRole.admin)
-              else ...[
-                // Seccion 1: requieren atencion (rojo + amarillo, peor primero).
-                _SectionHeader(
-                  icon: Icons.priority_high_rounded,
-                  title: 'Requieren atención',
-                  count: attention.length,
-                  color: dangerCount > 0 ? KuraColors.danger : KuraColors.warning,
-                ),
-                const SizedBox(height: 12),
-                if (attention.isEmpty)
-                  const _AttentionEmpty()
-                else
-                  ...attention.map((t) => _tile(repo, t)),
-
-                const SizedBox(height: 28),
-
-                // Seccion 2: recientes (el resto: en meta o sin datos aun).
-                _SectionHeader(
-                  icon: Icons.people_alt_outlined,
-                  title: 'Recientes',
-                  count: rest.length,
-                  color: KuraColors.primary,
-                ),
-                const SizedBox(height: 12),
-                if (rest.isEmpty)
-                  Text(
-                    'Nada más por ahora.',
-                    style: TextStyle(color: KuraColors.darkText.withOpacity(0.5)),
-                  )
-                else ...[
-                  ...rest.take(_recentLimit).map((t) => _tile(repo, t)),
-                  if (rest.length > _recentLimit)
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: TextButton.icon(
-                        onPressed: () => _openPatients(),
-                        icon: const Icon(Icons.arrow_forward, size: 18),
-                        label: Text('Ver todos los pacientes (${rest.length})'),
-                      ),
-                    ),
-                ],
-              ],
-            ],
+                // Aislamiento por rol: clínico ve SUS pacientes; admin los del
+                // centro. El master no llega aquí (va a /platform).
+                final isAdmin = user?.role == AppRole.admin;
+                final patients = isAdmin
+                    ? repo.listAllPatients()
+                    : (user?.staffId != null
+                        ? repo.listPatientsForStaff(user!.staffId!)
+                        : <Patient>[]);
+                // Un solo cómputo del semáforo por paciente.
+                final triage = patients.map((p) {
+                  final summary = PatientWoundSummary.compute(repo, p.id);
+                  final progress =
+                      PatientProgressStatus.compute(repo, summary.activeWounds);
+                  return _Triage(patient: p, summary: summary, progress: progress);
+                }).toList();
+                return ListView(
+                  // Espacio inferior para que el último elemento no quede tapado
+                  // por la barra de navegación flotante.
+                  padding: EdgeInsets.fromLTRB(
+                    16,
+                    20,
+                    16,
+                    MediaQuery.of(context).viewPadding.bottom +
+                        kFloatingNavBarHeight +
+                        32,
+                  ),
+                  // Dos layouts distintos según el rol (mismos tokens/componentes).
+                  children: isAdmin
+                      ? _adminChildren(context, repo, user, patients, triage)
+                      : _clinicianChildren(context, repo, user, triage),
                 );
               },
             ),
@@ -252,6 +201,376 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
         return 3;
     }
   }
+
+  List<Widget> _greeting(BuildContext context, AppUser? user, String subtitle) {
+    final t = BrandTokens.of(context);
+    return [
+      Text(
+        'Hola, ${user?.fullName.split(' ').first ?? ''} 👋',
+        style: Theme.of(context)
+            .textTheme
+            .headlineSmall
+            ?.copyWith(fontWeight: FontWeight.w800),
+      ),
+      const SizedBox(height: 4),
+      Text(subtitle, style: TextStyle(color: t.textSecondary)),
+    ];
+  }
+
+  /// Última actividad del paciente = consulta más reciente (por fecha de
+  /// visita). No hay cadencia/calendario; esto solo ordena "recientes".
+  DateTime _lastActivity(DataRepository repo, String patientId) {
+    final consultas = repo.listConsultationsForPatient(patientId);
+    if (consultas.isEmpty) return DateTime.fromMillisecondsSinceEpoch(0);
+    return consultas
+        .map((c) => c.visitDate)
+        .reduce((a, b) => a.isAfter(b) ? a : b);
+  }
+
+  /// Serie de área (cm²) de la primera herida activa, para el sparkline.
+  /// Vacía si no hay al menos 2 mediciones (no se puede trazar tendencia).
+  List<double> _areaSeries(DataRepository repo, _Triage t) {
+    if (t.summary.activeWounds.isEmpty) return const [];
+    final ms = repo.listMeasurementsForWound(t.summary.activeWounds.first.id);
+    if (ms.length < 2) return const [];
+    return ms.map((m) => m.areaCm2).toList();
+  }
+
+  // ---- Layout CLÍNICO (operativo, sus pacientes) ----
+  List<Widget> _clinicianChildren(
+      BuildContext context, DataRepository repo, AppUser? user, List<_Triage> triage) {
+    final t = BrandTokens.of(context);
+    final activePatients = triage.where((x) => x.patient.isActive).length;
+    final activeWounds = triage.fold<int>(0, (n, x) => n + x.summary.activeCount);
+    final dangerCount = triage.where((x) => x.worst == ProgressStatus.danger).length;
+    // Resumen del panel del clínico (mismos gráficos reutilizados del admin,
+    // pero sobre SUS pacientes): distribución de estatus + mezcla de casos.
+    final green = triage.where((x) => x.worst == ProgressStatus.good).length;
+    final amber = triage.where((x) => x.worst == ProgressStatus.warning).length;
+    final noData = triage.where((x) => x.worst == ProgressStatus.noData).length;
+    final etiologyCounts = <Etiologia, int>{};
+    for (final x in triage) {
+      for (final w in x.summary.activeWounds) {
+        etiologyCounts[w.etiology] = (etiologyCounts[w.etiology] ?? 0) + 1;
+      }
+    }
+    final etiologies = etiologyCounts.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    final attention = triage
+        .where((x) =>
+            x.worst == ProgressStatus.danger || x.worst == ProgressStatus.warning)
+        .toList()
+      ..sort((a, b) => _severityRank(a.worst).compareTo(_severityRank(b.worst)));
+    final recent = [...triage]
+      ..sort((a, b) => _lastActivity(repo, b.patient.id)
+          .compareTo(_lastActivity(repo, a.patient.id)));
+
+    return [
+      ..._greeting(context, user, 'Tu tablero de hoy · lo que necesita atención va primero'),
+      const SizedBox(height: 20),
+      _HeroCard(
+        activePatients: activePatients,
+        activeWounds: activeWounds,
+        dangerCount: dangerCount,
+        onTapAttention: () => _openPatients(status: ProgressStatus.danger),
+      ),
+      const SizedBox(height: 16),
+      _QuickAccessBar(
+        onSearch: () => _openPatients(),
+        onReports: () => context.go('/reports'),
+      ),
+      const SizedBox(height: 28),
+      if (triage.isEmpty)
+        const _EmptyDashboard(isAdmin: false)
+      else ...[
+        // Resumen de mi panel: donut de estatus + tipos de lesión (en
+        // escritorio lado a lado; en móvil apilados).
+        _ResponsiveColumns(
+          blocks: [
+            _sectionBlock(
+              context,
+              icon: Icons.donut_small_outlined,
+              title: 'Estado de mis pacientes',
+              count: triage.length,
+              child: _StatusDonut(
+                  green: green, amber: amber, red: dangerCount, noData: noData),
+            ),
+            if (etiologies.isNotEmpty)
+              _sectionBlock(
+                context,
+                icon: Icons.category_outlined,
+                title: 'Tipos de lesión',
+                count: etiologies.length,
+                child: _CategoryBars(
+                  entries: [
+                    for (final e in etiologies) _BarDatum(label: e.key.label, value: e.value)
+                  ],
+                  color: t.brandPrimary,
+                ),
+              ),
+          ],
+        ),
+        const SizedBox(height: 28),
+        _SectionHeader(
+          icon: Icons.priority_high_rounded,
+          title: 'Requieren atención',
+          count: attention.length,
+          color: dangerCount > 0 ? t.statusDanger : t.statusWarning,
+        ),
+        const SizedBox(height: 12),
+        if (attention.isEmpty)
+          const _AttentionEmpty()
+        else
+          ...attention.map((x) => _tile(repo, x)),
+        const SizedBox(height: 28),
+        _SectionHeader(
+          icon: Icons.history,
+          title: 'Continuar donde te quedaste',
+          count: recent.length,
+          color: t.info,
+        ),
+        const SizedBox(height: 12),
+        ...recent.take(_recentLimit).map((x) => _RecentPatientTile(
+              triage: x,
+              series: _areaSeries(repo, x),
+              onTap: () => context.go('/patients/${x.patient.id}'),
+            )),
+        if (recent.length > _recentLimit)
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              onPressed: () => _openPatients(),
+              icon: const Icon(Icons.arrow_forward, size: 18),
+              label: Text('Ver todos los pacientes (${recent.length})'),
+            ),
+          ),
+      ],
+    ];
+  }
+
+  // ---- Layout ADMIN (supervisión del centro) ----
+  List<Widget> _adminChildren(BuildContext context, DataRepository repo,
+      AppUser? user, List<Patient> patients, List<_Triage> triage) {
+    final t = BrandTokens.of(context);
+    final activePatients = patients.where((p) => p.isActive).length;
+    final activeWounds = triage.fold<int>(0, (n, x) => n + x.summary.activeCount);
+    final green = triage.where((x) => x.worst == ProgressStatus.good).length;
+    final amber = triage.where((x) => x.worst == ProgressStatus.warning).length;
+    final red = triage.where((x) => x.worst == ProgressStatus.danger).length;
+    final noData = triage.where((x) => x.worst == ProgressStatus.noData).length;
+    final closureRate =
+        triage.isEmpty ? 0 : ((green / triage.length) * 100).round();
+
+    // Tipos de lesión (etiología) — tiempo real, sobre heridas activas.
+    final etiologyCounts = <Etiologia, int>{};
+    for (final x in triage) {
+      for (final w in x.summary.activeWounds) {
+        etiologyCounts[w.etiology] = (etiologyCounts[w.etiology] ?? 0) + 1;
+      }
+    }
+    final etiologies = etiologyCounts.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+
+    // Todas las consultas del centro (base de los indicadores por periodo).
+    final now = DateTime.now();
+    final allConsultations = [
+      for (final p in patients) ...repo.listConsultationsForPatient(p.id)
+    ];
+
+    // Pacientes y sesiones por sitio, filtrado por _sitePeriod: sesiones =
+    // consultas en el periodo; pacientes = distintos atendidos en el periodo.
+    final sites = repo
+        .listSites(organizationId: user?.organizationId)
+        .where((s) => s.isActive)
+        .toList();
+    final siteCutoff = _sitePeriod.cutoff(now);
+    final sitePatients = <String, Set<String>>{};
+    final siteSessions = <String, int>{};
+    for (final c in allConsultations) {
+      if (c.visitDate.isBefore(siteCutoff)) continue;
+      siteSessions[c.siteId] = (siteSessions[c.siteId] ?? 0) + 1;
+      (sitePatients[c.siteId] ??= <String>{}).add(c.patientId);
+    }
+    final siteStats = sites
+        .map((s) => _SiteStat(
+              name: s.name,
+              patients: sitePatients[s.id]?.length ?? 0,
+              sessions: siteSessions[s.id] ?? 0,
+            ))
+        .where((s) => s.patients > 0 || s.sessions > 0)
+        .toList()
+      ..sort((a, b) => b.sessions.compareTo(a.sessions));
+
+    // Carga por Kurador, filtrado por _kuradorPeriod: sesiones y pacientes
+    // distintos atendidos por cada uno en el periodo.
+    final staff = repo
+        .listStaff(organizationId: user?.organizationId)
+        .where((s) => s.isActive)
+        .toList();
+    final kCutoff = _kuradorPeriod.cutoff(now);
+    final kSessions = <String, int>{};
+    final kPatients = <String, Set<String>>{};
+    for (final c in allConsultations) {
+      if (c.visitDate.isBefore(kCutoff)) continue;
+      kSessions[c.staffId] = (kSessions[c.staffId] ?? 0) + 1;
+      (kPatients[c.staffId] ??= <String>{}).add(c.patientId);
+    }
+    final loads = staff
+        .map((s) => _StaffLoad(
+              name: s.fullName,
+              role: s.roleTitle,
+              patients: kPatients[s.id]?.length ?? 0,
+              sessions: kSessions[s.id] ?? 0,
+            ))
+        .toList()
+      ..sort((a, b) => b.sessions.compareTo(a.sessions));
+    final maxSessions = loads.fold<int>(1, (m, l) => l.sessions > m ? l.sessions : m);
+
+    return [
+      ..._greeting(context, user, 'Supervisión del centro'),
+      const SizedBox(height: 20),
+      _HeroCard(
+        activePatients: activePatients,
+        activeWounds: activeWounds,
+        dangerCount: red,
+        onTapAttention: () => _openPatients(status: ProgressStatus.danger),
+      ),
+      const SizedBox(height: 20),
+      _KpiRow(kpis: [
+        _Kpi(icon: Icons.people, label: 'Pacientes activos', value: '$activePatients', color: t.info),
+        _Kpi(icon: Icons.healing, label: 'Heridas activas', value: '$activeWounds', color: t.info),
+        _Kpi(icon: Icons.trending_up, label: 'En avance', value: '$closureRate%', color: t.statusSuccess),
+        _Kpi(
+            icon: Icons.report_gmailerrorred_rounded,
+            label: 'Requieren atención',
+            value: '$red',
+            color: t.statusDanger),
+      ]),
+      const SizedBox(height: 28),
+      if (triage.isEmpty)
+        const _EmptyDashboard(isAdmin: true)
+      else
+        // En escritorio los bloques se reparten en varias columnas (no ocupan
+        // todo el ancho); en móvil quedan en una sola.
+        _ResponsiveColumns(
+          blocks: [
+            _sectionBlock(
+              context,
+              icon: Icons.donut_small_outlined,
+              title: 'Estado de trayectoria del centro',
+              count: triage.length,
+              child: _StatusDonut(green: green, amber: amber, red: red, noData: noData),
+            ),
+            if (etiologies.isNotEmpty)
+              _sectionBlock(
+                context,
+                icon: Icons.category_outlined,
+                title: 'Tipos de lesión',
+                count: etiologies.length,
+                child: _CategoryBars(
+                  entries: [
+                    for (final e in etiologies) _BarDatum(label: e.key.label, value: e.value)
+                  ],
+                  color: t.brandPrimary,
+                ),
+              ),
+            _sectionBlock(
+              context,
+              icon: Icons.location_on_outlined,
+              title: 'Pacientes y sesiones por sitio',
+              count: siteStats.length,
+              filter: _PeriodChips(
+                value: _sitePeriod,
+                onChanged: (p) => setState(() => _sitePeriod = p),
+              ),
+              child: siteStats.isEmpty
+                  ? Text('Sin actividad registrada en este periodo.',
+                      style: TextStyle(color: t.textSecondary))
+                  : _SiteBars(stats: siteStats),
+            ),
+            _sectionBlock(
+              context,
+              icon: Icons.groups_outlined,
+              title: 'Carga por Kurador',
+              count: loads.length,
+              filter: _PeriodChips(
+                value: _kuradorPeriod,
+                onChanged: (p) => setState(() => _kuradorPeriod = p),
+              ),
+              child: loads.isEmpty
+                  ? Text('Sin personal sanitario activo en el centro.',
+                      style: TextStyle(color: t.textSecondary))
+                  : Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        for (var i = 0; i < loads.length; i++)
+                          _StaffLoadRow(
+                            load: loads[i],
+                            maxSessions: maxSessions,
+                            showDivider: i > 0,
+                          ),
+                      ],
+                    ),
+            ),
+          ],
+        ),
+    ];
+  }
+
+  /// Bloque UNIFICADO: encabezado + (filtro opcional) + contenido, todo en una
+  /// sola tarjeta glass.
+  Widget _sectionBlock(
+    BuildContext context, {
+    required IconData icon,
+    required String title,
+    required int count,
+    required Widget child,
+    Widget? filter,
+  }) {
+    final t = BrandTokens.of(context);
+    return KuraGlassCard(
+      blur: false,
+      borderRadius: 18,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: t.info.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(icon, color: t.info, size: 20),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(title,
+                    style: Theme.of(context)
+                        .textTheme
+                        .titleMedium
+                        ?.copyWith(fontWeight: FontWeight.w700)),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+                decoration: BoxDecoration(
+                  color: t.info.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text('$count',
+                    style: TextStyle(fontWeight: FontWeight.w800, color: t.info)),
+              ),
+            ],
+          ),
+          if (filter != null) ...[const SizedBox(height: 12), filter],
+          const SizedBox(height: 16),
+          child,
+        ],
+      ),
+    );
+  }
 }
 
 /// Paciente + su resumen de heridas + el peor estatus de trayectoria,
@@ -266,149 +585,225 @@ class _Triage {
   ProgressStatus get worst => progress.worst;
 }
 
-/// Fila de metricas accionables, responsiva (1-4 columnas segun el ancho).
-class _MetricsGrid extends StatelessWidget {
+/// Hero del dashboard: banner oscuro con degradado de marca y el resumen del
+/// día (estilo mockup). El CTA es una acción clínica real (ir a "Requieren
+/// atención"), no una "agenda del día".
+class _HeroCard extends StatelessWidget {
   final int activePatients;
   final int activeWounds;
   final int dangerCount;
-  final int warningCount;
-  final VoidCallback onTapDanger;
-  final VoidCallback onTapWarning;
+  final VoidCallback onTapAttention;
 
-  const _MetricsGrid({
+  const _HeroCard({
     required this.activePatients,
     required this.activeWounds,
     required this.dangerCount,
-    required this.warningCount,
-    required this.onTapDanger,
-    required this.onTapWarning,
+    required this.onTapAttention,
   });
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final w = constraints.maxWidth;
-        final cols = w < 380
-            ? 1
-            : w < 640
-                ? 2
-                : w < 1000
-                    ? 3
-                    : 4;
-        // -1px de margen para que el redondeo nunca fuerce un salto de linea.
-        final itemW = (w - (cols - 1) * 12 - 1) / cols;
-        return Wrap(
-          spacing: 12,
-          runSpacing: 12,
-          children: [
-            _StatCard(
-              width: itemW,
-              icon: Icons.people,
-              label: 'Pacientes activos',
-              value: '$activePatients',
-              color: KuraColors.primary,
+    final t = BrandTokens.of(context);
+    // Tamaño de la ilustración proporcional al ancho del recuadro (≈ ancho de
+    // pantalla menos el padding de la lista), para que mantenga la MISMA
+    // proporción en móvil y escritorio (no se vea diminuta en pantallas anchas).
+    final art =
+        ((MediaQuery.of(context).size.width - 32) * 0.34).clamp(180.0, 320.0).toDouble();
+    // Stack sin recorte: la ilustración 3D DESBORDA el recuadro morado,
+    // sobresaliendo por arriba y un poco a la derecha.
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(AppSpacing.xl),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [t.heroTop, t.heroBottom],
             ),
-            _StatCard(
-              width: itemW,
-              icon: Icons.healing,
-              label: 'Heridas en tratamiento',
-              value: '$activeWounds',
-              color: KuraColors.infoBlue,
+            borderRadius: AppRadii.lgR,
+            boxShadow: [
+              BoxShadow(
+                color: t.heroTop.withOpacity(0.35),
+                blurRadius: 24,
+                offset: const Offset(0, 12),
+              ),
+            ],
+          ),
+          child: Padding(
+            // Reserva a la derecha (proporcional al arte) para que el texto no
+            // quede bajo la ilustración.
+            padding: EdgeInsets.only(right: art * 0.72),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Hoy',
+                  style: TextStyle(
+                    color: t.onBrand.withOpacity(0.70),
+                    fontSize: AppType.label,
+                    fontWeight: AppType.semibold,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.md),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _HeroStat(
+                        value: '$activePatients',
+                        label: 'pacientes\nactivos',
+                        color: t.onBrand,
+                      ),
+                    ),
+                    _HeroDivider(color: t.onBrand.withOpacity(0.20)),
+                    Expanded(
+                      child: _HeroStat(
+                        value: '$activeWounds',
+                        label: 'heridas en\ntratamiento',
+                        color: t.onBrand,
+                      ),
+                    ),
+                    _HeroDivider(color: t.onBrand.withOpacity(0.20)),
+                    Expanded(
+                      child: _HeroStat(
+                        value: '$dangerCount',
+                        label: 'requieren\natención',
+                        color: dangerCount > 0 ? const Color(0xFFFF7A90) : t.onBrand,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: AppSpacing.lg),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Material(
+                    color: t.onBrand,
+                    borderRadius: AppRadii.pillR,
+                    child: InkWell(
+                      onTap: onTapAttention,
+                      borderRadius: AppRadii.pillR,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: AppSpacing.lg, vertical: AppSpacing.md),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.priority_high_rounded, size: 18, color: t.brandPrimary),
+                            const SizedBox(width: AppSpacing.sm),
+                            Text('Requieren atención',
+                                style: TextStyle(
+                                    color: t.brandPrimary, fontWeight: AppType.bold)),
+                            const SizedBox(width: AppSpacing.xs),
+                            Icon(Icons.chevron_right, size: 18, color: t.brandPrimary),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
-            _StatCard(
-              width: itemW,
-              icon: Icons.report_gmailerrorred_rounded,
-              label: 'Requieren atención',
-              value: '$dangerCount',
-              color: KuraColors.danger,
-              emphasize: dangerCount > 0,
-              onTap: onTapDanger,
-            ),
-            _StatCard(
-              width: itemW,
-              icon: Icons.error_outline,
-              label: 'Con reservas',
-              value: '$warningCount',
-              color: KuraColors.warning,
-              emphasize: warningCount > 0,
-              onTap: onTapWarning,
-            ),
-          ],
-        );
-      },
+          ),
+        ),
+        Positioned(
+          right: -art * 0.06,
+          top: -art * 0.16,
+          child: SizedBox(
+            width: art,
+            height: art,
+            child: _HeroArt(fallbackColor: t.onBrand),
+          ),
+        ),
+      ],
     );
   }
 }
 
-class _StatCard extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final String value;
-  final Color color;
-  final double width;
-  final VoidCallback? onTap;
-  // Fondo/borde tintado cuando la metrica urgente tiene casos (>0), para
-  // que salte a la vista sin recurrir solo al color.
-  final bool emphasize;
-
-  const _StatCard({
-    required this.icon,
-    required this.label,
-    required this.value,
-    required this.color,
-    required this.width,
-    this.onTap,
-    this.emphasize = false,
-  });
+/// Ilustración 3D del hero. Usa el asset si existe; si aún no está, cae al
+/// glifo decorativo (para no romper la pantalla).
+class _HeroArt extends StatelessWidget {
+  final Color fallbackColor;
+  const _HeroArt({required this.fallbackColor});
 
   @override
   Widget build(BuildContext context) {
-    final content = Padding(
-      padding: const EdgeInsets.all(16),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: color.withOpacity(0.16),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Icon(icon, color: color),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(value,
-                    style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800)),
-                Text(label,
-                    style: TextStyle(
-                        fontSize: 12, color: KuraColors.darkText.withOpacity(0.7))),
-              ],
-            ),
-          ),
-          if (onTap != null)
-            Icon(Icons.chevron_right,
-                size: 18, color: KuraColors.darkText.withOpacity(0.35)),
-        ],
-      ),
+    // Llena la caja que le da el hero (tamaño proporcional al ancho).
+    return Image.asset(
+      'assets/images/hero_bandage.png',
+      fit: BoxFit.contain,
+      errorBuilder: (_, __, ___) => Center(child: _HeroGlyph(color: fallbackColor)),
     );
+  }
+}
+
+class _HeroStat extends StatelessWidget {
+  final String value;
+  final String label;
+  final Color color;
+  const _HeroStat({required this.value, required this.label, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(value,
+            style: TextStyle(
+                color: color, fontSize: AppType.display, fontWeight: AppType.extrabold)),
+        Text(label,
+            style: TextStyle(
+                color: color.withOpacity(0.75), fontSize: AppType.caption, height: 1.1)),
+      ],
+    );
+  }
+}
+
+class _HeroDivider extends StatelessWidget {
+  final Color color;
+  const _HeroDivider({required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 1,
+      height: 40,
+      margin: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
+      color: color,
+    );
+  }
+}
+
+/// Motivo decorativo del hero (evoca el apósito del mockup) construido con
+/// formas translúcidas — sin assets ni paquetes.
+class _HeroGlyph extends StatelessWidget {
+  final Color color;
+  const _HeroGlyph({required this.color});
+
+  Widget _square(double size, double opacity) => Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          color: color.withOpacity(opacity),
+          borderRadius: AppRadii.mdR,
+          border: Border.all(color: color.withOpacity(0.20)),
+        ),
+      );
+
+  @override
+  Widget build(BuildContext context) {
     return SizedBox(
-      width: width,
-      child: KuraGlassCard(
-        borderRadius: 20,
-        padding: EdgeInsets.zero,
-        // Tinte del vidrio cuando la metrica urgente tiene casos.
-        tint: emphasize ? color : null,
-        child: onTap == null
-            ? content
-            : InkWell(
-                onTap: onTap,
-                borderRadius: BorderRadius.circular(20),
-                child: content,
-              ),
+      width: 84,
+      height: 84,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          Positioned(right: 10, top: 2, child: _square(52, 0.10)),
+          Positioned(right: 0, bottom: 0, child: _square(64, 0.16)),
+          Icon(Icons.healing, size: 34, color: color.withOpacity(0.92)),
+        ],
       ),
     );
   }
@@ -476,25 +871,23 @@ class _AttentionEmpty extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final t = BrandTokens.of(context);
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: AppSpacing.xl),
       decoration: BoxDecoration(
-        color: KuraColors.success.withOpacity(0.08),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: KuraColors.success.withOpacity(0.25)),
+        color: t.statusSuccess.withOpacity(0.08),
+        borderRadius: AppRadii.mdR,
+        border: Border.all(color: t.statusSuccess.withOpacity(0.25)),
       ),
       child: Row(
         children: [
-          const Icon(Icons.check_circle, color: KuraColors.success),
-          const SizedBox(width: 12),
+          Icon(Icons.check_circle, color: t.statusSuccess),
+          const SizedBox(width: AppSpacing.md),
           Expanded(
             child: Text(
               'Sin pacientes que requieran atención por ahora ✅',
-              style: TextStyle(
-                fontWeight: FontWeight.w600,
-                color: KuraColors.darkText.withOpacity(0.8),
-              ),
+              style: TextStyle(fontWeight: FontWeight.w600, color: t.textPrimary),
             ),
           ),
         ],
@@ -510,30 +903,31 @@ class _EmptyDashboard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final t = BrandTokens.of(context);
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(24),
+      padding: const EdgeInsets.all(AppSpacing.xl),
       decoration: BoxDecoration(
-        color: KuraColors.chipBg.withOpacity(0.4),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: KuraColors.borderSubtle),
+        color: t.surface.withOpacity(0.5),
+        borderRadius: AppRadii.mdR,
+        border: Border.all(color: t.border),
       ),
       child: Column(
         children: [
-          Icon(Icons.people_outline, size: 44, color: KuraColors.darkText.withOpacity(0.25)),
-          const SizedBox(height: 12),
+          Icon(Icons.people_outline, size: 44, color: t.textDisabled),
+          const SizedBox(height: AppSpacing.md),
           Text(
             isAdmin
                 ? 'Aún no hay pacientes en el centro.'
                 : 'Aún no tienes pacientes asignados.',
             textAlign: TextAlign.center,
-            style: TextStyle(color: KuraColors.darkText.withOpacity(0.6)),
+            style: TextStyle(color: t.textSecondary),
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: AppSpacing.xs),
           Text(
             'Usa "Nuevo paciente" para registrar el primero.',
             textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 12, color: KuraColors.darkText.withOpacity(0.45)),
+            style: TextStyle(fontSize: AppType.label, color: t.textDisabled),
           ),
         ],
       ),
@@ -551,22 +945,26 @@ class _DashboardBackground extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final t = BrandTokens.of(context);
     return DecoratedBox(
       decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
           colors: [
-            KuraColors.lightBg,
-            Color.alphaBlend(KuraColors.primary.withOpacity(0.05), KuraColors.lightBg),
+            t.background,
+            // "Un toque del acento Kura muy tenue" como ambiente (no acción).
+            Color.alphaBlend(t.brandPrimary.withOpacity(0.05), t.background),
           ],
         ),
       ),
-      child: const Stack(
+      // Blobs ambientales en tonos de marca/informativo (nunca colores de
+      // estado clínico, que no son decorativos).
+      child: Stack(
         children: [
-          Positioned(top: -80, left: -60, child: _Blob(KuraColors.primary, 260, 0.10)),
-          Positioned(top: 160, right: -90, child: _Blob(KuraColors.infoBlue, 300, 0.08)),
-          Positioned(bottom: -70, left: -30, child: _Blob(KuraColors.warning, 240, 0.07)),
+          Positioned(top: -80, left: -60, child: _Blob(t.brandPrimary, 260, 0.08)),
+          Positioned(top: 160, right: -90, child: _Blob(t.info, 300, 0.07)),
+          Positioned(bottom: -70, left: -30, child: _Blob(t.info, 240, 0.05)),
         ],
       ),
     );
@@ -593,6 +991,738 @@ class _Blob extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+// ===================== Clínico: búsqueda + accesos =====================
+
+/// Barra de búsqueda (abre la lista de pacientes, donde vive la búsqueda real)
+/// + accesos rápidos a destinos frecuentes.
+class _QuickAccessBar extends StatelessWidget {
+  final VoidCallback onSearch;
+  final VoidCallback onReports;
+  const _QuickAccessBar({required this.onSearch, required this.onReports});
+
+  @override
+  Widget build(BuildContext context) {
+    final t = BrandTokens.of(context);
+    return Row(
+      children: [
+        Expanded(
+          child: Material(
+            color: t.surface,
+            shape: RoundedRectangleBorder(
+              borderRadius: AppRadii.pillR,
+              side: BorderSide(color: t.border),
+            ),
+            child: InkWell(
+              onTap: onSearch,
+              borderRadius: AppRadii.pillR,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.lg, vertical: 14),
+                child: Row(
+                  children: [
+                    Icon(Icons.search, size: 20, color: t.textSecondary),
+                    const SizedBox(width: AppSpacing.sm),
+                    Text('Buscar paciente', style: TextStyle(color: t.textSecondary)),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: AppSpacing.md),
+        Tooltip(
+          message: 'Reportes',
+          child: Material(
+            color: t.brandPrimary.withOpacity(0.10),
+            borderRadius: AppRadii.mdR,
+            child: InkWell(
+              onTap: onReports,
+              borderRadius: AppRadii.mdR,
+              child: Padding(
+                padding: const EdgeInsets.all(14),
+                child: Icon(Icons.description_outlined, color: t.brandPrimary),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ===================== Clínico: tile "reciente" con sparkline =====================
+
+class _RecentPatientTile extends StatelessWidget {
+  final _Triage triage;
+  final List<double> series;
+  final VoidCallback onTap;
+  const _RecentPatientTile({
+    required this.triage,
+    required this.series,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final t = BrandTokens.of(context);
+    final p = triage.patient;
+    final statusColor = triage.worst.color;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: KuraGlassCard(
+        blur: false,
+        borderRadius: 18,
+        padding: EdgeInsets.zero,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(18),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            child: Row(
+              children: [
+                CircleAvatar(
+                  backgroundColor: t.info.withOpacity(0.12),
+                  child: Text(p.fullName.isNotEmpty ? p.fullName[0] : '?',
+                      style: TextStyle(color: t.info, fontWeight: FontWeight.w800)),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(p.fullName, style: const TextStyle(fontWeight: FontWeight.w600)),
+                      Text('${p.folio} · ${p.age ?? '?'} años',
+                          style: TextStyle(fontSize: 12, color: t.textSecondary)),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          if (series.length >= 2)
+                            _WoundSparkline(values: series, color: statusColor)
+                          else
+                            Text('Sin datos de evolución',
+                                style: TextStyle(fontSize: 11, color: t.textDisabled)),
+                          const SizedBox(width: 8),
+                          Flexible(
+                            child: Text(triage.worst.shortLabel,
+                                style: TextStyle(
+                                    fontSize: 11,
+                                    color: statusColor,
+                                    fontWeight: FontWeight.w600),
+                                overflow: TextOverflow.ellipsis),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Icon(Icons.chevron_right, color: t.textDisabled),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Mini-gráfica de trayectoria (área de la herida vs. tiempo). Y invertida:
+/// área menor (mejor) arriba. Coloreada según el estatus del semáforo.
+class _WoundSparkline extends StatelessWidget {
+  final List<double> values;
+  final Color color;
+  const _WoundSparkline({required this.values, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 72,
+      height: 26,
+      child: CustomPaint(painter: _SparklinePainter(values, color)),
+    );
+  }
+}
+
+class _SparklinePainter extends CustomPainter {
+  final List<double> values;
+  final Color color;
+  _SparklinePainter(this.values, this.color);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (values.length < 2) return;
+    final minV = values.reduce((a, b) => a < b ? a : b);
+    final maxV = values.reduce((a, b) => a > b ? a : b);
+    final range = (maxV - minV).abs() < 1e-9 ? 1.0 : (maxV - minV);
+    final dx = size.width / (values.length - 1);
+    double yFor(double v) => size.height - ((v - minV) / range) * size.height;
+    final path = Path();
+    for (var i = 0; i < values.length; i++) {
+      final x = dx * i;
+      final y = yFor(values[i]);
+      i == 0 ? path.moveTo(x, y) : path.lineTo(x, y);
+    }
+    canvas.drawPath(
+      path,
+      Paint()
+        ..color = color
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2
+        ..strokeCap = StrokeCap.round
+        ..strokeJoin = StrokeJoin.round,
+    );
+    canvas.drawCircle(
+      Offset(dx * (values.length - 1), yFor(values.last)),
+      2.5,
+      Paint()..color = color,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _SparklinePainter old) =>
+      old.values != values || old.color != color;
+}
+
+// ===================== Admin: KPIs =====================
+
+class _Kpi {
+  final IconData icon;
+  final String label;
+  final String value;
+  final Color color;
+  const _Kpi({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.color,
+  });
+}
+
+class _KpiRow extends StatelessWidget {
+  final List<_Kpi> kpis;
+  const _KpiRow({required this.kpis});
+
+  @override
+  Widget build(BuildContext context) {
+    final t = BrandTokens.of(context);
+    return LayoutBuilder(
+      builder: (context, c) {
+        final w = c.maxWidth;
+        final cols = w < 720 ? 2 : 4;
+        final itemW = (w - (cols - 1) * 12 - 1) / cols;
+        return Wrap(
+          spacing: 12,
+          runSpacing: 12,
+          children: kpis
+              .map((k) => SizedBox(
+                    width: itemW,
+                    child: KuraGlassCard(
+                      blur: false,
+                      borderRadius: 18,
+                      child: Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(AppSpacing.sm),
+                            decoration: BoxDecoration(
+                              color: k.color.withOpacity(0.16),
+                              borderRadius: AppRadii.mdR,
+                            ),
+                            child: Icon(k.icon, color: k.color),
+                          ),
+                          const SizedBox(width: AppSpacing.md),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(k.value,
+                                    style: const TextStyle(
+                                        fontSize: AppType.headline,
+                                        fontWeight: AppType.extrabold)),
+                                Text(k.label,
+                                    style: TextStyle(
+                                        fontSize: AppType.label,
+                                        color: t.textSecondary)),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ))
+              .toList(),
+        );
+      },
+    );
+  }
+}
+
+// ===================== Admin: donut de estatus =====================
+
+class _StatusDonut extends StatelessWidget {
+  final int green;
+  final int amber;
+  final int red;
+  final int noData;
+  const _StatusDonut({
+    required this.green,
+    required this.amber,
+    required this.red,
+    required this.noData,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final t = BrandTokens.of(context);
+    final total = green + amber + red + noData;
+    // Paleta de ESTATUS (reservada, clínica) — siempre acompañada de etiqueta.
+    final segs = <(int, Color, String)>[
+      (red, t.statusDanger, 'No avanza'),
+      (amber, t.statusWarning, 'Con reservas'),
+      (green, t.statusSuccess, 'Avanza'),
+      (noData, t.statusNeutral, 'Sin datos'),
+    ];
+    return total == 0
+        ? Text('Sin datos de trayectoria aún.',
+            style: TextStyle(color: t.textSecondary))
+        : Row(
+              children: [
+                SizedBox(
+                  width: 116,
+                  height: 116,
+                  child: CustomPaint(
+                    painter: _DonutPainter(
+                      values: [for (final s in segs) s.$1],
+                      colors: [for (final s in segs) s.$2],
+                      track: t.border,
+                    ),
+                    child: Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text('$total',
+                              style: TextStyle(
+                                  fontSize: AppType.headline,
+                                  fontWeight: AppType.extrabold,
+                                  color: t.textPrimary)),
+                          Text('pacientes',
+                              style: TextStyle(
+                                  fontSize: AppType.caption,
+                                  color: t.textSecondary)),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 20),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      for (final s in segs)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: _LegendDot(color: s.$2, label: s.$3, count: s.$1),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            );
+  }
+}
+
+class _DonutPainter extends CustomPainter {
+  final List<int> values;
+  final List<Color> colors;
+  final Color track;
+  _DonutPainter({required this.values, required this.colors, required this.track});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    const stroke = 18.0;
+    final rect = Rect.fromCircle(
+      center: size.center(Offset.zero),
+      radius: (math.min(size.width, size.height) - stroke) / 2,
+    );
+    // Anillo de fondo (track).
+    canvas.drawArc(rect, 0, 2 * math.pi, false,
+        Paint()..color = track..style = PaintingStyle.stroke..strokeWidth = stroke);
+    final total = values.fold<int>(0, (a, b) => a + b);
+    if (total == 0) return;
+    var start = -math.pi / 2;
+    const gap = 0.03; // separación de 2px entre segmentos
+    for (var i = 0; i < values.length; i++) {
+      if (values[i] <= 0) continue;
+      final sweep = (values[i] / total) * 2 * math.pi;
+      canvas.drawArc(
+        rect,
+        start + gap / 2,
+        sweep - gap,
+        false,
+        Paint()
+          ..color = colors[i]
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = stroke,
+      );
+      start += sweep;
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _DonutPainter old) =>
+      old.values != values || old.colors != colors || old.track != track;
+}
+
+// ===================== Admin: barras horizontales =====================
+
+class _BarDatum {
+  final String label;
+  final int value;
+  const _BarDatum({required this.label, required this.value});
+}
+
+/// Barras horizontales de magnitud (un solo tono = sin problema de daltonismo),
+/// con etiqueta y valor directos.
+class _CategoryBars extends StatelessWidget {
+  final List<_BarDatum> entries;
+  final Color color;
+  const _CategoryBars({required this.entries, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    final t = BrandTokens.of(context);
+    final maxV = entries.fold<int>(1, (m, e) => e.value > m ? e.value : m);
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (var i = 0; i < entries.length; i++)
+            Padding(
+              padding: EdgeInsets.only(bottom: i == entries.length - 1 ? 0 : 14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(entries[i].label,
+                            style: const TextStyle(fontSize: AppType.body)),
+                      ),
+                      const SizedBox(width: 8),
+                      Text('${entries[i].value}',
+                          style: const TextStyle(fontWeight: AppType.bold)),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(6),
+                    child: Container(
+                      height: 8,
+                      color: t.border,
+                      child: FractionallySizedBox(
+                        alignment: Alignment.centerLeft,
+                        widthFactor: entries[i].value / maxV,
+                        child: ColoredBox(color: color),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      );
+  }
+}
+
+// ===================== Admin: pacientes/sesiones por sitio =====================
+
+class _SiteStat {
+  final String name;
+  final int patients;
+  final int sessions;
+  const _SiteStat({required this.name, required this.patients, required this.sessions});
+}
+
+class _SiteBars extends StatelessWidget {
+  final List<_SiteStat> stats;
+  const _SiteBars({required this.stats});
+
+  @override
+  Widget build(BuildContext context) {
+    final t = BrandTokens.of(context);
+    final maxPat = stats.fold<int>(1, (m, s) => s.patients > m ? s.patients : m);
+    final maxSes = stats.fold<int>(1, (m, s) => s.sessions > m ? s.sessions : m);
+    // 2 series: cromático (marca) vs acromático (gris). Distinguibles bajo
+    // cualquier daltonismo (difieren en croma), además de etiqueta directa.
+    final sesColor = t.textSecondary;
+    Widget dot(Color c) => Container(
+        width: 10, height: 10, decoration: BoxDecoration(color: c, shape: BoxShape.circle));
+    Widget bar(int value, int max, Color color) => Row(
+          children: [
+            Expanded(
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(5),
+                child: Container(
+                  height: 10,
+                  color: t.border,
+                  child: FractionallySizedBox(
+                    alignment: Alignment.centerLeft,
+                    widthFactor: value / max,
+                    child: ColoredBox(color: color),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 10),
+            SizedBox(
+              width: 28,
+              child: Text('$value',
+                  textAlign: TextAlign.right,
+                  style: const TextStyle(fontWeight: FontWeight.w700)),
+            ),
+          ],
+        );
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+              dot(t.brandPrimary),
+              const SizedBox(width: 6),
+              Text('Pacientes',
+                  style: TextStyle(fontSize: AppType.label, color: t.textSecondary)),
+              const SizedBox(width: 16),
+              dot(sesColor),
+              const SizedBox(width: 6),
+              Text('Sesiones',
+                  style: TextStyle(fontSize: AppType.label, color: t.textSecondary)),
+            ],
+          ),
+          const SizedBox(height: 14),
+          for (var i = 0; i < stats.length; i++)
+            Padding(
+              padding: EdgeInsets.only(bottom: i == stats.length - 1 ? 0 : 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(stats[i].name,
+                      style: const TextStyle(fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 8),
+                  bar(stats[i].patients, maxPat, t.brandPrimary),
+                  const SizedBox(height: 6),
+                  bar(stats[i].sessions, maxSes, sesColor),
+                ],
+              ),
+            ),
+        ],
+      );
+  }
+}
+
+// ===================== Layout multi-columna (escritorio) =====================
+
+/// Reparte una lista de "bloques" (sección + gráfico) en varias columnas
+/// según el ancho disponible: 1 en móvil, 2 en escritorio medio, 3 en pantallas
+/// anchas. Así los gráficos no se estiran a todo el ancho y se aprovecha el
+/// espacio horizontal sin perder legibilidad.
+class _ResponsiveColumns extends StatelessWidget {
+  final List<Widget> blocks;
+  const _ResponsiveColumns({required this.blocks});
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, c) {
+        final w = c.maxWidth;
+        final cols = w < 900 ? 1 : (w < 1400 ? 2 : 3);
+        if (cols == 1) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              for (var i = 0; i < blocks.length; i++) ...[
+                if (i > 0) const SizedBox(height: 24),
+                blocks[i],
+              ],
+            ],
+          );
+        }
+        // Distribución round-robin para balancear la altura de las columnas.
+        final columns = List.generate(cols, (_) => <Widget>[]);
+        for (var i = 0; i < blocks.length; i++) {
+          columns[i % cols].add(blocks[i]);
+        }
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            for (var ci = 0; ci < cols; ci++) ...[
+              if (ci > 0) const SizedBox(width: 20),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    for (var bi = 0; bi < columns[ci].length; bi++) ...[
+                      if (bi > 0) const SizedBox(height: 24),
+                      columns[ci][bi],
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _LegendDot extends StatelessWidget {
+  final Color color;
+  final String label;
+  final int count;
+  const _LegendDot({required this.color, required this.label, required this.count});
+
+  @override
+  Widget build(BuildContext context) {
+    final t = BrandTokens.of(context);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 10,
+          height: 10,
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        ),
+        const SizedBox(width: 6),
+        Text('$label ($count)',
+            style: TextStyle(fontSize: 12, color: t.textSecondary)),
+      ],
+    );
+  }
+}
+
+// ===================== Admin: carga por Kurador =====================
+
+class _StaffLoad {
+  final String name;
+  final String role;
+  final int patients;
+  final int sessions;
+  const _StaffLoad({
+    required this.name,
+    required this.role,
+    required this.patients,
+    required this.sessions,
+  });
+}
+
+/// Fila de un Kurador SIN tarjeta propia (vive dentro de la tarjeta unificada
+/// del bloque). Barra proporcional a las sesiones del periodo.
+class _StaffLoadRow extends StatelessWidget {
+  final _StaffLoad load;
+  final int maxSessions;
+  final bool showDivider;
+  const _StaffLoadRow({
+    required this.load,
+    required this.maxSessions,
+    required this.showDivider,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final t = BrandTokens.of(context);
+    final frac =
+        maxSessions <= 0 ? 0.0 : (load.sessions / maxSessions).clamp(0.0, 1.0);
+    return Column(
+      children: [
+        if (showDivider) ...[
+          const SizedBox(height: 14),
+          Divider(height: 1, color: t.border),
+          const SizedBox(height: 14),
+        ],
+        Row(
+          children: [
+            CircleAvatar(
+              radius: 18,
+              backgroundColor: t.info.withOpacity(0.12),
+              child: Text(load.name.isNotEmpty ? load.name[0] : '?',
+                  style: TextStyle(color: t.info, fontWeight: FontWeight.w800)),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(load.name, style: const TextStyle(fontWeight: FontWeight.w600)),
+                  Text(load.role, style: TextStyle(fontSize: 12, color: t.textSecondary)),
+                  const SizedBox(height: 8),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(4),
+                    child: LinearProgressIndicator(
+                      value: frac,
+                      minHeight: 6,
+                      backgroundColor: t.border,
+                      valueColor: AlwaysStoppedAnimation<Color>(t.brandPrimary),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 12),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text('${load.sessions}',
+                    style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 18)),
+                Text('sesiones · ${load.patients} pac.',
+                    style: TextStyle(fontSize: 11, color: t.textSecondary)),
+              ],
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+/// Chips de filtro de temporalidad (mes actual / 30 / 14 / 7 días) para los
+/// indicadores de actividad del admin.
+class _PeriodChips extends StatelessWidget {
+  final _Period value;
+  final ValueChanged<_Period> onChanged;
+  const _PeriodChips({required this.value, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    final t = BrandTokens.of(context);
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        for (final p in _Period.values)
+          ChoiceChip(
+            label: Text(p.label),
+            selected: p == value,
+            onSelected: (_) => onChanged(p),
+            labelStyle: TextStyle(
+              fontSize: 12,
+              fontWeight: p == value ? FontWeight.w700 : FontWeight.w500,
+              color: p == value ? t.brandPrimary : t.textSecondary,
+            ),
+            selectedColor: t.brandPrimary.withOpacity(0.12),
+            backgroundColor: t.surface,
+            side: BorderSide(
+                color: p == value ? t.brandPrimary.withOpacity(0.4) : t.border),
+            showCheckmark: false,
+            visualDensity: VisualDensity.compact,
+            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          ),
+      ],
     );
   }
 }

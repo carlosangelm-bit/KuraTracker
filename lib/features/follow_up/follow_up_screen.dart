@@ -43,16 +43,15 @@ List<double> bedCompositionCumulative(WoundMeasurement m) {
 /// ni fallback hardcodeado). Las tablas de umbrales del checkpoint de
 /// Sheehan (KuraSheehanCheckpoint._umbralesOficiales) SI son constantes
 /// legitimas del protocolo clinico y no se tocan.
-class FollowUpScreen extends ConsumerWidget {
+/// Pantalla completa de seguimiento (ruta). Envuelve [FollowUpBody] con el
+/// Scaffold y la acción "Registrar seguimiento".
+class FollowUpScreen extends StatelessWidget {
   final String patientId;
   final String woundId;
   const FollowUpScreen({super.key, required this.patientId, required this.woundId});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final repoAsync = ref.watch(dataRepositoryProvider);
-    final dateFmt = DateFormat('dd/MM');
-
+  Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Seguimiento de herida'),
@@ -66,8 +65,38 @@ class FollowUpScreen extends ConsumerWidget {
           ),
         ],
       ),
-      body: repoAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
+      body: FollowUpBody(patientId: patientId, woundId: woundId),
+    );
+  }
+}
+
+/// CONTENIDO del seguimiento (sin Scaffold/AppBar), reutilizable: lo usa la
+/// pantalla completa [FollowUpScreen] y también se EMBEBE en el detalle de
+/// paciente cuando el paciente tiene una sola herida (menos clicks).
+class FollowUpBody extends ConsumerWidget {
+  final String patientId;
+  final String woundId;
+
+  /// Cuando se embebe en otra pantalla que ya scrollea (detalle de paciente):
+  /// no envuelve en su propio scroll ni repite el título/etiología de la herida.
+  final bool embedded;
+
+  const FollowUpBody({
+    super.key,
+    required this.patientId,
+    required this.woundId,
+    this.embedded = false,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final repoAsync = ref.watch(dataRepositoryProvider);
+    final dateFmt = DateFormat('dd/MM');
+
+    return repoAsync.when(
+        loading: () => const Padding(
+            padding: EdgeInsets.all(40),
+            child: Center(child: CircularProgressIndicator())),
         error: (e, st) => Center(child: Text('Error: $e')),
         data: (repo) {
           final wound = repo.getWound(woundId);
@@ -177,20 +206,20 @@ class FollowUpScreen extends ConsumerWidget {
           final noProgressInWindow =
               referenceForProgress != null && current.areaCm2 >= referenceForProgress.areaCm2;
 
-          return SingleChildScrollView(
-            padding: const EdgeInsets.all(20),
-            child: Column(
+          final content = Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Text(wound.etiology.label,
-                    style: Theme.of(context)
-                        .textTheme
-                        .titleLarge
-                        ?.copyWith(fontWeight: FontWeight.w700)),
-                const SizedBox(height: 4),
-                Text('${measurements.length} mediciones registradas'
-                    '${hasFollowUps ? '' : ' (solo valoración basal)'}'),
-                const SizedBox(height: 20),
+                if (!embedded) ...[
+                  Text(wound.etiology.label,
+                      style: Theme.of(context)
+                          .textTheme
+                          .titleLarge
+                          ?.copyWith(fontWeight: FontWeight.w700)),
+                  const SizedBox(height: 4),
+                  Text('${measurements.length} mediciones registradas'
+                      '${hasFollowUps ? '' : ' (solo valoración basal)'}'),
+                  const SizedBox(height: 20),
+                ],
                 Card(
                   child: Padding(
                     padding: const EdgeInsets.all(16),
@@ -433,11 +462,13 @@ class FollowUpScreen extends ConsumerWidget {
                   ],
                 ),
               ],
-            ),
-          );
+            );
+          return embedded
+              ? content
+              : SingleChildScrollView(
+                  padding: const EdgeInsets.all(20), child: content);
         },
-      ),
-    );
+      );
   }
 
   Widget _buildGauge(SheehanCheckpointResult checkpoint) {

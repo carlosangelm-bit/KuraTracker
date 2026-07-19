@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../../core/theme/kura_theme.dart';
+import '../../core/design/tokens.dart';
 import '../../engine/models/kura_engine_enums.dart';
 import '../../models/patient.dart';
 import 'patient_progress_status.dart';
@@ -49,6 +49,7 @@ class PatientListTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final activeWounds = summary.activeCount;
+    final t = BrandTokens.of(context);
     final inner = InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(16),
@@ -56,12 +57,13 @@ class PatientListTile extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
           child: Row(
             children: [
+              // Avatar en tono informativo (neutro), no en el acento de marca:
+              // la identidad del paciente no es una acción.
               CircleAvatar(
-                backgroundColor: KuraColors.primary.withOpacity(0.12),
+                backgroundColor: t.info.withOpacity(0.12),
                 child: Text(
                   patient.fullName.isNotEmpty ? patient.fullName[0] : '?',
-                  style:
-                      const TextStyle(color: KuraColors.primary, fontWeight: FontWeight.w800),
+                  style: TextStyle(color: t.info, fontWeight: FontWeight.w800),
                 ),
               ),
               const SizedBox(width: 12),
@@ -72,7 +74,7 @@ class PatientListTile extends StatelessWidget {
                     Text(patient.fullName, style: const TextStyle(fontWeight: FontWeight.w600)),
                     Text(
                       '${patient.folio} · ${patient.age ?? '?'} años · ${patient.sex ?? '-'}',
-                      style: TextStyle(fontSize: 12, color: KuraColors.darkText.withOpacity(0.6)),
+                      style: TextStyle(fontSize: 12, color: t.textSecondary),
                     ),
                     const SizedBox(height: 6),
                     _EtiologyChipsRow(summary: summary),
@@ -89,16 +91,16 @@ class PatientListTile extends StatelessWidget {
                     spacing: 6,
                     children: [
                       if (patient.fragilePatient)
-                        const Tooltip(
+                        Tooltip(
                           message: 'Paciente frágil',
-                          child: Icon(Icons.priority_high, color: KuraColors.warning, size: 18),
+                          child: Icon(Icons.priority_high, color: t.statusWarning, size: 18),
                         ),
                       Chip(
                         label:
                             Text('$activeWounds herida${activeWounds == 1 ? '' : 's'}'),
                         backgroundColor: activeWounds > 0
-                            ? KuraColors.primary.withOpacity(0.1)
-                            : KuraColors.chipBg,
+                            ? t.info.withOpacity(0.10)
+                            : t.border.withOpacity(0.35),
                       ),
                     ],
                   ),
@@ -107,11 +109,13 @@ class PatientListTile extends StatelessWidget {
                     Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
+                        // Acciones secundarias en tono informativo (no el
+                        // acento de marca, reservado al CTA principal).
                         if (onValoracion != null)
                           IconButton(
                             tooltip: 'Valoración',
                             icon: const Icon(Icons.assignment_outlined, size: 20),
-                            color: KuraColors.primary,
+                            color: t.info,
                             onPressed: onValoracion,
                           ),
                         if (onSeguimiento != null)
@@ -121,8 +125,8 @@ class PatientListTile extends StatelessWidget {
                                 : 'Sin heridas activas para dar seguimiento',
                             icon: const Icon(Icons.show_chart, size: 20),
                             color: summary.hasActiveWounds
-                                ? KuraColors.primary
-                                : KuraColors.darkText.withOpacity(0.3),
+                                ? t.info
+                                : t.textDisabled,
                             onPressed: summary.hasActiveWounds ? onSeguimiento : null,
                           ),
                       ],
@@ -147,10 +151,11 @@ class _EtiologyChipsRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final t = BrandTokens.of(context);
     if (summary.etiologies.isEmpty) {
       return Text(
         'Sin heridas activas',
-        style: TextStyle(fontSize: 12, color: KuraColors.darkText.withOpacity(0.45)),
+        style: TextStyle(fontSize: 12, color: t.textDisabled),
       );
     }
     return Wrap(
@@ -161,7 +166,7 @@ class _EtiologyChipsRow extends StatelessWidget {
                 label: Text(e.label, style: const TextStyle(fontSize: 11)),
                 padding: EdgeInsets.zero,
                 labelPadding: const EdgeInsets.symmetric(horizontal: 8),
-                backgroundColor: KuraColors.infoBlue.withOpacity(0.1),
+                backgroundColor: t.info.withOpacity(0.1),
                 visualDensity: VisualDensity.compact,
                 materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
               ))

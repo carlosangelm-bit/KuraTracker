@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../design/tokens.dart';
 import '../providers/session_provider.dart';
 import '../theme/kura_theme.dart';
 import '../widgets/kura_glass_card.dart';
@@ -65,6 +66,7 @@ class AppShell extends ConsumerWidget {
     final items = _itemsFor(session.user);
     final selectedIndex = _indexFor(currentPath, items);
     final isWide = MediaQuery.of(context).size.width >= 900;
+    final t = BrandTokens.of(context);
 
     final destinationsRail = items
         .map((i) => NavigationRailDestination(
@@ -139,25 +141,22 @@ class AppShell extends ConsumerWidget {
                       backgroundColor: Colors.transparent,
                       elevation: 0,
                       surfaceTintColor: Colors.transparent,
-                      // "Pill" del acento Kura detras del item activo.
-                      indicatorColor: KuraColors.primary.withOpacity(0.16),
+                      // "Pill" del acento Kura detras del item activo
+                      // (navegacion = accion, uso legitimo del acento).
+                      indicatorColor: t.brandPrimary.withOpacity(0.16),
                       labelTextStyle: WidgetStateProperty.resolveWith((states) {
                         final selected = states.contains(WidgetState.selected);
                         return TextStyle(
                           fontSize: 11,
                           fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-                          color: selected
-                              ? KuraColors.primary
-                              : KuraColors.darkText.withOpacity(0.55),
+                          color: selected ? t.brandPrimary : t.textSecondary,
                         );
                       }),
                       iconTheme: WidgetStateProperty.resolveWith((states) {
                         final selected = states.contains(WidgetState.selected);
                         return IconThemeData(
                           size: 24,
-                          color: selected
-                              ? KuraColors.primary
-                              : KuraColors.darkText.withOpacity(0.55),
+                          color: selected ? t.brandPrimary : t.textSecondary,
                         );
                       }),
                     ),

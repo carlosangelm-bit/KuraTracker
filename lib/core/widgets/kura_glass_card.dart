@@ -2,7 +2,7 @@ import 'dart:ui';
 
 import 'package:flutter/material.dart';
 
-import '../theme/kura_theme.dart';
+import '../design/tokens.dart';
 
 /// Tarjeta con estilo "liquid glass" (glassmorphism) reutilizable en toda
 /// la app. Solo usa dart:ui (BackdropFilter + ImageFilter.blur), sin
@@ -50,20 +50,18 @@ class KuraGlassCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final t = BrandTokens.of(context);
     final radius = BorderRadius.circular(borderRadius);
 
-    // Relleno base: blanco mas opaco arriba (0.72) y algo mas translucido
-    // abajo (0.55). Alto para no lavar el texto clinico; si aun asi se
-    // lavara sobre un fondo mas vivo, subir estos valores.
-    const baseTop = Color(0xB8FFFFFF); // blanco ~0.72
-    const baseBottom = Color(0x8CFFFFFF); // blanco ~0.55
-
-    final topColor =
-        tint == null ? baseTop : Color.alphaBlend(tint!.withOpacity(0.14), baseTop);
-    final bottomColor =
-        tint == null ? baseBottom : Color.alphaBlend(tint!.withOpacity(0.10), baseBottom);
-    final borderColor =
-        tint == null ? Colors.white.withOpacity(0.60) : tint!.withOpacity(0.45);
+    // Relleno del vidrio desde tokens (alto arriba / algo más translúcido
+    // abajo, para el "sheen"). Alto para no lavar el texto clínico.
+    final topColor = tint == null
+        ? t.surfaceGlassHigh
+        : Color.alphaBlend(tint!.withOpacity(0.14), t.surfaceGlassHigh);
+    final bottomColor = tint == null
+        ? t.surfaceGlassLow
+        : Color.alphaBlend(tint!.withOpacity(0.10), t.surfaceGlassLow);
+    final borderColor = tint == null ? t.glassBorder : tint!.withOpacity(0.45);
 
     Widget surface = DecoratedBox(
       decoration: BoxDecoration(
@@ -91,23 +89,11 @@ class KuraGlassCard extends StatelessWidget {
           : surface,
     );
 
-    // Sombras en capas (fuera del recorte): contacto cercano + profundidad
-    // amplia y difusa.
+    // Sombras en capas (fuera del recorte): contacto cercano + profundidad.
     return DecoratedBox(
       decoration: BoxDecoration(
         borderRadius: radius,
-        boxShadow: [
-          BoxShadow(
-            color: KuraColors.darkText.withOpacity(0.07),
-            blurRadius: 6,
-            offset: const Offset(0, 2),
-          ),
-          BoxShadow(
-            color: KuraColors.darkText.withOpacity(0.10),
-            blurRadius: 24,
-            offset: const Offset(0, 12),
-          ),
-        ],
+        boxShadow: AppShadows.card,
       ),
       child: clipped,
     );
