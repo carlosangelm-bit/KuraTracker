@@ -237,10 +237,10 @@ class AppShadows {
     BoxShadow(color: Color(0x1A211813), blurRadius: 24, offset: Offset(0, 12)),
   ];
 
-  /// Sombra en capas del FAB (brandPrimary a ~30% y ~22%).
+  /// Sombra en capas del FAB (brandPrimary morado 0x7C3AED a ~30% y ~22%).
   static const List<BoxShadow> brandFab = [
-    BoxShadow(color: Color(0x4CEC0244), blurRadius: 8, offset: Offset(0, 3)),
-    BoxShadow(color: Color(0x38EC0244), blurRadius: 22, offset: Offset(0, 12)),
+    BoxShadow(color: Color(0x4C7C3AED), blurRadius: 8, offset: Offset(0, 3)),
+    BoxShadow(color: Color(0x387C3AED), blurRadius: 22, offset: Offset(0, 12)),
   ];
 }
 

@@ -10,6 +10,7 @@ import '../../models/patient.dart';
 import '../../models/wound.dart';
 import '../../models/consultation.dart';
 import '../../services/data_repository.dart';
+import '../follow_up/follow_up_screen.dart';
 
 class PatientDetailScreen extends ConsumerStatefulWidget {
   final String patientId;
@@ -38,6 +39,11 @@ class _PatientDetailScreenState extends ConsumerState<PatientDetailScreen> {
           final wounds = repo.listWoundsForPatient(patient.id);
           final consultations = repo.listConsultationsForPatient(patient.id);
           final comorbidities = repo.listComorbidities(patient.id);
+          // Si el paciente tiene UNA sola herida activa, el seguimiento se
+          // muestra embebido aquí mismo (menos clicks): no hace falta entrar a
+          // la pantalla de seguimiento.
+          final activeWounds = wounds.where((w) => w.isActive).toList();
+          final singleActiveWound = activeWounds.length == 1 ? activeWounds.first : null;
 
           return CustomScrollView(
             slivers: [
@@ -88,7 +94,38 @@ class _PatientDetailScreenState extends ConsumerState<PatientDetailScreen> {
                             patientId: patient.id,
                             wound: w,
                             repo: repo,
+                            // Oculta el botón "Seguimiento" de la herida única
+                            // activa: su seguimiento se muestra embebido abajo.
+                            showFollowUpButton:
+                                singleActiveWound == null || w.id != singleActiveWound.id,
                           )),
+                    // Seguimiento EMBEBIDO cuando hay una sola herida activa.
+                    if (singleActiveWound != null) ...[
+                      const SizedBox(height: 20),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text('Seguimiento de la herida',
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .titleLarge
+                                    ?.copyWith(fontWeight: FontWeight.w700)),
+                          ),
+                          FilledButton.tonalIcon(
+                            icon: const Icon(Icons.add_circle_outline, size: 18),
+                            label: const Text('Registrar seguimiento'),
+                            onPressed: () => context.go(
+                                '/patients/${patient.id}/wound/${singleActiveWound.id}/follow-up/new'),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      FollowUpBody(
+                        patientId: patient.id,
+                        woundId: singleActiveWound.id,
+                        embedded: true,
+                      ),
+                    ],
                     const SizedBox(height: 24),
                     Text('Historial de consultas',
                         style: Theme.of(context)
@@ -268,7 +305,15 @@ class _WoundCard extends StatelessWidget {
   final String patientId;
   final Wound wound;
   final DataRepository repo;
-  const _WoundCard({required this.patientId, required this.wound, required this.repo});
+  // Se oculta cuando el seguimiento ya se muestra EMBEBIDO abajo (paciente con
+  // una sola herida activa) — el botón navegaría a la misma información.
+  final bool showFollowUpButton;
+  const _WoundCard({
+    required this.patientId,
+    required this.wound,
+    required this.repo,
+    this.showFollowUpButton = true,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -328,13 +373,15 @@ class _WoundCard extends StatelessWidget {
             const SizedBox(height: 10),
             Row(
               children: [
-                TextButton.icon(
-                  icon: const Icon(Icons.show_chart, size: 18),
-                  label: const Text('Seguimiento'),
-                  onPressed: () =>
-                      context.go('/patients/$patientId/wound/${wound.id}/follow-up'),
-                ),
-                const SizedBox(width: 8),
+                if (showFollowUpButton) ...[
+                  TextButton.icon(
+                    icon: const Icon(Icons.show_chart, size: 18),
+                    label: const Text('Seguimiento'),
+                    onPressed: () =>
+                        context.go('/patients/$patientId/wound/${wound.id}/follow-up'),
+                  ),
+                  const SizedBox(width: 8),
+                ],
                 TextButton.icon(
                   icon: const Icon(Icons.edit_note, size: 18),
                   label: const Text('Nueva valoración'),
