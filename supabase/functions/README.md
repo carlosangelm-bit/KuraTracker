@@ -79,10 +79,42 @@ curl -X POST 'https://<PROJECT_REF>.supabase.co/functions/v1/acuity-sync-calenda
 ```
 
 Requisito: el email del calendario en Acuity debe coincidir con el email del
-perfil del Kurador (profiles.email). Los que salgan en `unmatched` son correos
-de Acuity que aún no existen como Kurador con cuenta en KuraTracker (candidatos
-a "crear usuario", ver Nivel 2 abajo). Reejecuta esta función cada que agregues
+perfil del Kurador (profiles.email). Reejecuta esta función cada que agregues
 calendarios o personal.
+
+### 5a-bis. Crear los usuarios faltantes (con cuenta de acceso)
+
+Para los proveedores de Acuity que aún NO existan en KuraTracker, la misma
+función puede crearlos: invita por email (Supabase Auth), crea el perfil (rol
+`clinico`) y el registro de personal, con su `acuity_calendar_id`, en el centro
+indicado. Necesitas el `organizationId` del centro (`select id,name from
+organizations;`):
+
+```
+curl -X POST 'https://<PROJECT_REF>.supabase.co/functions/v1/acuity-sync-calendars' \
+     -H "Authorization: Bearer <SERVICE_ROLE_KEY>" \
+     -H "Content-Type: application/json" \
+     -d '{"createMissing": true, "organizationId": "<UUID_DE_KURA+>"}'
+# -> {"matched":[...], "created":[...], "skipped":[...]}
+```
+
+Los creados reciben un correo de invitación para fijar su contraseña y así
+poder entrar a ver SU agenda. Es idempotente: quien ya exista se mapea, no se
+duplica.
+
+### Multi-organización (estructura a futuro)
+
+Hoy hay UNA cuenta de Acuity (secrets globales) y todo se crea en el centro que
+pases en `organizationId`. Para que OTRAS organizaciones conecten SU propia
+cuenta de Acuity:
+1. Tabla `organization_acuity_credentials` (organization_id → user_id/api_key
+   o token OAuth2).
+2. Que `acuity-proxy` / `acuity-webhook` / esta sync elijan las credenciales
+   según la organización (en vez de los secrets globales).
+3. Migrar de Basic Auth a **OAuth2** (registro en el Developer Hub de Acuity)
+   para conectar cuentas de terceros sin compartir API keys.
+La función ya recibe `organizationId` como parámetro para no reescribirla
+cuando se agregue esto.
 
 ### 5b. Manual (si algún email no coincide)
 
