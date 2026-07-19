@@ -74,11 +74,23 @@ El webhook usa ese mapeo para resolver `staff_id`/`organization_id` de cada
 cita. Citas de calendarios no mapeados quedan con `staff_id = null` (visibles
 solo para admin/master del centro correspondiente si tienen org, o sin dueño).
 
-## 6. Backfill inicial (opcional)
+## 6. Backfill inicial (citas ya existentes)
 
-El webhook solo refleja cambios NUEVOS. Para cargar las citas ya existentes,
-haz un `GET /appointments` por el proxy y haz upsert (script único), o
-reprograma/edita cada cita para que dispare su webhook.
+El webhook solo refleja cambios NUEVOS. Para traer las citas que ya existían en
+Acuity, usa la función `acuity-backfill` (escribe en PRODUCCIÓN vía service role;
+no toca el modo demo):
+
+```
+supabase functions deploy acuity-backfill
+# ejecutar UNA vez (autenticado con la service role key):
+curl -X POST 'https://<PROJECT_REF>.supabase.co/functions/v1/acuity-backfill' \
+     -H "Authorization: Bearer <SERVICE_ROLE_KEY>"
+# -> {"imported": N}
+```
+
+Hazlo DESPUÉS de mapear los `acuity_calendar_id` (paso 5) para que las citas
+queden con su `staff_id`/`organization_id`. Si tienes >1000 citas habría que
+paginar por rango de fechas (ver comentario en la función).
 
 ## Verificación
 
