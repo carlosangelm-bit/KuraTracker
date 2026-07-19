@@ -20,13 +20,18 @@ import 'package:flutter/material.dart';
 class KuraPalette {
   KuraPalette._();
 
-  static const Color brandPrimary = Color(0xFFEC0244); // magenta/rojo Kura
-  static const Color background = Color(0xFFFBF5EC); // crema
+  static const Color brandPrimary = Color(0xFF7C3AED); // violeta Kura
+  static const Color background = Color(0xFFF6F5FB); // neutro frío casi blanco
   static const Color surface = Color(0xFFFFFFFF);
-  static const Color textPrimary = Color(0xFF211813);
-  static const Color border = Color(0xFFE4D9C9);
-  static const Color chipBg = Color(0xFFF3E9DA);
-  static const Color info = Color(0xFF2E6E9E); // azul informativo (neutro)
+  static const Color textPrimary = Color(0xFF201A2E); // slate oscuro (frío)
+  static const Color border = Color(0xFFE7E4F0);
+  static const Color chipBg = Color(0xFFEFEDF7);
+  static const Color info = Color(0xFF3B82F6); // azul informativo (neutro)
+
+  // Hero (banner oscuro): degradado índigo → violeta y texto sobre él.
+  static const Color heroTop = Color(0xFF241B4E);
+  static const Color heroBottom = Color(0xFF5B3AC7);
+  static const Color onBrand = Color(0xFFFFFFFF);
 
   // Estado CLÍNICO (semáforo de Sheehan). Separado de la marca.
   static const Color statusSuccess = Color(0xFF1B8A5A); // avanza
@@ -41,6 +46,11 @@ class KuraPalette {
 class BrandTokens extends ThemeExtension<BrandTokens> {
   // Marca / acción (reservado a CTAs).
   final Color brandPrimary;
+  final Color onBrand; // texto/íconos sobre el acento o el hero
+
+  // Hero (banner oscuro con degradado).
+  final Color heroTop;
+  final Color heroBottom;
 
   // Superficies / base (neutras y calmadas).
   final Color background;
@@ -67,6 +77,9 @@ class BrandTokens extends ThemeExtension<BrandTokens> {
 
   const BrandTokens({
     required this.brandPrimary,
+    required this.onBrand,
+    required this.heroTop,
+    required this.heroBottom,
     required this.background,
     required this.surface,
     required this.surfaceGlassHigh,
@@ -87,6 +100,9 @@ class BrandTokens extends ThemeExtension<BrandTokens> {
   /// Única marca implementada por ahora: Kura.
   static const BrandTokens kura = BrandTokens(
     brandPrimary: KuraPalette.brandPrimary,
+    onBrand: KuraPalette.onBrand,
+    heroTop: KuraPalette.heroTop,
+    heroBottom: KuraPalette.heroBottom,
     background: KuraPalette.background,
     surface: KuraPalette.surface,
     // Relleno del vidrio: alto (0.72) arriba y algo más translúcido (0.55)
@@ -96,8 +112,8 @@ class BrandTokens extends ThemeExtension<BrandTokens> {
     surfaceGlassLow: Color(0x8CFFFFFF),
     glassBorder: Color(0x99FFFFFF),
     textPrimary: KuraPalette.textPrimary,
-    textSecondary: Color(0xFF6E655E),
-    textDisabled: Color(0xFFB0A89F),
+    textSecondary: Color(0xFF6B6577),
+    textDisabled: Color(0xFFAEA9BC),
     border: KuraPalette.border,
     focus: KuraPalette.brandPrimary,
     info: KuraPalette.info,
@@ -115,6 +131,9 @@ class BrandTokens extends ThemeExtension<BrandTokens> {
   @override
   BrandTokens copyWith({
     Color? brandPrimary,
+    Color? onBrand,
+    Color? heroTop,
+    Color? heroBottom,
     Color? background,
     Color? surface,
     Color? surfaceGlassHigh,
@@ -133,6 +152,9 @@ class BrandTokens extends ThemeExtension<BrandTokens> {
   }) {
     return BrandTokens(
       brandPrimary: brandPrimary ?? this.brandPrimary,
+      onBrand: onBrand ?? this.onBrand,
+      heroTop: heroTop ?? this.heroTop,
+      heroBottom: heroBottom ?? this.heroBottom,
       background: background ?? this.background,
       surface: surface ?? this.surface,
       surfaceGlassHigh: surfaceGlassHigh ?? this.surfaceGlassHigh,
@@ -156,6 +178,9 @@ class BrandTokens extends ThemeExtension<BrandTokens> {
     if (other is! BrandTokens) return this;
     return BrandTokens(
       brandPrimary: Color.lerp(brandPrimary, other.brandPrimary, t)!,
+      onBrand: Color.lerp(onBrand, other.onBrand, t)!,
+      heroTop: Color.lerp(heroTop, other.heroTop, t)!,
+      heroBottom: Color.lerp(heroBottom, other.heroBottom, t)!,
       background: Color.lerp(background, other.background, t)!,
       surface: Color.lerp(surface, other.surface, t)!,
       surfaceGlassHigh: Color.lerp(surfaceGlassHigh, other.surfaceGlassHigh, t)!,

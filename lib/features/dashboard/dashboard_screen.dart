@@ -120,7 +120,6 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
           final activePatients = patients.where((p) => p.isActive).length;
           final activeWounds = triage.fold<int>(0, (n, t) => n + t.summary.activeCount);
           final dangerCount = triage.where((t) => t.worst == ProgressStatus.danger).length;
-          final warningCount = triage.where((t) => t.worst == ProgressStatus.warning).length;
 
           return ListView(
             // Espacio inferior para que el ultimo elemento no quede tapado por
@@ -146,14 +145,14 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
               ),
               const SizedBox(height: 20),
 
-              // Metricas accionables.
-              _MetricsGrid(
+              // Hero: resumen del día en banner oscuro (estilo mockup). El CTA
+              // es una acción clínica real ("Requieren atención") — no una
+              // "agenda del día" (el modelo no tiene cadencia/calendario).
+              _HeroCard(
                 activePatients: activePatients,
                 activeWounds: activeWounds,
                 dangerCount: dangerCount,
-                warningCount: warningCount,
-                onTapDanger: () => _openPatients(status: ProgressStatus.danger),
-                onTapWarning: () => _openPatients(status: ProgressStatus.warning),
+                onTapAttention: () => _openPatients(status: ProgressStatus.danger),
               ),
               const SizedBox(height: 28),
 
@@ -269,152 +268,225 @@ class _Triage {
   ProgressStatus get worst => progress.worst;
 }
 
-/// Fila de metricas accionables, responsiva (1-4 columnas segun el ancho).
-class _MetricsGrid extends StatelessWidget {
+/// Hero del dashboard: banner oscuro con degradado de marca y el resumen del
+/// día (estilo mockup). El CTA es una acción clínica real (ir a "Requieren
+/// atención"), no una "agenda del día".
+class _HeroCard extends StatelessWidget {
   final int activePatients;
   final int activeWounds;
   final int dangerCount;
-  final int warningCount;
-  final VoidCallback onTapDanger;
-  final VoidCallback onTapWarning;
+  final VoidCallback onTapAttention;
 
-  const _MetricsGrid({
+  const _HeroCard({
     required this.activePatients,
     required this.activeWounds,
     required this.dangerCount,
-    required this.warningCount,
-    required this.onTapDanger,
-    required this.onTapWarning,
+    required this.onTapAttention,
   });
 
   @override
   Widget build(BuildContext context) {
     final t = BrandTokens.of(context);
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final w = constraints.maxWidth;
-        final cols = w < 380
-            ? 1
-            : w < 640
-                ? 2
-                : w < 1000
-                    ? 3
-                    : 4;
-        // -1px de margen para que el redondeo nunca fuerce un salto de linea.
-        final itemW = (w - (cols - 1) * 12 - 1) / cols;
-        return Wrap(
-          spacing: 12,
-          runSpacing: 12,
-          children: [
-            // Métricas informativas en tonos calmados (neutro/azul); NO usan el
-            // acento de marca. Las de estado clínico (rojo/ámbar) resaltan solas.
-            _StatCard(
-              width: itemW,
-              icon: Icons.people,
-              label: 'Pacientes activos',
-              value: '$activePatients',
-              color: t.textSecondary,
+    // Tamaño de la ilustración proporcional al ancho del recuadro (≈ ancho de
+    // pantalla menos el padding de la lista), para que mantenga la MISMA
+    // proporción en móvil y escritorio (no se vea diminuta en pantallas anchas).
+    final art =
+        ((MediaQuery.of(context).size.width - 32) * 0.34).clamp(180.0, 320.0).toDouble();
+    // Stack sin recorte: la ilustración 3D DESBORDA el recuadro morado,
+    // sobresaliendo por arriba y un poco a la derecha.
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(AppSpacing.xl),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [t.heroTop, t.heroBottom],
             ),
-            _StatCard(
-              width: itemW,
-              icon: Icons.healing,
-              label: 'Heridas en tratamiento',
-              value: '$activeWounds',
-              color: t.info,
+            borderRadius: AppRadii.lgR,
+            boxShadow: [
+              BoxShadow(
+                color: t.heroTop.withOpacity(0.35),
+                blurRadius: 24,
+                offset: const Offset(0, 12),
+              ),
+            ],
+          ),
+          child: Padding(
+            // Reserva a la derecha (proporcional al arte) para que el texto no
+            // quede bajo la ilustración.
+            padding: EdgeInsets.only(right: art * 0.72),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Hoy',
+                  style: TextStyle(
+                    color: t.onBrand.withOpacity(0.70),
+                    fontSize: AppType.label,
+                    fontWeight: AppType.semibold,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.md),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _HeroStat(
+                        value: '$activePatients',
+                        label: 'pacientes\nactivos',
+                        color: t.onBrand,
+                      ),
+                    ),
+                    _HeroDivider(color: t.onBrand.withOpacity(0.20)),
+                    Expanded(
+                      child: _HeroStat(
+                        value: '$activeWounds',
+                        label: 'heridas en\ntratamiento',
+                        color: t.onBrand,
+                      ),
+                    ),
+                    _HeroDivider(color: t.onBrand.withOpacity(0.20)),
+                    Expanded(
+                      child: _HeroStat(
+                        value: '$dangerCount',
+                        label: 'requieren\natención',
+                        color: dangerCount > 0 ? const Color(0xFFFF7A90) : t.onBrand,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: AppSpacing.lg),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Material(
+                    color: t.onBrand,
+                    borderRadius: AppRadii.pillR,
+                    child: InkWell(
+                      onTap: onTapAttention,
+                      borderRadius: AppRadii.pillR,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: AppSpacing.lg, vertical: AppSpacing.md),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.priority_high_rounded, size: 18, color: t.brandPrimary),
+                            const SizedBox(width: AppSpacing.sm),
+                            Text('Requieren atención',
+                                style: TextStyle(
+                                    color: t.brandPrimary, fontWeight: AppType.bold)),
+                            const SizedBox(width: AppSpacing.xs),
+                            Icon(Icons.chevron_right, size: 18, color: t.brandPrimary),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
-            _StatCard(
-              width: itemW,
-              icon: Icons.report_gmailerrorred_rounded,
-              label: 'Requieren atención',
-              value: '$dangerCount',
-              color: t.statusDanger,
-              emphasize: dangerCount > 0,
-              onTap: onTapDanger,
-            ),
-            _StatCard(
-              width: itemW,
-              icon: Icons.error_outline,
-              label: 'Con reservas',
-              value: '$warningCount',
-              color: t.statusWarning,
-              emphasize: warningCount > 0,
-              onTap: onTapWarning,
-            ),
-          ],
-        );
-      },
+          ),
+        ),
+        Positioned(
+          right: -art * 0.06,
+          top: -art * 0.16,
+          child: SizedBox(
+            width: art,
+            height: art,
+            child: _HeroArt(fallbackColor: t.onBrand),
+          ),
+        ),
+      ],
     );
   }
 }
 
-class _StatCard extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final String value;
-  final Color color;
-  final double width;
-  final VoidCallback? onTap;
-  // Fondo/borde tintado cuando la metrica urgente tiene casos (>0), para
-  // que salte a la vista sin recurrir solo al color.
-  final bool emphasize;
-
-  const _StatCard({
-    required this.icon,
-    required this.label,
-    required this.value,
-    required this.color,
-    required this.width,
-    this.onTap,
-    this.emphasize = false,
-  });
+/// Ilustración 3D del hero. Usa el asset si existe; si aún no está, cae al
+/// glifo decorativo (para no romper la pantalla).
+class _HeroArt extends StatelessWidget {
+  final Color fallbackColor;
+  const _HeroArt({required this.fallbackColor});
 
   @override
   Widget build(BuildContext context) {
-    final t = BrandTokens.of(context);
-    final content = Padding(
-      padding: const EdgeInsets.all(AppSpacing.lg),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(AppSpacing.sm),
-            decoration: BoxDecoration(
-              color: color.withOpacity(0.16),
-              borderRadius: AppRadii.mdR,
-            ),
-            child: Icon(icon, color: color),
-          ),
-          const SizedBox(width: AppSpacing.md),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(value,
-                    style: const TextStyle(
-                        fontSize: AppType.headline, fontWeight: AppType.extrabold)),
-                Text(label,
-                    style: TextStyle(fontSize: AppType.label, color: t.textSecondary)),
-              ],
-            ),
-          ),
-          if (onTap != null)
-            Icon(Icons.chevron_right, size: 18, color: t.textDisabled),
-        ],
-      ),
+    // Llena la caja que le da el hero (tamaño proporcional al ancho).
+    return Image.asset(
+      'assets/images/hero_bandage.png',
+      fit: BoxFit.contain,
+      errorBuilder: (_, __, ___) => Center(child: _HeroGlyph(color: fallbackColor)),
     );
+  }
+}
+
+class _HeroStat extends StatelessWidget {
+  final String value;
+  final String label;
+  final Color color;
+  const _HeroStat({required this.value, required this.label, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(value,
+            style: TextStyle(
+                color: color, fontSize: AppType.display, fontWeight: AppType.extrabold)),
+        Text(label,
+            style: TextStyle(
+                color: color.withOpacity(0.75), fontSize: AppType.caption, height: 1.1)),
+      ],
+    );
+  }
+}
+
+class _HeroDivider extends StatelessWidget {
+  final Color color;
+  const _HeroDivider({required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 1,
+      height: 40,
+      margin: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
+      color: color,
+    );
+  }
+}
+
+/// Motivo decorativo del hero (evoca el apósito del mockup) construido con
+/// formas translúcidas — sin assets ni paquetes.
+class _HeroGlyph extends StatelessWidget {
+  final Color color;
+  const _HeroGlyph({required this.color});
+
+  Widget _square(double size, double opacity) => Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          color: color.withOpacity(opacity),
+          borderRadius: AppRadii.mdR,
+          border: Border.all(color: color.withOpacity(0.20)),
+        ),
+      );
+
+  @override
+  Widget build(BuildContext context) {
     return SizedBox(
-      width: width,
-      child: KuraGlassCard(
-        borderRadius: 20,
-        padding: EdgeInsets.zero,
-        // Tinte del vidrio cuando la metrica urgente tiene casos.
-        tint: emphasize ? color : null,
-        child: onTap == null
-            ? content
-            : InkWell(
-                onTap: onTap,
-                borderRadius: BorderRadius.circular(20),
-                child: content,
-              ),
+      width: 84,
+      height: 84,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          Positioned(right: 10, top: 2, child: _square(52, 0.10)),
+          Positioned(right: 0, bottom: 0, child: _square(64, 0.16)),
+          Icon(Icons.healing, size: 34, color: color.withOpacity(0.92)),
+        ],
       ),
     );
   }
