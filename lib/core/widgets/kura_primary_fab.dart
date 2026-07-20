@@ -23,14 +23,16 @@ class KuraPrimaryFab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     // Se eleva por encima de la barra de navegacion flotante para que esta no
-    // lo tape. Tanto la barra (via SafeArea) como la posicion por defecto del
-    // FAB (el Scaffold respeta el safe-area) se desplazan igual con el inset
-    // del sistema, asi que una elevacion constante sirve en web y en movil.
-    // (kFloatingNavBarHeight 64 + margen inferior de la barra 12 - margen por
-    // defecto del FAB 16 + holgura 12 ≈ 72.)
+    // lo tape. La barra vive en el Scaffold del SHELL y el FAB en el de cada
+    // pantalla (Scaffolds distintos), asi que el FAB NO se desplaza solo por la
+    // barra: hay que elevarlo su huella completa = inset del sistema
+    // (viewPadding.bottom, safe-area) + alto de la barra + su margen inferior.
+    // Se usa viewPadding (no padding) para que sea estable con extendBody y sin
+    // depender del teclado.
     final t = BrandTokens.of(context);
+    final lift = MediaQuery.of(context).viewPadding.bottom + kFloatingNavBarHeight + 12;
     return Padding(
-      padding: const EdgeInsets.only(bottom: kFloatingNavBarHeight + 8),
+      padding: EdgeInsets.only(bottom: lift),
       child: DecoratedBox(
         decoration: const BoxDecoration(
           borderRadius: AppRadii.pillR,
