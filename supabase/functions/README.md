@@ -201,3 +201,49 @@ inyectados por Supabase). Reutiliza el mismo patrón JWT que `acuity-proxy`.
 - Entra como admin/master → pestaña **Usuarios** → "Nuevo usuario".
 - Debe aparecer en la lista y (sin SMTP) mostrarse una contraseña temporal.
 - Cambiar rol y activar/desactivar deben reflejarse de inmediato.
+
+---
+
+# Alta automática de pacientes desde citas (acuity → patients)
+
+Cuando se sincroniza una cita de un Kurador **activo mapeado**, se crea (si no
+existe) el paciente en `public.patients`, se vincula la cita a él
+(`appointments.patient_id`) y se asigna el paciente al Kurador
+(`staff_patient_assignments`) para que aparezca en su lista. Aplica tanto al
+webhook (citas nuevas) como al backfill (histórico).
+
+## Migración
+```
+supabase db push      # aplica 0018_acuity_auto_patient.sql
+```
+Agrega `patients.acuity_email` (+ índice único parcial por centro para
+deduplicar) y `appointments.patient_id`.
+
+## Lógica (Edge Functions)
+La lógica compartida vive en `supabase/functions/_shared/acuity_patient.ts`
+(`resolveOrCreatePatient`), importada por `acuity-webhook` y `acuity-backfill`.
+El `_shared/` se **empaqueta automáticamente** al desplegar cada función (no se
+despliega por separado).
+
+Deduplicación: **por email** dentro del centro (Acuity siempre trae email); si
+faltara, por nombre exacto (best-effort). El folio del paciente es `PA<year>-NNNN`
+y se marca `background_notes = 'Alta automática desde Acuity Scheduling.'` para
+distinguir estos expedientes (son "stub": sin fecha de nacimiento/sexo/comorbi-
+lidades, que el clínico completa después).
+
+## Despliegue / re-corrida
+Tras aplicar 0018, **re-desplegar** las dos funciones (traen el nuevo código) y
+re-correr el backfill para poblar los pacientes del histórico:
+```
+supabase functions deploy acuity-webhook --no-verify-jwt
+supabase functions deploy acuity-backfill
+curl -X POST '.../functions/v1/acuity-backfill' -H "Authorization: Bearer <SERVICE_ROLE_KEY>"
+# -> { imported, skipped, patientsLinked }
+```
+Es idempotente: re-correr no duplica pacientes (dedup por email; y el vínculo
+cita->paciente existente se reutiliza).
+
+## Verificación
+- `select count(*) from public.patients where acuity_email is not null;` > 0.
+- Un Kurador ve esos pacientes en su lista (vía staff_patient_assignments).
+- `select count(*) from public.appointments where patient_id is not null;` ≈ importadas.
