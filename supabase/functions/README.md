@@ -278,7 +278,11 @@ supabase db push      # aplica 0019 (columna appointments.intake_photo_path + bu
 - **acuity-webhook**: importa la foto de cada cita nueva (1 a la vez).
 - **acuity-import-photos** (nueva): importa el HISTÓRICO por lotes (10 por
   corrida, para no exceder el IDLE_TIMEOUT al comprimir). Reejecutar hasta
-  `remaining = 0`. Lee la URL desde `appointments.raw` (no depende de Acuity).
+  `remaining = 0`. Detecta si hay foto con `appointments.raw` (basta la
+  presencia del campo) y, para las que sí la traen, pide una copia FRESCA a
+  Acuity (`GET /appointments/{id}`) para obtener una URL no caducada — las URLs
+  firmadas de S3 caducan en 1 h, así que NO se confía en la de `raw`. Esto
+  elimina la carrera; ya no hace falta refrescar `raw` con backfill antes.
 
 Ruta del objeto: `{organization_id}/{appointment_id}.ext`. `intake_photo_path`
 guarda esa ruta, o el sentinela `no-photo` (la cita no traía foto) / `error`
