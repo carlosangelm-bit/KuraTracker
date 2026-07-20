@@ -6,7 +6,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/design/tokens.dart';
 import '../../core/providers/session_provider.dart';
-import '../../core/router/app_shell.dart' show kFloatingNavBarHeight;
+import '../../core/router/app_shell.dart' show kFloatingNavBarHeight, UserMenuButton;
 import '../../core/widgets/kura_glass_card.dart';
 import '../../core/widgets/kura_primary_fab.dart';
 import '../../engine/models/kura_engine_enums.dart';
@@ -140,7 +140,10 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                   // por la barra de navegación flotante.
                   padding: EdgeInsets.fromLTRB(
                     16,
-                    20,
+                    // El shell ya no pone AppBar; se compensa el inset superior
+                    // (barra de estado/notch) para que el encabezado no quede
+                    // debajo de él.
+                    20 + MediaQuery.of(context).viewPadding.top,
                     16,
                     MediaQuery.of(context).viewPadding.bottom +
                         kFloatingNavBarHeight +
@@ -205,15 +208,34 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   List<Widget> _greeting(BuildContext context, AppUser? user, String subtitle) {
     final t = BrandTokens.of(context);
     return [
-      Text(
-        'Hola, ${user?.fullName.split(' ').first ?? ''} 👋',
-        style: Theme.of(context)
-            .textTheme
-            .headlineSmall
-            ?.copyWith(fontWeight: FontWeight.w800),
+      // Encabezado: saludo a la izquierda y el avatar/menú de usuario a la
+      // derecha (antes vivía en el AppBar del shell, ya removido).
+      Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Hola, ${user?.fullName.split(' ').first ?? ''} 👋',
+                  style: Theme.of(context)
+                      .textTheme
+                      .headlineSmall
+                      ?.copyWith(fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 4),
+                Text(subtitle, style: TextStyle(color: t.textSecondary)),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          const Padding(
+            padding: EdgeInsets.only(top: 2),
+            child: UserMenuButton(),
+          ),
+        ],
       ),
-      const SizedBox(height: 4),
-      Text(subtitle, style: TextStyle(color: t.textSecondary)),
     ];
   }
 
@@ -604,11 +626,15 @@ class _HeroCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = BrandTokens.of(context);
-    // Tamaño de la ilustración proporcional al ancho del recuadro (≈ ancho de
-    // pantalla menos el padding de la lista), para que mantenga la MISMA
-    // proporción en móvil y escritorio (no se vea diminuta en pantallas anchas).
-    final art =
-        ((MediaQuery.of(context).size.width - 32) * 0.34).clamp(180.0, 320.0).toDouble();
+    final width = MediaQuery.of(context).size.width;
+    // En móvil (angosto) se OCULTA la ilustración: reservaba tanto ancho a la
+    // derecha que apretaba los 3 indicadores (se cortaban las etiquetas y
+    // quedaban desalineados). Sin arte, los KPIs ocupan todo el ancho en
+    // tercios iguales. En pantallas anchas el arte se mantiene, proporcional.
+    final showArt = width >= 600;
+    final art = showArt
+        ? ((width - 32) * 0.34).clamp(180.0, 320.0).toDouble()
+        : 0.0;
     // Stack sin recorte: la ilustración 3D DESBORDA el recuadro morado,
     // sobresaliendo por arriba y un poco a la derecha.
     return Stack(
@@ -633,9 +659,9 @@ class _HeroCard extends StatelessWidget {
             ],
           ),
           child: Padding(
-            // Reserva a la derecha (proporcional al arte) para que el texto no
-            // quede bajo la ilustración.
-            padding: EdgeInsets.only(right: art * 0.72),
+            // Reserva a la derecha solo cuando hay arte (escritorio); en móvil
+            // el texto usa todo el ancho.
+            padding: EdgeInsets.only(right: showArt ? art * 0.72 : 0),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
@@ -708,15 +734,16 @@ class _HeroCard extends StatelessWidget {
             ),
           ),
         ),
-        Positioned(
-          right: -art * 0.06,
-          top: -art * 0.16,
-          child: SizedBox(
-            width: art,
-            height: art,
-            child: _HeroArt(fallbackColor: t.onBrand),
+        if (showArt)
+          Positioned(
+            right: -art * 0.06,
+            top: -art * 0.16,
+            child: SizedBox(
+              width: art,
+              height: art,
+              child: _HeroArt(fallbackColor: t.onBrand),
+            ),
           ),
-        ),
       ],
     );
   }

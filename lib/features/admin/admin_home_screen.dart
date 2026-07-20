@@ -7,6 +7,7 @@ import 'package:file_picker/file_picker.dart';
 
 import '../../core/theme/kura_theme.dart';
 import '../../core/providers/session_provider.dart';
+import '../../core/router/app_shell.dart' show UserMenuButton;
 import '../../models/app_user.dart';
 import '../../models/note_option_catalog.dart';
 import '../../models/site.dart';
@@ -68,6 +69,7 @@ class _AdminHomeScreenState extends ConsumerState<AdminHomeScreen>
     return Scaffold(
       appBar: AppBar(
         title: const Text('Administración'),
+        actions: const [UserMenuButton()],
         bottom: TabBar(
           controller: _tabController,
           tabs: const [

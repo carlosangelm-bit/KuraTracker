@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/theme/kura_theme.dart';
 import '../../core/providers/session_provider.dart';
+import '../../core/router/app_shell.dart' show UserMenuButton;
 import '../../models/organization.dart';
 import '../../services/data_repository.dart';
 import '../admin/admin_home_screen.dart' show UsersTab, StaffTab, SitesTab, NoteCatalogTab;
@@ -78,6 +79,7 @@ class _PlatformHomeScreenState extends ConsumerState<PlatformHomeScreen>
     return Scaffold(
       appBar: AppBar(
         title: const Text('Plataforma'),
+        actions: const [UserMenuButton()],
         bottom: TabBar(
           controller: _tabController,
           tabs: const [
