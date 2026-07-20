@@ -604,11 +604,15 @@ class _HeroCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = BrandTokens.of(context);
-    // Tamaño de la ilustración proporcional al ancho del recuadro (≈ ancho de
-    // pantalla menos el padding de la lista), para que mantenga la MISMA
-    // proporción en móvil y escritorio (no se vea diminuta en pantallas anchas).
-    final art =
-        ((MediaQuery.of(context).size.width - 32) * 0.34).clamp(180.0, 320.0).toDouble();
+    final width = MediaQuery.of(context).size.width;
+    // En móvil (angosto) se OCULTA la ilustración: reservaba tanto ancho a la
+    // derecha que apretaba los 3 indicadores (se cortaban las etiquetas y
+    // quedaban desalineados). Sin arte, los KPIs ocupan todo el ancho en
+    // tercios iguales. En pantallas anchas el arte se mantiene, proporcional.
+    final showArt = width >= 600;
+    final art = showArt
+        ? ((width - 32) * 0.34).clamp(180.0, 320.0).toDouble()
+        : 0.0;
     // Stack sin recorte: la ilustración 3D DESBORDA el recuadro morado,
     // sobresaliendo por arriba y un poco a la derecha.
     return Stack(
@@ -633,9 +637,9 @@ class _HeroCard extends StatelessWidget {
             ],
           ),
           child: Padding(
-            // Reserva a la derecha (proporcional al arte) para que el texto no
-            // quede bajo la ilustración.
-            padding: EdgeInsets.only(right: art * 0.72),
+            // Reserva a la derecha solo cuando hay arte (escritorio); en móvil
+            // el texto usa todo el ancho.
+            padding: EdgeInsets.only(right: showArt ? art * 0.72 : 0),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
@@ -708,15 +712,16 @@ class _HeroCard extends StatelessWidget {
             ),
           ),
         ),
-        Positioned(
-          right: -art * 0.06,
-          top: -art * 0.16,
-          child: SizedBox(
-            width: art,
-            height: art,
-            child: _HeroArt(fallbackColor: t.onBrand),
+        if (showArt)
+          Positioned(
+            right: -art * 0.06,
+            top: -art * 0.16,
+            child: SizedBox(
+              width: art,
+              height: art,
+              child: _HeroArt(fallbackColor: t.onBrand),
+            ),
           ),
-        ),
       ],
     );
   }

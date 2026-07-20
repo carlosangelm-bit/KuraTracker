@@ -92,10 +92,19 @@ class AppShell extends ConsumerWidget {
       // lo refracte). Las pantallas scrolleables compensan con padding inferior
       // (ver kFloatingNavBarHeight / MediaQuery.padding.bottom).
       extendBody: true,
+      // En movil se quita el titulo de marca ("KuraTracker") para ganar
+      // espacio vertical: casi todas las pantallas ya tienen su propio AppBar
+      // con su titulo, y el dashboard su propio encabezado. Queda una franja
+      // delgada y transparente solo con el avatar (para conservar el acceso a
+      // cerrar sesion en todas las pantallas).
       appBar: isWide
           ? null
           : AppBar(
-              title: _brandTitle(),
+              toolbarHeight: 44,
+              backgroundColor: Colors.transparent,
+              surfaceTintColor: Colors.transparent,
+              elevation: 0,
+              scrolledUnderElevation: 0,
               actions: [_userMenu(context, ref, session)],
             ),
       body: isWide
