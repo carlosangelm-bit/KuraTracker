@@ -73,6 +73,18 @@ class AcuityService {
     });
   }
 
+  /// Signed URL (1 h) para mostrar la foto de herida guardada en el bucket
+  /// privado acuity-intake (ver 0019). Devuelve null si no hay ruta válida o
+  /// falla la firma.
+  Future<String?> intakePhotoUrl(String path) async {
+    if (!isAvailable) return null;
+    try {
+      return await _sb.storage.from('acuity-intake').createSignedUrl(path, 3600);
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<void> cancel(int id) async => _proxy('PUT', '/appointments/$id/cancel');
 
   Future<void> reschedule(int id, String datetime) async =>

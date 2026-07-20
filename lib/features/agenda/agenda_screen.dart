@@ -802,7 +802,7 @@ class _AppointmentTile extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 8),
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
-        onTap: () => _showAppointmentDetail(context, appointment),
+        onTap: () => _showAppointmentDetail(context, service, appointment),
         child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         child: Row(
@@ -857,7 +857,7 @@ class _AppointmentTile extends StatelessWidget {
             PopupMenuButton<String>(
               onSelected: (v) async {
                 if (v == 'detail') {
-                  _showAppointmentDetail(context, appointment);
+                  _showAppointmentDetail(context, service, appointment);
                 } else if (v == 'cancel') {
                   await _confirmCancel(context, service, appointment);
                 } else if (v == 'reschedule') {
@@ -927,7 +927,7 @@ void _showAppointmentActions(
             title: const Text('Ver detalle'),
             onTap: () {
               Navigator.pop(sheetCtx);
-              _showAppointmentDetail(context, a);
+              _showAppointmentDetail(context, service, a);
             },
           ),
           ListTile(
@@ -956,18 +956,19 @@ void _showAppointmentActions(
 // Detalle de cita: TODOS los campos de Acuity (columna appointments.raw)
 // ---------------------------------------------------------------------------
 
-void _showAppointmentDetail(BuildContext context, Appointment a) {
+void _showAppointmentDetail(BuildContext context, AcuityService service, Appointment a) {
   showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
     showDragHandle: true,
-    builder: (_) => _AppointmentDetailSheet(appointment: a),
+    builder: (_) => _AppointmentDetailSheet(appointment: a, service: service),
   );
 }
 
 class _AppointmentDetailSheet extends StatelessWidget {
   final Appointment appointment;
-  const _AppointmentDetailSheet({required this.appointment});
+  final AcuityService service;
+  const _AppointmentDetailSheet({required this.appointment, required this.service});
 
   @override
   Widget build(BuildContext context) {
@@ -1016,6 +1017,10 @@ class _AppointmentDetailSheet extends StatelessWidget {
                 a.patientName.isEmpty ? 'Detalle de la cita' : a.patientName,
                 style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
               ),
+              if (a.hasIntakePhoto) ...[
+                const SizedBox(height: 12),
+                _IntakePhotoView(service: service, path: a.intakePhotoPath!),
+              ],
               const SizedBox(height: 12),
               _DetailSection(title: 'Datos de la cita', rows: facts),
               if (forms.isNotEmpty) ...[
@@ -1070,6 +1075,69 @@ class _AppointmentDetailSheet extends StatelessWidget {
   }
 
   static String _yesNo(dynamic v) => v == true ? 'Sí' : 'No';
+}
+
+/// Foto de la herida del formulario de admisión (bucket privado acuity-intake).
+/// Resuelve una signed URL de 1 h y la muestra; toca para verla en grande.
+class _IntakePhotoView extends StatelessWidget {
+  final AcuityService service;
+  final String path;
+  const _IntakePhotoView({required this.service, required this.path});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Padding(
+          padding: EdgeInsets.only(top: 4, bottom: 4),
+          child: Text('Foto de la herida',
+              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
+        ),
+        FutureBuilder<String?>(
+          future: service.intakePhotoUrl(path),
+          builder: (context, snap) {
+            if (snap.connectionState != ConnectionState.done) {
+              return const SizedBox(
+                height: 160,
+                child: Center(child: CircularProgressIndicator()),
+              );
+            }
+            final url = snap.data;
+            if (url == null) {
+              return Text('No se pudo cargar la foto.',
+                  style: TextStyle(fontSize: 12, color: KuraColors.darkText.withOpacity(0.6)));
+            }
+            return GestureDetector(
+              onTap: () => showDialog<void>(
+                context: context,
+                builder: (dialogCtx) => Dialog(
+                  child: InteractiveViewer(
+                    child: Image.network(url, fit: BoxFit.contain),
+                  ),
+                ),
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: Image.network(
+                  url,
+                  height: 200,
+                  width: double.infinity,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => Container(
+                    height: 160,
+                    color: KuraColors.chipBg,
+                    alignment: Alignment.center,
+                    child: const Icon(Icons.broken_image_outlined),
+                  ),
+                ),
+              ),
+            );
+          },
+        ),
+      ],
+    );
+  }
 }
 
 class _DetailSection extends StatelessWidget {

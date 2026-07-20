@@ -259,3 +259,41 @@ cita->paciente existente se reutiliza).
 - `select count(*) from public.patients where acuity_email is not null;` > 0.
 - Un Kurador ve esos pacientes en su lista (vía staff_patient_assignments).
 - `select count(*) from public.appointments where patient_id is not null;` ≈ importadas.
+
+---
+
+# Fotos de herida durables (acuity-intake)
+
+La "foto de la herida" del formulario de admisión llega como URL firmada de S3
+que **caduca**. Para conservarla se descarga, se **comprime** (equilibrado:
+lado largo 1600px, JPEG 80) y se guarda en el bucket privado `acuity-intake`.
+
+## Migración
+```
+supabase db push      # aplica 0019 (columna appointments.intake_photo_path + bucket + RLS)
+```
+
+## Lógica
+`_shared/acuity_photo.ts` (`importIntakePhoto`, ImageScript) la usan:
+- **acuity-webhook**: importa la foto de cada cita nueva (1 a la vez).
+- **acuity-import-photos** (nueva): importa el HISTÓRICO por lotes (10 por
+  corrida, para no exceder el IDLE_TIMEOUT al comprimir). Reejecutar hasta
+  `remaining = 0`. Lee la URL desde `appointments.raw` (no depende de Acuity).
+
+Ruta del objeto: `{organization_id}/{appointment_id}.ext`. `intake_photo_path`
+guarda esa ruta, o el sentinela `no-photo` (la cita no traía foto) / `error`
+(no se pudo descargar, p.ej. URL ya caducada). RLS de lectura = misma
+visibilidad que la cita (admin del centro / clínico dueño / master).
+
+## Despliegue / corrida (⚠️ URGENTE: las URLs de S3 caducan)
+```
+supabase functions deploy acuity-webhook --no-verify-jwt
+supabase functions deploy acuity-import-photos
+# correr en bucle hasta remaining = 0:
+curl -X POST '.../functions/v1/acuity-import-photos' -H "Authorization: Bearer <SERVICE_ROLE_KEY>"
+# -> { uploaded, noPhoto, failed, remaining }
+```
+
+## Verificación
+- `select count(*) from public.appointments where intake_photo_path like '%/%';` (fotos guardadas)
+- En la app: Agenda → tocar una cita con foto → se muestra bajo "Foto de la herida".
