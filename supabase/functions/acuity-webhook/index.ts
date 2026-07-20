@@ -19,6 +19,7 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { extractEnrichment, resolveOrCreatePatient } from "../_shared/acuity_patient.ts";
+import { importIntakePhoto, PHOTO_ERROR } from "../_shared/acuity_photo.ts";
 
 const USER_ID = Deno.env.get("ACUITY_USER_ID") ?? "";
 const API_KEY = Deno.env.get("ACUITY_API_KEY") ?? "";
@@ -139,6 +140,20 @@ serve(async (req) => {
     updated_at: new Date().toISOString(),
   });
   if (error) return new Response(`db error: ${error.message}`, { status: 500 });
+
+  // Foto de la herida (durable): descarga/comprime y guarda la ruta. Tolerante a
+  // fallos: si algo sale mal, no se cae el webhook; acuity-import-photos puede
+  // reintentar/rellenar después.
+  try {
+    const path = await importIntakePhoto(supabase, {
+      appointmentId: appt.id,
+      organizationId: staff.organization_id,
+      appt,
+    });
+    await supabase.from("appointments").update({ intake_photo_path: path }).eq("id", appt.id);
+  } catch (_) {
+    await supabase.from("appointments").update({ intake_photo_path: PHOTO_ERROR }).eq("id", appt.id);
+  }
 
   return new Response("ok", { status: 200 });
 });

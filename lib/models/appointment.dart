@@ -12,6 +12,10 @@ class Appointment {
   final DateTime? datetime; // en hora local del dispositivo
   final String status; // scheduled | rescheduled | canceled
   final String? patientId; // paciente de KuraTracker vinculado (0018), si existe
+  // Ruta en el bucket privado acuity-intake de la foto de la herida del
+  // formulario de admisión (0019). Sentinelas 'no-photo'/'error' = sin foto
+  // mostrable. Ver hasIntakePhoto.
+  final String? intakePhotoPath;
   // Objeto COMPLETO de Acuity tal cual (columna appointments.raw). Contiene
   // todos los campos que Acuity devuelve (notas, formularios de admisión,
   // ubicación, pago, etiquetas, metadatos...), aunque solo algunos tengan
@@ -30,11 +34,18 @@ class Appointment {
     required this.datetime,
     required this.status,
     this.patientId,
+    this.intakePhotoPath,
     this.raw,
   });
 
   String get patientName => '$firstName $lastName'.trim();
   bool get isCanceled => status == 'canceled';
+
+  /// true si hay una foto de herida guardada mostrable (ruta real, no sentinela).
+  bool get hasIntakePhoto {
+    final p = intakePhotoPath;
+    return p != null && p.contains('/') && p != 'no-photo' && p != 'error';
+  }
 
   factory Appointment.fromMap(Map<String, dynamic> m) {
     final dt = m['datetime'];
@@ -49,6 +60,7 @@ class Appointment {
       datetime: dt == null ? null : DateTime.tryParse(dt.toString())?.toLocal(),
       status: (m['status'] ?? 'scheduled') as String,
       patientId: m['patient_id'] as String?,
+      intakePhotoPath: m['intake_photo_path'] as String?,
       raw: m['raw'] is Map ? Map<String, dynamic>.from(m['raw'] as Map) : null,
     );
   }
