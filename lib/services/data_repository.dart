@@ -4,6 +4,7 @@ import 'package:uuid/uuid.dart';
 import '../core/config/app_config.dart';
 import '../models/app_user.dart';
 import '../models/consultation.dart';
+import '../models/manual_appointment.dart';
 import '../models/organization.dart';
 import '../models/patient.dart';
 import '../models/note_option_catalog.dart';
@@ -247,6 +248,104 @@ class DataRepository {
 
   Future<void> setOrganizationActive(String organizationId, bool active) async {
     await _store.updateRow(Collections.organizations, organizationId, {'is_active': active});
+  }
+
+  // ---------------- Agenda: modo por centro + citas manuales ----------------
+  // (0020_manual_scheduling.sql). scheduling_mode: none | manual | acuity.
+
+  /// Modo de agenda del centro (none | manual | acuity). 'none' si no se
+  /// resuelve la organización.
+  String schedulingModeFor(String? organizationId) {
+    if (organizationId == null) return 'none';
+    final org = listOrganizations().where((o) => o.id == organizationId);
+    return org.isEmpty ? 'none' : org.first.schedulingMode;
+  }
+
+  Future<void> setSchedulingMode(String organizationId, String mode) async {
+    await _store.updateRow(
+        Collections.organizations, organizationId, {'scheduling_mode': mode});
+  }
+
+  /// Citas manuales del centro (admin) o de un Kurador (clínico). El aislamiento
+  /// real lo aplica la RLS; el filtro aquí acota la vista.
+  List<ManualAppointment> listManualAppointments({String? organizationId, String? staffId}) =>
+      _store
+          .getAll(Collections.manualAppointments)
+          .map(ManualAppointment.fromJson)
+          .where((a) =>
+              (organizationId == null || a.organizationId == organizationId) &&
+              (staffId == null || a.staffId == staffId))
+          .toList();
+
+  Future<ManualAppointment> createManualAppointment({
+    required String organizationId,
+    required DateTime datetime,
+    String? staffId,
+    String? patientId,
+    String? title,
+    DateTime? endTime,
+    String? notes,
+    String? createdByProfileId,
+  }) async {
+    final now = DateTime.now().toIso8601String();
+    final data = {
+      'id': _uuid.v4(),
+      'organization_id': organizationId,
+      'staff_id': staffId,
+      'patient_id': patientId,
+      'title': title,
+      'datetime': datetime.toIso8601String(),
+      'end_time': endTime?.toIso8601String(),
+      'notes': notes,
+      'status': 'scheduled',
+      'created_by': createdByProfileId,
+      'created_at': now,
+      'updated_at': now,
+    };
+    final saved = await _store.insertRow(Collections.manualAppointments, data);
+    return ManualAppointment.fromJson(saved);
+  }
+
+  Future<ManualAppointment> updateManualAppointment(
+    String id, {
+    String? staffId,
+    bool clearStaff = false,
+    String? patientId,
+    bool clearPatient = false,
+    String? title,
+    DateTime? datetime,
+    DateTime? endTime,
+    bool clearEndTime = false,
+    String? notes,
+    String? status,
+  }) async {
+    final patch = <String, dynamic>{'updated_at': DateTime.now().toIso8601String()};
+    if (clearStaff) {
+      patch['staff_id'] = null;
+    } else if (staffId != null) {
+      patch['staff_id'] = staffId;
+    }
+    if (clearPatient) {
+      patch['patient_id'] = null;
+    } else if (patientId != null) {
+      patch['patient_id'] = patientId;
+    }
+    if (title != null) patch['title'] = title;
+    if (datetime != null) patch['datetime'] = datetime.toIso8601String();
+    if (clearEndTime) {
+      patch['end_time'] = null;
+    } else if (endTime != null) {
+      patch['end_time'] = endTime.toIso8601String();
+    }
+    if (notes != null) patch['notes'] = notes;
+    if (status != null) patch['status'] = status;
+    final saved = await _store.updateRow(Collections.manualAppointments, id, patch);
+    return ManualAppointment.fromJson(saved);
+  }
+
+  Future<void> cancelManualAppointment(String id) async {
+    await _store.updateRow(Collections.manualAppointments, id,
+        {'status': 'canceled', 'updated_at': DateTime.now().toIso8601String()});
   }
 
   // ---------------- Sitios ----------------
