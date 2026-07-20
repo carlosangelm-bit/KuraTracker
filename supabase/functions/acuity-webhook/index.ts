@@ -18,7 +18,7 @@
 
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { resolveOrCreatePatient } from "../_shared/acuity_patient.ts";
+import { extractEnrichment, resolveOrCreatePatient } from "../_shared/acuity_patient.ts";
 
 const USER_ID = Deno.env.get("ACUITY_USER_ID") ?? "";
 const API_KEY = Deno.env.get("ACUITY_API_KEY") ?? "";
@@ -114,6 +114,9 @@ serve(async (req) => {
       firstName: appt.firstName ?? "",
       lastName: appt.lastName ?? "",
       email: appt.email ?? null,
+      // El webhook trae el objeto completo (con formulario de admisión), así que
+      // se enriquece el expediente (cuidador, domicilio, notas...).
+      enrichment: extractEnrichment(appt),
     });
   }
 

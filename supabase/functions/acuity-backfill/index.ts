@@ -29,7 +29,12 @@
 
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { resolveOrCreatePatient } from "../_shared/acuity_patient.ts";
+import {
+  type Enrichment,
+  extractEnrichment,
+  resolveOrCreatePatient,
+  STUB_NOTE,
+} from "../_shared/acuity_patient.ts";
 
 const USER_ID = Deno.env.get("ACUITY_USER_ID") ?? "";
 const API_KEY = Deno.env.get("ACUITY_API_KEY") ?? "";
@@ -90,10 +95,16 @@ serve(async (_req) => {
   // Precarga en memoria: pacientes existentes por (organizacion, email) de los
   // centros en scope -- evita 1 SELECT por cita.
   const patientByOrgEmail = new Map<string, string>();
+  // Metadatos de pacientes YA existentes (para enriquecer los que sigan en
+  // blanco sin pisar ediciones del clínico).
+  const existingPatientMeta = new Map<
+    string,
+    { background_notes: string | null; caregiver_name: string | null; caregiver_phone: string | null }
+  >();
   if (orgIds.length > 0) {
     const { data: existingPatients } = await supabase
       .from("patients")
-      .select("id, organization_id, acuity_email")
+      .select("id, organization_id, acuity_email, background_notes, caregiver_name, caregiver_phone")
       .in("organization_id", orgIds)
       .not("acuity_email", "is", null);
     for (const p of existingPatients ?? []) {
@@ -101,6 +112,11 @@ serve(async (_req) => {
       if (email) {
         patientByOrgEmail.set(`${p.organization_id}|${email}`, p.id as string);
       }
+      existingPatientMeta.set(p.id as string, {
+        background_notes: (p.background_notes as string | null) ?? null,
+        caregiver_name: (p.caregiver_name as string | null) ?? null,
+        caregiver_phone: (p.caregiver_phone as string | null) ?? null,
+      });
     }
   }
 
@@ -139,7 +155,16 @@ serve(async (_req) => {
   const pending: PendingAppt[] = [];
   const newPatientsByKey = new Map<
     string,
-    { organization_id: string; full_name: string; acuity_email: string; folio: string }
+    {
+      organization_id: string;
+      full_name: string;
+      acuity_email: string;
+      folio: string;
+      caregiver_name: string | null;
+      caregiver_phone: string | null;
+      has_identified_caregiver: boolean;
+      background_notes: string;
+    }
   >();
   let skipped = 0;
 
@@ -182,11 +207,18 @@ serve(async (_req) => {
           `${String(a.firstName ?? "")} ${String(a.lastName ?? "")}`.trim() ||
           "Paciente sin nombre";
         folioCount += 1;
+        // Enriquecimiento desde el formulario de admisión de la cita (si el
+        // objeto de la lista lo incluye; si no, quedan solo teléfono/notas).
+        const enr = extractEnrichment(a);
         newPatientsByKey.set(emailKey, {
           organization_id: owner.organization_id,
           full_name: fullName,
           acuity_email: email,
           folio: `PA${year}-${String(folioCount).padStart(4, "0")}`,
+          caregiver_name: enr.caregiverName,
+          caregiver_phone: enr.caregiverPhone,
+          has_identified_caregiver: enr.hasCaregiver,
+          background_notes: enr.backgroundNotes,
         });
       }
     } else if (!patientId && !email) {
@@ -213,7 +245,10 @@ serve(async (_req) => {
       full_name: p.full_name,
       organization_id: p.organization_id,
       acuity_email: p.acuity_email,
-      background_notes: "Alta automática desde Acuity Scheduling.",
+      background_notes: p.background_notes,
+      caregiver_name: p.caregiver_name,
+      caregiver_phone: p.caregiver_phone,
+      has_identified_caregiver: p.has_identified_caregiver,
       is_active: true,
     }));
     const { data: inserted, error } = await supabase
@@ -242,6 +277,7 @@ serve(async (_req) => {
       firstName: String(a.firstName ?? ""),
       lastName: String(a.lastName ?? ""),
       email: null,
+      enrichment: extractEnrichment(a),
     });
   }
 
@@ -296,12 +332,44 @@ serve(async (_req) => {
     if (error) return json({ error: `db error asignaciones: ${error.message}` }, 500);
   }
 
+  // Enriquecer expedientes YA existentes que sigan "en blanco" (nota stub/vacía
+  // o cuidador vacío), con los datos del formulario de su cita. Acotado: 1
+  // update por paciente (primera cita), solo si aporta algo. Los pacientes
+  // recién creados en este lote ya salieron enriquecidos del INSERT de arriba.
+  const enrichById = new Map<string, Enrichment>();
+  for (const p of pending) {
+    const pid = p.patientId;
+    if (!pid || !existingPatientMeta.has(pid) || enrichById.has(pid)) continue;
+    enrichById.set(pid, extractEnrichment(p.a));
+  }
+  let patientsEnriched = 0;
+  for (const [pid, enr] of enrichById) {
+    const meta = existingPatientMeta.get(pid)!;
+    const patch: Record<string, unknown> = {};
+    const bn = (meta.background_notes ?? "").trim();
+    if ((bn === "" || bn === STUB_NOTE) && enr.backgroundNotes !== STUB_NOTE) {
+      patch.background_notes = enr.backgroundNotes;
+    }
+    if (!meta.caregiver_name && enr.caregiverName) {
+      patch.caregiver_name = enr.caregiverName;
+      patch.has_identified_caregiver = true;
+    }
+    if (!meta.caregiver_phone && enr.caregiverPhone) {
+      patch.caregiver_phone = enr.caregiverPhone;
+      patch.has_identified_caregiver = true;
+    }
+    if (Object.keys(patch).length > 0) {
+      await supabase.from("patients").update(patch).eq("id", pid);
+      patientsEnriched++;
+    }
+  }
+
   if (rows.length > 0) {
     const { error } = await supabase.from("appointments").upsert(rows);
     if (error) return json({ error: `db error: ${error.message}` }, 500);
   }
 
-  return json({ imported: rows.length, skipped, patientsLinked });
+  return json({ imported: rows.length, skipped, patientsLinked, patientsEnriched });
 });
 
 function json(data: unknown, status = 200): Response {

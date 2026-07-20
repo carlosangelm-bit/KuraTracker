@@ -231,6 +231,18 @@ y se marca `background_notes = 'Alta automática desde Acuity Scheduling.'` para
 distinguir estos expedientes (son "stub": sin fecha de nacimiento/sexo/comorbi-
 lidades, que el clínico completa después).
 
+**Enriquecimiento desde el formulario de admisión** (`extractEnrichment`): además
+del nombre/email, se mapean los campos del formulario "Consulta a domicilio" al
+expediente: *nombre del contacto que recibirá al especialista* → `caregiver_name`,
+*teléfono de esa persona* → `caregiver_phone`, *dirección del tratamiento* +
+teléfono del paciente + notas + foto de la herida → `background_notes`. El
+emparejamiento es por subcadena del texto de la pregunta (tolerante). Aplica al
+crear y también **re-enriquece expedientes ya existentes** que sigan "en blanco"
+(no pisa ediciones del clínico). Depende de que el objeto de Acuity incluya
+`forms`: el webhook (GET de 1 cita) siempre lo trae; si la lista del backfill no
+lo trae, el histórico solo recibe teléfono/notas y el enriquecimiento completo
+llega vía webhook en el próximo evento de cada cita.
+
 ## Despliegue / re-corrida
 Tras aplicar 0018, **re-desplegar** las dos funciones (traen el nuevo código) y
 re-correr el backfill para poblar los pacientes del histórico:
@@ -238,7 +250,7 @@ re-correr el backfill para poblar los pacientes del histórico:
 supabase functions deploy acuity-webhook --no-verify-jwt
 supabase functions deploy acuity-backfill
 curl -X POST '.../functions/v1/acuity-backfill' -H "Authorization: Bearer <SERVICE_ROLE_KEY>"
-# -> { imported, skipped, patientsLinked }
+# -> { imported, skipped, patientsLinked, patientsEnriched }
 ```
 Es idempotente: re-correr no duplica pacientes (dedup por email; y el vínculo
 cita->paciente existente se reutiliza).
