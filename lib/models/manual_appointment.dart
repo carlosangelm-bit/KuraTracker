@@ -12,6 +12,11 @@ class ManualAppointment {
   final DateTime? endTime;
   final String? notes;
   final String status; // scheduled | canceled | completed
+  // Paridad con Acuity ("Consulta a domicilio"), ver 0023.
+  final String? address; // dirección donde se recibirá el tratamiento
+  final String? contactName; // contacto que recibirá al especialista
+  final String? contactPhone;
+  final String? photoPath; // ruta en bucket intake-photos o data URL (demo)
 
   const ManualAppointment({
     required this.id,
@@ -23,9 +28,14 @@ class ManualAppointment {
     required this.endTime,
     required this.notes,
     required this.status,
+    this.address,
+    this.contactName,
+    this.contactPhone,
+    this.photoPath,
   });
 
   bool get isCanceled => status == 'canceled';
+  bool get hasPhoto => (photoPath ?? '').isNotEmpty;
 
   factory ManualAppointment.fromJson(Map<String, dynamic> m) {
     final dt = m['datetime'];
@@ -40,6 +50,10 @@ class ManualAppointment {
       endTime: end == null ? null : DateTime.tryParse('$end')?.toLocal(),
       notes: m['notes'] as String?,
       status: (m['status'] ?? 'scheduled') as String,
+      address: m['address'] as String?,
+      contactName: m['contact_name'] as String?,
+      contactPhone: m['contact_phone'] as String?,
+      photoPath: m['photo_path'] as String?,
     );
   }
 }
