@@ -85,6 +85,18 @@ serve(async (req) => {
       ? "rescheduled"
       : "scheduled";
 
+  // Acuity NO devuelve `endTime` como datetime completo, solo "HH:MM"
+  // (p.ej. "12:00"), lo cual no es un timestamp válido. Se calcula a
+  // partir de `datetime` (ISO completo) + `duration` en minutos.
+  let endTimeIso: string | null = null;
+  const durationMin = Number(appt.duration ?? 0);
+  if (appt.datetime && !Number.isNaN(durationMin) && durationMin > 0) {
+    const start = new Date(appt.datetime);
+    if (!Number.isNaN(start.getTime())) {
+      endTimeIso = new Date(start.getTime() + durationMin * 60000).toISOString();
+    }
+  }
+
   const { error } = await supabase.from("appointments").upsert({
     id: appt.id,
     organization_id: staff.organization_id,
@@ -97,7 +109,7 @@ serve(async (req) => {
     email: appt.email,
     phone: appt.phone,
     datetime: appt.datetime,
-    end_time: appt.endTime ?? null,
+    end_time: endTimeIso,
     status,
     raw: appt,
     updated_at: new Date().toISOString(),

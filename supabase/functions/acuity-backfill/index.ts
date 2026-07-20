@@ -30,10 +30,12 @@ serve(async (_req) => {
     return json({ error: "Acuity no configurado (faltan secrets)." }, 503);
   }
 
-  // Trae TODAS las citas (incluye pasadas y canceladas). Acuity limita por
-  // `max`; si tuvieras más de 1000, habría que paginar por fechas.
+  // Trae TODAS las citas (incluye pasadas y canceladas). Se usa un `max`
+  // holgado (2200, confirmado que cubre el histórico actual de Kura+); si el
+  // volumen crece más allá, habría que paginar por fechas para evitar
+  // timeouts de la API de Acuity con valores muy altos.
   const res = await fetch(
-    "https://acuityscheduling.com/api/v1/appointments?max=1000&showall=true",
+    "https://acuityscheduling.com/api/v1/appointments?max=2200&showall=true",
     { headers: { Authorization: `Basic ${AUTH}` } },
   );
   if (!res.ok) {
@@ -68,6 +70,18 @@ serve(async (_req) => {
     })
     .map((a) => {
       const owner = byCalendar.get(Number(a.calendarID))!;
+      // Acuity NO devuelve `endTime` como datetime completo, solo "HH:MM"
+      // (p.ej. "12:00"), lo cual no es un timestamp válido. Se calcula a
+      // partir de `datetime` (ISO completo) + `duration` en minutos.
+      let endTimeIso: string | null = null;
+      const dt = a.datetime as string | undefined;
+      const durationMin = Number(a.duration ?? 0);
+      if (dt && !Number.isNaN(durationMin) && durationMin > 0) {
+        const start = new Date(dt);
+        if (!Number.isNaN(start.getTime())) {
+          endTimeIso = new Date(start.getTime() + durationMin * 60000).toISOString();
+        }
+      }
       return {
         id: a.id,
         organization_id: owner.organization_id,
@@ -80,7 +94,7 @@ serve(async (_req) => {
         email: a.email,
         phone: a.phone,
         datetime: a.datetime,
-        end_time: a.endTime ?? null,
+        end_time: endTimeIso,
         status: a.canceled === true ? "canceled" : "scheduled",
         raw: a,
         updated_at: new Date().toISOString(),
