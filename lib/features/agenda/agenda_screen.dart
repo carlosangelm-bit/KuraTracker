@@ -11,7 +11,10 @@ import '../../core/providers/session_provider.dart';
 import '../../core/router/app_shell.dart' show UserMenuButton;
 import '../../models/app_user.dart';
 import '../../models/appointment.dart';
+import '../../models/manual_appointment.dart';
+import '../../models/patient.dart';
 import '../../services/acuity_service.dart';
+import '../../services/data_repository.dart';
 
 /// Agenda de citas (Acuity Scheduling). El clínico ve SUS citas y el admin las
 /// del centro (el aislamiento lo aplica la RLS de la tabla `appointments`).
@@ -44,9 +47,26 @@ class _AgendaScreenState extends ConsumerState<AgendaScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final service = ref.watch(acuityServiceProvider);
     final user = ref.watch(sessionProvider).user;
     final isAdmin = user?.role == AppRole.admin;
+    final repo = ref.watch(dataRepositoryProvider).valueOrNull;
+    final mode = repo?.schedulingModeFor(user?.organizationId) ?? 'none';
+
+    // Modo de agenda por centro (0020): manual (gestión local) / acuity
+    // (integración) / none (sin configurar).
+    if (mode == 'manual') {
+      return _ManualAgenda(
+        isAdmin: isAdmin,
+        organizationId: user?.organizationId,
+        currentStaffId: user?.staffId,
+        currentUserId: user?.id,
+      );
+    }
+    if (mode == 'none') {
+      return _AgendaModeSetup(isAdmin: isAdmin, organizationId: user?.organizationId);
+    }
+
+    final service = ref.watch(acuityServiceProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -1563,6 +1583,650 @@ class _AgendaEmpty extends StatelessWidget {
             const SizedBox(height: 12),
             Text(message, style: TextStyle(color: KuraColors.darkText.withOpacity(0.6))),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+// ===========================================================================
+// AGENDA MANUAL (centros con scheduling_mode = 'manual') — CRUD local
+// ===========================================================================
+
+class _ManualAgenda extends ConsumerStatefulWidget {
+  final bool isAdmin;
+  final String? organizationId;
+  final String? currentStaffId;
+  final String? currentUserId;
+  const _ManualAgenda({
+    required this.isAdmin,
+    required this.organizationId,
+    required this.currentStaffId,
+    required this.currentUserId,
+  });
+
+  @override
+  ConsumerState<_ManualAgenda> createState() => _ManualAgendaState();
+}
+
+class _ManualAgendaState extends ConsumerState<_ManualAgenda> {
+  bool _showHistory = false;
+  String? _kuradorFilter;
+
+  Future<void> _openForm(DataRepository repo, {ManualAppointment? existing}) async {
+    final orgId = widget.organizationId;
+    if (orgId == null) return;
+    final changed = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (_) => Padding(
+        padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+        child: _ManualForm(
+          repo: repo,
+          isAdmin: widget.isAdmin,
+          organizationId: orgId,
+          currentStaffId: widget.currentStaffId,
+          currentUserId: widget.currentUserId,
+          existing: existing,
+        ),
+      ),
+    );
+    if (changed == true && mounted) setState(() {});
+  }
+
+  Future<void> _cancel(DataRepository repo, ManualAppointment a) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (d) => AlertDialog(
+        title: const Text('Cancelar cita'),
+        content: const Text('¿Cancelar esta cita?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(d, false), child: const Text('No')),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: KuraColors.danger),
+            onPressed: () => Navigator.pop(d, true),
+            child: const Text('Cancelar cita'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    await repo.cancelManualAppointment(a.id);
+    if (mounted) setState(() {});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final repo = ref.watch(dataRepositoryProvider).valueOrNull;
+    if (repo == null) {
+      return Scaffold(appBar: _bar(), body: const Center(child: CircularProgressIndicator()));
+    }
+
+    final all = repo
+        .listManualAppointments(
+          organizationId: widget.isAdmin ? widget.organizationId : null,
+          staffId: widget.isAdmin ? null : widget.currentStaffId,
+        )
+        .where((a) => !a.isCanceled)
+        .toList()
+      ..sort((a, b) => a.datetime.compareTo(b.datetime));
+
+    final staffNames = {
+      for (final s in repo.listStaff(organizationId: widget.organizationId)) s.id: s.fullName
+    };
+    String patientName(String? id) =>
+        id == null ? 'Sin paciente' : (repo.getPatient(id)?.fullName ?? 'Paciente');
+
+    final filtered =
+        _kuradorFilter == null ? all : all.where((a) => a.staffId == _kuradorFilter).toList();
+
+    final ids = all.map((a) => a.staffId).whereType<String>().toSet();
+    final kuradorOptions = ids.length < 2
+        ? <MapEntry<String, String>>[]
+        : (ids.map((id) => MapEntry(id, staffNames[id] ?? 'Kurador')).toList()
+          ..sort((a, b) => a.value.toLowerCase().compareTo(b.value.toLowerCase())));
+
+    final today = _dayStart(DateTime.now());
+    final visible = _showHistory
+        ? filtered
+        : filtered.where((a) => !_dayStart(a.datetime).isBefore(today)).toList();
+    final ordered = _showHistory ? visible.reversed.toList() : visible;
+
+    return Scaffold(
+      appBar: _bar(),
+      floatingActionButton: FloatingActionButton.extended(
+        backgroundColor: KuraColors.primary,
+        foregroundColor: Colors.white,
+        icon: const Icon(Icons.event_available),
+        label: const Text('Nueva cita'),
+        onPressed: widget.organizationId == null ? null : () => _openForm(repo),
+      ),
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _ManualSummary(appointments: all),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                FilterChip(
+                  label: const Text('Historial'),
+                  avatar: const Icon(Icons.history, size: 16),
+                  selected: _showHistory,
+                  selectedColor: KuraColors.primary.withOpacity(0.15),
+                  onSelected: (v) => setState(() => _showHistory = v),
+                ),
+                if (kuradorOptions.isNotEmpty) _kuradorDropdown(kuradorOptions),
+              ],
+            ),
+          ),
+          const Divider(height: 1),
+          Expanded(
+            child: ordered.isEmpty
+                ? _AgendaEmpty(
+                    message: _showHistory ? 'Sin citas registradas.' : 'Sin citas próximas')
+                : ListView(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
+                    children: _grouped(repo, ordered, staffNames, patientName),
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  AppBar _bar() => AppBar(
+        title: Text(widget.isAdmin ? 'Agenda del centro' : 'Mi agenda'),
+        actions: const [UserMenuButton()],
+      );
+
+  Widget _kuradorDropdown(List<MapEntry<String, String>> opts) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        decoration: BoxDecoration(
+          border: Border.all(color: KuraColors.primary.withOpacity(0.35)),
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: DropdownButtonHideUnderline(
+          child: DropdownButton<String?>(
+            value: _kuradorFilter,
+            isDense: true,
+            icon: const Icon(Icons.filter_list, size: 18),
+            hint: const Text('Kurador', style: TextStyle(fontSize: 13)),
+            items: [
+              const DropdownMenuItem<String?>(value: null, child: Text('Todos los Kuradores')),
+              ...opts.map((e) => DropdownMenuItem<String?>(value: e.key, child: Text(e.value))),
+            ],
+            onChanged: (v) => setState(() => _kuradorFilter = v),
+          ),
+        ),
+      );
+
+  List<Widget> _grouped(
+    DataRepository repo,
+    List<ManualAppointment> items,
+    Map<String, String> staffNames,
+    String Function(String?) patientName,
+  ) {
+    final groups = <DateTime, List<ManualAppointment>>{};
+    for (final a in items) {
+      groups.putIfAbsent(_dayStart(a.datetime), () => []).add(a);
+    }
+    final out = <Widget>[];
+    groups.forEach((day, appts) {
+      out.add(_DayHeader(day: day, count: appts.length));
+      for (final a in appts) {
+        out.add(_ManualTile(
+          appointment: a,
+          patientName: patientName(a.patientId),
+          kuradorName: widget.isAdmin ? staffNames[a.staffId] : null,
+          onEdit: () => _openForm(repo, existing: a),
+          onCancel: () => _cancel(repo, a),
+        ));
+      }
+    });
+    return out;
+  }
+}
+
+/// Encabezado resumen de la agenda manual (mismo estilo que el de Acuity).
+class _ManualSummary extends StatelessWidget {
+  final List<ManualAppointment> appointments;
+  const _ManualSummary({required this.appointments});
+
+  @override
+  Widget build(BuildContext context) {
+    final now = DateTime.now();
+    final weekStart = _mondayOf(now);
+    final weekEnd = weekStart.add(const Duration(days: 7));
+    final todayCount = appointments.where((a) => _sameDay(a.datetime, now)).length;
+    final weekCount = appointments
+        .where((a) => !a.datetime.isBefore(weekStart) && a.datetime.isBefore(weekEnd))
+        .length;
+    ManualAppointment? next;
+    for (final a in appointments) {
+      if (a.datetime.isAfter(now)) {
+        next = a;
+        break;
+      }
+    }
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [KuraPalette.heroTop, KuraPalette.heroBottom],
+        ),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Hoy · ${_dayLong(_dayStart(now))}',
+                    style: TextStyle(color: Colors.white.withOpacity(0.75), fontSize: 12)),
+                const SizedBox(height: 2),
+                Text(
+                  todayCount == 0 ? 'Sin citas hoy' : '$todayCount ${todayCount == 1 ? 'cita' : 'citas'}',
+                  style: const TextStyle(
+                      color: Colors.white, fontSize: 26, fontWeight: FontWeight.w800),
+                ),
+              ],
+            ),
+          ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (next != null) ...[
+                Text('Próxima',
+                    style: TextStyle(color: Colors.white.withOpacity(0.75), fontSize: 12)),
+                Text('${_dayLabel(next.datetime)} · ${DateFormat('HH:mm').format(next.datetime)}',
+                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+                const SizedBox(height: 6),
+              ],
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.16),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text('Esta semana: $weekCount',
+                    style: const TextStyle(color: Colors.white, fontSize: 12)),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ManualTile extends StatelessWidget {
+  final ManualAppointment appointment;
+  final String patientName;
+  final String? kuradorName;
+  final VoidCallback onEdit;
+  final VoidCallback onCancel;
+  const _ManualTile({
+    required this.appointment,
+    required this.patientName,
+    required this.kuradorName,
+    required this.onEdit,
+    required this.onCancel,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final dt = appointment.datetime;
+    final isPast = dt.isBefore(DateTime.now());
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: onEdit,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          child: Row(
+            children: [
+              Container(
+                width: 56,
+                padding: const EdgeInsets.symmetric(vertical: 6),
+                decoration: BoxDecoration(
+                  color: KuraColors.primary.withOpacity(isPast ? 0.06 : 0.12),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Column(
+                  children: [
+                    Text(
+                      DateFormat('HH:mm').format(dt),
+                      style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        color: isPast ? KuraColors.darkText.withOpacity(0.5) : KuraColors.primary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(patientName, style: const TextStyle(fontWeight: FontWeight.w700)),
+                    const SizedBox(height: 2),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 4,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        if ((appointment.title ?? '').isNotEmpty)
+                          _MiniChip(
+                              icon: Icons.medical_services_outlined, label: appointment.title!),
+                        if (kuradorName != null)
+                          _MiniChip(icon: Icons.person_outline, label: kuradorName!),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              PopupMenuButton<String>(
+                onSelected: (v) {
+                  if (v == 'edit') onEdit();
+                  if (v == 'cancel') onCancel();
+                },
+                itemBuilder: (_) => const [
+                  PopupMenuItem(value: 'edit', child: Text('Editar')),
+                  PopupMenuItem(value: 'cancel', child: Text('Cancelar cita')),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Formulario de alta/edición de cita manual.
+class _ManualForm extends StatefulWidget {
+  final DataRepository repo;
+  final bool isAdmin;
+  final String organizationId;
+  final String? currentStaffId;
+  final String? currentUserId;
+  final ManualAppointment? existing;
+  const _ManualForm({
+    required this.repo,
+    required this.isAdmin,
+    required this.organizationId,
+    required this.currentStaffId,
+    required this.currentUserId,
+    required this.existing,
+  });
+
+  @override
+  State<_ManualForm> createState() => _ManualFormState();
+}
+
+class _ManualFormState extends State<_ManualForm> {
+  late final TextEditingController _titleCtrl =
+      TextEditingController(text: widget.existing?.title ?? '');
+  late final TextEditingController _notesCtrl =
+      TextEditingController(text: widget.existing?.notes ?? '');
+  String? _patientId;
+  String? _staffId;
+  late DateTime _date;
+  late TimeOfDay _time;
+  bool _saving = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    final e = widget.existing;
+    _patientId = e?.patientId;
+    _staffId = e?.staffId ?? (widget.isAdmin ? null : widget.currentStaffId);
+    final dt = e?.datetime ?? _nextHalfHour();
+    _date = DateTime(dt.year, dt.month, dt.day);
+    _time = TimeOfDay(hour: dt.hour, minute: dt.minute);
+  }
+
+  static DateTime _nextHalfHour() {
+    final now = DateTime.now().add(const Duration(minutes: 30));
+    return DateTime(now.year, now.month, now.day, now.hour, now.minute < 30 ? 30 : 0)
+        .add(now.minute < 30 ? Duration.zero : const Duration(hours: 1));
+  }
+
+  @override
+  void dispose() {
+    _titleCtrl.dispose();
+    _notesCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    try {
+      final dt =
+          DateTime(_date.year, _date.month, _date.day, _time.hour, _time.minute);
+      final title = _titleCtrl.text.trim();
+      final notes = _notesCtrl.text.trim();
+      if (widget.existing == null) {
+        await widget.repo.createManualAppointment(
+          organizationId: widget.organizationId,
+          datetime: dt,
+          staffId: _staffId,
+          patientId: _patientId,
+          title: title.isEmpty ? null : title,
+          notes: notes.isEmpty ? null : notes,
+          createdByProfileId: widget.currentUserId,
+        );
+      } else {
+        await widget.repo.updateManualAppointment(
+          widget.existing!.id,
+          staffId: _staffId,
+          clearStaff: _staffId == null,
+          patientId: _patientId,
+          clearPatient: _patientId == null,
+          title: title,
+          datetime: dt,
+          notes: notes,
+        );
+      }
+      if (mounted) Navigator.pop(context, true);
+    } catch (e) {
+      setState(() {
+        _error = 'No se pudo guardar: $e';
+        _saving = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Pacientes seleccionables: el admin ve los del centro; el clínico los suyos.
+    final patients = widget.isAdmin
+        ? widget.repo.listAllPatients()
+        : (widget.currentStaffId != null
+            ? widget.repo.listPatientsForStaff(widget.currentStaffId!)
+            : <Patient>[]);
+    final staff = widget.repo.listStaff(organizationId: widget.organizationId);
+
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(widget.existing == null ? 'Nueva cita' : 'Editar cita',
+                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+              const SizedBox(height: 16),
+              DropdownButtonFormField<String?>(
+                value: _patientId,
+                isExpanded: true,
+                decoration: const InputDecoration(labelText: 'Paciente'),
+                items: [
+                  const DropdownMenuItem<String?>(value: null, child: Text('Sin paciente')),
+                  ...patients.map((p) => DropdownMenuItem<String?>(
+                        value: p.id,
+                        child: Text(p.fullName, overflow: TextOverflow.ellipsis),
+                      )),
+                ],
+                onChanged: (v) => setState(() => _patientId = v),
+              ),
+              const SizedBox(height: 12),
+              if (widget.isAdmin) ...[
+                DropdownButtonFormField<String?>(
+                  value: _staffId,
+                  isExpanded: true,
+                  decoration: const InputDecoration(labelText: 'Kurador'),
+                  items: [
+                    const DropdownMenuItem<String?>(value: null, child: Text('Sin asignar')),
+                    ...staff.map((s) => DropdownMenuItem<String?>(
+                          value: s.id,
+                          child: Text(s.fullName, overflow: TextOverflow.ellipsis),
+                        )),
+                  ],
+                  onChanged: (v) => setState(() => _staffId = v),
+                ),
+                const SizedBox(height: 12),
+              ],
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      icon: const Icon(Icons.calendar_today, size: 16),
+                      label: Text(DateFormat('dd/MM/yyyy').format(_date)),
+                      onPressed: () async {
+                        final d = await showDatePicker(
+                          context: context,
+                          initialDate: _date,
+                          firstDate: DateTime(2020),
+                          lastDate: DateTime(2100),
+                        );
+                        if (d != null) setState(() => _date = d);
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      icon: const Icon(Icons.schedule, size: 16),
+                      label: Text(_time.format(context)),
+                      onPressed: () async {
+                        final t = await showTimePicker(context: context, initialTime: _time);
+                        if (t != null) setState(() => _time = t);
+                      },
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _titleCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Tipo / motivo',
+                  hintText: 'Curación, valoración, seguimiento…',
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _notesCtrl,
+                maxLines: 3,
+                decoration: const InputDecoration(labelText: 'Notas (opcional)'),
+              ),
+              if (_error != null) ...[
+                const SizedBox(height: 12),
+                Text(_error!, style: const TextStyle(color: KuraColors.danger)),
+              ],
+              const SizedBox(height: 16),
+              FilledButton(
+                style: FilledButton.styleFrom(backgroundColor: KuraColors.primary),
+                onPressed: _saving ? null : _submit,
+                child: _saving
+                    ? const SizedBox(
+                        height: 18,
+                        width: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                    : Text(widget.existing == null ? 'Crear cita' : 'Guardar'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Pantalla cuando el centro no tiene modo de agenda configurado. El admin puede
+/// activar la agenda manual; el clínico ve un aviso.
+class _AgendaModeSetup extends ConsumerWidget {
+  final bool isAdmin;
+  final String? organizationId;
+  const _AgendaModeSetup({required this.isAdmin, required this.organizationId});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Agenda'),
+        actions: const [UserMenuButton()],
+      ),
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.calendar_month_outlined,
+                  size: 48, color: KuraColors.darkText.withOpacity(0.25)),
+              const SizedBox(height: 12),
+              const Text('Agenda no configurada',
+                  style: TextStyle(fontWeight: FontWeight.w700)),
+              const SizedBox(height: 6),
+              Text(
+                isAdmin
+                    ? 'Elige cómo gestionar la agenda de este centro.'
+                    : 'El administrador de tu centro aún no ha configurado la agenda.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: KuraColors.darkText.withOpacity(0.6)),
+              ),
+              if (isAdmin && organizationId != null) ...[
+                const SizedBox(height: 20),
+                FilledButton.icon(
+                  style: FilledButton.styleFrom(backgroundColor: KuraColors.primary),
+                  icon: const Icon(Icons.edit_calendar_outlined),
+                  label: const Text('Usar agenda manual'),
+                  onPressed: () async {
+                    final repo = ref.read(dataRepositoryProvider).valueOrNull;
+                    if (repo == null) return;
+                    await repo.setSchedulingMode(organizationId!, 'manual');
+                    // Forzar re-lectura del modo.
+                    ref.invalidate(dataRepositoryProvider);
+                  },
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'La integración con Acuity por centro estará disponible pronto.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 11, color: KuraColors.darkText.withOpacity(0.5)),
+                ),
+              ],
+            ],
+          ),
         ),
       ),
     );
