@@ -134,6 +134,13 @@ class SupabaseDataStore implements DataStore {
     return {'data': data};
   }
 
+  /// Llama a una función RPC de Postgres (SECURITY DEFINER). Usado para
+  /// operaciones que RLS no permite como UPDATE directo pero sí de forma
+  /// acotada/validada dentro de la función (p.ej. set_scheduling_mode).
+  Future<void> callRpc(String name, Map<String, dynamic> params) async {
+    await _client.rpc(name, params: params);
+  }
+
   void _upsertIntoCache(String collection, Map<String, dynamic> row) {
     final list = _cache.putIfAbsent(collection, () => []);
     final idx = list.indexWhere((e) => e['id'] == row['id']);
