@@ -11,6 +11,13 @@ class Appointment {
   final String? phone;
   final DateTime? datetime; // en hora local del dispositivo
   final String status; // scheduled | rescheduled | canceled
+  final String? patientId; // paciente de KuraTracker vinculado (0018), si existe
+  // Objeto COMPLETO de Acuity tal cual (columna appointments.raw). Contiene
+  // todos los campos que Acuity devuelve (notas, formularios de admisión,
+  // ubicación, pago, etiquetas, metadatos...), aunque solo algunos tengan
+  // columna propia. La pantalla de detalle lo usa para mostrar "todos los
+  // campos".
+  final Map<String, dynamic>? raw;
 
   const Appointment({
     required this.id,
@@ -22,6 +29,8 @@ class Appointment {
     required this.phone,
     required this.datetime,
     required this.status,
+    this.patientId,
+    this.raw,
   });
 
   String get patientName => '$firstName $lastName'.trim();
@@ -39,6 +48,8 @@ class Appointment {
       phone: m['phone'] as String?,
       datetime: dt == null ? null : DateTime.tryParse(dt.toString())?.toLocal(),
       status: (m['status'] ?? 'scheduled') as String,
+      patientId: m['patient_id'] as String?,
+      raw: m['raw'] is Map ? Map<String, dynamic>.from(m['raw'] as Map) : null,
     );
   }
 }

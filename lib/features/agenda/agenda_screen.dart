@@ -1,4 +1,7 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
@@ -797,7 +800,10 @@ class _AppointmentTile extends StatelessWidget {
     final isPast = dt.isBefore(DateTime.now());
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
-      child: Padding(
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () => _showAppointmentDetail(context, appointment),
+        child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         child: Row(
           children: [
@@ -850,18 +856,22 @@ class _AppointmentTile extends StatelessWidget {
             ),
             PopupMenuButton<String>(
               onSelected: (v) async {
-                if (v == 'cancel') {
+                if (v == 'detail') {
+                  _showAppointmentDetail(context, appointment);
+                } else if (v == 'cancel') {
                   await _confirmCancel(context, service, appointment);
                 } else if (v == 'reschedule') {
                   await _openScheduleSheet(context, service, rescheduleId: appointment.id);
                 }
               },
               itemBuilder: (_) => const [
+                PopupMenuItem(value: 'detail', child: Text('Ver detalle')),
                 PopupMenuItem(value: 'reschedule', child: Text('Reagendar')),
                 PopupMenuItem(value: 'cancel', child: Text('Cancelar cita')),
               ],
             ),
           ],
+        ),
         ),
       ),
     );
@@ -913,6 +923,14 @@ void _showAppointmentActions(
           ),
           const Divider(height: 1),
           ListTile(
+            leading: const Icon(Icons.info_outline),
+            title: const Text('Ver detalle'),
+            onTap: () {
+              Navigator.pop(sheetCtx);
+              _showAppointmentDetail(context, a);
+            },
+          ),
+          ListTile(
             leading: const Icon(Icons.schedule),
             title: const Text('Reagendar'),
             onTap: () {
@@ -932,6 +950,207 @@ void _showAppointmentActions(
       ),
     ),
   );
+}
+
+// ---------------------------------------------------------------------------
+// Detalle de cita: TODOS los campos de Acuity (columna appointments.raw)
+// ---------------------------------------------------------------------------
+
+void _showAppointmentDetail(BuildContext context, Appointment a) {
+  showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    showDragHandle: true,
+    builder: (_) => _AppointmentDetailSheet(appointment: a),
+  );
+}
+
+class _AppointmentDetailSheet extends StatelessWidget {
+  final Appointment appointment;
+  const _AppointmentDetailSheet({required this.appointment});
+
+  @override
+  Widget build(BuildContext context) {
+    final a = appointment;
+    final raw = a.raw;
+    // Lector tolerante: preferir raw (objeto completo de Acuity) y caer al
+    // modelo si falta.
+    String? r(String key) {
+      final v = raw?[key];
+      if (v == null) return null;
+      final s = v.toString().trim();
+      return s.isEmpty ? null : s;
+    }
+
+    final dt = a.datetime;
+    final facts = <MapEntry<String, String>>[
+      MapEntry('Paciente', a.patientName.isEmpty ? '—' : a.patientName),
+      if ((r('phone') ?? a.phone) != null) MapEntry('Teléfono', r('phone') ?? a.phone!),
+      if ((r('email') ?? a.email) != null) MapEntry('Email', r('email') ?? a.email!),
+      if (dt != null) MapEntry('Fecha y hora', DateFormat('dd/MM/yyyy · HH:mm').format(dt)),
+      if (r('duration') != null) MapEntry('Duración', '${r('duration')} min'),
+      if ((a.appointmentType ?? r('type')) != null)
+        MapEntry('Tipo', a.appointmentType ?? r('type')!),
+      if (r('calendar') != null) MapEntry('Calendario (Kurador)', r('calendar')!),
+      if (r('location') != null) MapEntry('Ubicación', r('location')!),
+      MapEntry('Estado', a.status),
+      if (r('price') != null) MapEntry('Precio', r('price')!),
+      if (r('paid') != null) MapEntry('Pagado', _yesNo(raw?['paid'])),
+      if (r('amountPaid') != null) MapEntry('Monto pagado', r('amountPaid')!),
+      if (r('notes') != null) MapEntry('Notas', r('notes')!),
+    ];
+
+    final forms = (raw?['forms'] as List?) ?? const [];
+
+    return SafeArea(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.sizeOf(context).height * 0.85,
+        ),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                a.patientName.isEmpty ? 'Detalle de la cita' : a.patientName,
+                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+              ),
+              const SizedBox(height: 12),
+              _DetailSection(title: 'Datos de la cita', rows: facts),
+              if (forms.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                ..._formSections(forms),
+              ],
+              const SizedBox(height: 8),
+              // Garantía de "todos los campos": el objeto crudo íntegro.
+              ExpansionTile(
+                tilePadding: EdgeInsets.zero,
+                childrenPadding: EdgeInsets.zero,
+                title: const Text('Todos los campos (crudo)',
+                    style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
+                children: [
+                  if (raw == null)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      child: Text(
+                        'Esta cita no tiene datos crudos guardados '
+                        '(sincronizada antes de habilitar el guardado completo).',
+                        style: TextStyle(color: KuraColors.darkText.withOpacity(0.6)),
+                      ),
+                    )
+                  else
+                    _RawJsonBox(raw: raw),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  List<Widget> _formSections(List<dynamic> forms) {
+    final sections = <Widget>[];
+    for (final f in forms) {
+      if (f is! Map) continue;
+      final name = (f['name'] ?? 'Formulario').toString();
+      final values = (f['values'] as List?) ?? const [];
+      final rows = <MapEntry<String, String>>[];
+      for (final v in values) {
+        if (v is! Map) continue;
+        final label = (v['name'] ?? '').toString();
+        final value = (v['value'] ?? '').toString().trim();
+        if (label.isEmpty) continue;
+        rows.add(MapEntry(label, value.isEmpty ? '—' : value));
+      }
+      if (rows.isNotEmpty) sections.add(_DetailSection(title: name, rows: rows));
+    }
+    return sections;
+  }
+
+  static String _yesNo(dynamic v) => v == true ? 'Sí' : 'No';
+}
+
+class _DetailSection extends StatelessWidget {
+  final String title;
+  final List<MapEntry<String, String>> rows;
+  const _DetailSection({required this.title, required this.rows});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(top: 8, bottom: 4),
+          child: Text(title,
+              style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
+        ),
+        ...rows.map(
+          (e) => Padding(
+            padding: const EdgeInsets.symmetric(vertical: 3),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SizedBox(
+                  width: 130,
+                  child: Text(e.key,
+                      style: TextStyle(fontSize: 12, color: KuraColors.darkText.withOpacity(0.6))),
+                ),
+                Expanded(child: SelectableText(e.value, style: const TextStyle(fontSize: 13))),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _RawJsonBox extends StatelessWidget {
+  final Map<String, dynamic> raw;
+  const _RawJsonBox({required this.raw});
+
+  @override
+  Widget build(BuildContext context) {
+    String pretty;
+    try {
+      pretty = const JsonEncoder.withIndent('  ').convert(raw);
+    } catch (_) {
+      pretty = raw.toString();
+    }
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: KuraColors.chipBg,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton.icon(
+              icon: const Icon(Icons.copy, size: 16),
+              label: const Text('Copiar'),
+              onPressed: () {
+                Clipboard.setData(ClipboardData(text: pretty));
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Copiado')),
+                );
+              },
+            ),
+          ),
+          SelectableText(
+            pretty,
+            style: const TextStyle(fontSize: 11, fontFamily: 'monospace'),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 // ---------------------------------------------------------------------------
