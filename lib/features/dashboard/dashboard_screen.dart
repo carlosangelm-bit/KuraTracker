@@ -626,18 +626,21 @@ class _HeroCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = BrandTokens.of(context);
-    final width = MediaQuery.of(context).size.width;
-    // En móvil (angosto) se OCULTA la ilustración: reservaba tanto ancho a la
-    // derecha que apretaba los 3 indicadores (se cortaban las etiquetas y
-    // quedaban desalineados). Sin arte, los KPIs ocupan todo el ancho en
-    // tercios iguales. En pantallas anchas el arte se mantiene, proporcional.
-    final showArt = width >= 600;
-    final art = showArt
-        ? ((width - 32) * 0.34).clamp(180.0, 320.0).toDouble()
-        : 0.0;
-    // Stack sin recorte: la ilustración 3D DESBORDA el recuadro morado,
-    // sobresaliendo por arriba y un poco a la derecha.
-    return Stack(
+    // Se usa el ancho REAL disponible para el hero (constraints), NO el de la
+    // pantalla: en un layout multi-columna el hero puede ser angosto aunque la
+    // pantalla sea ancha. Usar el ancho de pantalla reservaba espacio para la
+    // ilustración y aplastaba el texto -> overflow / pantalla en blanco.
+    // En anchos < 600 se oculta la ilustración (móvil) y los KPIs ocupan todo
+    // el ancho en tercios iguales; en anchos grandes el arte se mantiene.
+    return LayoutBuilder(builder: (context, constraints) {
+      final width = constraints.maxWidth;
+      final showArt = width.isFinite && width >= 600;
+      final art = showArt
+          ? ((width - 32) * 0.34).clamp(180.0, 320.0).toDouble()
+          : 0.0;
+      // Stack sin recorte: la ilustración 3D DESBORDA el recuadro morado,
+      // sobresaliendo por arriba y un poco a la derecha.
+      return Stack(
       clipBehavior: Clip.none,
       children: [
         Container(
@@ -719,9 +722,13 @@ class _HeroCard extends StatelessWidget {
                           children: [
                             Icon(Icons.priority_high_rounded, size: 18, color: t.brandPrimary),
                             const SizedBox(width: AppSpacing.sm),
-                            Text('Requieren atención',
-                                style: TextStyle(
-                                    color: t.brandPrimary, fontWeight: AppType.bold)),
+                            Flexible(
+                              child: Text('Requieren atención',
+                                  overflow: TextOverflow.ellipsis,
+                                  softWrap: false,
+                                  style: TextStyle(
+                                      color: t.brandPrimary, fontWeight: AppType.bold)),
+                            ),
                             const SizedBox(width: AppSpacing.xs),
                             Icon(Icons.chevron_right, size: 18, color: t.brandPrimary),
                           ],
@@ -734,18 +741,19 @@ class _HeroCard extends StatelessWidget {
             ),
           ),
         ),
-        if (showArt)
-          Positioned(
-            right: -art * 0.06,
-            top: -art * 0.16,
-            child: SizedBox(
-              width: art,
-              height: art,
-              child: _HeroArt(fallbackColor: t.onBrand),
+          if (showArt)
+            Positioned(
+              right: -art * 0.06,
+              top: -art * 0.16,
+              child: SizedBox(
+                width: art,
+                height: art,
+                child: _HeroArt(fallbackColor: t.onBrand),
+              ),
             ),
-          ),
-      ],
-    );
+        ],
+      );
+    });
   }
 }
 
@@ -1626,8 +1634,11 @@ class _LegendDot extends StatelessWidget {
           decoration: BoxDecoration(color: color, shape: BoxShape.circle),
         ),
         const SizedBox(width: 6),
-        Text('$label ($count)',
-            style: TextStyle(fontSize: 12, color: t.textSecondary)),
+        Flexible(
+          child: Text('$label ($count)',
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: 12, color: t.textSecondary)),
+        ),
       ],
     );
   }
