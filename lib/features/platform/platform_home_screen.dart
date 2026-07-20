@@ -5,7 +5,7 @@ import '../../core/theme/kura_theme.dart';
 import '../../core/providers/session_provider.dart';
 import '../../models/organization.dart';
 import '../../services/data_repository.dart';
-import '../admin/admin_home_screen.dart' show StaffTab, SitesTab, NoteCatalogTab;
+import '../admin/admin_home_screen.dart' show UsersTab, StaffTab, SitesTab, NoteCatalogTab;
 
 /// Area de "Plataforma": pantalla exclusiva del rol `master`
 /// (administrador de plataforma, ver 0012_master_role.sql). A diferencia
@@ -37,7 +37,7 @@ class _PlatformHomeScreenState extends ConsumerState<PlatformHomeScreen>
   // DefaultTabController: TabBar en AppBar.bottom queda como hermano,
   // no ancestro/descendiente, de un DefaultTabController que solo
   // envuelve el body).
-  late final TabController _tabController = TabController(length: 4, vsync: this)
+  late final TabController _tabController = TabController(length: 5, vsync: this)
     ..addListener(() {
       if (_tabController.indexIsChanging) return;
       if (_tabController.index != _tab) {
@@ -82,6 +82,7 @@ class _PlatformHomeScreenState extends ConsumerState<PlatformHomeScreen>
           controller: _tabController,
           tabs: const [
             Tab(text: 'Organizaciones'),
+            Tab(text: 'Usuarios'),
             Tab(text: 'Personal sanitario'),
             Tab(text: 'Sitios'),
             Tab(text: 'Catálogo'),
@@ -132,8 +133,13 @@ class _PlatformHomeScreenState extends ConsumerState<PlatformHomeScreen>
               const Divider(height: 1),
               Expanded(
                 child: switch (_tab) {
-                  1 => StaffTab(repo: repo, organizationId: _selectedOrgId),
-                  2 => SitesTab(repo: repo, organizationId: _selectedOrgId),
+                  1 => UsersTab(
+                      repo: repo,
+                      organizationId: _selectedOrgId,
+                      currentUserId: ref.watch(sessionProvider).user?.id,
+                    ),
+                  2 => StaffTab(repo: repo, organizationId: _selectedOrgId),
+                  3 => SitesTab(repo: repo, organizationId: _selectedOrgId),
                   _ => NoteCatalogTab(repo: repo, organizationId: _selectedOrgId),
                 },
               ),

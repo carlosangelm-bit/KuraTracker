@@ -119,6 +119,21 @@ class SupabaseDataStore implements DataStore {
     return row;
   }
 
+  /// Invoca una Edge Function de Supabase. El cliente adjunta automaticamente
+  /// el JWT del usuario autenticado (la funcion aplica su propia autorizacion
+  /// del lado servidor, con service role). Se usa para operaciones que NO
+  /// pueden hacerse solo con la anon key + RLS, como crear un usuario con
+  /// login (Auth admin.createUser requiere service role). Lanza
+  /// [FunctionException] si la funcion responde >= 400 (el llamador puede leer
+  /// e.details para el mensaje de error).
+  Future<Map<String, dynamic>> invokeFunction(
+      String name, Map<String, dynamic> body) async {
+    final res = await _client.functions.invoke(name, body: body);
+    final data = res.data;
+    if (data is Map) return data.cast<String, dynamic>();
+    return {'data': data};
+  }
+
   void _upsertIntoCache(String collection, Map<String, dynamic> row) {
     final list = _cache.putIfAbsent(collection, () => []);
     final idx = list.indexWhere((e) => e['id'] == row['id']);
