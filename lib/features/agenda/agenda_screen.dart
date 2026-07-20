@@ -2180,6 +2180,7 @@ class _AgendaModeSetup extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final service = ref.watch(acuityServiceProvider);
     return Scaffold(
       appBar: AppBar(
         title: const Text('Agenda'),
@@ -2214,17 +2215,204 @@ class _AgendaModeSetup extends ConsumerWidget {
                     final repo = ref.read(dataRepositoryProvider).valueOrNull;
                     if (repo == null) return;
                     await repo.setSchedulingMode(organizationId!, 'manual');
-                    // Forzar re-lectura del modo.
                     ref.invalidate(dataRepositoryProvider);
                   },
                 ),
-                const SizedBox(height: 8),
-                Text(
-                  'La integración con Acuity por centro estará disponible pronto.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 11, color: KuraColors.darkText.withOpacity(0.5)),
+                if (service.isAvailable) ...[
+                  const SizedBox(height: 10),
+                  OutlinedButton.icon(
+                    icon: const Icon(Icons.link),
+                    label: const Text('Conectar Acuity'),
+                    onPressed: () async {
+                      final ok = await showModalBottomSheet<bool>(
+                        context: context,
+                        isScrollControlled: true,
+                        showDragHandle: true,
+                        builder: (_) => Padding(
+                          padding: EdgeInsets.only(
+                              bottom: MediaQuery.of(context).viewInsets.bottom),
+                          child: _AcuityConfigSheet(organizationId: organizationId!),
+                        ),
+                      );
+                      if (ok == true) ref.invalidate(dataRepositoryProvider);
+                    },
+                  ),
+                ],
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Configuración de Acuity por centro (Fase 2b): el admin ingresa User ID + API
+/// Key; se guarda por RPC, se prueba la conexión, se registran los webhooks
+/// (?org=), se mapean calendarios y se activa scheduling_mode = 'acuity'.
+class _AcuityConfigSheet extends ConsumerStatefulWidget {
+  final String organizationId;
+  const _AcuityConfigSheet({required this.organizationId});
+
+  @override
+  ConsumerState<_AcuityConfigSheet> createState() => _AcuityConfigSheetState();
+}
+
+class _AcuityConfigSheetState extends ConsumerState<_AcuityConfigSheet> {
+  final _userIdCtrl = TextEditingController();
+  final _apiKeyCtrl = TextEditingController();
+  bool _loadingStatus = true;
+  AcuityConfigStatus? _status;
+  bool _busy = false;
+  String? _progress;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadStatus();
+  }
+
+  Future<void> _loadStatus() async {
+    final repo = ref.read(dataRepositoryProvider).valueOrNull;
+    if (repo != null) {
+      try {
+        _status = await repo.getOrgAcuityStatus(widget.organizationId);
+        if (_status != null) _userIdCtrl.text = _status!.userId;
+      } catch (_) {}
+    }
+    if (mounted) setState(() => _loadingStatus = false);
+  }
+
+  @override
+  void dispose() {
+    _userIdCtrl.dispose();
+    _apiKeyCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _saveAndConnect() async {
+    final repo = ref.read(dataRepositoryProvider).valueOrNull;
+    final service = ref.read(acuityServiceProvider);
+    if (repo == null) return;
+    final userId = _userIdCtrl.text.trim();
+    final apiKey = _apiKeyCtrl.text.trim();
+    if (userId.isEmpty || apiKey.isEmpty) {
+      setState(() => _error = 'User ID y API Key son obligatorios.');
+      return;
+    }
+    setState(() {
+      _busy = true;
+      _error = null;
+      _progress = 'Guardando credenciales…';
+    });
+    try {
+      await repo.setOrgAcuityCredentials(widget.organizationId, userId, apiKey);
+      setState(() => _progress = 'Probando conexión con Acuity…');
+      final err = await service.testConnection();
+      if (err != null) {
+        setState(() {
+          _error = 'No se pudo conectar con Acuity. Revisa el User ID / API Key.\n$err';
+          _busy = false;
+          _progress = null;
+        });
+        return;
+      }
+      setState(() => _progress = 'Registrando webhooks…');
+      await service.registerWebhooks(widget.organizationId);
+      await repo.markAcuityWebhooks(widget.organizationId, true);
+      setState(() => _progress = 'Mapeando calendarios…');
+      try {
+        await service.syncCalendars(widget.organizationId);
+      } catch (_) {
+        // el mapeo puede completarse luego; no bloquea la activación
+      }
+      setState(() => _progress = 'Activando agenda Acuity…');
+      await repo.setSchedulingMode(widget.organizationId, 'acuity');
+      if (mounted) Navigator.pop(context, true);
+    } catch (e) {
+      setState(() {
+        _error = e.toString().replaceFirst('Exception: ', '');
+        _busy = false;
+        _progress = null;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Text('Conectar Acuity Scheduling',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+              const SizedBox(height: 4),
+              Text(
+                'Ingresa el User ID y la API Key de la cuenta de Acuity de este '
+                'centro (Acuity → Integrations → API). La key se guarda de forma '
+                'segura en el servidor y nunca se muestra completa.',
+                style: TextStyle(fontSize: 12, color: KuraColors.darkText.withOpacity(0.6)),
+              ),
+              const SizedBox(height: 12),
+              if (_loadingStatus)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 8),
+                  child: LinearProgressIndicator(),
+                )
+              else if (_status != null)
+                Container(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: KuraColors.chipBg,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    'Ya conectado · User ID ${_status!.userId} · key ••••${_status!.keyLast4}'
+                    ' · webhooks ${_status!.webhooksRegistered ? '✓' : '✗'}\n'
+                    'Vuelve a ingresar la API Key para reconfigurar.',
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                ),
+              TextField(
+                controller: _userIdCtrl,
+                enabled: !_busy,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(labelText: 'User ID'),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _apiKeyCtrl,
+                enabled: !_busy,
+                obscureText: true,
+                decoration: const InputDecoration(labelText: 'API Key'),
+              ),
+              if (_progress != null) ...[
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    const SizedBox(
+                      width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+                    const SizedBox(width: 8),
+                    Expanded(child: Text(_progress!, style: const TextStyle(fontSize: 12))),
+                  ],
                 ),
               ],
+              if (_error != null) ...[
+                const SizedBox(height: 12),
+                Text(_error!, style: const TextStyle(color: KuraColors.danger, fontSize: 12)),
+              ],
+              const SizedBox(height: 16),
+              FilledButton(
+                style: FilledButton.styleFrom(backgroundColor: KuraColors.primary),
+                onPressed: _busy ? null : _saveAndConnect,
+                child: Text(_busy ? 'Conectando…' : 'Guardar y conectar'),
+              ),
             ],
           ),
         ),
