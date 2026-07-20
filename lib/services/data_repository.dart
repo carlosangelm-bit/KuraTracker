@@ -261,6 +261,30 @@ class DataRepository {
     return org.isEmpty ? 'none' : org.first.schedulingMode;
   }
 
+  /// Fija el branding del centro (color principal + logo) para los reportes.
+  /// En Supabase usa el RPC set_org_branding (RLS de organizations es
+  /// master-only); en demo actualiza la fila directo.
+  Future<void> setOrgBranding(
+    String organizationId, {
+    String? primaryColor,
+    String? logoPath,
+  }) async {
+    final store = _store;
+    if (store is SupabaseDataStore) {
+      await store.callRpc('set_org_branding', {
+        'p_org': organizationId,
+        'p_primary_color': primaryColor,
+        'p_logo_path': logoPath,
+      });
+      await store.refreshCollection(Collections.organizations);
+    } else {
+      await _store.updateRow(Collections.organizations, organizationId, {
+        'brand_primary_color': primaryColor,
+        'brand_logo_path': logoPath,
+      });
+    }
+  }
+
   Future<void> setSchedulingMode(String organizationId, String mode) async {
     final store = _store;
     if (store is SupabaseDataStore) {

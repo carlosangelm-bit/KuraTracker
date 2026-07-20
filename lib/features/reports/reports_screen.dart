@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import 'package:pdf/pdf.dart' show PdfColor;
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 
@@ -33,6 +34,13 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
   bool _includeBackground = true;
   String _evidenceMode = 'primera_ultima'; // 'todas' | 'primera_ultima'
   bool _generating = false;
+  final _recommendationsCtrl = TextEditingController();
+
+  @override
+  void dispose() {
+    _recommendationsCtrl.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -151,6 +159,21 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                       title: const Text('Primera y última'),
                       onChanged: (v) => setState(() => _evidenceMode = v!),
                     ),
+                    const SizedBox(height: 8),
+                    Text('Recomendaciones para el paciente',
+                        style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                            color: KuraColors.darkText.withOpacity(0.8))),
+                    const SizedBox(height: 6),
+                    TextField(
+                      controller: _recommendationsCtrl,
+                      maxLines: 4,
+                      decoration: const InputDecoration(
+                        hintText:
+                            'Indicaciones/cuidados que el profesional deja al paciente (aparecen en el PDF).',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
                     const SizedBox(height: 16),
                     FilledButton.icon(
                       icon: _generating
@@ -205,11 +228,42 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     }
   }
 
+  PdfColor _brandColor(String? hex) {
+    if (hex == null || hex.trim().isEmpty) return const PdfColor.fromInt(0xFF7C3AED);
+    var h = hex.trim().replaceAll('#', '');
+    if (h.length == 6) h = 'FF$h';
+    final v = int.tryParse(h, radix: 16);
+    return v == null ? const PdfColor.fromInt(0xFF7C3AED) : PdfColor.fromInt(v);
+  }
+
+  Future<pw.ImageProvider?> _loadLogo(String? logoPath) async {
+    if (logoPath == null || logoPath.isEmpty) return null;
+    try {
+      final url = await PhotoUploadService.resolveOrgLogoUrl(logoPath);
+      if (url.startsWith('data:')) {
+        return pw.MemoryImage(base64Decode(url.substring(url.indexOf(',') + 1)));
+      }
+      return await networkImage(url);
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<void> _generatePdf(DataRepository repo) async {
     setState(() => _generating = true);
     try {
       final doc = pw.Document();
       final generatedAt = _fmtDate.format(DateTime.now());
+
+      // Branding del centro del usuario (logo + color) para el encabezado.
+      final userOrgId = ref.read(sessionProvider).user?.organizationId;
+      final orgs = userOrgId == null
+          ? const []
+          : repo.listOrganizations().where((o) => o.id == userOrgId).toList();
+      final org = orgs.isEmpty ? null : orgs.first;
+      final brandColor = _brandColor(org?.brandPrimaryColor);
+      final brandLogo = await _loadLogo(org?.brandLogoPath);
+      final centerName = org?.name ?? 'KuraTracker';
 
       for (final patientId in _selectedPatientIds) {
         final patient = repo.getPatient(patientId);
@@ -252,12 +306,40 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
         doc.addPage(
           pw.MultiPage(
             build: (context) => [
-              pw.Header(text: 'KuraTracker — Historia clínica'),
+              pw.Container(
+                padding: const pw.EdgeInsets.all(10),
+                margin: const pw.EdgeInsets.only(bottom: 10),
+                decoration: pw.BoxDecoration(
+                  border: pw.Border(left: pw.BorderSide(color: brandColor, width: 4)),
+                ),
+                child: pw.Row(
+                  crossAxisAlignment: pw.CrossAxisAlignment.center,
+                  children: [
+                    if (brandLogo != null) ...[
+                      pw.Image(brandLogo, height: 40),
+                      pw.SizedBox(width: 10),
+                    ],
+                    pw.Expanded(
+                      child: pw.Column(
+                        crossAxisAlignment: pw.CrossAxisAlignment.start,
+                        children: [
+                          pw.Text(centerName,
+                              style: pw.TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: pw.FontWeight.bold,
+                                  color: brandColor)),
+                          pw.Text('Reporte clínico de herida · $generatedAt',
+                              style: const pw.TextStyle(fontSize: 9)),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
               pw.Text(patient.fullName,
                   style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold)),
               pw.Text('Folio: ${patient.folio}'),
               pw.Text('Edad: ${patient.age ?? '-'} · Sexo: ${patient.sex ?? '-'}'),
-              pw.Text('Generado: $generatedAt', style: const pw.TextStyle(fontSize: 9)),
               if (_includeBackground &&
                   (patient.backgroundNotes ?? '').isNotEmpty) ...[
                 pw.SizedBox(height: 12),
@@ -341,6 +423,13 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                         ],
                       ),
                     )),
+              ],
+              if (_recommendationsCtrl.text.trim().isNotEmpty) ...[
+                pw.SizedBox(height: 16),
+                pw.Text('Recomendaciones para el paciente',
+                    style: pw.TextStyle(fontWeight: pw.FontWeight.bold, color: brandColor)),
+                pw.SizedBox(height: 4),
+                pw.Text(_recommendationsCtrl.text.trim()),
               ],
               pw.SizedBox(height: 20),
               pw.Text(

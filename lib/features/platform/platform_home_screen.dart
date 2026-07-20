@@ -7,7 +7,8 @@ import '../../core/router/app_shell.dart' show UserMenuButton;
 import '../../core/widgets/kura_primary_fab.dart';
 import '../../models/organization.dart';
 import '../../services/data_repository.dart';
-import '../admin/admin_home_screen.dart' show UsersTab, StaffTab, SitesTab, NoteCatalogTab;
+import '../admin/admin_home_screen.dart'
+    show UsersTab, StaffTab, SitesTab, NoteCatalogTab, BrandingTab;
 
 /// Area de "Plataforma": pantalla exclusiva del rol `master`
 /// (administrador de plataforma, ver 0012_master_role.sql). A diferencia
@@ -39,7 +40,7 @@ class _PlatformHomeScreenState extends ConsumerState<PlatformHomeScreen>
   // DefaultTabController: TabBar en AppBar.bottom queda como hermano,
   // no ancestro/descendiente, de un DefaultTabController que solo
   // envuelve el body).
-  late final TabController _tabController = TabController(length: 5, vsync: this)
+  late final TabController _tabController = TabController(length: 6, vsync: this)
     ..addListener(() {
       if (_tabController.indexIsChanging) return;
       if (_tabController.index != _tab) {
@@ -89,6 +90,7 @@ class _PlatformHomeScreenState extends ConsumerState<PlatformHomeScreen>
             Tab(text: 'Personal sanitario'),
             Tab(text: 'Sitios'),
             Tab(text: 'Catálogo'),
+            Tab(text: 'Marca'),
           ],
           onTap: (i) => setState(() => _tab = i),
         ),
@@ -143,7 +145,8 @@ class _PlatformHomeScreenState extends ConsumerState<PlatformHomeScreen>
                     ),
                   2 => StaffTab(repo: repo, organizationId: _selectedOrgId),
                   3 => SitesTab(repo: repo, organizationId: _selectedOrgId),
-                  _ => NoteCatalogTab(repo: repo, organizationId: _selectedOrgId),
+                  4 => NoteCatalogTab(repo: repo, organizationId: _selectedOrgId),
+                  _ => BrandingTab(repo: repo, organizationId: _selectedOrgId),
                 },
               ),
             ],
