@@ -14,7 +14,7 @@ import '../../models/app_user.dart';
 import '../../models/consultation.dart';
 import '../../engine/models/kura_engine_enums.dart';
 import '../../models/patient.dart';
-import '../../models/treatment_plan.dart' show WoundPhoto;
+import '../../models/treatment_plan.dart' show WoundPhoto, TreatmentPlan;
 import '../../services/data_repository.dart';
 import '../../services/photo_upload_service.dart';
 
@@ -213,6 +213,17 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     return [sorted.first, sorted.last];
   }
 
+  /// Plan de tratamiento más reciente para una herida (recorre las consultas de
+  /// más nueva a más antigua hasta encontrar uno). null si no hay.
+  TreatmentPlan? _latestPlan(
+      DataRepository repo, List<Consultation> consultations, String woundId) {
+    for (final c in consultations) {
+      final p = repo.getTreatmentPlanForConsultation(c.id, woundId);
+      if (p != null) return p;
+    }
+    return null;
+  }
+
   /// Carga los bytes de una foto (Supabase Storage vía signed URL, o data URL en
   /// demo) como imagen embebible en el PDF. Devuelve null si falla.
   Future<pw.ImageProvider?> _loadPhoto(String storagePath) async {
@@ -351,30 +362,99 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                   style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
               if (wounds.isEmpty) pw.Text('Sin heridas registradas.'),
               ...wounds.map((w) {
-                final measurements = repo.listMeasurementsForWound(w.id);
+                final measurements = repo.listMeasurementsForWound(w.id); // asc por fecha
                 final photos = photosByWound[w.id];
+                final last = measurements.isNotEmpty ? measurements.last : null;
+                final first = measurements.isNotEmpty ? measurements.first : null;
+                final plan = _latestPlan(repo, consultations, w.id);
+
+                // Avance: % de reducción de área entre la primera y la última.
+                String? progreso;
+                if (measurements.length >= 2 && first!.areaCm2 > 0) {
+                  final diff = first.areaCm2 - last!.areaCm2;
+                  final pct = (diff / first.areaCm2) * 100;
+                  final verbo = pct >= 0 ? 'reducción' : 'aumento';
+                  progreso =
+                      'El área pasó de ${first.areaCm2.toStringAsFixed(1)} cm² '
+                      '(${_fmtDate.format(first.measuredAt)}) a '
+                      '${last.areaCm2.toStringAsFixed(1)} cm² '
+                      '(${_fmtDate.format(last.measuredAt)}): '
+                      '$verbo del ${pct.abs().toStringAsFixed(0)}%.';
+                }
+
+                // Composición del tejido (última medición), si se registró.
+                final comp = <String>[];
+                if (last != null && last.bedCompositionSum > 0) {
+                  if (last.granulationPct > 0) comp.add('granulación ${last.granulationPct.toStringAsFixed(0)}%');
+                  if (last.sloughPct > 0) comp.add('esfacelo ${last.sloughPct.toStringAsFixed(0)}%');
+                  if (last.necrosisPct > 0) comp.add('necrosis ${last.necrosisPct.toStringAsFixed(0)}%');
+                  if (last.epithelializationPct > 0) comp.add('epitelización ${last.epithelializationPct.toStringAsFixed(0)}%');
+                }
+
+                pw.Widget label(String t) =>
+                    pw.Text(t, style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 10, color: brandColor));
+
                 return pw.Container(
-                  margin: const pw.EdgeInsets.only(top: 8, bottom: 8),
-                  padding: const pw.EdgeInsets.all(8),
-                  decoration: pw.BoxDecoration(border: pw.Border.all(width: 0.5)),
+                  margin: const pw.EdgeInsets.only(top: 10, bottom: 6),
+                  padding: const pw.EdgeInsets.all(10),
+                  decoration: pw.BoxDecoration(
+                    border: pw.Border.all(width: 0.5),
+                    borderRadius: pw.BorderRadius.circular(4),
+                  ),
                   child: pw.Column(
                     crossAxisAlignment: pw.CrossAxisAlignment.start,
                     children: [
+                      // Diagnóstico
                       pw.Text('${w.etiology.label}${w.subtype != null ? ' — ${w.subtype}' : ''}',
-                          style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
-                      pw.Text('Localización: ${w.bodyLocationPrimary}'),
-                      if (measurements.isNotEmpty) ...[
-                        pw.SizedBox(height: 4),
-                        pw.Text('Mediciones (${measurements.length}):',
+                          style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 12)),
+                      pw.Text('Localización: ${w.bodyLocationPrimary}',
+                          style: const pw.TextStyle(fontSize: 9)),
+                      if (w.wuwhsGrade != null)
+                        pw.Text('Grado de severidad (WUWHS): ${w.wuwhsGrade!.name.toUpperCase()}',
                             style: const pw.TextStyle(fontSize: 9)),
-                        ...measurements.map((m) => pw.Text(
-                              '· ${_fmtDate.format(m.measuredAt)} — ${m.areaCm2.toStringAsFixed(1)} cm²',
+
+                      // Condición actual
+                      pw.SizedBox(height: 6),
+                      label('Condición actual'),
+                      if (last != null)
+                        pw.Text(
+                          'Tamaño: ${last.areaCm2.toStringAsFixed(1)} cm² '
+                          '(${last.lengthCm.toStringAsFixed(1)} × ${last.widthCm.toStringAsFixed(1)} cm)'
+                          '${last.depthCm > 0 ? ', profundidad ${last.depthCm.toStringAsFixed(1)} cm' : ''}'
+                          ' · ${_fmtDate.format(last.measuredAt)}',
+                          style: const pw.TextStyle(fontSize: 9),
+                        )
+                      else
+                        pw.Text('Sin mediciones registradas.', style: const pw.TextStyle(fontSize: 9)),
+                      if (comp.isNotEmpty)
+                        pw.Text('Composición del tejido: ${comp.join(', ')}.',
+                            style: const pw.TextStyle(fontSize: 9)),
+
+                      // Avance
+                      if (progreso != null) ...[
+                        pw.SizedBox(height: 6),
+                        label('Avance de la herida'),
+                        pw.Text(progreso, style: const pw.TextStyle(fontSize: 9)),
+                      ],
+
+                      // Tratamiento establecido
+                      if (plan != null) ...[
+                        pw.SizedBox(height: 6),
+                        label('Tratamiento establecido'),
+                        if ((plan.finalDescription ?? '').isNotEmpty)
+                          pw.Text(plan.finalDescription!, style: const pw.TextStyle(fontSize: 9)),
+                        ...plan.components.map((cmp) => pw.Text(
+                              '· ${cmp.method}${cmp.product.isNotEmpty ? ': ${cmp.product}' : ''}',
                               style: const pw.TextStyle(fontSize: 9),
                             )),
                       ],
+
+                      // Evidencia
                       if (photos != null) ...[
                         pw.SizedBox(height: 6),
-                        pw.Text('Evidencia fotográfica:', style: const pw.TextStyle(fontSize: 9)),
+                        label(_evidenceMode == 'primera_ultima'
+                            ? 'Evidencia fotográfica (antes / después)'
+                            : 'Evidencia fotográfica'),
                         pw.SizedBox(height: 4),
                         pw.Wrap(spacing: 8, runSpacing: 8, children: photos),
                       ],
