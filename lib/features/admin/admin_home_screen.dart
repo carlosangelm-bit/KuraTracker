@@ -1,9 +1,12 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:collection/collection.dart';
 import 'package:csv/csv.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../../core/theme/kura_theme.dart';
 import '../../core/providers/session_provider.dart';
@@ -15,6 +18,7 @@ import '../../models/site.dart';
 import '../../models/staff.dart';
 import '../../services/csv_download.dart';
 import '../../services/data_repository.dart';
+import '../../services/photo_upload_service.dart';
 
 /// Panel de administración: gestión de personal sanitario, sitios y
 /// activación de usuarios / función premium (sección 4).
@@ -40,7 +44,7 @@ class _AdminHomeScreenState extends ConsumerState<AdminHomeScreen>
   // luego "Null check operator used on a null value" dentro del propio framework
   // de Flutter (_TabBarState), no en código de esta pantalla. Ocurría siempre,
   // con datos vacíos o no: no dependía de que el admin tuviera o no fila en `staff`.
-  late final TabController _tabController = TabController(length: 4, vsync: this)
+  late final TabController _tabController = TabController(length: 5, vsync: this)
     ..addListener(() {
       if (_tabController.indexIsChanging) return;
       if (_tabController.index != _tab) {
@@ -78,6 +82,7 @@ class _AdminHomeScreenState extends ConsumerState<AdminHomeScreen>
             Tab(text: 'Personal sanitario'),
             Tab(text: 'Sitios'),
             Tab(text: 'Configuración'),
+            Tab(text: 'Marca'),
           ],
           onTap: (i) => setState(() => _tab = i),
         ),
@@ -93,6 +98,8 @@ class _AdminHomeScreenState extends ConsumerState<AdminHomeScreen>
               return SitesTab(repo: repo, organizationId: organizationId);
             case 3:
               return NoteCatalogTab(repo: repo, organizationId: organizationId);
+            case 4:
+              return BrandingTab(repo: repo, organizationId: organizationId);
             default:
               return UsersTab(
                 repo: repo,
@@ -1530,6 +1537,236 @@ Future<String?> _promptForLabel(BuildContext context, {required String title}) {
       ],
     ),
   );
+}
+
+/// Configuración de marca del centro para los reportes PDF: color principal +
+/// logo. Se usa en Administración (admin) y Plataforma (master, por centro).
+class BrandingTab extends StatefulWidget {
+  final DataRepository repo;
+  final String? organizationId;
+  const BrandingTab({super.key, required this.repo, required this.organizationId});
+
+  @override
+  State<BrandingTab> createState() => _BrandingTabState();
+}
+
+class _BrandingTabState extends State<BrandingTab> {
+  final _colorCtrl = TextEditingController(text: '#7C3AED');
+  Uint8List? _logoBytes;
+  String? _logoName;
+  String? _existingLogoPath;
+  bool _loaded = false;
+  bool _saving = false;
+  final _picker = ImagePicker();
+
+  static const _swatches = [
+    '#7C3AED', '#1B8A5A', '#2563EB', '#C0392B',
+    '#E8A93A', '#0F766E', '#9D174D', '#334155',
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    final orgId = widget.organizationId;
+    if (orgId != null) {
+      final matches = widget.repo.listOrganizations().where((o) => o.id == orgId);
+      if (matches.isNotEmpty) {
+        final o = matches.first;
+        if ((o.brandPrimaryColor ?? '').isNotEmpty) _colorCtrl.text = o.brandPrimaryColor!;
+        _existingLogoPath = o.brandLogoPath;
+      }
+    }
+    _loaded = true;
+  }
+
+  @override
+  void dispose() {
+    _colorCtrl.dispose();
+    super.dispose();
+  }
+
+  Color? _parse(String hex) {
+    var h = hex.trim().replaceAll('#', '');
+    if (h.length == 6) h = 'FF$h';
+    if (h.length != 8) return null;
+    final v = int.tryParse(h, radix: 16);
+    return v == null ? null : Color(v);
+  }
+
+  Future<void> _pickLogo() async {
+    try {
+      final x = await _picker.pickImage(source: ImageSource.gallery, imageQuality: 90);
+      if (x == null) return;
+      final bytes = await x.readAsBytes();
+      setState(() {
+        _logoBytes = bytes;
+        _logoName = x.name;
+      });
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('No se pudo cargar el logo: $e')));
+      }
+    }
+  }
+
+  Future<void> _save() async {
+    final orgId = widget.organizationId;
+    if (orgId == null) return;
+    final color = _colorCtrl.text.trim();
+    if (_parse(color) == null) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Color inválido. Usa formato #RRGGBB.')));
+      return;
+    }
+    setState(() => _saving = true);
+    try {
+      String? logoPath = _existingLogoPath;
+      if (_logoBytes != null) {
+        logoPath = await PhotoUploadService.uploadOrgLogo(
+            organizationId: orgId, bytes: _logoBytes!, fileName: _logoName ?? 'logo.png');
+      }
+      await widget.repo.setOrgBranding(orgId, primaryColor: color, logoPath: logoPath);
+      if (mounted) {
+        setState(() {
+          _existingLogoPath = logoPath;
+          _logoBytes = null;
+        });
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('Branding guardado.')));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('No se pudo guardar: $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_loaded) return const Center(child: CircularProgressIndicator());
+    final color = _parse(_colorCtrl.text) ?? KuraColors.primary;
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 88),
+      children: [
+        const Text('Marca del centro para reportes',
+            style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
+        const SizedBox(height: 4),
+        Text('El logo y el color aparecen en los reportes PDF que se entregan al paciente.',
+            style: TextStyle(fontSize: 12, color: KuraColors.darkText.withOpacity(0.6))),
+        const SizedBox(height: 16),
+        const Text('Color principal', style: TextStyle(fontWeight: FontWeight.w600)),
+        const SizedBox(height: 8),
+        Row(children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: color,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.black12),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: TextField(
+              controller: _colorCtrl,
+              decoration: const InputDecoration(labelText: 'Hex (#RRGGBB)'),
+              onChanged: (_) => setState(() {}),
+            ),
+          ),
+        ]),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: _swatches.map((h) {
+            final c = _parse(h)!;
+            return GestureDetector(
+              onTap: () => setState(() => _colorCtrl.text = h),
+              child: Container(
+                width: 28,
+                height: 28,
+                decoration: BoxDecoration(
+                    color: c, shape: BoxShape.circle, border: Border.all(color: Colors.black12)),
+              ),
+            );
+          }).toList(),
+        ),
+        const SizedBox(height: 20),
+        const Text('Logo', style: TextStyle(fontWeight: FontWeight.w600)),
+        const SizedBox(height: 8),
+        _logoPreview(),
+        const SizedBox(height: 8),
+        OutlinedButton.icon(
+          icon: const Icon(Icons.image_outlined, size: 18),
+          label: Text(_logoBytes != null || (_existingLogoPath ?? '').isNotEmpty
+              ? 'Cambiar logo'
+              : 'Cargar logo'),
+          onPressed: _saving ? null : _pickLogo,
+        ),
+        const SizedBox(height: 24),
+        const Text('Vista previa del encabezado', style: TextStyle(fontWeight: FontWeight.w600)),
+        const SizedBox(height: 8),
+        _headerPreview(color),
+        const SizedBox(height: 24),
+        FilledButton(
+          style: FilledButton.styleFrom(backgroundColor: KuraColors.primary),
+          onPressed: _saving ? null : _save,
+          child: Text(_saving ? 'Guardando…' : 'Guardar branding'),
+        ),
+      ],
+    );
+  }
+
+  Widget _logoPreview() {
+    if (_logoBytes != null) {
+      return ClipRRect(borderRadius: BorderRadius.circular(8), child: Image.memory(_logoBytes!, height: 80));
+    }
+    if ((_existingLogoPath ?? '').isNotEmpty) {
+      return FutureBuilder<String>(
+        future: PhotoUploadService.resolveOrgLogoUrl(_existingLogoPath!),
+        builder: (c, s) {
+          if (s.connectionState != ConnectionState.done || s.data == null) {
+            return const SizedBox(height: 80, child: Center(child: CircularProgressIndicator()));
+          }
+          return Image.network(s.data!, height: 80, errorBuilder: (_, __, ___) => const Icon(Icons.broken_image_outlined));
+        },
+      );
+    }
+    return Text('Sin logo (se usará el nombre del centro).',
+        style: TextStyle(fontSize: 12, color: KuraColors.darkText.withOpacity(0.5)));
+  }
+
+  Widget _headerPreview(Color color) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        border: Border(left: BorderSide(color: color, width: 4)),
+        color: color.withOpacity(0.06),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(children: [
+        if (_logoBytes != null)
+          Image.memory(_logoBytes!, height: 36)
+        else if ((_existingLogoPath ?? '').isNotEmpty)
+          FutureBuilder<String>(
+            future: PhotoUploadService.resolveOrgLogoUrl(_existingLogoPath!),
+            builder: (c, s) => (s.data != null)
+                ? Image.network(s.data!, height: 36, errorBuilder: (_, __, ___) => const SizedBox.shrink())
+                : const SizedBox(width: 36, height: 36),
+          ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text('Reporte de herida',
+              style: TextStyle(fontWeight: FontWeight.w800, color: color, fontSize: 16)),
+        ),
+      ]),
+    );
+  }
 }
 
 class _EmptyState extends StatelessWidget {

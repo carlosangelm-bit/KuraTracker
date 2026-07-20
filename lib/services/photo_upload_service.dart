@@ -51,6 +51,41 @@ class PhotoUploadService {
     return path;
   }
 
+  static const String _brandingBucket = 'org-branding';
+
+  /// Sube el logo del centro al bucket org-branding y devuelve el valor a
+  /// guardar en organizations.brand_logo_path (ruta o data URL en demo).
+  static Future<String> uploadOrgLogo({
+    required String organizationId,
+    required Uint8List bytes,
+    required String fileName,
+    String contentType = 'image/png',
+  }) async {
+    if (!AppConfig.isSupabaseConfigured) {
+      return 'data:$contentType;base64,${base64Encode(bytes)}';
+    }
+    final safe = fileName.replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '_');
+    final path = '$organizationId/${DateTime.now().millisecondsSinceEpoch}_$safe';
+    await Supabase.instance.client.storage.from(_brandingBucket).uploadBinary(
+          path,
+          bytes,
+          fileOptions: FileOptions(contentType: contentType, upsert: false),
+        );
+    return path;
+  }
+
+  /// Resuelve una URL mostrable para el logo del centro (o data URL en demo).
+  static Future<String> resolveOrgLogoUrl(String path) async {
+    if (path.startsWith('data:') ||
+        path.startsWith('http://') ||
+        path.startsWith('https://')) {
+      return path;
+    }
+    return Supabase.instance.client.storage
+        .from(_brandingBucket)
+        .createSignedUrl(path, 3600);
+  }
+
   /// Resuelve una URL mostrable para un `photo_path` de intake-photos (o un
   /// data URL/URL ya autocontenida en demo).
   static Future<String> resolveIntakePhotoUrl(String path) async {
