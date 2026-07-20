@@ -141,6 +141,12 @@ class SupabaseDataStore implements DataStore {
     await _client.rpc(name, params: params);
   }
 
+  /// Como [callRpc] pero devuelve el resultado (p.ej. filas de una función que
+  /// retorna una tabla, como get_org_acuity_status).
+  Future<dynamic> callRpcResult(String name, Map<String, dynamic> params) async {
+    return await _client.rpc(name, params: params);
+  }
+
   void _upsertIntoCache(String collection, Map<String, dynamic> row) {
     final list = _cache.putIfAbsent(collection, () => []);
     final idx = list.indexWhere((e) => e['id'] == row['id']);

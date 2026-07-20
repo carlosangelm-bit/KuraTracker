@@ -27,10 +27,7 @@
 
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-
-const USER_ID = Deno.env.get("ACUITY_USER_ID") ?? "";
-const API_KEY = Deno.env.get("ACUITY_API_KEY") ?? "";
-const AUTH = btoa(`${USER_ID}:${API_KEY}`);
+import { getAcuityAuth } from "../_shared/acuity_auth.ts";
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -38,10 +35,6 @@ const supabase = createClient(
 );
 
 serve(async (req) => {
-  if (!USER_ID || !API_KEY) {
-    return json({ error: "Acuity no configurado (faltan secrets)." }, 503);
-  }
-
   let createMissing = false;
   let organizationId: string | null = null;
   try {
@@ -55,8 +48,13 @@ serve(async (req) => {
     return json({ error: "createMissing requiere organizationId." }, 400);
   }
 
+  // MULTI-CENTRO: usa las credenciales del centro indicado (o las globales si
+  // no tiene propias / no se pasa organizationId).
+  const auth = await getAcuityAuth(supabase, organizationId);
+  if (!auth) return json({ error: "Acuity no configurado para este centro." }, 503);
+
   const res = await fetch("https://acuityscheduling.com/api/v1/calendars", {
-    headers: { Authorization: `Basic ${AUTH}` },
+    headers: { Authorization: `Basic ${auth.basic}` },
   });
   if (!res.ok) return json({ error: `Acuity error ${res.status}` }, 502);
   const calendars = (await res.json()) as Array<Record<string, unknown>>;

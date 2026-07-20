@@ -89,6 +89,42 @@ class AcuityService {
 
   Future<void> reschedule(int id, String datetime) async =>
       _proxy('PUT', '/appointments/$id/reschedule', payload: {'datetime': datetime});
+
+  // --- Configuración por centro (Fase 2b) ---
+
+  /// Prueba la conexión con Acuity usando las credenciales del centro del
+  /// usuario (vía el proxy). Devuelve null si OK, o un mensaje de error.
+  Future<String?> testConnection() async {
+    try {
+      await _proxy('GET', '/me');
+      return null;
+    } catch (e) {
+      return e.toString().replaceFirst('Exception: ', '');
+    }
+  }
+
+  /// Registra en Acuity los webhooks del centro, apuntando a la Edge Function
+  /// con el `?org=` de este centro (para enrutamiento/validación por centro).
+  Future<void> registerWebhooks(String organizationId) async {
+    final target =
+        '${AppConfig.supabaseUrl}/functions/v1/acuity-webhook?org=$organizationId';
+    const events = [
+      'appointment.scheduled',
+      'appointment.rescheduled',
+      'appointment.canceled',
+      'appointment.changed',
+    ];
+    for (final e in events) {
+      await _proxy('POST', '/webhooks', payload: {'event': e, 'target': target});
+    }
+  }
+
+  /// Mapea los calendarios de Acuity del centro a su personal (por email).
+  Future<dynamic> syncCalendars(String organizationId) async {
+    final res = await _sb.functions.invoke('acuity-sync-calendars',
+        body: {'organizationId': organizationId});
+    return res.data;
+  }
 }
 
 final acuityServiceProvider = Provider<AcuityService>((ref) => AcuityService());

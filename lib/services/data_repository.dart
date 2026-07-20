@@ -360,6 +360,46 @@ class DataRepository {
         {'status': 'canceled', 'updated_at': DateTime.now().toIso8601String()});
   }
 
+  // ---------------- Acuity por centro (Fase 2, 0022) ----------------
+  // Solo en modo Supabase; las credenciales se guardan/consultan por RPC
+  // (nunca se lee la API key completa desde el cliente).
+
+  Future<void> setOrgAcuityCredentials(String orgId, String userId, String apiKey) async {
+    final store = _store;
+    if (store is! SupabaseDataStore) {
+      throw Exception('La configuración de Acuity solo está disponible con Supabase.');
+    }
+    await store.callRpc('set_org_acuity_credentials', {
+      'p_org': orgId,
+      'p_user_id': userId,
+      'p_api_key': apiKey,
+    });
+  }
+
+  Future<AcuityConfigStatus?> getOrgAcuityStatus(String orgId) async {
+    final store = _store;
+    if (store is! SupabaseDataStore) return null;
+    final rows = await store.callRpcResult('get_org_acuity_status', {'p_org': orgId});
+    if (rows is List && rows.isNotEmpty) {
+      final r = (rows.first as Map).cast<String, dynamic>();
+      return AcuityConfigStatus(
+        userId: r['user_id']?.toString() ?? '',
+        keyLast4: r['key_last4']?.toString() ?? '',
+        webhooksRegistered: r['webhooks_registered'] == true,
+      );
+    }
+    return null;
+  }
+
+  Future<void> markAcuityWebhooks(String orgId, bool registered) async {
+    final store = _store;
+    if (store is! SupabaseDataStore) return;
+    await store.callRpc('mark_org_acuity_webhooks', {
+      'p_org': orgId,
+      'p_registered': registered,
+    });
+  }
+
   // ---------------- Sitios ----------------
 
   /// Lista los sitios. [organizationId] es un filtro OPCIONAL usado
@@ -1203,6 +1243,19 @@ class CreatedUser {
     required this.email,
     required this.tempPassword,
     required this.role,
+  });
+}
+
+/// Estado de la conexión de Acuity de un centro (sin exponer la API key: solo
+/// el user id, los últimos 4 de la key y si los webhooks quedaron registrados).
+class AcuityConfigStatus {
+  final String userId;
+  final String keyLast4;
+  final bool webhooksRegistered;
+  const AcuityConfigStatus({
+    required this.userId,
+    required this.keyLast4,
+    required this.webhooksRegistered,
   });
 }
 
