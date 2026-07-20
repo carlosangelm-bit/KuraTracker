@@ -8,11 +8,14 @@
 -- Vaciar la tabla es SEGURO: Acuity es la fuente de verdad; el backfill acotado
 -- la vuelve a poblar únicamente con las citas vigentes.
 --
+-- Kuradores ACTIVOS a conservar (deben quedar con is_active=true y
+-- acuity_calendar_id mapeado): Juan Carlos Alejandre, María Amaya y Nancy del Real.
+--
 -- Orden de ejecución (para que no se re-importe la basura):
---   1) Corregir el mapeo (mapear a María, desmapear/desactivar a Alpizar) — Genspark.
+--   1) Corregir el mapeo (mapear a María y a Nancy; desmapear/desactivar a Alpizar) — Genspark.
 --   2) Deploy de acuity-backfill y acuity-webhook (--no-verify-jwt) acotadas.
 --   3) Correr ESTE script (delete).
---   4) Re-correr el backfill -> debe quedar un puñado de citas (María + Juan Carlos).
+--   4) Re-correr el backfill -> solo citas de Juan Carlos, María y Nancy.
 --   5) Verificar:  select count(*), staff_id from public.appointments group by staff_id;
 
 delete from public.appointments;
