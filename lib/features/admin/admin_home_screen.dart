@@ -8,6 +8,7 @@ import 'package:file_picker/file_picker.dart';
 import '../../core/theme/kura_theme.dart';
 import '../../core/providers/session_provider.dart';
 import '../../core/router/app_shell.dart' show UserMenuButton;
+import '../../core/widgets/kura_primary_fab.dart';
 import '../../models/app_user.dart';
 import '../../models/note_option_catalog.dart';
 import '../../models/site.dart';
@@ -625,11 +626,10 @@ class _StaffTabState extends State<StaffTab> {
                 );
               },
             ),
-      floatingActionButton: FloatingActionButton.extended(
-        backgroundColor: KuraColors.primary,
-        icon: const Icon(Icons.person_add),
-        label: const Text('Nuevo'),
+      floatingActionButton: KuraPrimaryFab(
         onPressed: () => _openStaffForm(),
+        icon: Icons.person_add,
+        label: 'Nuevo',
       ),
     );
   }
@@ -907,11 +907,10 @@ class _SitesTabState extends State<SitesTab> {
                 );
               },
             ),
-      floatingActionButton: FloatingActionButton.extended(
-        backgroundColor: KuraColors.primary,
-        icon: const Icon(Icons.add_location_alt_outlined),
-        label: const Text('Nuevo'),
+      floatingActionButton: KuraPrimaryFab(
         onPressed: () => _openSiteForm(),
+        icon: Icons.add_location_alt_outlined,
+        label: 'Nuevo',
       ),
     );
   }
@@ -1498,11 +1497,10 @@ class _NoteCatalogTabState extends State<NoteCatalogTab> {
                   ),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        backgroundColor: KuraColors.primary,
-        icon: const Icon(Icons.add),
-        label: const Text('Nuevo concepto'),
+      floatingActionButton: KuraPrimaryFab(
         onPressed: _addOption,
+        icon: Icons.add,
+        label: 'Nuevo concepto',
       ),
     );
   }

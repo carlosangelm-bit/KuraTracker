@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/theme/kura_theme.dart';
 import '../../core/providers/session_provider.dart';
 import '../../core/router/app_shell.dart' show UserMenuButton;
+import '../../core/widgets/kura_primary_fab.dart';
 import '../../models/organization.dart';
 import '../../services/data_repository.dart';
 import '../admin/admin_home_screen.dart' show UsersTab, StaffTab, SitesTab, NoteCatalogTab;
@@ -295,11 +296,10 @@ class _OrganizationsTab extends StatelessWidget {
                 );
               },
             ),
-      floatingActionButton: FloatingActionButton.extended(
-        backgroundColor: KuraColors.primary,
-        icon: const Icon(Icons.add_business_outlined),
-        label: const Text('Nuevo centro'),
+      floatingActionButton: KuraPrimaryFab(
         onPressed: onCreate,
+        icon: Icons.add_business_outlined,
+        label: 'Nuevo centro',
       ),
     );
   }

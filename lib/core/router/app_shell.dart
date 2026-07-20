@@ -67,6 +67,12 @@ class AppShell extends ConsumerWidget {
     final items = _itemsFor(session.user);
     final selectedIndex = _indexFor(currentPath, items);
     final isWide = MediaQuery.of(context).size.width >= 900;
+    // La barra flotante solo se muestra en pantallas de NIVEL SUPERIOR (las
+    // pestañas). En pantallas "profundas" (detalle de paciente, formularios,
+    // captura, seguimiento…) se oculta: son flujos con botón de regresar y, al
+    // vivir en el mismo Scaffold-shell con extendBody, la barra taparía sus
+    // botones inferiores. Así ningún botón queda cubierto en ninguna pantalla.
+    final isTopLevel = items.any((i) => i.path == currentPath);
     final t = BrandTokens.of(context);
 
     final destinationsRail = items
@@ -128,7 +134,7 @@ class AppShell extends ConsumerWidget {
       // Barra de navegacion FLOTANTE estilo "liquid glass": no pegada a los
       // bordes (margen + esquinas casi pildora), acabado de vidrio consistente
       // con KuraGlassCard y sombra en capas para verse despegada del fondo.
-      bottomNavigationBar: isWide
+      bottomNavigationBar: (isWide || !isTopLevel)
           ? null
           : SafeArea(
               top: false,

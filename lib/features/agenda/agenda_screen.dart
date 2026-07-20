@@ -9,6 +9,7 @@ import '../../core/design/tokens.dart';
 import '../../core/theme/kura_theme.dart';
 import '../../core/providers/session_provider.dart';
 import '../../core/router/app_shell.dart' show UserMenuButton;
+import '../../core/widgets/kura_primary_fab.dart';
 import '../../models/app_user.dart';
 import '../../models/appointment.dart';
 import '../../models/manual_appointment.dart';
@@ -94,12 +95,10 @@ class _AgendaScreenState extends ConsumerState<AgendaScreen> {
               },
             ),
       floatingActionButton: service.isAvailable
-          ? FloatingActionButton.extended(
-              backgroundColor: KuraColors.primary,
-              foregroundColor: Colors.white,
-              icon: const Icon(Icons.event_available),
-              label: const Text('Nueva cita'),
+          ? KuraPrimaryFab(
               onPressed: () => _openScheduleSheet(context, service),
+              icon: Icons.event_available,
+              label: 'Nueva cita',
             )
           : null,
     );
@@ -1695,13 +1694,13 @@ class _ManualAgendaState extends ConsumerState<_ManualAgenda> {
 
     return Scaffold(
       appBar: _bar(),
-      floatingActionButton: FloatingActionButton.extended(
-        backgroundColor: KuraColors.primary,
-        foregroundColor: Colors.white,
-        icon: const Icon(Icons.event_available),
-        label: const Text('Nueva cita'),
-        onPressed: widget.organizationId == null ? null : () => _openForm(repo),
-      ),
+      floatingActionButton: widget.organizationId == null
+          ? null
+          : KuraPrimaryFab(
+              onPressed: () => _openForm(repo),
+              icon: Icons.event_available,
+              label: 'Nueva cita',
+            ),
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
