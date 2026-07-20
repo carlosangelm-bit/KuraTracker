@@ -6,7 +6,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/design/tokens.dart';
 import '../../core/providers/session_provider.dart';
-import '../../core/router/app_shell.dart' show kFloatingNavBarHeight;
+import '../../core/router/app_shell.dart' show kFloatingNavBarHeight, UserMenuButton;
 import '../../core/widgets/kura_glass_card.dart';
 import '../../core/widgets/kura_primary_fab.dart';
 import '../../engine/models/kura_engine_enums.dart';
@@ -140,7 +140,10 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                   // por la barra de navegación flotante.
                   padding: EdgeInsets.fromLTRB(
                     16,
-                    20,
+                    // El shell ya no pone AppBar; se compensa el inset superior
+                    // (barra de estado/notch) para que el encabezado no quede
+                    // debajo de él.
+                    20 + MediaQuery.of(context).viewPadding.top,
                     16,
                     MediaQuery.of(context).viewPadding.bottom +
                         kFloatingNavBarHeight +
@@ -205,15 +208,34 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   List<Widget> _greeting(BuildContext context, AppUser? user, String subtitle) {
     final t = BrandTokens.of(context);
     return [
-      Text(
-        'Hola, ${user?.fullName.split(' ').first ?? ''} 👋',
-        style: Theme.of(context)
-            .textTheme
-            .headlineSmall
-            ?.copyWith(fontWeight: FontWeight.w800),
+      // Encabezado: saludo a la izquierda y el avatar/menú de usuario a la
+      // derecha (antes vivía en el AppBar del shell, ya removido).
+      Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Hola, ${user?.fullName.split(' ').first ?? ''} 👋',
+                  style: Theme.of(context)
+                      .textTheme
+                      .headlineSmall
+                      ?.copyWith(fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 4),
+                Text(subtitle, style: TextStyle(color: t.textSecondary)),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          const Padding(
+            padding: EdgeInsets.only(top: 2),
+            child: UserMenuButton(),
+          ),
+        ],
       ),
-      const SizedBox(height: 4),
-      Text(subtitle, style: TextStyle(color: t.textSecondary)),
     ];
   }
 

@@ -3,6 +3,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:csv/csv.dart';
 
 import '../../core/theme/kura_theme.dart';
+import '../../core/router/app_shell.dart' show UserMenuButton;
 import '../../services/data_repository.dart';
 import '../../engine/models/kura_engine_enums.dart';
 
@@ -88,7 +89,10 @@ class _ImportExportScreenState extends State<ImportExportScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Interoperabilidad eKare')),
+      appBar: AppBar(
+        title: const Text('Interoperabilidad eKare'),
+        actions: const [UserMenuButton()],
+      ),
       body: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 720),

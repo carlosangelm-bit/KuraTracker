@@ -5,7 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/providers/session_provider.dart';
-import '../../core/router/app_shell.dart' show kFloatingNavBarHeight;
+import '../../core/router/app_shell.dart' show kFloatingNavBarHeight, UserMenuButton;
 import '../../core/widgets/kura_primary_fab.dart';
 import '../../engine/models/kura_engine_enums.dart';
 import '../../engine/sheehan_decision_style.dart';
@@ -149,7 +149,8 @@ class PatientsListScreenState extends ConsumerState<PatientsListScreen> {
               value: _prefs.viewMode,
               onChanged: (mode) => _updatePrefs((p) => p.copyWith(viewMode: mode)),
             ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 4),
+          const UserMenuButton(),
         ],
       ),
       body: !_prefsLoaded

@@ -92,21 +92,12 @@ class AppShell extends ConsumerWidget {
       // lo refracte). Las pantallas scrolleables compensan con padding inferior
       // (ver kFloatingNavBarHeight / MediaQuery.padding.bottom).
       extendBody: true,
-      // En movil se quita el titulo de marca ("KuraTracker") para ganar
-      // espacio vertical: casi todas las pantallas ya tienen su propio AppBar
-      // con su titulo, y el dashboard su propio encabezado. Queda una franja
-      // delgada y transparente solo con el avatar (para conservar el acceso a
-      // cerrar sesion en todas las pantallas).
-      appBar: isWide
-          ? null
-          : AppBar(
-              toolbarHeight: 44,
-              backgroundColor: Colors.transparent,
-              surfaceTintColor: Colors.transparent,
-              elevation: 0,
-              scrolledUnderElevation: 0,
-              actions: [_userMenu(context, ref, session)],
-            ),
+      // Sin AppBar del shell: UNA sola barra por pantalla. Cada pantalla de
+      // nivel superior ya trae su propio AppBar con su titulo e incluye el
+      // avatar/menu de usuario en sus acciones ([UserMenuButton]); el dashboard
+      // lo lleva en su encabezado. En escritorio el menu vive en el
+      // NavigationRail. Esto elimina la doble barra en movil.
+      appBar: null,
       body: isWide
           ? Row(
               children: [
@@ -245,4 +236,47 @@ class _NavItem {
   final IconData selectedIcon;
   final String label;
   const _NavItem(this.path, this.icon, this.selectedIcon, this.label);
+}
+
+/// Menú de usuario (avatar + cerrar sesión) para los AppBar de las pantallas.
+/// Al quitar el AppBar del shell (una sola barra por pantalla), cada pantalla
+/// de nivel superior lo incluye en sus `actions` para conservar el acceso a
+/// cerrar sesión en móvil.
+class UserMenuButton extends ConsumerWidget {
+  const UserMenuButton({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final user = ref.watch(sessionProvider).user;
+    if (user == null) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: PopupMenuButton<String>(
+        tooltip: user.fullName,
+        onSelected: (value) {
+          if (value == 'logout') {
+            ref.read(sessionProvider.notifier).logout();
+            context.go('/login');
+          }
+        },
+        itemBuilder: (context) => [
+          PopupMenuItem(
+            enabled: false,
+            child: Text(user.fullName, style: const TextStyle(fontWeight: FontWeight.w700)),
+          ),
+          PopupMenuItem(enabled: false, child: Text(user.role.label)),
+          const PopupMenuDivider(),
+          const PopupMenuItem(value: 'logout', child: Text('Cerrar sesión')),
+        ],
+        child: CircleAvatar(
+          radius: 16,
+          backgroundColor: KuraColors.primary.withOpacity(0.15),
+          child: Text(
+            user.fullName.isNotEmpty ? user.fullName[0].toUpperCase() : '?',
+            style: const TextStyle(color: KuraColors.primary, fontWeight: FontWeight.w800),
+          ),
+        ),
+      ),
+    );
+  }
 }

@@ -5,7 +5,7 @@ import 'package:printing/printing.dart';
 
 import '../../core/theme/kura_theme.dart';
 import '../../core/providers/session_provider.dart';
-import '../../core/router/app_shell.dart' show kFloatingNavBarHeight;
+import '../../core/router/app_shell.dart' show kFloatingNavBarHeight, UserMenuButton;
 import '../../models/app_user.dart';
 import '../../models/consultation.dart';
 import '../../engine/models/kura_engine_enums.dart';
@@ -35,7 +35,10 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     final session = ref.watch(sessionProvider);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Reportes')),
+      appBar: AppBar(
+        title: const Text('Reportes'),
+        actions: const [UserMenuButton()],
+      ),
       body: repoAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, st) => Center(child: Text('Error: $e')),

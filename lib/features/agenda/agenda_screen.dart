@@ -8,6 +8,7 @@ import 'package:intl/intl.dart';
 import '../../core/design/tokens.dart';
 import '../../core/theme/kura_theme.dart';
 import '../../core/providers/session_provider.dart';
+import '../../core/router/app_shell.dart' show UserMenuButton;
 import '../../models/app_user.dart';
 import '../../models/appointment.dart';
 import '../../services/acuity_service.dart';
@@ -48,7 +49,10 @@ class _AgendaScreenState extends ConsumerState<AgendaScreen> {
     final isAdmin = user?.role == AppRole.admin;
 
     return Scaffold(
-      appBar: AppBar(title: Text(isAdmin ? 'Agenda del centro' : 'Mi agenda')),
+      appBar: AppBar(
+        title: Text(isAdmin ? 'Agenda del centro' : 'Mi agenda'),
+        actions: const [UserMenuButton()],
+      ),
       body: !service.isAvailable
           ? const _AgendaUnavailable()
           : StreamBuilder<List<Appointment>>(
