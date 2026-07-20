@@ -262,8 +262,20 @@ class DataRepository {
   }
 
   Future<void> setSchedulingMode(String organizationId, String mode) async {
-    await _store.updateRow(
-        Collections.organizations, organizationId, {'scheduling_mode': mode});
+    final store = _store;
+    if (store is SupabaseDataStore) {
+      // La RLS de organizations solo permite UPDATE al master; para que el admin
+      // del centro pueda activar su modo de agenda se usa un RPC acotado
+      // (set_scheduling_mode, 0021) y luego se refresca la cache.
+      await store.callRpc('set_scheduling_mode', {
+        'p_org': organizationId,
+        'p_mode': mode,
+      });
+      await store.refreshCollection(Collections.organizations);
+    } else {
+      await _store.updateRow(
+          Collections.organizations, organizationId, {'scheduling_mode': mode});
+    }
   }
 
   /// Citas manuales del centro (admin) o de un Kurador (clínico). El aislamiento
