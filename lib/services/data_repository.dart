@@ -127,6 +127,98 @@ class DataRepository {
     await _store.updateRow(Collections.profiles, userId, {'premium_enabled': premium});
   }
 
+  /// Cambia el rol de un usuario (admin <-> clinico) desde el panel de
+  /// Administracion / Plataforma. En Supabase, la RLS de profiles
+  /// (profiles_update_own_or_admin) + el trigger anti-escalada
+  /// (prevent_profile_privilege_escalation) permiten esto SOLO a admin/master;
+  /// un clinico no puede auto-promoverse (0006/0012/0017).
+  Future<void> setUserRole(String userId, AppRole role) async {
+    await _store.updateRow(Collections.profiles, userId, {'role': role.dbValue});
+  }
+
+  /// Da de alta un usuario CON cuenta de acceso (login).
+  ///
+  /// En Supabase esto NO puede hacerse solo con la anon key: crear la cuenta
+  /// en Auth requiere service role, asi que se delega en la Edge Function
+  /// `admin-create-user` (que valida que el llamador sea admin/master, crea la
+  /// cuenta, el profile y -para clinicos- el staff, y devuelve una contrasena
+  /// temporal cuando no hay SMTP configurado). Ver supabase/functions/README.md.
+  ///
+  /// En modo demo local (sin Supabase) no hay Auth real: se crea directamente
+  /// el profile (+ staff si es clinico) para que la pantalla sea funcional en
+  /// la demo; [CreatedUser.tempPassword] queda null en ese caso.
+  Future<CreatedUser> createUserWithLogin({
+    required String email,
+    required String fullName,
+    required AppRole role,
+    required String organizationId,
+    String? phone,
+    String? cedulaProfesional,
+    String? primarySiteId,
+    String roleTitle = 'Kurador',
+  }) async {
+    final store = _store;
+    if (store is SupabaseDataStore) {
+      Map<String, dynamic> data;
+      try {
+        data = await store.invokeFunction('admin-create-user', {
+          'email': email,
+          'fullName': fullName,
+          'role': role.dbValue,
+          'organizationId': organizationId,
+          if (phone != null && phone.isNotEmpty) 'phone': phone,
+          if (cedulaProfesional != null && cedulaProfesional.isNotEmpty)
+            'cedulaProfesional': cedulaProfesional,
+          if (primarySiteId != null) 'primarySiteId': primarySiteId,
+          'roleTitle': roleTitle,
+        });
+      } on FunctionException catch (e) {
+        throw Exception(_edgeErrorMessage(e));
+      }
+      if (data['error'] != null) throw Exception(data['error'].toString());
+      // Refresca profiles y staff para que la lista refleje el alta sin
+      // re-login (la Edge Function escribio con service role, fuera de la cache).
+      await store.refreshCollection(Collections.profiles);
+      await store.refreshCollection(Collections.staff);
+      return CreatedUser(
+        uid: data['uid'] as String,
+        email: (data['email'] ?? email) as String,
+        tempPassword: data['tempPassword'] as String?,
+        role: role,
+      );
+    }
+
+    // Modo demo local: sin Auth real.
+    final uid = _uuid.v4();
+    await _store.insertRow(Collections.profiles, {
+      'id': uid,
+      'role': role.dbValue,
+      'full_name': fullName,
+      'email': email,
+      'is_active': true,
+      'premium_enabled': false,
+      'organization_id': organizationId,
+    });
+    if (role == AppRole.clinico) {
+      await createStaff(
+        fullName: fullName,
+        roleTitle: roleTitle,
+        organizationId: organizationId,
+        primarySiteId: primarySiteId,
+        profileId: uid,
+        cedulaProfesional: cedulaProfesional,
+      );
+    }
+    return CreatedUser(uid: uid, email: email, tempPassword: null, role: role);
+  }
+
+  String _edgeErrorMessage(FunctionException e) {
+    final details = e.details;
+    if (details is Map && details['error'] != null) return details['error'].toString();
+    if (details is String && details.isNotEmpty) return details;
+    return 'No se pudo crear el usuario (código ${e.status}).';
+  }
+
   // ---------------- Organizaciones (centros) ----------------
   // (organizations, ver 0011_organizations.sql + 0012_master_role.sql).
   // Solo un usuario `master` puede listar TODAS las organizaciones y
@@ -983,6 +1075,24 @@ class DataRepository {
   // cliente a audit_log siempre sera rechazado por RLS con 403. Si se
   // necesita registrar una accion adicional, se debe agregar/ajustar el
   // trigger en Postgres, nunca una llamada manual desde el cliente.
+}
+
+/// Resultado del alta de un usuario con login (createUserWithLogin). En
+/// Supabase, [tempPassword] es una contrasena temporal generada por la Edge
+/// Function para compartir con el usuario cuando no hay SMTP configurado; en
+/// modo demo local es null (no hay Auth real).
+class CreatedUser {
+  final String uid;
+  final String email;
+  final String? tempPassword;
+  final AppRole role;
+
+  const CreatedUser({
+    required this.uid,
+    required this.email,
+    required this.tempPassword,
+    required this.role,
+  });
 }
 
 /// Una fila cruda del CSV de importacion del catalogo (Configuracion >

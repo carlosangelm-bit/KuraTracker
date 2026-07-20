@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:collection/collection.dart';
 import 'package:csv/csv.dart';
@@ -60,6 +61,9 @@ class _AdminHomeScreenState extends ConsumerState<AdminHomeScreen>
     // Supabase, ver 0011_organizations.sql), en vez de derivarlo de forma
     // implicita dentro de cada dialogo.
     final organizationId = ref.watch(sessionProvider).user?.organizationId;
+    // Id del usuario en sesion: la pestana de Usuarios lo usa para impedir que
+    // el admin se cambie el rol o se desactive a si mismo (auto-bloqueo).
+    final currentUserId = ref.watch(sessionProvider).user?.id;
 
     return Scaffold(
       appBar: AppBar(
@@ -87,7 +91,11 @@ class _AdminHomeScreenState extends ConsumerState<AdminHomeScreen>
             case 3:
               return NoteCatalogTab(repo: repo, organizationId: organizationId);
             default:
-              return _UsersTab(repo: repo);
+              return UsersTab(
+                repo: repo,
+                organizationId: organizationId,
+                currentUserId: currentUserId,
+              );
           }
         },
       ),
@@ -95,76 +103,415 @@ class _AdminHomeScreenState extends ConsumerState<AdminHomeScreen>
   }
 }
 
-class _UsersTab extends StatefulWidget {
+/// Pestaña de gestión de usuarios y roles. Se reutiliza en dos contextos:
+///   - Panel de Administración (admin de centro): organizationId = su centro.
+///   - Área de Plataforma (master): organizationId = centro elegido en el
+///     selector (por eso ve/gestiona usuarios de cualquier centro, uno a la vez).
+/// Permite crear usuarios CON login (via Edge Function admin-create-user),
+/// cambiar su rol (admin <-> personal sanitario) y activar/desactivar. El
+/// usuario en sesión ([currentUserId]) no puede cambiarse el rol ni
+/// desactivarse a sí mismo, para evitar dejarse fuera del sistema.
+class UsersTab extends StatefulWidget {
   final DataRepository repo;
-  const _UsersTab({required this.repo});
+  final String? organizationId;
+  final String? currentUserId;
+  const UsersTab({
+    super.key,
+    required this.repo,
+    required this.organizationId,
+    required this.currentUserId,
+  });
 
   @override
-  State<_UsersTab> createState() => _UsersTabState();
+  State<UsersTab> createState() => _UsersTabState();
 }
 
-class _UsersTabState extends State<_UsersTab> {
+class _UsersTabState extends State<UsersTab> {
+  Future<void> _openCreateForm() async {
+    final orgId = widget.organizationId;
+    if (orgId == null) return;
+    final created = await showDialog<CreatedUser>(
+      context: context,
+      builder: (_) => _UserFormDialog(repo: widget.repo, organizationId: orgId),
+    );
+    if (created == null || !mounted) return;
+    setState(() {});
+    await _showCredentials(created);
+  }
+
+  /// Muestra el correo y la contraseña temporal para que el admin la
+  /// comparta con la persona (necesario mientras no haya SMTP configurado).
+  Future<void> _showCredentials(CreatedUser user) async {
+    await showDialog<void>(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        title: const Text('Usuario creado'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Se creó la cuenta de ${user.email} (${user.role.label}).'),
+            const SizedBox(height: 12),
+            if (user.tempPassword != null) ...[
+              const Text(
+                'Contraseña temporal (compártela con la persona; podrá '
+                'cambiarla más adelante):',
+                style: TextStyle(fontSize: 12),
+              ),
+              const SizedBox(height: 6),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: KuraColors.chipBg,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: SelectableText(
+                        user.tempPassword!,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontFamily: 'monospace',
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.copy, size: 18),
+                      tooltip: 'Copiar',
+                      onPressed: () {
+                        Clipboard.setData(ClipboardData(text: user.tempPassword!));
+                        ScaffoldMessenger.of(dialogCtx).showSnackBar(
+                          const SnackBar(content: Text('Contraseña copiada')),
+                        );
+                      },
+                    ),
+                  ],
+                ),
+              ),
+            ] else
+              const Text(
+                'Cuenta de demostración (este entorno no tiene login real).',
+                style: TextStyle(fontSize: 12),
+              ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogCtx),
+            child: const Text('Listo'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _changeRole(AppUser u, AppRole newRole) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        title: const Text('Cambiar rol'),
+        content: Text('¿Cambiar a ${u.fullName} a "${newRole.label}"?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogCtx, false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogCtx, true),
+            style: FilledButton.styleFrom(backgroundColor: KuraColors.primary),
+            child: const Text('Cambiar'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      await widget.repo.setUserRole(u.id, newRole);
+      if (mounted) setState(() {});
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('No se pudo cambiar el rol: $e')),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final users = widget.repo.listUsers();
-    if (users.isEmpty) {
-      return const _EmptyState(
-        icon: Icons.people_outline,
-        message: 'Aún no hay usuarios registrados.',
-      );
-    }
-    return ListView.separated(
-      padding: const EdgeInsets.all(16),
-      itemCount: users.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 8),
-      itemBuilder: (context, i) {
-        final u = users[i];
-        return Card(
-          child: ListTile(
-            leading: CircleAvatar(
-              backgroundColor: KuraColors.primary.withOpacity(0.12),
-              child: Icon(
-                u.role == AppRole.admin ? Icons.admin_panel_settings : Icons.medical_services,
-                color: KuraColors.primary,
-              ),
+    final users = widget.repo
+        .listUsers()
+        .where((u) =>
+            widget.organizationId == null || u.organizationId == widget.organizationId)
+        .toList();
+    return Scaffold(
+      body: users.isEmpty
+          ? const _EmptyState(
+              icon: Icons.people_outline,
+              message: 'Aún no hay usuarios en este centro.\n'
+                  'Usa el botón "Nuevo usuario" para dar de alta al primero.',
+            )
+          : ListView.separated(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 88),
+              itemCount: users.length,
+              separatorBuilder: (_, __) => const SizedBox(height: 8),
+              itemBuilder: (context, i) {
+                final u = users[i];
+                final isSelf = u.id == widget.currentUserId;
+                return Card(
+                  child: ListTile(
+                    leading: CircleAvatar(
+                      backgroundColor: KuraColors.primary.withOpacity(0.12),
+                      child: Icon(
+                        u.role == AppRole.admin
+                            ? Icons.admin_panel_settings
+                            : Icons.medical_services,
+                        color: KuraColors.primary,
+                      ),
+                    ),
+                    title: Text('${u.fullName}${isSelf ? ' (tú)' : ''}'),
+                    subtitle: Text('${u.email} · ${u.role.label}'
+                        '${u.staffId == null ? '' : ' · vinculado a personal sanitario'}'),
+                    trailing: Wrap(
+                      spacing: 8,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        Column(
+                          children: [
+                            const Text('Activo', style: TextStyle(fontSize: 10)),
+                            Switch(
+                              value: u.isActive,
+                              activeColor: KuraColors.primary,
+                              onChanged: isSelf
+                                  ? null
+                                  : (v) async {
+                                      await widget.repo.setUserActive(u.id, v);
+                                      setState(() {});
+                                    },
+                            ),
+                          ],
+                        ),
+                        Column(
+                          children: [
+                            const Text('Premium', style: TextStyle(fontSize: 10)),
+                            Switch(
+                              value: u.premiumEnabled,
+                              activeColor: KuraColors.success,
+                              onChanged: (v) async {
+                                await widget.repo.setUserPremium(u.id, v);
+                                setState(() {});
+                              },
+                            ),
+                          ],
+                        ),
+                        // Cambio de rol: oculto para uno mismo (evita
+                        // auto-bloqueo) y para perfiles master (no se degradan
+                        // desde esta pantalla).
+                        if (!isSelf && u.role != AppRole.master)
+                          PopupMenuButton<AppRole>(
+                            tooltip: 'Cambiar rol',
+                            icon: const Icon(Icons.manage_accounts_outlined),
+                            onSelected: (r) => _changeRole(u, r),
+                            itemBuilder: (_) => [
+                              if (u.role != AppRole.admin)
+                                const PopupMenuItem(
+                                  value: AppRole.admin,
+                                  child: Text('Hacer administrador'),
+                                ),
+                              if (u.role != AppRole.clinico)
+                                const PopupMenuItem(
+                                  value: AppRole.clinico,
+                                  child: Text('Hacer personal sanitario'),
+                                ),
+                            ],
+                          ),
+                      ],
+                    ),
+                  ),
+                );
+              },
             ),
-            title: Text(u.fullName),
-            subtitle: Text('${u.email} · ${u.role.label}'
-                '${u.staffId == null ? '' : ' · vinculado a personal sanitario'}'),
-            trailing: Wrap(
-              spacing: 12,
+      floatingActionButton: FloatingActionButton.extended(
+        backgroundColor: KuraColors.primary,
+        icon: const Icon(Icons.person_add_alt_1),
+        label: const Text('Nuevo usuario'),
+        onPressed: widget.organizationId == null ? null : _openCreateForm,
+      ),
+    );
+  }
+}
+
+/// Formulario de alta de usuario con login. Devuelve el [CreatedUser] via
+/// Navigator.pop para que la pestaña muestre la contraseña temporal.
+class _UserFormDialog extends StatefulWidget {
+  final DataRepository repo;
+  final String organizationId;
+  const _UserFormDialog({required this.repo, required this.organizationId});
+
+  @override
+  State<_UserFormDialog> createState() => _UserFormDialogState();
+}
+
+class _UserFormDialogState extends State<_UserFormDialog> {
+  final _formKey = GlobalKey<FormState>();
+  final _nameCtrl = TextEditingController();
+  final _emailCtrl = TextEditingController();
+  final _phoneCtrl = TextEditingController();
+  final _cedulaCtrl = TextEditingController();
+  AppRole _role = AppRole.clinico;
+  String? _siteId;
+  bool _saving = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _nameCtrl.dispose();
+    _emailCtrl.dispose();
+    _phoneCtrl.dispose();
+    _cedulaCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    if (!_formKey.currentState!.validate()) return;
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    try {
+      final cedula = _cedulaCtrl.text.trim();
+      final phone = _phoneCtrl.text.trim();
+      final created = await widget.repo.createUserWithLogin(
+        email: _emailCtrl.text.trim(),
+        fullName: _nameCtrl.text.trim(),
+        role: _role,
+        organizationId: widget.organizationId,
+        phone: phone.isEmpty ? null : phone,
+        cedulaProfesional: cedula.isEmpty ? null : cedula,
+        primarySiteId: _role == AppRole.clinico ? _siteId : null,
+      );
+      if (mounted) Navigator.pop(context, created);
+    } catch (e) {
+      setState(() {
+        _error = e.toString().replaceFirst('Exception: ', '');
+        _saving = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final sites = widget.repo.listSites(organizationId: widget.organizationId);
+    return AlertDialog(
+      title: const Text('Nuevo usuario'),
+      content: SizedBox(
+        width: MediaQuery.sizeOf(context).width < 500 ? double.maxFinite : 420,
+        child: Form(
+          key: _formKey,
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Column(
-                  children: [
-                    const Text('Activo', style: TextStyle(fontSize: 10)),
-                    Switch(
-                      value: u.isActive,
-                      activeColor: KuraColors.primary,
-                      onChanged: (v) async {
-                        await widget.repo.setUserActive(u.id, v);
-                        setState(() {});
-                      },
+                TextFormField(
+                  controller: _nameCtrl,
+                  decoration: const InputDecoration(labelText: 'Nombre completo'),
+                  validator: (v) => (v == null || v.trim().isEmpty) ? 'Requerido' : null,
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _emailCtrl,
+                  keyboardType: TextInputType.emailAddress,
+                  decoration: const InputDecoration(
+                    labelText: 'Correo (para iniciar sesión)',
+                  ),
+                  validator: (v) {
+                    final t = (v ?? '').trim();
+                    if (t.isEmpty) return 'Requerido';
+                    if (!t.contains('@') || !t.contains('.')) return 'Correo inválido';
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<AppRole>(
+                  value: _role,
+                  decoration: const InputDecoration(labelText: 'Rol'),
+                  items: const [
+                    DropdownMenuItem(
+                      value: AppRole.clinico,
+                      child: Text('Personal sanitario'),
+                    ),
+                    DropdownMenuItem(
+                      value: AppRole.admin,
+                      child: Text('Administrador'),
                     ),
                   ],
+                  onChanged: (r) => setState(() => _role = r ?? AppRole.clinico),
                 ),
-                Column(
-                  children: [
-                    const Text('Premium', style: TextStyle(fontSize: 10)),
-                    Switch(
-                      value: u.premiumEnabled,
-                      activeColor: KuraColors.success,
-                      onChanged: (v) async {
-                        await widget.repo.setUserPremium(u.id, v);
-                        setState(() {});
-                      },
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _phoneCtrl,
+                  keyboardType: TextInputType.phone,
+                  decoration: const InputDecoration(labelText: 'Teléfono (opcional)'),
+                ),
+                if (_role == AppRole.clinico) ...[
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: _cedulaCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Cédula profesional (opcional)',
+                      hintText: 'Requerida para firmar notas de seguimiento',
                     ),
-                  ],
+                  ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String?>(
+                    value: _siteId,
+                    decoration: const InputDecoration(labelText: 'Sitio principal'),
+                    items: [
+                      const DropdownMenuItem<String?>(
+                        value: null,
+                        child: Text('Sin asignar'),
+                      ),
+                      ...sites.map(
+                        (s) => DropdownMenuItem<String?>(value: s.id, child: Text(s.name)),
+                      ),
+                    ],
+                    onChanged: (v) => setState(() => _siteId = v),
+                  ),
+                ],
+                const SizedBox(height: 8),
+                Text(
+                  'Se creará una cuenta de acceso. Si el correo (SMTP) no está '
+                  'configurado en el servidor, se generará una contraseña '
+                  'temporal para compartir con la persona.',
+                  style: TextStyle(fontSize: 11, color: KuraColors.darkText.withOpacity(0.5)),
                 ),
+                if (_error != null) ...[
+                  const SizedBox(height: 12),
+                  Text(_error!, style: const TextStyle(color: KuraColors.danger)),
+                ],
               ],
             ),
           ),
-        );
-      },
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _saving ? null : () => Navigator.pop(context),
+          child: const Text('Cancelar'),
+        ),
+        FilledButton(
+          onPressed: _saving ? null : _submit,
+          style: FilledButton.styleFrom(backgroundColor: KuraColors.primary),
+          child: _saving
+              ? const SizedBox(
+                  height: 16,
+                  width: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                )
+              : const Text('Crear usuario'),
+        ),
+      ],
     );
   }
 }

@@ -157,3 +157,47 @@ paginar por rango de fechas (ver comentario en la función).
   `timestamptz`. La app formatea en local.
 - En **modo demo local** (sin Supabase) la Agenda muestra un estado
   "no disponible en demo" (no hay Edge Functions).
+
+---
+
+# Gestión de usuarios y roles (admin-create-user)
+
+Permite que el **admin de un centro** y el **master** creen usuarios CON login
+y cambien roles desde la app (pestaña "Usuarios" en Administración / Plataforma),
+sin tocar SQL a mano.
+
+## Qué se puede hacer sin backend nuevo
+Cambiar rol (admin ↔ personal sanitario) y activar/desactivar usuarios YA
+funciona solo con RLS: se hace desde el cliente vía `profiles`. Requisito para
+el **master**: aplicar la migración `0017_master_manage_profiles.sql`, que
+agrega `or is_master()` a las policies de `profiles` (el admin de centro ya
+podía; ver el hallazgo documentado en esa migración).
+
+```
+supabase db push        # aplica 0017 (además de 0016 si faltara)
+```
+
+## Qué necesita la Edge Function
+**Crear** una cuenta de acceso nueva requiere service role (Auth
+`admin.createUser`), que no puede vivir en el cliente. La función
+`admin-create-user`:
+- Verifica (por el JWT) que el llamador sea **admin** o **master**.
+- **admin**: crea SOLO en su propio centro. **master**: en el centro que indique
+  (`organizationId`). Rol permitido: `admin` | `clinico` (nunca `master`).
+- Crea la cuenta Auth (el trigger `handle_new_auth_user` crea el `profile` desde
+  `user_metadata`), refuerza el perfil y —para clínicos— crea el `staff`.
+- Como el **SMTP puede no estar configurado**, crea con `email_confirm=true` y
+  **devuelve una contraseña temporal** para que el admin la comparta; la app la
+  muestra en un diálogo. Con SMTP, el usuario puede usar "olvidé mi contraseña".
+
+```
+supabase functions deploy admin-create-user     # con verify_jwt (default)
+```
+
+No requiere secrets propios (usa `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY`,
+inyectados por Supabase). Reutiliza el mismo patrón JWT que `acuity-proxy`.
+
+## Verificación
+- Entra como admin/master → pestaña **Usuarios** → "Nuevo usuario".
+- Debe aparecer en la lista y (sin SMTP) mostrarse una contraseña temporal.
+- Cambiar rol y activar/desactivar deben reflejarse de inmediato.
