@@ -42,10 +42,14 @@ serve(async (_req) => {
   const appts = (await res.json()) as Array<Record<string, unknown>>;
 
   // Mapa calendarID -> {staff_id, organization_id} para resolver dueño.
+  // SOLO staff ACTIVO con calendario mapeado: así el espejo local se queda
+  // únicamente con las citas de Kuradores vigentes (no importa el histórico de
+  // proveedores inactivos/no mapeados).
   const { data: staffRows } = await supabase
     .from("staff")
     .select("id, organization_id, acuity_calendar_id")
-    .not("acuity_calendar_id", "is", null);
+    .not("acuity_calendar_id", "is", null)
+    .eq("is_active", true);
   const byCalendar = new Map<number, { id: string; organization_id: string }>();
   for (const s of staffRows ?? []) {
     byCalendar.set(Number(s.acuity_calendar_id), {
@@ -54,33 +58,41 @@ serve(async (_req) => {
     });
   }
 
-  const rows = appts.map((a) => {
-    const owner = byCalendar.get(Number(a.calendarID));
-    return {
-      id: a.id,
-      organization_id: owner?.organization_id ?? null,
-      staff_id: owner?.id ?? null,
-      acuity_calendar_id: a.calendarID,
-      appointment_type_id: a.appointmentTypeID,
-      appointment_type: a.type,
-      first_name: a.firstName,
-      last_name: a.lastName,
-      email: a.email,
-      phone: a.phone,
-      datetime: a.datetime,
-      end_time: a.endTime ?? null,
-      status: a.canceled === true ? "canceled" : "scheduled",
-      raw: a,
-      updated_at: new Date().toISOString(),
-    };
-  });
+  // Descarta las citas cuyo calendario no pertenezca a un Kurador activo mapeado.
+  let skipped = 0;
+  const rows = appts
+    .filter((a) => {
+      if (byCalendar.has(Number(a.calendarID))) return true;
+      skipped++;
+      return false;
+    })
+    .map((a) => {
+      const owner = byCalendar.get(Number(a.calendarID))!;
+      return {
+        id: a.id,
+        organization_id: owner.organization_id,
+        staff_id: owner.id,
+        acuity_calendar_id: a.calendarID,
+        appointment_type_id: a.appointmentTypeID,
+        appointment_type: a.type,
+        first_name: a.firstName,
+        last_name: a.lastName,
+        email: a.email,
+        phone: a.phone,
+        datetime: a.datetime,
+        end_time: a.endTime ?? null,
+        status: a.canceled === true ? "canceled" : "scheduled",
+        raw: a,
+        updated_at: new Date().toISOString(),
+      };
+    });
 
   if (rows.length > 0) {
     const { error } = await supabase.from("appointments").upsert(rows);
     if (error) return json({ error: `db error: ${error.message}` }, 500);
   }
 
-  return json({ imported: rows.length });
+  return json({ imported: rows.length, skipped });
 });
 
 function json(data: unknown, status = 200): Response {

@@ -65,11 +65,19 @@ serve(async (req) => {
   const appt = await acuityRes.json();
 
   // Resolver staff (Kurador) y organización desde el calendario de Acuity.
+  // Solo Kuradores ACTIVOS con calendario mapeado.
   const { data: staff } = await supabase
     .from("staff")
     .select("id, organization_id")
     .eq("acuity_calendar_id", appt.calendarID)
+    .eq("is_active", true)
     .maybeSingle();
+
+  // Si la cita no pertenece a un Kurador activo mapeado, no la almacenamos:
+  // respondemos 200 para que Acuity NO reintente y la tabla se mantenga limpia.
+  if (!staff) {
+    return new Response("ok (ignorado: calendario no mapeado)", { status: 200 });
+  }
 
   const status = action.includes("canceled")
     ? "canceled"
@@ -79,8 +87,8 @@ serve(async (req) => {
 
   const { error } = await supabase.from("appointments").upsert({
     id: appt.id,
-    organization_id: staff?.organization_id ?? null,
-    staff_id: staff?.id ?? null,
+    organization_id: staff.organization_id,
+    staff_id: staff.id,
     acuity_calendar_id: appt.calendarID,
     appointment_type_id: appt.appointmentTypeID,
     appointment_type: appt.type,
