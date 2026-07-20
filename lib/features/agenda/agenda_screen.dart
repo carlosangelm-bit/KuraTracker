@@ -1,8 +1,10 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 
 import '../../core/design/tokens.dart';
@@ -16,6 +18,7 @@ import '../../models/manual_appointment.dart';
 import '../../models/patient.dart';
 import '../../services/acuity_service.dart';
 import '../../services/data_repository.dart';
+import '../../services/photo_upload_service.dart';
 
 /// Agenda de citas (Acuity Scheduling). El clínico ve SUS citas y el admin las
 /// del centro (el aislamiento lo aplica la RLS de la tabla `appointments`).
@@ -1955,6 +1958,9 @@ class _ManualTile extends StatelessWidget {
 }
 
 /// Formulario de alta/edición de cita manual.
+/// Formulario de alta/edición de cita manual con paridad de campos con Acuity
+/// ("Consulta a domicilio"): permite seleccionar un paciente existente O CREAR
+/// uno nuevo, y captura dirección, contacto (nombre/teléfono) y foto de herida.
 class _ManualForm extends StatefulWidget {
   final DataRepository repo;
   final bool isAdmin;
@@ -1976,16 +1982,31 @@ class _ManualForm extends StatefulWidget {
 }
 
 class _ManualFormState extends State<_ManualForm> {
-  late final TextEditingController _titleCtrl =
-      TextEditingController(text: widget.existing?.title ?? '');
-  late final TextEditingController _notesCtrl =
-      TextEditingController(text: widget.existing?.notes ?? '');
+  // Paciente
+  bool _newPatient = false;
   String? _patientId;
+  final _nameCtrl = TextEditingController();
+  final _lastNameCtrl = TextEditingController();
+  final _pPhoneCtrl = TextEditingController();
+  final _pEmailCtrl = TextEditingController();
+  // Cita
   String? _staffId;
   late DateTime _date;
   late TimeOfDay _time;
+  final _titleCtrl = TextEditingController();
+  final _notesCtrl = TextEditingController();
+  // Consulta a domicilio
+  final _addressCtrl = TextEditingController();
+  final _contactNameCtrl = TextEditingController();
+  final _contactPhoneCtrl = TextEditingController();
+  Uint8List? _photoBytes;
+  String? _photoName;
+  String? _existingPhotoPath;
+
   bool _saving = false;
   String? _error;
+
+  final _picker = ImagePicker();
 
   @override
   void initState() {
@@ -1996,6 +2017,12 @@ class _ManualFormState extends State<_ManualForm> {
     final dt = e?.datetime ?? _nextHalfHour();
     _date = DateTime(dt.year, dt.month, dt.day);
     _time = TimeOfDay(hour: dt.hour, minute: dt.minute);
+    _titleCtrl.text = e?.title ?? '';
+    _notesCtrl.text = e?.notes ?? '';
+    _addressCtrl.text = e?.address ?? '';
+    _contactNameCtrl.text = e?.contactName ?? '';
+    _contactPhoneCtrl.text = e?.contactPhone ?? '';
+    _existingPhotoPath = e?.photoPath;
   }
 
   static DateTime _nextHalfHour() {
@@ -2006,9 +2033,41 @@ class _ManualFormState extends State<_ManualForm> {
 
   @override
   void dispose() {
+    _nameCtrl.dispose();
+    _lastNameCtrl.dispose();
+    _pPhoneCtrl.dispose();
+    _pEmailCtrl.dispose();
     _titleCtrl.dispose();
     _notesCtrl.dispose();
+    _addressCtrl.dispose();
+    _contactNameCtrl.dispose();
+    _contactPhoneCtrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _pickPhoto() async {
+    try {
+      final x = await _picker.pickImage(source: ImageSource.gallery, imageQuality: 85);
+      if (x == null) return;
+      final bytes = await x.readAsBytes();
+      setState(() {
+        _photoBytes = bytes;
+        _photoName = x.name;
+      });
+    } catch (e) {
+      setState(() => _error = 'No se pudo cargar la foto: $e');
+    }
+  }
+
+  String? _bg() {
+    final lines = <String>[];
+    final ph = _pPhoneCtrl.text.trim();
+    final em = _pEmailCtrl.text.trim();
+    final addr = _addressCtrl.text.trim();
+    if (ph.isNotEmpty) lines.add('Teléfono del paciente: $ph');
+    if (em.isNotEmpty) lines.add('Email: $em');
+    if (addr.isNotEmpty) lines.add('Domicilio de tratamiento: $addr');
+    return lines.isEmpty ? null : lines.join('\n');
   }
 
   Future<void> _submit() async {
@@ -2017,18 +2076,75 @@ class _ManualFormState extends State<_ManualForm> {
       _error = null;
     });
     try {
-      final dt =
-          DateTime(_date.year, _date.month, _date.day, _time.hour, _time.minute);
+      final org = widget.organizationId;
+      final contactName = _contactNameCtrl.text.trim();
+      final contactPhone = _contactPhoneCtrl.text.trim();
+      final addr = _addressCtrl.text.trim();
+      final assignStaff = widget.isAdmin ? _staffId : widget.currentStaffId;
+
+      // 1) Paciente: nuevo o existente.
+      String? patientId;
+      if (widget.existing == null && _newPatient) {
+        final fullName = '${_nameCtrl.text.trim()} ${_lastNameCtrl.text.trim()}'.trim();
+        if (fullName.isEmpty) {
+          setState(() {
+            _error = 'El nombre del paciente es obligatorio.';
+            _saving = false;
+          });
+          return;
+        }
+        final created = await widget.repo.createPatient(
+          fullName: fullName,
+          organizationId: org,
+          caregiverName: contactName.isEmpty ? null : contactName,
+          caregiverPhone: contactPhone.isEmpty ? null : contactPhone,
+          hasIdentifiedCaregiver: contactName.isNotEmpty || contactPhone.isNotEmpty,
+          backgroundNotes: _bg(),
+        );
+        patientId = created.id;
+        if (assignStaff != null) {
+          await widget.repo.assignPatientToStaff(patientId, assignStaff);
+        }
+      } else {
+        patientId = _patientId;
+        // Reflejar contacto/domicilio en el expediente (si está vacío).
+        if (patientId != null &&
+            (contactName.isNotEmpty || contactPhone.isNotEmpty || addr.isNotEmpty)) {
+          await widget.repo.updatePatientContactIfEmpty(
+            patientId,
+            caregiverName: contactName.isEmpty ? null : contactName,
+            caregiverPhone: contactPhone.isEmpty ? null : contactPhone,
+            appendBackgroundNote: addr.isEmpty ? null : 'Domicilio de tratamiento: $addr',
+          );
+        }
+      }
+
+      // 2) Foto (si se cargó una nueva).
+      String? photoPath = _existingPhotoPath;
+      if (_photoBytes != null) {
+        photoPath = await PhotoUploadService.uploadIntakePhoto(
+          organizationId: org,
+          bytes: _photoBytes!,
+          fileName: _photoName ?? 'foto.jpg',
+        );
+      }
+
+      // 3) Cita.
+      final dt = DateTime(_date.year, _date.month, _date.day, _time.hour, _time.minute);
       final title = _titleCtrl.text.trim();
       final notes = _notesCtrl.text.trim();
       if (widget.existing == null) {
         await widget.repo.createManualAppointment(
-          organizationId: widget.organizationId,
+          organizationId: org,
           datetime: dt,
-          staffId: _staffId,
-          patientId: _patientId,
+          staffId: assignStaff,
+          patientId: patientId,
           title: title.isEmpty ? null : title,
           notes: notes.isEmpty ? null : notes,
+          address: addr.isEmpty ? null : addr,
+          contactName: contactName.isEmpty ? null : contactName,
+          contactPhone: contactPhone.isEmpty ? null : contactPhone,
+          photoPath: photoPath,
           createdByProfileId: widget.currentUserId,
         );
       } else {
@@ -2036,11 +2152,15 @@ class _ManualFormState extends State<_ManualForm> {
           widget.existing!.id,
           staffId: _staffId,
           clearStaff: _staffId == null,
-          patientId: _patientId,
-          clearPatient: _patientId == null,
+          patientId: patientId,
+          clearPatient: patientId == null,
           title: title,
           datetime: dt,
           notes: notes,
+          address: addr,
+          contactName: contactName,
+          contactPhone: contactPhone,
+          photoPath: photoPath,
         );
       }
       if (mounted) Navigator.pop(context, true);
@@ -2054,13 +2174,13 @@ class _ManualFormState extends State<_ManualForm> {
 
   @override
   Widget build(BuildContext context) {
-    // Pacientes seleccionables: el admin ve los del centro; el clínico los suyos.
     final patients = widget.isAdmin
         ? widget.repo.listAllPatients()
         : (widget.currentStaffId != null
             ? widget.repo.listPatientsForStaff(widget.currentStaffId!)
             : <Patient>[]);
     final staff = widget.repo.listStaff(organizationId: widget.organizationId);
+    final creating = widget.existing == null;
 
     return SafeArea(
       child: Padding(
@@ -2070,23 +2190,64 @@ class _ManualFormState extends State<_ManualForm> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text(widget.existing == null ? 'Nueva cita' : 'Editar cita',
+              Text(creating ? 'Nueva cita' : 'Editar cita',
                   style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
-              const SizedBox(height: 16),
-              DropdownButtonFormField<String?>(
-                value: _patientId,
-                isExpanded: true,
-                decoration: const InputDecoration(labelText: 'Paciente'),
-                items: [
-                  const DropdownMenuItem<String?>(value: null, child: Text('Sin paciente')),
-                  ...patients.map((p) => DropdownMenuItem<String?>(
-                        value: p.id,
-                        child: Text(p.fullName, overflow: TextOverflow.ellipsis),
-                      )),
-                ],
-                onChanged: (v) => setState(() => _patientId = v),
-              ),
               const SizedBox(height: 12),
+
+              // --- Paciente ---
+              const Text('Paciente',
+                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
+              const SizedBox(height: 6),
+              if (creating)
+                Wrap(spacing: 8, children: [
+                  ChoiceChip(
+                    label: const Text('Existente'),
+                    selected: !_newPatient,
+                    selectedColor: KuraColors.primary.withOpacity(0.15),
+                    onSelected: (_) => setState(() => _newPatient = false),
+                  ),
+                  ChoiceChip(
+                    label: const Text('Nuevo'),
+                    selected: _newPatient,
+                    selectedColor: KuraColors.primary.withOpacity(0.15),
+                    onSelected: (_) => setState(() => _newPatient = true),
+                  ),
+                ]),
+              const SizedBox(height: 8),
+              if (creating && _newPatient) ...[
+                TextField(
+                    controller: _nameCtrl,
+                    decoration: const InputDecoration(labelText: 'Nombre')),
+                const SizedBox(height: 8),
+                TextField(
+                    controller: _lastNameCtrl,
+                    decoration: const InputDecoration(labelText: 'Apellidos')),
+                const SizedBox(height: 8),
+                TextField(
+                    controller: _pPhoneCtrl,
+                    keyboardType: TextInputType.phone,
+                    decoration: const InputDecoration(labelText: 'Teléfono (opcional)')),
+                const SizedBox(height: 8),
+                TextField(
+                    controller: _pEmailCtrl,
+                    keyboardType: TextInputType.emailAddress,
+                    decoration: const InputDecoration(labelText: 'Correo (opcional)')),
+              ] else
+                DropdownButtonFormField<String?>(
+                  value: _patientId,
+                  isExpanded: true,
+                  decoration: const InputDecoration(labelText: 'Selecciona paciente'),
+                  items: [
+                    const DropdownMenuItem<String?>(value: null, child: Text('Sin paciente')),
+                    ...patients.map((p) => DropdownMenuItem<String?>(
+                        value: p.id,
+                        child: Text(p.fullName, overflow: TextOverflow.ellipsis))),
+                  ],
+                  onChanged: (v) => setState(() => _patientId = v),
+                ),
+              const SizedBox(height: 12),
+
+              // --- Kurador (admin) ---
               if (widget.isAdmin) ...[
                 DropdownButtonFormField<String?>(
                   value: _staffId,
@@ -2095,58 +2256,77 @@ class _ManualFormState extends State<_ManualForm> {
                   items: [
                     const DropdownMenuItem<String?>(value: null, child: Text('Sin asignar')),
                     ...staff.map((s) => DropdownMenuItem<String?>(
-                          value: s.id,
-                          child: Text(s.fullName, overflow: TextOverflow.ellipsis),
-                        )),
+                        value: s.id,
+                        child: Text(s.fullName, overflow: TextOverflow.ellipsis))),
                   ],
                   onChanged: (v) => setState(() => _staffId = v),
                 ),
                 const SizedBox(height: 12),
               ],
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      icon: const Icon(Icons.calendar_today, size: 16),
-                      label: Text(DateFormat('dd/MM/yyyy').format(_date)),
-                      onPressed: () async {
-                        final d = await showDatePicker(
+
+              // --- Fecha/hora ---
+              Row(children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    icon: const Icon(Icons.calendar_today, size: 16),
+                    label: Text(DateFormat('dd/MM/yyyy').format(_date)),
+                    onPressed: () async {
+                      final d = await showDatePicker(
                           context: context,
                           initialDate: _date,
                           firstDate: DateTime(2020),
-                          lastDate: DateTime(2100),
-                        );
-                        if (d != null) setState(() => _date = d);
-                      },
-                    ),
+                          lastDate: DateTime(2100));
+                      if (d != null) setState(() => _date = d);
+                    },
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      icon: const Icon(Icons.schedule, size: 16),
-                      label: Text(_time.format(context)),
-                      onPressed: () async {
-                        final t = await showTimePicker(context: context, initialTime: _time);
-                        if (t != null) setState(() => _time = t);
-                      },
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _titleCtrl,
-                decoration: const InputDecoration(
-                  labelText: 'Tipo / motivo',
-                  hintText: 'Curación, valoración, seguimiento…',
                 ),
-              ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    icon: const Icon(Icons.schedule, size: 16),
+                    label: Text(_time.format(context)),
+                    onPressed: () async {
+                      final tm = await showTimePicker(context: context, initialTime: _time);
+                      if (tm != null) setState(() => _time = tm);
+                    },
+                  ),
+                ),
+              ]),
+              const SizedBox(height: 16),
+
+              // --- Consulta a domicilio (paridad Acuity) ---
+              const Text('Consulta a domicilio',
+                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
+              const SizedBox(height: 6),
+              TextField(
+                  controller: _addressCtrl,
+                  decoration: const InputDecoration(labelText: 'Dirección del tratamiento')),
+              const SizedBox(height: 8),
+              TextField(
+                  controller: _contactNameCtrl,
+                  decoration: const InputDecoration(
+                      labelText: 'Nombre del contacto que recibirá al especialista')),
+              const SizedBox(height: 8),
+              TextField(
+                  controller: _contactPhoneCtrl,
+                  keyboardType: TextInputType.phone,
+                  decoration: const InputDecoration(labelText: 'Teléfono del contacto')),
+              const SizedBox(height: 12),
+              _photoField(),
+              const SizedBox(height: 16),
+
+              // --- Tipo / notas ---
+              TextField(
+                  controller: _titleCtrl,
+                  decoration: const InputDecoration(
+                      labelText: 'Tipo / motivo',
+                      hintText: 'Curación, valoración, seguimiento…')),
               const SizedBox(height: 12),
               TextField(
-                controller: _notesCtrl,
-                maxLines: 3,
-                decoration: const InputDecoration(labelText: 'Notas (opcional)'),
-              ),
+                  controller: _notesCtrl,
+                  maxLines: 3,
+                  decoration: const InputDecoration(labelText: 'Notas (opcional)')),
+
               if (_error != null) ...[
                 const SizedBox(height: 12),
                 Text(_error!, style: const TextStyle(color: KuraColors.danger)),
@@ -2160,12 +2340,51 @@ class _ManualFormState extends State<_ManualForm> {
                         height: 18,
                         width: 18,
                         child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                    : Text(widget.existing == null ? 'Crear cita' : 'Guardar'),
+                    : Text(creating ? 'Crear cita' : 'Guardar'),
               ),
             ],
           ),
         ),
       ),
+    );
+  }
+
+  Widget _photoField() {
+    Widget? preview;
+    if (_photoBytes != null) {
+      preview = ClipRRect(
+        borderRadius: BorderRadius.circular(10),
+        child: Image.memory(_photoBytes!, height: 140, width: double.infinity, fit: BoxFit.cover),
+      );
+    } else if ((_existingPhotoPath ?? '').isNotEmpty) {
+      preview = FutureBuilder<String>(
+        future: PhotoUploadService.resolveIntakePhotoUrl(_existingPhotoPath!),
+        builder: (context, snap) {
+          if (snap.connectionState != ConnectionState.done || snap.data == null) {
+            return const SizedBox(height: 140, child: Center(child: CircularProgressIndicator()));
+          }
+          return ClipRRect(
+            borderRadius: BorderRadius.circular(10),
+            child: Image.network(snap.data!,
+                height: 140,
+                width: double.infinity,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) =>
+                    const SizedBox(height: 60, child: Center(child: Icon(Icons.broken_image_outlined)))),
+          );
+        },
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (preview != null) ...[preview, const SizedBox(height: 8)],
+        OutlinedButton.icon(
+          icon: const Icon(Icons.photo_camera_outlined, size: 18),
+          label: Text(preview != null ? 'Cambiar foto de la herida' : 'Cargar foto de la herida'),
+          onPressed: _saving ? null : _pickPhoto,
+        ),
+      ],
     );
   }
 }

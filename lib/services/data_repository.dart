@@ -297,6 +297,10 @@ class DataRepository {
     String? title,
     DateTime? endTime,
     String? notes,
+    String? address,
+    String? contactName,
+    String? contactPhone,
+    String? photoPath,
     String? createdByProfileId,
   }) async {
     final now = DateTime.now().toIso8601String();
@@ -309,6 +313,10 @@ class DataRepository {
       'datetime': datetime.toIso8601String(),
       'end_time': endTime?.toIso8601String(),
       'notes': notes,
+      'address': address,
+      'contact_name': contactName,
+      'contact_phone': contactPhone,
+      'photo_path': photoPath,
       'status': 'scheduled',
       'created_by': createdByProfileId,
       'created_at': now,
@@ -330,6 +338,10 @@ class DataRepository {
     bool clearEndTime = false,
     String? notes,
     String? status,
+    String? address,
+    String? contactName,
+    String? contactPhone,
+    String? photoPath,
   }) async {
     final patch = <String, dynamic>{'updated_at': DateTime.now().toIso8601String()};
     if (clearStaff) {
@@ -351,8 +363,47 @@ class DataRepository {
     }
     if (notes != null) patch['notes'] = notes;
     if (status != null) patch['status'] = status;
+    if (address != null) patch['address'] = address;
+    if (contactName != null) patch['contact_name'] = contactName;
+    if (contactPhone != null) patch['contact_phone'] = contactPhone;
+    if (photoPath != null) patch['photo_path'] = photoPath;
     final saved = await _store.updateRow(Collections.manualAppointments, id, patch);
     return ManualAppointment.fromJson(saved);
+  }
+
+  /// Refleja el contacto de una cita manual en el expediente del paciente
+  /// (cuidador), SOLO si esos campos están vacíos (no pisa datos del clínico).
+  /// Opcionalmente agrega una nota (p.ej. domicilio de tratamiento) a
+  /// background_notes. Usado por el alta manual cuando el paciente ya existía.
+  Future<void> updatePatientContactIfEmpty(
+    String patientId, {
+    String? caregiverName,
+    String? caregiverPhone,
+    String? appendBackgroundNote,
+  }) async {
+    final rows =
+        _store.getAll(Collections.patients).where((r) => r['id'] == patientId).toList();
+    if (rows.isEmpty) return;
+    final r = rows.first;
+    final patch = <String, dynamic>{};
+    if (((r['caregiver_name'] as String?) ?? '').isEmpty &&
+        (caregiverName ?? '').isNotEmpty) {
+      patch['caregiver_name'] = caregiverName;
+      patch['has_identified_caregiver'] = true;
+    }
+    if (((r['caregiver_phone'] as String?) ?? '').isEmpty &&
+        (caregiverPhone ?? '').isNotEmpty) {
+      patch['caregiver_phone'] = caregiverPhone;
+      patch['has_identified_caregiver'] = true;
+    }
+    if ((appendBackgroundNote ?? '').isNotEmpty) {
+      final existing = ((r['background_notes'] as String?) ?? '').trim();
+      patch['background_notes'] =
+          existing.isEmpty ? appendBackgroundNote : '$existing\n$appendBackgroundNote';
+    }
+    if (patch.isNotEmpty) {
+      await _store.updateRow(Collections.patients, patientId, patch);
+    }
   }
 
   Future<void> cancelManualAppointment(String id) async {

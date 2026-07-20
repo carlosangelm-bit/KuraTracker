@@ -24,6 +24,45 @@ class PhotoUploadService {
   PhotoUploadService._();
 
   static const String _bucket = 'wound-evidence';
+  static const String _intakeBucket = 'intake-photos';
+
+  /// Sube una foto de admisión (agenda manual) al bucket privado
+  /// `intake-photos` y devuelve el valor a persistir en
+  /// `manual_appointments.photo_path`. La ruta empieza por `organization_id`
+  /// para que la RLS de storage (0023) autorice a admin/clínico del centro.
+  /// En modo demo local (sin Supabase) devuelve un data URL base64
+  /// autocontenido, mostrable con Image.network sin backend.
+  static Future<String> uploadIntakePhoto({
+    required String organizationId,
+    required Uint8List bytes,
+    required String fileName,
+    String contentType = 'image/jpeg',
+  }) async {
+    if (!AppConfig.isSupabaseConfigured) {
+      return 'data:$contentType;base64,${base64Encode(bytes)}';
+    }
+    final safeFileName = fileName.replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '_');
+    final path = '$organizationId/${DateTime.now().millisecondsSinceEpoch}_$safeFileName';
+    await Supabase.instance.client.storage.from(_intakeBucket).uploadBinary(
+          path,
+          bytes,
+          fileOptions: FileOptions(contentType: contentType, upsert: false),
+        );
+    return path;
+  }
+
+  /// Resuelve una URL mostrable para un `photo_path` de intake-photos (o un
+  /// data URL/URL ya autocontenida en demo).
+  static Future<String> resolveIntakePhotoUrl(String path) async {
+    if (path.startsWith('data:') ||
+        path.startsWith('http://') ||
+        path.startsWith('https://')) {
+      return path;
+    }
+    return Supabase.instance.client.storage
+        .from(_intakeBucket)
+        .createSignedUrl(path, 3600);
+  }
 
   /// Sube una foto de seguimiento y retorna el valor a persistir en
   /// `wound_photos.storage_path`.
