@@ -70,7 +70,7 @@ serve(async (_req) => {
         });
         if (value === NO_PHOTO) noPhoto++;
         else uploaded++;
-      } catch (_) {
+      } catch (_e) {
         value = PHOTO_ERROR;
         failed++;
       }
@@ -91,7 +91,10 @@ async function fetchAppointment(id: number): Promise<Record<string, unknown>> {
   const res = await fetch(`https://acuityscheduling.com/api/v1/appointments/${id}`, {
     headers: { Authorization: `Basic ${AUTH}` },
   });
-  if (!res.ok) throw new Error(`Acuity GET appointment ${id}: ${res.status}`);
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`Acuity GET appointment ${id}: ${res.status} ${body.slice(0, 300)}`);
+  }
   return (await res.json()) as Record<string, unknown>;
 }
 
