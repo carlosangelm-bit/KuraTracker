@@ -18,6 +18,7 @@
 
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { resolveOrCreatePatient } from "../_shared/acuity_patient.ts";
 
 const USER_ID = Deno.env.get("ACUITY_USER_ID") ?? "";
 const API_KEY = Deno.env.get("ACUITY_API_KEY") ?? "";
@@ -97,10 +98,30 @@ serve(async (req) => {
     }
   }
 
+  // Alta automática del paciente (dedup por email). Si la cita ya estaba
+  // vinculada a un paciente (p.ej. al reagendar/cambiar), se reutiliza ese
+  // vínculo en vez de resolver de nuevo.
+  const { data: existingAppt } = await supabase
+    .from("appointments")
+    .select("patient_id")
+    .eq("id", appt.id)
+    .maybeSingle();
+  let patientId = (existingAppt?.patient_id as string | null) ?? null;
+  if (!patientId) {
+    patientId = await resolveOrCreatePatient(supabase, {
+      organizationId: staff.organization_id,
+      staffId: staff.id,
+      firstName: appt.firstName ?? "",
+      lastName: appt.lastName ?? "",
+      email: appt.email ?? null,
+    });
+  }
+
   const { error } = await supabase.from("appointments").upsert({
     id: appt.id,
     organization_id: staff.organization_id,
     staff_id: staff.id,
+    patient_id: patientId,
     acuity_calendar_id: appt.calendarID,
     appointment_type_id: appt.appointmentTypeID,
     appointment_type: appt.type,
