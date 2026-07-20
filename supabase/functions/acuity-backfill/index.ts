@@ -35,20 +35,25 @@ import {
   resolveOrCreatePatient,
   STUB_NOTE,
 } from "../_shared/acuity_patient.ts";
-
-const USER_ID = Deno.env.get("ACUITY_USER_ID") ?? "";
-const API_KEY = Deno.env.get("ACUITY_API_KEY") ?? "";
-const AUTH = btoa(`${USER_ID}:${API_KEY}`);
+import { getAcuityAuth } from "../_shared/acuity_auth.ts";
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
 );
 
-serve(async (_req) => {
-  if (!USER_ID || !API_KEY) {
-    return json({ error: "Acuity no configurado (faltan secrets)." }, 503);
+serve(async (req) => {
+  // MULTI-CENTRO: si se pasa organizationId, se acota a ese centro y se usan sus
+  // credenciales; si no, se usan las globales y todos los Kuradores mapeados
+  // activos (comportamiento actual de Kura+).
+  let organizationId: string | null = null;
+  try {
+    organizationId = (await req.json())?.organizationId ?? null;
+  } catch (_) {
+    // sin body => modo global
   }
+  const auth = await getAcuityAuth(supabase, organizationId);
+  if (!auth) return json({ error: "Acuity no configurado para este centro." }, 503);
 
   // Trae TODAS las citas (incluye pasadas y canceladas). Se usa un `max`
   // holgado (2200, confirmado que cubre el histórico actual de Kura+); si el
@@ -56,7 +61,7 @@ serve(async (_req) => {
   // timeouts de la API de Acuity con valores muy altos.
   const res = await fetch(
     "https://acuityscheduling.com/api/v1/appointments?max=2200&showall=true",
-    { headers: { Authorization: `Basic ${AUTH}` } },
+    { headers: { Authorization: `Basic ${auth.basic}` } },
   );
   if (!res.ok) {
     return json({ error: `Acuity error ${res.status}` }, 502);
@@ -64,14 +69,15 @@ serve(async (_req) => {
   const appts = (await res.json()) as Array<Record<string, unknown>>;
 
   // Mapa calendarID -> {staff_id, organization_id} para resolver dueño.
-  // SOLO staff ACTIVO con calendario mapeado: así el espejo local se queda
-  // únicamente con las citas de Kuradores vigentes (no importa el histórico de
-  // proveedores inactivos/no mapeados).
-  const { data: staffRows } = await supabase
+  // SOLO staff ACTIVO con calendario mapeado; si se pasó organizationId, se
+  // acota a ese centro.
+  let staffSel = supabase
     .from("staff")
     .select("id, organization_id, acuity_calendar_id")
     .not("acuity_calendar_id", "is", null)
     .eq("is_active", true);
+  if (organizationId) staffSel = staffSel.eq("organization_id", organizationId);
+  const { data: staffRows } = await staffSel;
   const byCalendar = new Map<number, { id: string; organization_id: string }>();
   for (const s of staffRows ?? []) {
     byCalendar.set(Number(s.acuity_calendar_id), {

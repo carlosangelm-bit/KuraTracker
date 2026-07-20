@@ -2,27 +2,32 @@
 //
 // Por qué existe: Acuity no soporta CORS y las credenciales (API Key) NO
 // pueden vivir en el cliente. La app (Flutter) llama a esta función con su JWT
-// de Supabase (supabase.functions.invoke lo adjunta automáticamente), y aquí
-// se traduce la llamada a Acuity usando Basic Auth desde secrets del servidor.
+// de Supabase (supabase.functions.invoke lo adjunta), y aquí se traduce la
+// llamada a Acuity usando Basic Auth.
 //
-// Con verify_jwt ACTIVADO (default), solo usuarios autenticados de Supabase
-// pueden invocarla. La autorización fina (qué puede ver/hacer cada rol) se
-// aplica en la app + RLS sobre la tabla appointments; este proxy es un puente.
+// MULTI-CENTRO (Fase 2): las credenciales se resuelven según la organización
+// del usuario que llama (organization_acuity_credentials, 0022), con fallback a
+// los secrets globales (cuenta única actual). Así cada centro habla con SU
+// propia cuenta de Acuity.
 //
 // Uso desde la app: functions.invoke('acuity-proxy', body: {
 //   'method': 'GET'|'POST'|'PUT', 'path': '/appointment-types', 'query': {...},
-//   'payload': {...}   // cuerpo JSON para POST/PUT
+//   'payload': {...}
 // })
 //
-// Deploy:  supabase functions deploy acuity-proxy
-// Secrets: supabase secrets set ACUITY_USER_ID=... ACUITY_API_KEY=...
+// Deploy:  supabase functions deploy acuity-proxy   (con verify_jwt, default)
 
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { getAcuityAuth } from "../_shared/acuity_auth.ts";
 
-const USER_ID = Deno.env.get("ACUITY_USER_ID") ?? "";
-const API_KEY = Deno.env.get("ACUITY_API_KEY") ?? "";
-const AUTH = btoa(`${USER_ID}:${API_KEY}`);
 const ACUITY_BASE = "https://acuityscheduling.com/api/v1";
+
+const supabase = createClient(
+  Deno.env.get("SUPABASE_URL")!,
+  Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+  { auth: { autoRefreshToken: false, persistSession: false } },
+);
 
 interface ProxyRequest {
   method?: string;
@@ -32,9 +37,20 @@ interface ProxyRequest {
 }
 
 serve(async (req) => {
-  if (!USER_ID || !API_KEY) {
-    return json({ error: "Acuity no configurado (faltan secrets)." }, 503);
-  }
+  // Resolver el centro del usuario que llama (por su JWT) y sus credenciales.
+  const jwt = (req.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "");
+  if (!jwt) return json({ error: "No autenticado." }, 401);
+  const { data: caller, error: callerErr } = await supabase.auth.getUser(jwt);
+  if (callerErr || !caller.user) return json({ error: "Sesión inválida." }, 401);
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("organization_id")
+    .eq("id", caller.user.id)
+    .maybeSingle();
+
+  const auth = await getAcuityAuth(supabase, (profile?.organization_id as string | null) ?? null);
+  if (!auth) return json({ error: "Acuity no configurado para este centro." }, 503);
+
   let body: ProxyRequest;
   try {
     body = (await req.json()) as ProxyRequest;
@@ -54,7 +70,7 @@ serve(async (req) => {
   for (let attempt = 0; attempt < 3; attempt++) {
     const res = await fetch(target, {
       method,
-      headers: { Authorization: `Basic ${AUTH}`, "Content-Type": "application/json" },
+      headers: { Authorization: `Basic ${auth.basic}`, "Content-Type": "application/json" },
       body: method === "GET" || method === "HEAD" ? undefined : JSON.stringify(body.payload ?? {}),
     });
     if (res.status === 429 && attempt < 2) {

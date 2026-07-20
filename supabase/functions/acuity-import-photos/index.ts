@@ -21,10 +21,7 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { extractPhotoUrl, importIntakePhoto, NO_PHOTO, PHOTO_ERROR } from "../_shared/acuity_photo.ts";
-
-const USER_ID = Deno.env.get("ACUITY_USER_ID") ?? "";
-const API_KEY = Deno.env.get("ACUITY_API_KEY") ?? "";
-const AUTH = btoa(`${USER_ID}:${API_KEY}`);
+import { type AcuityAuth, getAcuityAuth } from "../_shared/acuity_auth.ts";
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -35,10 +32,6 @@ const supabase = createClient(
 const BATCH = 10;
 
 serve(async (_req) => {
-  if (!USER_ID || !API_KEY) {
-    return json({ error: "Acuity no configurado (faltan secrets)." }, 503);
-  }
-
   const { data: rows, error } = await supabase
     .from("appointments")
     .select("id, organization_id, raw")
@@ -50,6 +43,8 @@ serve(async (_req) => {
   let uploaded = 0;
   let noPhoto = 0;
   let failed = 0;
+  // Credenciales por centro (cacheadas por organización dentro del lote).
+  const authByOrg = new Map<string, AcuityAuth | null>();
 
   for (const r of rows ?? []) {
     let value: string;
@@ -61,11 +56,15 @@ serve(async (_req) => {
       noPhoto++;
     } else {
       try {
+        const org = r.organization_id as string;
+        if (!authByOrg.has(org)) authByOrg.set(org, await getAcuityAuth(supabase, org));
+        const auth = authByOrg.get(org);
+        if (!auth) throw new Error("acuity no configurado para el centro");
         // 2) Copia FRESCA de la cita (URL de foto no caducada).
-        const fresh = await fetchAppointment(r.id as number);
+        const fresh = await fetchAppointment(r.id as number, auth.basic);
         value = await importIntakePhoto(supabase, {
           appointmentId: r.id as number,
-          organizationId: r.organization_id as string,
+          organizationId: org,
           appt: fresh,
         });
         if (value === NO_PHOTO) noPhoto++;
@@ -87,9 +86,9 @@ serve(async (_req) => {
   return json({ uploaded, noPhoto, failed, remaining: remaining ?? 0 });
 });
 
-async function fetchAppointment(id: number): Promise<Record<string, unknown>> {
+async function fetchAppointment(id: number, basic: string): Promise<Record<string, unknown>> {
   const res = await fetch(`https://acuityscheduling.com/api/v1/appointments/${id}`, {
-    headers: { Authorization: `Basic ${AUTH}` },
+    headers: { Authorization: `Basic ${basic}` },
   });
   if (!res.ok) {
     const body = await res.text().catch(() => "");

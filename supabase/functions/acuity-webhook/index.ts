@@ -20,10 +20,7 @@ import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { extractEnrichment, resolveOrCreatePatient } from "../_shared/acuity_patient.ts";
 import { importIntakePhoto, PHOTO_ERROR } from "../_shared/acuity_photo.ts";
-
-const USER_ID = Deno.env.get("ACUITY_USER_ID") ?? "";
-const API_KEY = Deno.env.get("ACUITY_API_KEY") ?? "";
-const AUTH = btoa(`${USER_ID}:${API_KEY}`);
+import { getAcuityAuth } from "../_shared/acuity_auth.ts";
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -32,11 +29,11 @@ const supabase = createClient(
 
 // HMAC-SHA256 (base64) del cuerpo crudo usando la API Key como secreto,
 // comparado con el header x-acuity-signature.
-async function validSignature(rawBody: string, signature: string): Promise<boolean> {
+async function validSignature(apiKey: string, rawBody: string, signature: string): Promise<boolean> {
   if (!signature) return false;
   const key = await crypto.subtle.importKey(
     "raw",
-    new TextEncoder().encode(API_KEY),
+    new TextEncoder().encode(apiKey),
     { name: "HMAC", hash: "SHA-256" },
     false,
     ["sign"],
@@ -47,8 +44,16 @@ async function validSignature(rawBody: string, signature: string): Promise<boole
 }
 
 serve(async (req) => {
+  // MULTI-CENTRO: cada centro registra su webhook apuntando a
+  // .../acuity-webhook?org=<uuid>, para saber de qué centro es y validar la
+  // firma HMAC con SU API key. Sin `org` (webhooks de la cuenta única actual),
+  // se usan las credenciales globales (fallback).
+  const orgParam = new URL(req.url).searchParams.get("org");
+  const auth = await getAcuityAuth(supabase, orgParam);
+  if (!auth) return new Response("acuity not configured", { status: 401 });
+
   const raw = await req.text();
-  if (!(await validSignature(raw, req.headers.get("x-acuity-signature") ?? ""))) {
+  if (!(await validSignature(auth.apiKey, raw, req.headers.get("x-acuity-signature") ?? ""))) {
     return new Response("invalid signature", { status: 401 });
   }
 
@@ -61,19 +66,21 @@ serve(async (req) => {
   // Detalle completo de la cita.
   const acuityRes = await fetch(
     `https://acuityscheduling.com/api/v1/appointments/${id}`,
-    { headers: { Authorization: `Basic ${AUTH}` } },
+    { headers: { Authorization: `Basic ${auth.basic}` } },
   );
   if (!acuityRes.ok) return new Response("acuity fetch error", { status: 502 });
   const appt = await acuityRes.json();
 
   // Resolver staff (Kurador) y organización desde el calendario de Acuity.
-  // Solo Kuradores ACTIVOS con calendario mapeado.
-  const { data: staff } = await supabase
+  // Solo Kuradores ACTIVOS con calendario mapeado; si el webhook trae `org`, se
+  // acota a ese centro (evita colisión de calendarID entre cuentas distintas).
+  let staffQuery = supabase
     .from("staff")
     .select("id, organization_id")
     .eq("acuity_calendar_id", appt.calendarID)
-    .eq("is_active", true)
-    .maybeSingle();
+    .eq("is_active", true);
+  if (orgParam) staffQuery = staffQuery.eq("organization_id", orgParam);
+  const { data: staff } = await staffQuery.maybeSingle();
 
   // Si la cita no pertenece a un Kurador activo mapeado, no la almacenamos:
   // respondemos 200 para que Acuity NO reintente y la tabla se mantenga limpia.

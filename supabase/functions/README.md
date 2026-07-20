@@ -301,3 +301,46 @@ curl -X POST '.../functions/v1/acuity-import-photos' -H "Authorization: Bearer <
 ## Verificación
 - `select count(*) from public.appointments where intake_photo_path like '%/%';` (fotos guardadas)
 - En la app: Agenda → tocar una cita con foto → se muestra bajo "Foto de la herida".
+
+---
+
+# Acuity multi-centro (Fase 2 — credenciales por organización)
+
+Cada centro puede conectar SU propia cuenta de Acuity, en vez de la cuenta única
+global (secrets). Retrocompatible: si un centro no tiene credenciales propias, se
+usa el fallback global (ACUITY_USER_ID / ACUITY_API_KEY) — Kura+ sigue igual.
+
+## Migración
+```
+supabase db push      # 0022: tabla organization_acuity_credentials + RPCs
+```
+- `organization_acuity_credentials`: RLS habilitada SIN policies de cliente (la
+  API key nunca es legible/escribible directo). Solo service role + RPCs.
+- RPCs (security definer, validan admin del centro / master):
+  `set_org_acuity_credentials(p_org,p_user_id,p_api_key)`,
+  `get_org_acuity_status(p_org)` (devuelve user_id + últimos 4 de la key, nunca
+  la key completa), `mark_org_acuity_webhooks(p_org,bool)`.
+
+## Resolución de credenciales
+`_shared/acuity_auth.ts` (`getAcuityAuth(db, orgId)`): 1) credenciales del centro
+si existen; 2) fallback a los secrets globales. Lo usan las 5 Edge Functions.
+
+## Re-desplegar las funciones (traen el cambio)
+```
+supabase functions deploy acuity-proxy            # resuelve el centro del que llama (por su JWT)
+supabase functions deploy acuity-webhook --no-verify-jwt
+supabase functions deploy acuity-sync-calendars
+supabase functions deploy acuity-backfill
+supabase functions deploy acuity-import-photos
+```
+
+## Webhooks por centro
+Cada centro registra sus webhooks apuntando a
+`.../acuity-webhook?org=<organization_id>` (así el webhook sabe de qué centro es
+y valida la firma HMAC con SU key). Los webhooks actuales de Kura+ (sin `?org=`)
+siguen funcionando con el fallback global.
+
+## Pendiente (Fase 2b)
+UI para que el admin ingrese/actualice sus credenciales (RPCs), pruebe la
+conexión, auto-registre webhooks y mapee calendarios; y ponga scheduling_mode =
+'acuity'. Hardening: cifrar acuity_api_key con Supabase Vault.
