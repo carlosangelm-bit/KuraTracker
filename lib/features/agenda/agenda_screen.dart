@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
+import '../../core/design/tokens.dart';
 import '../../core/theme/kura_theme.dart';
 import '../../core/providers/session_provider.dart';
 import '../../models/app_user.dart';
@@ -11,11 +12,34 @@ import '../../services/acuity_service.dart';
 /// Agenda de citas (Acuity Scheduling). El clínico ve SUS citas y el admin las
 /// del centro (el aislamiento lo aplica la RLS de la tabla `appointments`).
 /// Las altas/cambios pasan por la Edge Function `acuity-proxy`.
-class AgendaScreen extends ConsumerWidget {
+///
+/// UI: encabezado resumen + dos vistas conmutables (Día / Semana). En móvil la
+/// vista por defecto es Día (lista agrupada por jornada); en escritorio,
+/// Semana (columnas por día). El admin ve una insignia con el Kurador dueño de
+/// cada cita y puede filtrar por uno.
+class AgendaScreen extends ConsumerStatefulWidget {
   const AgendaScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<AgendaScreen> createState() => _AgendaScreenState();
+}
+
+enum _AgendaView { dia, semana }
+
+class _AgendaScreenState extends ConsumerState<AgendaScreen> {
+  // null = automático según el ancho (día en móvil, semana en escritorio).
+  _AgendaView? _view;
+  // Lunes de la semana visible en la vista Semana.
+  DateTime _weekStart = _mondayOf(DateTime.now());
+  // Día seleccionado dentro de la vista Semana en pantallas angostas.
+  DateTime? _selectedDay;
+  // Vista Día: si mostrar también las citas pasadas.
+  bool _showHistory = false;
+  // Admin: filtro por Kurador (staff_id) o null para todos.
+  String? _kuradorFilter;
+
+  @override
+  Widget build(BuildContext context) {
     final service = ref.watch(acuityServiceProvider);
     final user = ref.watch(sessionProvider).user;
     final isAdmin = user?.role == AppRole.admin;
@@ -33,20 +57,13 @@ class AgendaScreen extends ConsumerWidget {
                 if (!snapshot.hasData) {
                   return const Center(child: CircularProgressIndicator());
                 }
-                final now = DateTime.now();
-                final appointments = snapshot.data!
-                    .where((a) => !a.isCanceled && (a.datetime?.isAfter(now) ?? false))
-                    .toList();
-                if (appointments.isEmpty) {
-                  return const _AgendaEmpty();
-                }
-                return ListView.separated(
-                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
-                  itemCount: appointments.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 8),
-                  itemBuilder: (context, i) =>
-                      _AppointmentTile(appointment: appointments[i], service: service),
-                );
+                // Citas válidas (no canceladas y con fecha). Se conservan
+                // pasadas y futuras: las vistas deciden qué mostrar.
+                final all = snapshot.data!
+                    .where((a) => !a.isCanceled && a.datetime != null)
+                    .toList()
+                  ..sort((a, b) => a.datetime!.compareTo(b.datetime!));
+                return _buildContent(context, all, isAdmin, service);
               },
             ),
       floatingActionButton: service.isAvailable
@@ -60,7 +77,866 @@ class AgendaScreen extends ConsumerWidget {
           : null,
     );
   }
+
+  Widget _buildContent(
+    BuildContext context,
+    List<Appointment> all,
+    bool isAdmin,
+    AcuityService service,
+  ) {
+    final width = MediaQuery.sizeOf(context).width;
+    final isWide = width >= 900;
+    final view = _view ?? (isWide ? _AgendaView.semana : _AgendaView.dia);
+
+    // Nombres de Kurador por staff_id (solo relevante para el admin).
+    final staffNames = <String, String>{};
+    if (isAdmin) {
+      final repo = ref.watch(dataRepositoryProvider).valueOrNull;
+      if (repo != null) {
+        for (final s in repo.listStaff()) {
+          staffNames[s.id] = s.fullName;
+        }
+      }
+    }
+
+    // Filtro por Kurador (admin).
+    final filtered = _kuradorFilter == null
+        ? all
+        : all.where((a) => a.staffId == _kuradorFilter).toList();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _SummaryHeader(appointments: all),
+        _Controls(
+          view: view,
+          onViewChanged: (v) => setState(() => _view = v),
+          isAdmin: isAdmin,
+          showHistory: _showHistory,
+          onHistoryChanged: (v) => setState(() => _showHistory = v),
+          weekStart: _weekStart,
+          onWeekDelta: (days) => setState(() {
+            _weekStart = _dayStart(_weekStart.add(Duration(days: days)));
+            _selectedDay = null;
+          }),
+          onWeekToday: () => setState(() {
+            _weekStart = _mondayOf(DateTime.now());
+            _selectedDay = null;
+          }),
+          kuradorFilter: _kuradorFilter,
+          kuradorOptions: _kuradorOptions(all, staffNames),
+          onKuradorChanged: (v) => setState(() => _kuradorFilter = v),
+        ),
+        const Divider(height: 1),
+        Expanded(
+          child: view == _AgendaView.dia
+              ? _DayAgenda(
+                  appointments: filtered,
+                  showHistory: _showHistory,
+                  isAdmin: isAdmin,
+                  staffNames: staffNames,
+                  service: service,
+                )
+              : _WeekAgenda(
+                  appointments: filtered,
+                  weekStart: _weekStart,
+                  isWide: isWide,
+                  selectedDay: _selectedDay,
+                  onSelectDay: (d) => setState(() => _selectedDay = d),
+                  isAdmin: isAdmin,
+                  staffNames: staffNames,
+                  service: service,
+                ),
+        ),
+      ],
+    );
+  }
+
+  /// Opciones de filtro por Kurador: (staffId, nombre) de los que tengan al
+  /// menos una cita. Vacío si hay 0/1 Kurador (no vale la pena el filtro).
+  List<MapEntry<String, String>> _kuradorOptions(
+      List<Appointment> all, Map<String, String> staffNames) {
+    final ids = all.map((a) => a.staffId).whereType<String>().toSet();
+    if (ids.length < 2) return const [];
+    final entries = ids
+        .map((id) => MapEntry(id, staffNames[id] ?? 'Kurador'))
+        .toList()
+      ..sort((a, b) => a.value.toLowerCase().compareTo(b.value.toLowerCase()));
+    return entries;
+  }
 }
+
+// ---------------------------------------------------------------------------
+// Encabezado resumen
+// ---------------------------------------------------------------------------
+
+class _SummaryHeader extends StatelessWidget {
+  final List<Appointment> appointments;
+  const _SummaryHeader({required this.appointments});
+
+  @override
+  Widget build(BuildContext context) {
+    final now = DateTime.now();
+    final today = _dayStart(now);
+    final weekStart = _mondayOf(now);
+    final weekEnd = weekStart.add(const Duration(days: 7));
+
+    final todayCount = appointments.where((a) => _sameDay(a.datetime!, now)).length;
+    final weekCount = appointments
+        .where((a) => !a.datetime!.isBefore(weekStart) && a.datetime!.isBefore(weekEnd))
+        .length;
+    Appointment? next;
+    for (final a in appointments) {
+      if (a.datetime!.isAfter(now)) {
+        next = a;
+        break; // 'appointments' viene ordenada ascendente
+      }
+    }
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [KuraPalette.heroTop, KuraPalette.heroBottom],
+        ),
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: KuraPalette.brandPrimary.withOpacity(0.28),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Hoy · ${_dayLong(today)}',
+                    style: TextStyle(color: Colors.white.withOpacity(0.75), fontSize: 12)),
+                const SizedBox(height: 2),
+                Text(
+                  todayCount == 0
+                      ? 'Sin citas hoy'
+                      : '$todayCount ${todayCount == 1 ? 'cita' : 'citas'}',
+                  style: const TextStyle(
+                      color: Colors.white, fontSize: 26, fontWeight: FontWeight.w800),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (next != null) ...[
+                Text('Próxima',
+                    style: TextStyle(color: Colors.white.withOpacity(0.75), fontSize: 12)),
+                Text(
+                  '${_dayLabel(next.datetime!)} · ${DateFormat('HH:mm').format(next.datetime!)}',
+                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 6),
+              ],
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.16),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text('Esta semana: $weekCount',
+                    style: const TextStyle(color: Colors.white, fontSize: 12)),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Controles (toggle vista + navegación semana + historial + filtro Kurador)
+// ---------------------------------------------------------------------------
+
+class _Controls extends StatelessWidget {
+  final _AgendaView view;
+  final ValueChanged<_AgendaView> onViewChanged;
+  final bool isAdmin;
+  final bool showHistory;
+  final ValueChanged<bool> onHistoryChanged;
+  final DateTime weekStart;
+  final ValueChanged<int> onWeekDelta;
+  final VoidCallback onWeekToday;
+  final String? kuradorFilter;
+  final List<MapEntry<String, String>> kuradorOptions;
+  final ValueChanged<String?> onKuradorChanged;
+
+  const _Controls({
+    required this.view,
+    required this.onViewChanged,
+    required this.isAdmin,
+    required this.showHistory,
+    required this.onHistoryChanged,
+    required this.weekStart,
+    required this.onWeekDelta,
+    required this.onWeekToday,
+    required this.kuradorFilter,
+    required this.kuradorOptions,
+    required this.onKuradorChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+      child: Column(
+        children: [
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              // Toggle de vista.
+              ChoiceChip(
+                label: const Text('Día'),
+                selected: view == _AgendaView.dia,
+                selectedColor: KuraColors.primary.withOpacity(0.15),
+                onSelected: (_) => onViewChanged(_AgendaView.dia),
+              ),
+              ChoiceChip(
+                label: const Text('Semana'),
+                selected: view == _AgendaView.semana,
+                selectedColor: KuraColors.primary.withOpacity(0.15),
+                onSelected: (_) => onViewChanged(_AgendaView.semana),
+              ),
+              if (view == _AgendaView.dia)
+                FilterChip(
+                  label: const Text('Historial'),
+                  avatar: const Icon(Icons.history, size: 16),
+                  selected: showHistory,
+                  selectedColor: KuraColors.primary.withOpacity(0.15),
+                  onSelected: onHistoryChanged,
+                ),
+              if (kuradorOptions.isNotEmpty) _kuradorDropdown(),
+            ],
+          ),
+          if (view == _AgendaView.semana) ...[
+            const SizedBox(height: 8),
+            _weekNav(),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _kuradorDropdown() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      decoration: BoxDecoration(
+        border: Border.all(color: KuraColors.primary.withOpacity(0.35)),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String?>(
+          value: kuradorFilter,
+          isDense: true,
+          icon: const Icon(Icons.filter_list, size: 18),
+          hint: const Text('Kurador', style: TextStyle(fontSize: 13)),
+          items: [
+            const DropdownMenuItem<String?>(value: null, child: Text('Todos los Kuradores')),
+            ...kuradorOptions.map(
+              (e) => DropdownMenuItem<String?>(value: e.key, child: Text(e.value)),
+            ),
+          ],
+          onChanged: onKuradorChanged,
+        ),
+      ),
+    );
+  }
+
+  Widget _weekNav() {
+    final weekEnd = weekStart.add(const Duration(days: 6));
+    final sameMonth = weekStart.month == weekEnd.month;
+    final label = sameMonth
+        ? '${weekStart.day}–${weekEnd.day} ${_mo[weekStart.month - 1]}'
+        : '${weekStart.day} ${_mo[weekStart.month - 1]} – ${weekEnd.day} ${_mo[weekEnd.month - 1]}';
+    return Row(
+      children: [
+        IconButton(
+          icon: const Icon(Icons.chevron_left),
+          tooltip: 'Semana anterior',
+          onPressed: () => onWeekDelta(-7),
+        ),
+        Expanded(
+          child: Center(
+            child: Text(label,
+                style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+          ),
+        ),
+        TextButton(onPressed: onWeekToday, child: const Text('Hoy')),
+        IconButton(
+          icon: const Icon(Icons.chevron_right),
+          tooltip: 'Semana siguiente',
+          onPressed: () => onWeekDelta(7),
+        ),
+      ],
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Vista Día: lista agrupada por jornada
+// ---------------------------------------------------------------------------
+
+class _DayAgenda extends StatelessWidget {
+  final List<Appointment> appointments;
+  final bool showHistory;
+  final bool isAdmin;
+  final Map<String, String> staffNames;
+  final AcuityService service;
+
+  const _DayAgenda({
+    required this.appointments,
+    required this.showHistory,
+    required this.isAdmin,
+    required this.staffNames,
+    required this.service,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final today = _dayStart(DateTime.now());
+    final visible = showHistory
+        ? appointments
+        : appointments.where((a) => !_dayStart(a.datetime!).isBefore(today)).toList();
+    if (visible.isEmpty) {
+      return _AgendaEmpty(
+        message: showHistory ? 'Sin citas registradas.' : 'Sin citas próximas',
+      );
+    }
+
+    // Agrupar por día conservando el orden (asc). En modo historial se
+    // muestra de más reciente a más antiguo para que lo último quede arriba.
+    final ordered = showHistory ? visible.reversed.toList() : visible;
+    final groups = <DateTime, List<Appointment>>{};
+    for (final a in ordered) {
+      groups.putIfAbsent(_dayStart(a.datetime!), () => []).add(a);
+    }
+
+    final children = <Widget>[];
+    groups.forEach((day, appts) {
+      children.add(_DayHeader(day: day, count: appts.length));
+      for (final a in appts) {
+        children.add(_AppointmentTile(
+          appointment: a,
+          service: service,
+          kuradorName: isAdmin ? staffNames[a.staffId] : null,
+        ));
+      }
+    });
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
+      children: children,
+    );
+  }
+}
+
+class _DayHeader extends StatelessWidget {
+  final DateTime day;
+  final int count;
+  const _DayHeader({required this.day, required this.count});
+
+  @override
+  Widget build(BuildContext context) {
+    final isToday = _sameDay(day, DateTime.now());
+    return Padding(
+      padding: const EdgeInsets.only(top: 12, bottom: 6),
+      child: Row(
+        children: [
+          Text(
+            _dayLabel(day),
+            style: TextStyle(
+              fontWeight: FontWeight.w800,
+              fontSize: 14,
+              color: isToday ? KuraColors.primary : KuraColors.darkText,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text('· $count', style: TextStyle(fontSize: 12, color: KuraColors.darkText.withOpacity(0.5))),
+        ],
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Vista Semana: ancha = 7 columnas; angosta = tira de días + lista del día
+// ---------------------------------------------------------------------------
+
+class _WeekAgenda extends StatelessWidget {
+  final List<Appointment> appointments;
+  final DateTime weekStart;
+  final bool isWide;
+  final DateTime? selectedDay;
+  final ValueChanged<DateTime> onSelectDay;
+  final bool isAdmin;
+  final Map<String, String> staffNames;
+  final AcuityService service;
+
+  const _WeekAgenda({
+    required this.appointments,
+    required this.weekStart,
+    required this.isWide,
+    required this.selectedDay,
+    required this.onSelectDay,
+    required this.isAdmin,
+    required this.staffNames,
+    required this.service,
+  });
+
+  List<Appointment> _forDay(DateTime day) =>
+      appointments.where((a) => _sameDay(a.datetime!, day)).toList();
+
+  @override
+  Widget build(BuildContext context) {
+    final days = List.generate(7, (i) => _dayStart(weekStart.add(Duration(days: i))));
+    return isWide ? _wide(days) : _narrow(context, days);
+  }
+
+  Widget _wide(List<DateTime> days) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 96),
+      child: Row(
+        // stretch: cada columna recibe la altura completa (tight) para que el
+        // Expanded(ListView) interno tenga altura acotada y las 7 columnas
+        // queden a la misma altura (cuadrícula de semana).
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (final day in days)
+            Expanded(
+              child: _WeekColumn(
+                day: day,
+                appts: _forDay(day),
+                isAdmin: isAdmin,
+                staffNames: staffNames,
+                service: service,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _narrow(BuildContext context, List<DateTime> days) {
+    // Día seleccionado: el provisto si cae en la semana; si no, hoy (si está
+    // en la semana) o el primer día.
+    DateTime selected = selectedDay ?? DateTime.now();
+    if (!days.any((d) => _sameDay(d, selected))) {
+      final today = DateTime.now();
+      selected = days.any((d) => _sameDay(d, today)) ? _dayStart(today) : days.first;
+    }
+    final dayAppts = _forDay(selected)..sort((a, b) => a.datetime!.compareTo(b.datetime!));
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SizedBox(
+          height: 64,
+          child: Row(
+            children: [
+              for (final day in days)
+                Expanded(
+                  child: _WeekStripCell(
+                    day: day,
+                    count: _forDay(day).length,
+                    selected: _sameDay(day, selected),
+                    onTap: () => onSelectDay(_dayStart(day)),
+                  ),
+                ),
+            ],
+          ),
+        ),
+        const Divider(height: 1),
+        Expanded(
+          child: dayAppts.isEmpty
+              ? _AgendaEmpty(message: 'Sin citas el ${_dayLabel(selected)}')
+              : ListView(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 96),
+                  children: [
+                    for (final a in dayAppts)
+                      _AppointmentTile(
+                        appointment: a,
+                        service: service,
+                        kuradorName: isAdmin ? staffNames[a.staffId] : null,
+                      ),
+                  ],
+                ),
+        ),
+      ],
+    );
+  }
+}
+
+class _WeekStripCell extends StatelessWidget {
+  final DateTime day;
+  final int count;
+  final bool selected;
+  final VoidCallback onTap;
+  const _WeekStripCell({
+    required this.day,
+    required this.count,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isToday = _sameDay(day, DateTime.now());
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 2, vertical: 6),
+        decoration: BoxDecoration(
+          color: selected ? KuraColors.primary : Colors.transparent,
+          borderRadius: BorderRadius.circular(12),
+          border: isToday && !selected
+              ? Border.all(color: KuraColors.primary.withOpacity(0.5))
+              : null,
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(
+              _wd[day.weekday - 1],
+              style: TextStyle(
+                fontSize: 11,
+                color: selected ? Colors.white70 : KuraColors.darkText.withOpacity(0.6),
+              ),
+            ),
+            Text(
+              '${day.day}',
+              style: TextStyle(
+                fontWeight: FontWeight.w700,
+                color: selected ? Colors.white : KuraColors.darkText,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Container(
+              width: 16,
+              height: 16,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: count == 0
+                    ? Colors.transparent
+                    : (selected ? Colors.white24 : KuraColors.primary.withOpacity(0.15)),
+                shape: BoxShape.circle,
+              ),
+              child: count == 0
+                  ? null
+                  : Text(
+                      '$count',
+                      style: TextStyle(
+                        fontSize: 9,
+                        fontWeight: FontWeight.w700,
+                        color: selected ? Colors.white : KuraColors.primary,
+                      ),
+                    ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Columna de un día en la vista Semana ancha (escritorio).
+class _WeekColumn extends StatelessWidget {
+  final DateTime day;
+  final List<Appointment> appts;
+  final bool isAdmin;
+  final Map<String, String> staffNames;
+  final AcuityService service;
+
+  const _WeekColumn({
+    required this.day,
+    required this.appts,
+    required this.isAdmin,
+    required this.staffNames,
+    required this.service,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isToday = _sameDay(day, DateTime.now());
+    final sorted = [...appts]..sort((a, b) => a.datetime!.compareTo(b.datetime!));
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 4),
+      decoration: BoxDecoration(
+        color: isToday ? KuraColors.primary.withOpacity(0.05) : null,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: KuraColors.darkText.withOpacity(0.08)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 6),
+            child: Column(
+              children: [
+                Text(
+                  _wd[day.weekday - 1],
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: KuraColors.darkText.withOpacity(0.6),
+                  ),
+                ),
+                Text(
+                  '${day.day}',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w800,
+                    color: isToday ? KuraColors.primary : KuraColors.darkText,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1),
+          Expanded(
+            child: sorted.isEmpty
+                ? Center(
+                    child: Text('—',
+                        style: TextStyle(color: KuraColors.darkText.withOpacity(0.25))),
+                  )
+                : ListView(
+                    padding: const EdgeInsets.all(6),
+                    children: [
+                      for (final a in sorted)
+                        _WeekChip(
+                          appointment: a,
+                          service: service,
+                          kuradorName: isAdmin ? staffNames[a.staffId] : null,
+                        ),
+                    ],
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Cita compacta dentro de una columna de la vista Semana ancha.
+class _WeekChip extends StatelessWidget {
+  final Appointment appointment;
+  final AcuityService service;
+  final String? kuradorName;
+  const _WeekChip({required this.appointment, required this.service, this.kuradorName});
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(8),
+      onTap: () => _showAppointmentActions(context, service, appointment),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+        decoration: BoxDecoration(
+          color: KuraColors.primary.withOpacity(0.10),
+          borderRadius: BorderRadius.circular(8),
+          border: Border(left: BorderSide(color: KuraColors.primary, width: 3)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(DateFormat('HH:mm').format(appointment.datetime!),
+                style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12)),
+            Text(
+              appointment.patientName.isEmpty ? 'Cita' : appointment.patientName,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 12),
+            ),
+            if (kuradorName != null)
+              Text(kuradorName!,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 10, color: KuraColors.darkText.withOpacity(0.55))),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Tarjeta de cita (vistas Día y Semana angosta)
+// ---------------------------------------------------------------------------
+
+class _AppointmentTile extends StatelessWidget {
+  final Appointment appointment;
+  final AcuityService service;
+  final String? kuradorName;
+  const _AppointmentTile({
+    required this.appointment,
+    required this.service,
+    this.kuradorName,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final dt = appointment.datetime!;
+    final isPast = dt.isBefore(DateTime.now());
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        child: Row(
+          children: [
+            // Bloque de hora prominente.
+            Container(
+              width: 56,
+              padding: const EdgeInsets.symmetric(vertical: 6),
+              decoration: BoxDecoration(
+                color: KuraColors.primary.withOpacity(isPast ? 0.06 : 0.12),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Column(
+                children: [
+                  Text(
+                    DateFormat('HH:mm').format(dt),
+                    style: TextStyle(
+                      fontWeight: FontWeight.w800,
+                      color: isPast ? KuraColors.darkText.withOpacity(0.5) : KuraColors.primary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    appointment.patientName.isEmpty ? 'Cita' : appointment.patientName,
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 2),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 4,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      if (appointment.appointmentType != null)
+                        _MiniChip(
+                          icon: Icons.medical_services_outlined,
+                          label: appointment.appointmentType!,
+                        ),
+                      if (kuradorName != null)
+                        _MiniChip(icon: Icons.person_outline, label: kuradorName!),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            PopupMenuButton<String>(
+              onSelected: (v) async {
+                if (v == 'cancel') {
+                  await _confirmCancel(context, service, appointment);
+                } else if (v == 'reschedule') {
+                  await _openScheduleSheet(context, service, rescheduleId: appointment.id);
+                }
+              },
+              itemBuilder: (_) => const [
+                PopupMenuItem(value: 'reschedule', child: Text('Reagendar')),
+                PopupMenuItem(value: 'cancel', child: Text('Cancelar cita')),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MiniChip extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  const _MiniChip({required this.icon, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: KuraColors.chipBg,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 13, color: KuraColors.darkText.withOpacity(0.6)),
+          const SizedBox(width: 4),
+          Text(label,
+              style: TextStyle(fontSize: 11, color: KuraColors.darkText.withOpacity(0.75))),
+        ],
+      ),
+    );
+  }
+}
+
+/// Acciones (reagendar/cancelar) para una cita, mostradas al tocar un chip de
+/// la vista Semana ancha (que no tiene menú propio por espacio).
+void _showAppointmentActions(
+    BuildContext context, AcuityService service, Appointment a) {
+  showModalBottomSheet<void>(
+    context: context,
+    builder: (sheetCtx) => SafeArea(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ListTile(
+            title: Text(a.patientName.isEmpty ? 'Cita' : a.patientName,
+                style: const TextStyle(fontWeight: FontWeight.w700)),
+            subtitle: Text(a.datetime == null
+                ? '—'
+                : DateFormat('dd/MM/yyyy · HH:mm').format(a.datetime!)),
+          ),
+          const Divider(height: 1),
+          ListTile(
+            leading: const Icon(Icons.schedule),
+            title: const Text('Reagendar'),
+            onTap: () {
+              Navigator.pop(sheetCtx);
+              _openScheduleSheet(context, service, rescheduleId: a.id);
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.cancel_outlined, color: KuraColors.danger),
+            title: const Text('Cancelar cita'),
+            onTap: () {
+              Navigator.pop(sheetCtx);
+              _confirmCancel(context, service, a);
+            },
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Flujo de alta / reagenda (bottom sheet) — sin cambios de lógica
+// ---------------------------------------------------------------------------
 
 Future<void> _openScheduleSheet(
   BuildContext context,
@@ -80,45 +956,6 @@ Future<void> _openScheduleSheet(
       ),
     ),
   );
-}
-
-class _AppointmentTile extends StatelessWidget {
-  final Appointment appointment;
-  final AcuityService service;
-  const _AppointmentTile({required this.appointment, required this.service});
-
-  @override
-  Widget build(BuildContext context) {
-    final dt = appointment.datetime;
-    final dateStr = dt == null ? '—' : DateFormat('dd/MM/yyyy · HH:mm').format(dt);
-    return Card(
-      child: ListTile(
-        leading: CircleAvatar(
-          backgroundColor: KuraColors.primary.withOpacity(0.12),
-          child: const Icon(Icons.event, color: KuraColors.primary),
-        ),
-        title: Text(appointment.patientName.isEmpty ? 'Cita' : appointment.patientName,
-            style: const TextStyle(fontWeight: FontWeight.w600)),
-        subtitle: Text(
-          '$dateStr'
-          '${appointment.appointmentType != null ? ' · ${appointment.appointmentType}' : ''}',
-        ),
-        trailing: PopupMenuButton<String>(
-          onSelected: (v) async {
-            if (v == 'cancel') {
-              await _confirmCancel(context, service, appointment);
-            } else if (v == 'reschedule') {
-              await _openScheduleSheet(context, service, rescheduleId: appointment.id);
-            }
-          },
-          itemBuilder: (_) => const [
-            PopupMenuItem(value: 'reschedule', child: Text('Reagendar')),
-            PopupMenuItem(value: 'cancel', child: Text('Cancelar cita')),
-          ],
-        ),
-      ),
-    );
-  }
 }
 
 Future<void> _confirmCancel(
@@ -420,7 +1257,8 @@ class _AgendaUnavailable extends StatelessWidget {
 }
 
 class _AgendaEmpty extends StatelessWidget {
-  const _AgendaEmpty();
+  final String message;
+  const _AgendaEmpty({this.message = 'Sin citas próximas'});
   @override
   Widget build(BuildContext context) {
     return Center(
@@ -432,11 +1270,42 @@ class _AgendaEmpty extends StatelessWidget {
             Icon(Icons.event_available_outlined,
                 size: 48, color: KuraColors.darkText.withOpacity(0.25)),
             const SizedBox(height: 12),
-            Text('Sin citas próximas',
-                style: TextStyle(color: KuraColors.darkText.withOpacity(0.6))),
+            Text(message, style: TextStyle(color: KuraColors.darkText.withOpacity(0.6))),
           ],
         ),
       ),
     );
   }
 }
+
+// ---------------------------------------------------------------------------
+// Helpers de fecha (etiquetas en español sin depender de intl locale data)
+// ---------------------------------------------------------------------------
+
+const List<String> _wd = ['lun', 'mar', 'mié', 'jue', 'vie', 'sáb', 'dom'];
+const List<String> _mo = [
+  'ene', 'feb', 'mar', 'abr', 'may', 'jun',
+  'jul', 'ago', 'sep', 'oct', 'nov', 'dic'
+];
+
+DateTime _dayStart(DateTime d) => DateTime(d.year, d.month, d.day);
+
+DateTime _mondayOf(DateTime d) {
+  final s = _dayStart(d);
+  return s.subtract(Duration(days: s.weekday - 1));
+}
+
+bool _sameDay(DateTime a, DateTime b) =>
+    a.year == b.year && a.month == b.month && a.day == b.day;
+
+/// "Hoy" / "Mañana" / "Ayer" o "vie 25 jul".
+String _dayLabel(DateTime d) {
+  final diff = _dayStart(d).difference(_dayStart(DateTime.now())).inDays;
+  if (diff == 0) return 'Hoy';
+  if (diff == 1) return 'Mañana';
+  if (diff == -1) return 'Ayer';
+  return '${_wd[d.weekday - 1]} ${d.day} ${_mo[d.month - 1]}';
+}
+
+/// "25 jul" (para el encabezado resumen).
+String _dayLong(DateTime d) => '${d.day} ${_mo[d.month - 1]}';
