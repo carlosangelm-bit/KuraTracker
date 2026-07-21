@@ -2,6 +2,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 
 import '../core/config/app_config.dart';
+import '../models/adverse_event.dart';
 import '../models/app_user.dart';
 import '../models/consultation.dart';
 import '../models/manual_appointment.dart';
@@ -1076,6 +1077,76 @@ class DataRepository {
 
   Future<void> updateConsultationDraftStatus(String id, bool isDraft) async {
     await _store.updateRow(Collections.consultations, id, {'is_draft': isDraft});
+  }
+
+  // ---------------- Eventos adversos (COFEPRIS) ----------------
+
+  /// Bitácora de eventos adversos de un paciente, del más reciente al más
+  /// antiguo (por fecha de ocurrencia). Ver migración 0025_adverse_events.sql.
+  List<AdverseEvent> listAdverseEventsForPatient(String patientId) => _store
+      .getAll(Collections.adverseEvents)
+      .where((e) => e['patient_id'] == patientId)
+      .map(AdverseEvent.fromJson)
+      .toList()
+    ..sort((a, b) => b.occurredAt.compareTo(a.occurredAt));
+
+  AdverseEvent? getAdverseEvent(String id) {
+    final match =
+        _store.getAll(Collections.adverseEvents).where((e) => e['id'] == id);
+    return match.isEmpty ? null : AdverseEvent.fromJson(match.first);
+  }
+
+  /// Crea un evento adverso. `organizationId` y `staffId` los pasa la pantalla
+  /// desde `session.user` (mismo patrón que createPatient/createConsultation):
+  /// el repo no lee la sesión. `organizationId` es obligatorio por RLS
+  /// (adverse_events.organization_id not null + policy de inserción).
+  Future<AdverseEvent> createAdverseEvent({
+    required String organizationId,
+    required String patientId,
+    required String? staffId,
+    String? woundId,
+    String? consultationId,
+    required DateTime occurredAt,
+    required String type,
+    required AdverseEventSeverity severity,
+    Set<AdverseEventAlarmSign> alarmSigns = const {},
+    String? description,
+    String? actionsTaken,
+    String? evolution,
+    DateTime? reportedAt,
+  }) async {
+    final event = AdverseEvent(
+      id: _uuid.v4(),
+      organizationId: organizationId,
+      patientId: patientId,
+      staffId: staffId,
+      woundId: woundId,
+      consultationId: consultationId,
+      occurredAt: occurredAt,
+      type: type,
+      severity: severity,
+      alarmSigns: alarmSigns,
+      description: description,
+      actionsTaken: actionsTaken,
+      evolution: evolution,
+      reportedAt: reportedAt,
+      createdAt: DateTime.now(),
+    );
+    final saved =
+        await _store.insertRow(Collections.adverseEvents, event.toJson());
+    return AdverseEvent.fromJson(saved);
+  }
+
+  /// Marca un evento como reportado a la autoridad (registra reported_at).
+  /// Usado por el recordatorio de reporte ≤24 h de los eventos centinela.
+  Future<AdverseEvent> markAdverseEventReported(
+    String id, {
+    DateTime? reportedAt,
+  }) async {
+    final saved = await _store.updateRow(Collections.adverseEvents, id, {
+      'reported_at': (reportedAt ?? DateTime.now()).toIso8601String(),
+    });
+    return AdverseEvent.fromJson(saved);
   }
 
   // ---------------- Heridas ----------------

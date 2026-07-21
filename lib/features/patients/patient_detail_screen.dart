@@ -11,6 +11,7 @@ import '../../models/wound.dart';
 import '../../models/consultation.dart';
 import '../../services/data_repository.dart';
 import '../follow_up/follow_up_screen.dart';
+import '../adverse_events/adverse_events_screen.dart' show adverseSeverityColor;
 
 class PatientDetailScreen extends ConsumerStatefulWidget {
   final String patientId;
@@ -159,6 +160,8 @@ class _PatientDetailScreenState extends ConsumerState<PatientDetailScreen> {
                                   : const Icon(Icons.chevron_right, size: 18),
                             ),
                           )),
+                    const SizedBox(height: 24),
+                    _AdverseEventsSection(patientId: patient.id, repo: repo),
                     const SizedBox(height: 40),
                   ]),
                 ),
@@ -447,6 +450,89 @@ class _ScenarioBadge extends StatelessWidget {
       ),
       child: Text('Escenario $scenario',
           style: TextStyle(color: color, fontWeight: FontWeight.w700, fontSize: 12)),
+    );
+  }
+}
+
+/// Sección "Eventos adversos" en el detalle del paciente: cabecera + acción de
+/// registro, marca de alerta de eventos centinela pendientes de reporte, y
+/// acceso a la bitácora completa. Ver módulo lib/features/adverse_events/.
+class _AdverseEventsSection extends StatelessWidget {
+  final String patientId;
+  final DataRepository repo;
+  const _AdverseEventsSection({required this.patientId, required this.repo});
+
+  @override
+  Widget build(BuildContext context) {
+    final events = repo.listAdverseEventsForPatient(patientId);
+    final pendientes = events.where((e) => e.needsReport).length;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text('Eventos adversos',
+                  style: Theme.of(context)
+                      .textTheme
+                      .titleLarge
+                      ?.copyWith(fontWeight: FontWeight.w700)),
+            ),
+            FilledButton.tonalIcon(
+              icon: const Icon(Icons.add, size: 18),
+              label: const Text('Registrar evento'),
+              onPressed: () =>
+                  context.go('/patients/$patientId/adverse-events/new'),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        if (pendientes > 0)
+          Container(
+            margin: const EdgeInsets.only(bottom: 8),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: KuraColors.danger.withOpacity(0.10),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: KuraColors.danger.withOpacity(0.5)),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.warning_amber_rounded,
+                    color: KuraColors.danger, size: 20),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    pendientes == 1
+                        ? '1 evento centinela pendiente de reporte (≤24 h).'
+                        : '$pendientes eventos centinela pendientes de reporte (≤24 h).',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: KuraColors.danger,
+                          fontWeight: FontWeight.w600,
+                        ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        if (events.isEmpty)
+          const Text('Sin eventos adversos registrados.')
+        else
+          Card(
+            margin: EdgeInsets.zero,
+            child: ListTile(
+              onTap: () => context.go('/patients/$patientId/adverse-events'),
+              leading: Icon(
+                Icons.report_problem_outlined,
+                color: adverseSeverityColor(events.first.severity),
+              ),
+              title: Text('Bitácora de eventos (${events.length})'),
+              subtitle: Text('Más reciente: ${events.first.type}'),
+              trailing: const Icon(Icons.chevron_right, size: 18),
+            ),
+          ),
+      ],
     );
   }
 }
