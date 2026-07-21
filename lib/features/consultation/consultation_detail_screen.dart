@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
 import '../../core/theme/kura_theme.dart';
@@ -41,7 +42,14 @@ class ConsultationDetailScreen extends ConsumerWidget {
     final dateFmt = DateFormat('dd/MM/yyyy');
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Detalle de consulta')),
+      appBar: AppBar(
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          tooltip: 'Volver al paciente',
+          onPressed: () => context.go('/patients/$patientId'),
+        ),
+        title: const Text('Detalle de consulta'),
+      ),
       body: repoAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, st) => Center(child: Text('Error: $e')),
