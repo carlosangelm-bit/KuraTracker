@@ -1,4 +1,5 @@
 import 'package:uuid/uuid.dart';
+import 'demo_wound_photos.dart';
 import 'local_store.dart';
 
 const _uuid = Uuid();
@@ -12,7 +13,7 @@ class DemoSeed {
   // sola vez en instalaciones demo previas (que tenían 'seeded' v1), evitando
   // duplicados y datos viejos. Solo aplica al modo demo local (SharedPreferences);
   // producción usa Supabase y nunca llama a este seed.
-  static const String _seedFlag = 'seeded_v2';
+  static const String _seedFlag = 'seeded_v3';
 
   static Future<void> ensureSeeded(LocalStore store) async {
     if (store.getBool(_seedFlag)) return;
@@ -1197,5 +1198,120 @@ class DemoSeed {
       ],
       areas: [10.0, 9.4, 8.8],
     );
+
+    // ---- Caso con EVIDENCIA FOTOGRÁFICA real (LPP sacra, 5 visitas) ----
+    // Fotos de una evolución compartida para demostración (ver
+    // demo_wound_photos.dart). 5 puntos (basal -> 4 seguimientos) con área
+    // decreciente y composición del lecho mejorando, para lucir el antes/
+    // después, el % de reducción y la galería en el reporte y el detalle.
+    {
+      final pid = _uuid.v4();
+      final wid = _uuid.v4();
+      final folio = 'EXP2025-00${folioSeq.toString().padLeft(2, '0')}';
+      folioSeq++;
+      final dates =
+          [28, 21, 14, 7, 0].map((d) => now.subtract(Duration(days: d))).toList();
+      final areas = [24.0, 18.0, 12.0, 7.0, 3.5];
+      // [granulación, esfacelo, necrosis, epitelización] por visita.
+      final comps = [
+        [10, 35, 45, 10],
+        [25, 40, 25, 10],
+        [45, 35, 8, 12],
+        [65, 20, 0, 15],
+        [78, 7, 0, 15],
+      ];
+      final depths = [1.8, 1.5, 1.1, 0.7, 0.4];
+      final consultIds = List.generate(5, (_) => _uuid.v4());
+      final measIds = List.generate(5, (_) => _uuid.v4());
+
+      await appendRows(Collections.patients, [
+        {
+          'id': pid,
+          'organization_id': organizationId,
+          'folio': folio,
+          'full_name': 'Ricardo Salinas Vega',
+          'birth_date': isoDate(DateTime(1948, 3, 15)),
+          'sex': 'M',
+          'primary_site_id': siteDomicilioCdmx,
+          'mobility': 'encamado',
+          'has_identified_caregiver': true,
+          'caregiver_name': 'Marta Salinas (hija)',
+          'caregiver_phone': '55 1234 5678',
+          'fragile_patient': true,
+          'background_notes':
+              'Paciente encamado. LPP sacra grado 3, manejo domiciliario.',
+          'ekare_external_id': null,
+          'is_active': true,
+          'created_at': iso(dates.first),
+        }
+      ]);
+      await appendRows(Collections.patientComorbidities, [
+        {'id': _uuid.v4(), 'patient_id': pid, 'code': 'diabetes_mellitus', 'status': 'presente'},
+        {'id': _uuid.v4(), 'patient_id': pid, 'code': 'malnutricion', 'status': 'presente'},
+      ]);
+      await appendRows(Collections.wounds, [
+        {
+          'id': wid,
+          'patient_id': pid,
+          'etiology': 'lpp',
+          'subtype': 'Lesión por presión',
+          'body_location_primary': 'sacro',
+          'body_location_secondary': null,
+          'onset_date': isoDate(dates.first.subtract(const Duration(days: 14))),
+          'wagner_grade': null,
+          'ceap_class': null,
+          'wuwhs_grade': 'g3',
+          'agente_causal': null,
+          'is_active': true,
+          'closed_at': null,
+          'created_at': iso(dates.first),
+        }
+      ]);
+      final consults = <Map<String, dynamic>>[];
+      final measures = <Map<String, dynamic>>[];
+      final photos = <Map<String, dynamic>>[];
+      for (var i = 0; i < 5; i++) {
+        final type = i == 0 ? 'valoracion' : 'seguimiento';
+        consults.add(
+            consulta(consultIds[i], pid, staff1Id, siteDomicilioCdmx, type, dates[i]));
+        final c = comps[i];
+        measures.add({
+          ...meas(wid, consultIds[i], dates[i], areas[i], c[0], c[1], c[2], c[3], depths[i]),
+          'id': measIds[i],
+        });
+        photos.add({
+          'id': _uuid.v4(),
+          'wound_id': wid,
+          'consultation_id': consultIds[i],
+          'measurement_id': measIds[i],
+          'storage_path': DemoWoundPhotos.all[i],
+          'taken_at': iso(dates[i]),
+          'is_baseline': i == 0,
+          'photo_stage': null,
+        });
+      }
+      await appendRows(Collections.consultations, consults);
+      await appendRows(Collections.woundMeasurements, measures);
+      await appendRows(Collections.woundPhotos, photos);
+      await appendRows(Collections.woundAssessments, [
+        {
+          'id': _uuid.v4(),
+          'consultation_id': consultIds.first,
+          'wound_id': wid,
+          'first_assessment_date': isoDate(dates.first),
+          'edema': 'moderado',
+          'pain': true,
+          'pain_vas': 5,
+          'exudate_amount': 'abundante',
+          'infection_criteria': <String>[],
+          'odor': 'moderado',
+          'wound_edge': 'macerado',
+          'perilesional_skin': ['macerada'],
+        }
+      ]);
+      await appendRows(Collections.staffPatientAssignments, [
+        {'id': _uuid.v4(), 'staff_id': staff1Id, 'patient_id': pid},
+      ]);
+    }
   }
 }
