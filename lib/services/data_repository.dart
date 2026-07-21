@@ -5,6 +5,7 @@ import '../core/config/app_config.dart';
 import '../models/adverse_event.dart';
 import '../models/antecedentes.dart';
 import '../models/app_user.dart';
+import '../models/clinical_amendment.dart';
 import '../models/consent.dart';
 import '../models/consultation.dart';
 import '../models/manual_appointment.dart';
@@ -1151,6 +1152,45 @@ class DataRepository {
 
   Future<void> updateConsultationDraftStatus(String id, bool isDraft) async {
     await _store.updateRow(Collections.consultations, id, {'is_draft': isDraft});
+  }
+
+  // ---------------- Notas de enmienda / aclaración (NOM-004, Fase 4) ----------
+
+  /// Enmiendas de una consulta (nota), de la más antigua a la más reciente
+  /// (orden cronológico del expediente). Append-only.
+  List<ClinicalAmendment> listAmendmentsForConsultation(String consultationId) =>
+      _store
+          .getAll(Collections.clinicalAmendments)
+          .where((a) => a['consultation_id'] == consultationId)
+          .map(ClinicalAmendment.fromJson)
+          .toList()
+        ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+
+  /// Agrega una nota de enmienda/aclaración a una consulta. NO edita ni borra el
+  /// original (append-only). `staffId`/firma los pasa la pantalla desde sesión.
+  Future<ClinicalAmendment> addAmendment({
+    required String patientId,
+    required String consultationId,
+    required String body,
+    String? reason,
+    required String? staffId,
+    String? signedBy,
+    String? signedLicense,
+  }) async {
+    final amendment = ClinicalAmendment(
+      id: _uuid.v4(),
+      patientId: patientId,
+      consultationId: consultationId,
+      body: body,
+      reason: reason,
+      staffId: staffId,
+      signedBy: signedBy,
+      signedLicense: signedLicense,
+      createdAt: DateTime.now(),
+    );
+    final saved = await _store.insertRow(
+        Collections.clinicalAmendments, amendment.toJson());
+    return ClinicalAmendment.fromJson(saved);
   }
 
   // ---------------- Eventos adversos (COFEPRIS) ----------------

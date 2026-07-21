@@ -178,6 +178,7 @@ class Collections {
   static const adverseEvents = 'adverse_events';
   static const consents = 'consents';
   static const referrals = 'referrals';
+  static const clinicalAmendments = 'clinical_amendments';
 
   /// Todas las colecciones/tablas, en un orden razonable para hidratar la
   /// cache de [SupabaseDataStore] tras el login (catalogos primero, luego
@@ -208,5 +209,6 @@ class Collections {
     adverseEvents,
     consents,
     referrals,
+    clinicalAmendments,
   ];
 }
