@@ -63,6 +63,12 @@ class _PatientDetailScreenState extends ConsumerState<PatientDetailScreen> {
                 pinned: true,
                 actions: [
                   IconButton(
+                    icon: const Icon(Icons.edit_outlined),
+                    tooltip: 'Editar / completar expediente',
+                    onPressed: () =>
+                        context.go('/patients/${patient.id}/edit'),
+                  ),
+                  IconButton(
                     icon: const Icon(Icons.add_circle_outline),
                     tooltip: 'Nueva consulta',
                     onPressed: () =>

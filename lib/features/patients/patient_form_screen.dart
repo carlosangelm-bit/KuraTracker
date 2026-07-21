@@ -7,10 +7,15 @@ import '../../core/providers/session_provider.dart';
 import '../../engine/models/kura_engine_enums.dart';
 import '../../models/antecedentes.dart';
 import '../../models/app_user.dart';
+import '../../services/data_repository.dart';
 import 'comorbidity_selector.dart';
 
 class PatientFormScreen extends ConsumerStatefulWidget {
-  const PatientFormScreen({super.key});
+  /// null = alta de un paciente nuevo. No-null = editar / completar el
+  /// expediente de un paciente existente (típico en los pacientes creados
+  /// automáticamente desde Acuity, que llegan solo con el nombre).
+  final String? patientId;
+  const PatientFormScreen({super.key, this.patientId});
 
   @override
   ConsumerState<PatientFormScreen> createState() => _PatientFormScreenState();
@@ -96,18 +101,66 @@ class _PatientFormScreenState extends ConsumerState<PatientFormScreen> {
   // Comorbilidades (APP) capturadas en la apertura del expediente (NOM-004).
   // Se pueden agregar/actualizar después desde el detalle del paciente.
   final Map<Comorbilidad, ComorbilidadEstado> _comorbidities = {};
+  // Snapshot de las comorbilidades al abrir en modo edición, para persistir
+  // solo las que cambian (evita re-fechar/re-firmar las que no se tocaron).
+  final Map<Comorbilidad, ComorbilidadEstado> _originalComorbidities = {};
   bool _saving = false;
+  // En modo edición, se precargan los datos del paciente una sola vez.
+  bool _prefilled = false;
+
+  bool get _isEdit => widget.patientId != null;
+
+  /// Precarga los controladores/campos con el paciente existente (modo edición).
+  /// Se llama una vez desde build() cuando ya hay repo disponible.
+  void _prefill(DataRepository repo) {
+    if (_prefilled || widget.patientId == null) return;
+    _prefilled = true;
+    final p = repo.getPatient(widget.patientId!);
+    if (p == null) return;
+    _nameCtrl.text = p.fullName;
+    _birthDate = p.birthDate;
+    _sex = p.sex ?? _sex;
+    _siteId = p.primarySiteId;
+    _mobility = p.mobility ?? _mobility;
+    _hasCaregiver = p.hasIdentifiedCaregiver;
+    _caregiverNameCtrl.text = p.caregiverName ?? '';
+    _caregiverPhoneCtrl.text = p.caregiverPhone ?? '';
+    _fragile = p.fragilePatient;
+    _notesCtrl.text = p.backgroundNotes ?? '';
+    _curpCtrl.text = p.curp ?? '';
+    _addressCtrl.text = p.address ?? '';
+    _occupationCtrl.text = p.occupation ?? '';
+    _responsibleNameCtrl.text = p.responsibleName ?? '';
+    _responsibleRelationshipCtrl.text = p.responsibleRelationship ?? '';
+    _responsiblePhoneCtrl.text = p.responsiblePhone ?? '';
+    _weightCtrl.text = p.weightKg?.toString() ?? '';
+    _heightCtrl.text = p.heightCm?.toString() ?? '';
+    _familyHistory
+      ..clear()
+      ..addAll(p.familyHistory);
+    _familyHistoryNotesCtrl.text = p.familyHistoryNotes ?? '';
+    _smoking = p.smoking;
+    _alcohol = p.alcohol;
+    _physicalActivity = p.physicalActivity;
+    _apnpNotesCtrl.text = p.apnpNotes ?? '';
+    for (final c in repo.listComorbidities(widget.patientId!)) {
+      _comorbidities[c.code] = c.status;
+      _originalComorbidities[c.code] = c.status;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final repoAsync = ref.watch(dataRepositoryProvider);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Nuevo paciente')),
+      appBar: AppBar(
+          title: Text(_isEdit ? 'Completar / editar expediente' : 'Nuevo paciente')),
       body: repoAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, st) => Center(child: Text('Error: $e')),
         data: (repo) {
+          _prefill(repo);
           final sites = repo.listSites();
           _siteId ??= sites.isNotEmpty ? sites.first.id : null;
 
@@ -412,7 +465,9 @@ class _PatientFormScreenState extends ConsumerState<PatientFormScreen> {
                                     strokeWidth: 2, color: Colors.white),
                               )
                             : const Icon(Icons.save),
-                        label: Text(_saving ? 'Guardando...' : 'Crear expediente'),
+                        label: Text(_saving
+                            ? 'Guardando...'
+                            : (_isEdit ? 'Guardar cambios' : 'Crear expediente')),
                         style: FilledButton.styleFrom(
                           backgroundColor: KuraColors.primary,
                           padding: const EdgeInsets.symmetric(vertical: 14),
@@ -423,7 +478,90 @@ class _PatientFormScreenState extends ConsumerState<PatientFormScreen> {
                                 if (!_formKey.currentState!.validate()) return;
                                 setState(() => _saving = true);
                                 final session = ref.read(sessionProvider);
+                                var staffId = session.user?.staffId;
+                                if (staffId == null &&
+                                    session.user?.role == AppRole.admin) {
+                                  staffId =
+                                      await repo.ensureAdminStaffId(session.user!);
+                                }
                                 try {
+                                  // ---- MODO EDICIÓN: completar/editar un
+                                  // expediente existente (p.ej. paciente de
+                                  // Acuity que solo traía el nombre). ----
+                                  if (_isEdit) {
+                                    await repo.updatePatient(
+                                      patientId: widget.patientId!,
+                                      fullName: _nameCtrl.text.trim(),
+                                      birthDate: _birthDate,
+                                      sex: _sex,
+                                      primarySiteId: _siteId,
+                                      mobility: _mobility,
+                                      hasIdentifiedCaregiver: _hasCaregiver,
+                                      caregiverName: _hasCaregiver
+                                          ? _caregiverNameCtrl.text.trim()
+                                          : null,
+                                      caregiverPhone: _hasCaregiver
+                                          ? _caregiverPhoneCtrl.text.trim()
+                                          : null,
+                                      fragilePatient: _fragile,
+                                      backgroundNotes: _notesCtrl.text.trim(),
+                                      curp: _curpCtrl.text.trim().isEmpty
+                                          ? null
+                                          : _curpCtrl.text.trim().toUpperCase(),
+                                      address: _addressCtrl.text.trim().isEmpty
+                                          ? null
+                                          : _addressCtrl.text.trim(),
+                                      occupation: _occupationCtrl.text.trim().isEmpty
+                                          ? null
+                                          : _occupationCtrl.text.trim(),
+                                      responsibleName:
+                                          _responsibleNameCtrl.text.trim().isEmpty
+                                              ? null
+                                              : _responsibleNameCtrl.text.trim(),
+                                      responsibleRelationship:
+                                          _responsibleRelationshipCtrl.text.trim().isEmpty
+                                              ? null
+                                              : _responsibleRelationshipCtrl.text.trim(),
+                                      responsiblePhone:
+                                          _responsiblePhoneCtrl.text.trim().isEmpty
+                                              ? null
+                                              : _responsiblePhoneCtrl.text.trim(),
+                                      weightKg: double.tryParse(
+                                          _weightCtrl.text.trim().replaceAll(',', '.')),
+                                      heightCm: double.tryParse(
+                                          _heightCtrl.text.trim().replaceAll(',', '.')),
+                                      familyHistory: _familyHistory,
+                                      familyHistoryNotes:
+                                          _familyHistoryNotesCtrl.text.trim().isEmpty
+                                              ? null
+                                              : _familyHistoryNotesCtrl.text.trim(),
+                                      smoking: _smoking,
+                                      alcohol: _alcohol,
+                                      physicalActivity: _physicalActivity,
+                                      apnpNotes: _apnpNotesCtrl.text.trim().isEmpty
+                                          ? null
+                                          : _apnpNotesCtrl.text.trim(),
+                                    );
+                                    // Solo persistir las comorbilidades que
+                                    // cambiaron respecto a la carga inicial.
+                                    for (final entry in _comorbidities.entries) {
+                                      final original =
+                                          _originalComorbidities[entry.key] ??
+                                              ComorbilidadEstado.noEvaluado;
+                                      if (entry.value == original) continue;
+                                      await repo.setComorbidity(
+                                        patientId: widget.patientId!,
+                                        code: entry.key,
+                                        status: entry.value,
+                                        staffId: staffId,
+                                      );
+                                    }
+                                    if (mounted) {
+                                      context.go('/patients/${widget.patientId}');
+                                    }
+                                    return;
+                                  }
+                                  // ---- MODO ALTA: paciente nuevo. ----
                                   final patient = await repo.createPatient(
                                     fullName: _nameCtrl.text.trim(),
                                     organizationId: session.user?.organizationId,
@@ -477,12 +615,6 @@ class _PatientFormScreenState extends ConsumerState<PatientFormScreen> {
                                         ? null
                                         : _apnpNotesCtrl.text.trim(),
                                   );
-                                  var staffId = session.user?.staffId;
-                                  if (staffId == null &&
-                                      session.user?.role == AppRole.admin) {
-                                    staffId =
-                                        await repo.ensureAdminStaffId(session.user!);
-                                  }
                                   if (staffId != null) {
                                     await repo.assignPatientToStaff(
                                         patient.id, staffId);

@@ -99,6 +99,12 @@ final routerProvider = Provider<GoRouter>((ref) {
                 PatientDetailScreen(patientId: state.pathParameters['patientId']!),
           ),
           GoRoute(
+            path: '/patients/:patientId/edit',
+            builder: (context, state) => PatientFormScreen(
+              patientId: state.pathParameters['patientId']!,
+            ),
+          ),
+          GoRoute(
             path: '/patients/:patientId/consultation/new',
             builder: (context, state) {
               final visitTypeParam = state.uri.queryParameters['visitType'];
