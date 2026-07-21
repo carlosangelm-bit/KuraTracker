@@ -7,6 +7,7 @@ import '../../core/theme/kura_theme.dart';
 import '../../core/providers/session_provider.dart';
 import '../../engine/models/kura_engine_enums.dart';
 import '../../models/antecedentes.dart';
+import '../../models/patient_diagnosis.dart';
 import '../../models/patient.dart';
 import '../../models/wound.dart';
 import '../../models/consultation.dart';
@@ -14,6 +15,7 @@ import '../../models/consent.dart';
 import '../../services/data_repository.dart';
 import '../follow_up/follow_up_screen.dart';
 import '../adverse_events/adverse_events_screen.dart' show adverseSeverityColor;
+import 'cie10_picker_sheet.dart' show diagnosisRelationColor;
 
 class PatientDetailScreen extends ConsumerStatefulWidget {
   final String patientId;
@@ -42,6 +44,7 @@ class _PatientDetailScreenState extends ConsumerState<PatientDetailScreen> {
           final wounds = repo.listWoundsForPatient(patient.id);
           final consultations = repo.listConsultationsForPatient(patient.id);
           final comorbidities = repo.listComorbidities(patient.id);
+          final diagnoses = repo.listDiagnoses(patient.id);
           // Si el paciente tiene UNA sola herida activa, el seguimiento se
           // muestra embebido aquí mismo (menos clicks): no hace falta entrar a
           // la pantalla de seguimiento.
@@ -75,6 +78,8 @@ class _PatientDetailScreenState extends ConsumerState<PatientDetailScreen> {
                     const SizedBox(height: 16),
                     _ComorbidityCard(
                         patientId: patient.id, comorbidities: comorbidities),
+                    const SizedBox(height: 16),
+                    _DiagnosesCard(patientId: patient.id, diagnoses: diagnoses),
                     const SizedBox(height: 16),
                     _ConsentsSummaryCard(patientId: patient.id, repo: repo),
                     const SizedBox(height: 16),
@@ -405,6 +410,95 @@ class _ComorbidityCard extends StatelessWidget {
                     );
                   }).toList(),
                 ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Tarjeta de diagnósticos CIE-10 del expediente (NOM-004). Muestra el conteo
+/// activo y el diagnóstico principal; navega a la pantalla de gestión. Registro
+/// documental: no toca el motor Kura+ (eso es la tarjeta de comorbilidades).
+class _DiagnosesCard extends StatelessWidget {
+  final String patientId;
+  final List<PatientDiagnosis> diagnoses;
+  const _DiagnosesCard({required this.patientId, required this.diagnoses});
+
+  @override
+  Widget build(BuildContext context) {
+    final activos =
+        diagnoses.where((d) => d.status == DiagnosisStatus.activo).toList();
+    PatientDiagnosis? principal;
+    for (final d in activos) {
+      if (d.isPrimary) {
+        principal = d;
+        break;
+      }
+    }
+    return Card(
+      margin: EdgeInsets.zero,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: () => context.go('/patients/$patientId/diagnoses'),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Diagnósticos (CIE-10)'
+                      '${activos.isEmpty ? '' : ' · ${activos.length}'}',
+                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                  const Icon(Icons.chevron_right, size: 18),
+                ],
+              ),
+              const SizedBox(height: 8),
+              if (activos.isEmpty)
+                Text('Registrar diagnóstico codificado del expediente',
+                    style: Theme.of(context).textTheme.bodySmall)
+              else ...[
+                if (principal != null)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 6),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.star,
+                            size: 14, color: KuraColors.primary),
+                        const SizedBox(width: 4),
+                        Expanded(
+                          child: Text('${principal.code} · ${principal.name}',
+                              style: const TextStyle(
+                                  fontSize: 12, fontWeight: FontWeight.w600),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis),
+                        ),
+                      ],
+                    ),
+                  ),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: activos
+                      .where((d) => !d.isPrimary)
+                      .take(6)
+                      .map((d) => Chip(
+                            label: Text(d.code,
+                                style: const TextStyle(fontSize: 12)),
+                            avatar: Icon(Icons.circle,
+                                size: 10,
+                                color: diagnosisRelationColor(d.relation)),
+                            backgroundColor: KuraColors.chipBg,
+                          ))
+                      .toList(),
+                ),
+              ],
             ],
           ),
         ),

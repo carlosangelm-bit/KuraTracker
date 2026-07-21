@@ -3,6 +3,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../models/app_user.dart';
 import '../../services/data_repository.dart';
+import '../../engine/cie10_catalog.dart';
 import '../config/app_config.dart';
 
 /// Estado de sesion. En modo Supabase (produccion), refleja
@@ -147,4 +148,11 @@ final sessionProvider = StateNotifierProvider<SessionController, SessionState>(
 
 final dataRepositoryProvider = FutureProvider<DataRepository>((ref) {
   return DataRepository.instance();
+});
+
+/// Catálogo CIE-10 de heridas crónicas (asset empaquetado, reference data
+/// estática). Se carga una vez y se cachea; lo consumen el picker y la
+/// pantalla de diagnósticos del expediente.
+final cie10CatalogProvider = FutureProvider<Cie10Catalog>((ref) {
+  return Cie10Catalog.load();
 });
