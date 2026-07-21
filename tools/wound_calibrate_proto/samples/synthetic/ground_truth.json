@@ -1,0 +1,26 @@
+{
+  "wound": {
+    "shape": "ellipse",
+    "center_mm": [
+      28.0,
+      42.0
+    ],
+    "semi_axis_a_mm": 11.0,
+    "semi_axis_b_mm": 7.0,
+    "color_bgr": [
+      0,
+      255,
+      0
+    ],
+    "area_cm2": 2.419,
+    "largo_cm": 2.2,
+    "ancho_cm": 1.4
+  },
+  "reference_circle_diameter_mm": 12.7,
+  "render_px_per_mm": 20.0,
+  "images": [
+    "synthetic_00.png",
+    "synthetic_01.png",
+    "synthetic_02.png"
+  ]
+}

@@ -13,7 +13,7 @@ class DemoSeed {
   // sola vez en instalaciones demo previas (que tenían 'seeded' v1), evitando
   // duplicados y datos viejos. Solo aplica al modo demo local (SharedPreferences);
   // producción usa Supabase y nunca llama a este seed.
-  static const String _seedFlag = 'seeded_v4';
+  static const String _seedFlag = 'seeded_v5';
 
   static Future<void> ensureSeeded(LocalStore store) async {
     if (store.getBool(_seedFlag)) return;
@@ -368,6 +368,26 @@ class DemoSeed {
       {'id': _uuid.v4(), 'patient_id': p4Id, 'code': 'obesidad', 'status': 'presente'},
       // Paciente 5: traumatica, sin comorbilidades
       {'id': _uuid.v4(), 'patient_id': p5Id, 'code': 'diabetes_mellitus', 'status': 'negado'},
+    ]);
+
+    // ---------------- Consentimientos ----------------
+    // Todos los pacientes demo tienen los 3 consentimientos otorgados para que
+    // el flujo de valoración/fotografía/desbridamiento funcione en la demo. Los
+    // pacientes creados en sesión (sin consentimientos) muestran el gate.
+    final nowIso = DateTime.now().toIso8601String();
+    await store.saveAll(Collections.consents, [
+      for (final pid in [p1Id, p2Id, p3Id, p4Id, p5Id])
+        for (final type in ['privacidad', 'fotografia', 'desbridamiento'])
+          {
+            'id': _uuid.v4(),
+            'patient_id': pid,
+            'type': type,
+            'granted': true,
+            'granted_at': nowIso,
+            'signed_by': 'Paciente (demo)',
+            'doc_ref': null,
+            'created_at': nowIso,
+          },
     ]);
 
     // ---------------- Heridas ----------------

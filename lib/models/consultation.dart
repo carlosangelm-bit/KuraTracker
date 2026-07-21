@@ -60,6 +60,11 @@ class Consultation {
   final String? followUpEvolution;
   final String? followUpSignedBy;
   final String? followUpSignedLicense;
+  // Firma digital del profesional (JSON de trazos del pad de firma) + marca de
+  // tiempo. Complementan la firma de solo lectura (nombre + cédula). Ver
+  // migración 0027_followup_signature.sql.
+  final String? followUpSignature;
+  final DateTime? followUpSignedAt;
 
   const Consultation({
     required this.id,
@@ -77,6 +82,8 @@ class Consultation {
     this.followUpEvolution,
     this.followUpSignedBy,
     this.followUpSignedLicense,
+    this.followUpSignature,
+    this.followUpSignedAt,
   });
 
   factory Consultation.fromJson(Map<String, dynamic> json) => Consultation(
@@ -95,6 +102,10 @@ class Consultation {
         followUpEvolution: json['follow_up_evolution'] as String?,
         followUpSignedBy: json['follow_up_signed_by'] as String?,
         followUpSignedLicense: json['follow_up_signed_license'] as String?,
+        followUpSignature: json['follow_up_signature'] as String?,
+        followUpSignedAt: json['follow_up_signed_at'] == null
+            ? null
+            : DateTime.parse(json['follow_up_signed_at'] as String),
       );
 
   Map<String, dynamic> toJson() => {
@@ -113,5 +124,7 @@ class Consultation {
         'follow_up_evolution': followUpEvolution,
         'follow_up_signed_by': followUpSignedBy,
         'follow_up_signed_license': followUpSignedLicense,
+        'follow_up_signature': followUpSignature,
+        'follow_up_signed_at': followUpSignedAt?.toIso8601String(),
       };
 }

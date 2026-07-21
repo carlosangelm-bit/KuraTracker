@@ -1,0 +1,9 @@
+# WoundCalibrate proto (Fase 1a) — dependencias
+#
+# Runtime del motor de medicion:
+numpy>=1.24
+opencv-python>=4.8
+pupil-apriltags>=1.0.4      # detector AprilTag 36h11 (wheels precompilados)
+#
+# Solo para el generador sintetico / validacion (dev):
+moms-apriltag>=3.0          # genera bitmaps de tags 36h11 para las imagenes de prueba

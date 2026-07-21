@@ -4,6 +4,7 @@ import 'package:uuid/uuid.dart';
 import '../core/config/app_config.dart';
 import '../models/adverse_event.dart';
 import '../models/app_user.dart';
+import '../models/consent.dart';
 import '../models/consultation.dart';
 import '../models/manual_appointment.dart';
 import '../models/organization.dart';
@@ -1053,6 +1054,8 @@ class DataRepository {
     String? followUpEvolution,
     String? followUpSignedBy,
     String? followUpSignedLicense,
+    String? followUpSignature,
+    DateTime? followUpSignedAt,
   }) async {
     final data = {
       'id': _uuid.v4(),
@@ -1070,6 +1073,8 @@ class DataRepository {
       'follow_up_evolution': followUpEvolution,
       'follow_up_signed_by': followUpSignedBy,
       'follow_up_signed_license': followUpSignedLicense,
+      'follow_up_signature': followUpSignature,
+      'follow_up_signed_at': followUpSignedAt?.toIso8601String(),
     };
     final saved = await _store.insertRow(Collections.consultations, data);
     return Consultation.fromJson(saved);
@@ -1147,6 +1152,69 @@ class DataRepository {
       'reported_at': (reportedAt ?? DateTime.now()).toIso8601String(),
     });
     return AdverseEvent.fromJson(saved);
+  }
+
+  // ---------------- Consentimientos (Expedientes clínicos / Desbridamiento) ----
+
+  /// Consentimientos vigentes de un paciente (uno por tipo).
+  List<Consent> listConsentsForPatient(String patientId) => _store
+      .getAll(Collections.consents)
+      .where((c) => c['patient_id'] == patientId)
+      .map(Consent.fromJson)
+      .toList();
+
+  /// Consentimiento de un tipo para el paciente (null si no existe fila).
+  Consent? consentFor(String patientId, ConsentType type) {
+    final match = _store.getAll(Collections.consents).where(
+        (c) => c['patient_id'] == patientId && c['type'] == type.dbValue);
+    return match.isEmpty ? null : Consent.fromJson(match.first);
+  }
+
+  /// true si el paciente tiene el consentimiento [type] otorgado (granted).
+  bool hasConsent(String patientId, ConsentType type) =>
+      consentFor(patientId, type)?.granted ?? false;
+
+  /// true si el paciente tiene TODOS los consentimientos indicados otorgados.
+  bool hasConsents(String patientId, Iterable<ConsentType> types) =>
+      types.every((t) => hasConsent(patientId, t));
+
+  /// Tipos requeridos que faltan (no otorgados) para el paciente.
+  List<ConsentType> missingConsents(
+          String patientId, Iterable<ConsentType> required) =>
+      required.where((t) => !hasConsent(patientId, t)).toList();
+
+  /// Registra/actualiza un consentimiento (uno por paciente+tipo, ver
+  /// unique(patient_id,type) en 0026). Si ya existe fila para ese tipo se
+  /// actualiza (permite otorgar o revocar); si no, se inserta.
+  Future<Consent> setConsent({
+    required String patientId,
+    required ConsentType type,
+    required bool granted,
+    String? signedBy,
+    String? docRef,
+  }) async {
+    final existing = _store.getAll(Collections.consents).where(
+        (c) => c['patient_id'] == patientId && c['type'] == type.dbValue);
+    final patch = {
+      'granted': granted,
+      'granted_at': granted ? DateTime.now().toIso8601String() : null,
+      'signed_by': signedBy,
+      'doc_ref': docRef,
+    };
+    if (existing.isNotEmpty) {
+      final saved = await _store.updateRow(
+          Collections.consents, existing.first['id'] as String, patch);
+      return Consent.fromJson(saved);
+    }
+    final row = {
+      'id': _uuid.v4(),
+      'patient_id': patientId,
+      'type': type.dbValue,
+      ...patch,
+      'created_at': DateTime.now().toIso8601String(),
+    };
+    final saved = await _store.insertRow(Collections.consents, row);
+    return Consent.fromJson(saved);
   }
 
   // ---------------- Heridas ----------------

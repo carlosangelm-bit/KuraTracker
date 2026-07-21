@@ -9,6 +9,7 @@ import '../../engine/models/kura_engine_enums.dart';
 import '../../models/patient.dart';
 import '../../models/wound.dart';
 import '../../models/consultation.dart';
+import '../../models/consent.dart';
 import '../../services/data_repository.dart';
 import '../follow_up/follow_up_screen.dart';
 import '../adverse_events/adverse_events_screen.dart' show adverseSeverityColor;
@@ -67,6 +68,8 @@ class _PatientDetailScreenState extends ConsumerState<PatientDetailScreen> {
                     _PatientHeaderCard(patient: patient, dateFmt: _dateFmt),
                     const SizedBox(height: 16),
                     if (comorbidities.isNotEmpty) _ComorbidityCard(comorbidities: comorbidities),
+                    const SizedBox(height: 16),
+                    _ConsentsSummaryCard(patientId: patient.id, repo: repo),
                     const SizedBox(height: 16),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -533,6 +536,82 @@ class _AdverseEventsSection extends StatelessWidget {
             ),
           ),
       ],
+    );
+  }
+}
+
+/// Tarjeta-resumen de consentimientos del paciente (Protocolos "Expedientes
+/// clínicos" y "Desbridamiento"): estado por tipo + acceso a la gestión.
+class _ConsentsSummaryCard extends StatelessWidget {
+  final String patientId;
+  final DataRepository repo;
+  const _ConsentsSummaryCard({required this.patientId, required this.repo});
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      margin: EdgeInsets.zero,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: () => context.go('/patients/$patientId/consents'),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.assignment_turned_in_outlined,
+                      color: KuraColors.primary),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text('Consentimientos',
+                        style: Theme.of(context)
+                            .textTheme
+                            .titleMedium
+                            ?.copyWith(fontWeight: FontWeight.w700)),
+                  ),
+                  const Icon(Icons.chevron_right, size: 18),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: ConsentType.values.map((type) {
+                  final granted = repo.hasConsent(patientId, type);
+                  final color =
+                      granted ? KuraColors.success : KuraColors.danger;
+                  return Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: color.withOpacity(0.12),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          granted ? Icons.check_circle : Icons.cancel_outlined,
+                          size: 14,
+                          color: color,
+                        ),
+                        const SizedBox(width: 6),
+                        Text(type.label,
+                            style: TextStyle(
+                                color: color,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 12)),
+                      ],
+                    ),
+                  );
+                }).toList(),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

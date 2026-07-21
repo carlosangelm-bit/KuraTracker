@@ -1,0 +1,41 @@
+{
+  "_README": "Geometria fisica REAL de la tarjeta WoundCalibrate. Este archivo es la 'verdad' contra la que se calibra. Sistema de coordenadas: origen en la esquina superior-izquierda de la tarjeta, eje X hacia la derecha, eje Y hacia ABAJO, unidades en milimetros (convencion imagen y-abajo, evita espejos en la homografia). Reemplaza los valores marcados como PLACEHOLDER con los MEDIDOS del impreso real.",
+  "is_placeholder": true,
+  "card_family": "tag36h11",
+  "card_size_mm": { "width": 85.6, "height": 54.0, "_note": "PLACEHOLDER: tamano tarjeta credito. Medir el impreso real." },
+
+  "tags": [
+    { "id": 0, "corner": "top_left",     "center_mm": [10.0, 10.0], "size_mm": 10.0, "_note": "PLACEHOLDER" },
+    { "id": 1, "corner": "top_right",    "center_mm": [75.6, 10.0], "size_mm": 10.0, "_note": "PLACEHOLDER" },
+    { "id": 2, "corner": "bottom_right", "center_mm": [75.6, 44.0], "size_mm": 10.0, "_note": "PLACEHOLDER" },
+    { "id": 3, "corner": "bottom_left",  "center_mm": [10.0, 44.0], "size_mm": 10.0, "_note": "PLACEHOLDER" }
+  ],
+
+  "reference_circle": {
+    "diameter_mm": 12.7,
+    "center_mm": [42.8, 27.0],
+    "_note": "diameter_mm=12.7 (0.50\") es un valor DE ESPECIFICACION del disenio, no un placeholder. center_mm es PLACEHOLDER: medir donde queda el circulo en el impreso real."
+  },
+
+  "ruler": {
+    "origin_mm": [10.0, 50.0],
+    "direction": [1.0, 0.0],
+    "length_mm": 60.0,
+    "_note": "PLACEHOLDER: origen/orientacion/longitud de la regla impresa. Solo se usa como cross-check opcional de escala."
+  },
+
+  "camera": {
+    "focal_length_px": null,
+    "_note": "OPCIONAL. Si se conoce la focal en px (de EXIF o calibracion), la compuerta de distancia 10-30cm se evalua en cm. Si es null, la distancia se reporta como tamano-de-tag-en-px (proxy) y la compuerta de cm se marca 'skipped'."
+  },
+
+  "quality_tolerances": {
+    "planarity_max_side_error_pct": 5.0,
+    "circle_diameter_tol_pct": 3.0,
+    "overexposed_max_fraction": 0.02,
+    "overexposed_threshold_255": 250,
+    "distance_min_cm": 10.0,
+    "distance_max_cm": 30.0,
+    "_note": "Umbrales de las compuertas de calidad. Ajustables tras validar con fotos reales."
+  }
+}
