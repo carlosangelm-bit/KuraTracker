@@ -11,6 +11,7 @@ import '../models/consultation.dart';
 import '../models/manual_appointment.dart';
 import '../models/organization.dart';
 import '../models/patient.dart';
+import '../models/patient_diagnosis.dart';
 import '../models/referral.dart';
 import '../models/note_option_catalog.dart';
 import '../models/site.dart';
@@ -19,6 +20,7 @@ import '../models/treatment_plan.dart';
 import '../models/wound.dart';
 import '../engine/models/kura_engine_output.dart';
 import '../engine/models/kura_engine_enums.dart';
+import '../engine/cie10_catalog.dart';
 import 'local_db/demo_seed.dart';
 import 'local_db/local_store.dart';
 import 'remote/data_store.dart';
@@ -1092,6 +1094,140 @@ class DataRepository {
     final saved =
         await _store.insertRow(Collections.patientComorbidities, json);
     return PatientComorbidity.fromJson(saved);
+  }
+
+  // ---------------- Diagnósticos CIE-10 (NOM-004, expediente) ----------------
+  // Alcance DOCUMENTAL: no alimentan el motor Kura+ (eso vive en las
+  // comorbilidades de arriba). Ver 0034_patient_diagnoses.sql y
+  // lib/engine/cie10_catalog.dart (catálogo empaquetado como asset).
+
+  List<PatientDiagnosis> listDiagnoses(String patientId) => _store
+      .getAll(Collections.patientDiagnoses)
+      .where((d) => d['patient_id'] == patientId)
+      .map(PatientDiagnosis.fromJson)
+      .toList()
+    ..sort((a, b) {
+      // Principal primero; luego por relación (causa→herida) y código.
+      if (a.isPrimary != b.isPrimary) return a.isPrimary ? -1 : 1;
+      final r = a.relation.index.compareTo(b.relation.index);
+      return r != 0 ? r : a.code.compareTo(b.code);
+    });
+
+  /// Agrega un diagnóstico CIE-10 al expediente. Toma el `code` del catálogo y
+  /// guarda un SNAPSHOT del nombre. `staffId`/`organizationId` los pasa la
+  /// pantalla desde la sesión. Idempotente por (patient_id, code): si el código
+  /// ya existe se reactiva/actualiza (re-fechado y re-atribuido).
+  Future<PatientDiagnosis> addDiagnosis({
+    required String patientId,
+    required Cie10Code code,
+    required DiagnosisRelation relation,
+    String? woundId,
+    bool isPrimary = false,
+    String? notes,
+    required String? organizationId,
+    required String? staffId,
+  }) async {
+    final existing = _store
+        .getAll(Collections.patientDiagnoses)
+        .where((d) => d['patient_id'] == patientId && d['code'] == code.code)
+        .toList();
+    if (existing.isNotEmpty) {
+      final saved = await _store.updateRow(
+        Collections.patientDiagnoses,
+        existing.first['id'] as String,
+        {
+          'name': code.name,
+          'relation': relation.dbValue,
+          'wound_id': woundId,
+          'notes': notes,
+          'status': DiagnosisStatus.activo.dbValue,
+          'noted_at': DateTime.now().toIso8601String(),
+          'noted_by': staffId,
+        },
+      );
+      final reactivated = PatientDiagnosis.fromJson(saved);
+      if (isPrimary) await setPrimaryDiagnosis(patientId, reactivated.id);
+      return reactivated;
+    }
+    final diag = PatientDiagnosis(
+      id: _uuid.v4(),
+      organizationId: organizationId,
+      patientId: patientId,
+      woundId: woundId,
+      staffId: staffId,
+      code: code.code,
+      name: code.name,
+      relation: relation,
+      isPrimary: false, // el principal se fija abajo para desmarcar el previo
+      status: DiagnosisStatus.activo,
+      notes: notes,
+      notedAt: DateTime.now(),
+      notedBy: staffId,
+      createdAt: DateTime.now(),
+    );
+    final saved =
+        await _store.insertRow(Collections.patientDiagnoses, diag.toJson());
+    final created = PatientDiagnosis.fromJson(saved);
+    if (isPrimary) await setPrimaryDiagnosis(patientId, created.id);
+    return created;
+  }
+
+  /// Marca [diagnosisId] como el diagnóstico principal del paciente y desmarca
+  /// cualquier otro (restricción de "un solo principal", uq_..._primary en BD).
+  ///
+  /// Orden IMPORTANTE: primero se DESMARCA cualquier otro principal y solo
+  /// después se marca el objetivo. En el backend Supabase cada updateRow es una
+  /// llamada independiente; marcar antes de desmarcar dejaría dos filas con
+  /// is_primary=true a la vez y violaría el índice único parcial uq_..._primary.
+  Future<void> setPrimaryDiagnosis(String patientId, String diagnosisId) async {
+    final all = _store
+        .getAll(Collections.patientDiagnoses)
+        .where((d) => d['patient_id'] == patientId)
+        .toList();
+    // 1) Desmarcar los otros principales.
+    for (final d in all) {
+      if (d['id'] != diagnosisId && (d['is_primary'] as bool? ?? false)) {
+        await _store.updateRow(
+          Collections.patientDiagnoses,
+          d['id'] as String,
+          {'is_primary': false},
+        );
+      }
+    }
+    // 2) Marcar el objetivo (si no lo estaba ya).
+    final target = all.where((d) => d['id'] == diagnosisId);
+    if (target.isNotEmpty && !(target.first['is_primary'] as bool? ?? false)) {
+      await _store.updateRow(
+        Collections.patientDiagnoses,
+        diagnosisId,
+        {'is_primary': true},
+      );
+    }
+  }
+
+  /// Cambia el estado de un diagnóstico (activo/resuelto/descartado),
+  /// re-fechándolo y re-atribuyéndolo. No se borra.
+  Future<PatientDiagnosis> setDiagnosisStatus({
+    required String diagnosisId,
+    required DiagnosisStatus status,
+    required String? staffId,
+  }) async {
+    final saved = await _store.updateRow(
+      Collections.patientDiagnoses,
+      diagnosisId,
+      {
+        'status': status.dbValue,
+        'noted_at': DateTime.now().toIso8601String(),
+        'noted_by': staffId,
+      },
+    );
+    return PatientDiagnosis.fromJson(saved);
+  }
+
+  /// Borrado físico (solo admin, según RLS). El flujo clínico normal usa
+  /// `setDiagnosisStatus(descartado)`.
+  Future<void> deleteDiagnosis(String diagnosisId) async {
+    await _store.deleteRow(Collections.patientDiagnoses, diagnosisId);
   }
 
   // ---------------- Consultas ----------------

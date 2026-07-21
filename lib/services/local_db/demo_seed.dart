@@ -370,6 +370,55 @@ class DemoSeed {
       {'id': _uuid.v4(), 'patient_id': p5Id, 'code': 'diabetes_mellitus', 'status': 'negado'},
     ]);
 
+    // ---------------- Diagnósticos CIE-10 (expediente, NOM-004) --------------
+    // Códigos del subconjunto placeholder de assets/data/cie10_heridas.json.
+    // Registro documental: no alimentan el motor (eso son las comorbilidades).
+    final dxIso = DateTime.now().toIso8601String();
+    Map<String, dynamic> dxRow(String pid, String code, String name,
+            String relation, bool primary) =>
+        {
+          'id': _uuid.v4(),
+          'organization_id': organizationId,
+          'patient_id': pid,
+          'wound_id': null,
+          'staff_id': null,
+          'code': code,
+          'name': name,
+          'relation': relation,
+          'is_primary': primary,
+          'status': 'activo',
+          'notes': null,
+          'noted_at': dxIso,
+          'noted_by': null,
+          'created_at': dxIso,
+        };
+    await store.saveAll(Collections.patientDiagnoses, [
+      // Paciente 1: pie diabetico
+      dxRow(p1Id, 'L97X',
+          'ÚLCERA DE MIEMBRO INFERIOR, NO CLASIFICADA EN OTRA PARTE', 'herida', true),
+      dxRow(p1Id, 'E115',
+          'DIABETES MELLITUS TIPO 2, CON COMPLICACIONES CIRCULATORIAS PERIFÉRICAS',
+          'causa', false),
+      dxRow(p1Id, 'E669', 'OBESIDAD, NO ESPECIFICADA', 'comorbilidad', false),
+      // Paciente 2: LPP sacra
+      dxRow(p2Id, 'L893', 'ÚLCERA DE DECÚBITO, ETAPA IV', 'herida', true),
+      dxRow(p2Id, 'N189',
+          'ENFERMEDAD RENAL CRÓNICA, NO ESPECIFICADA', 'comorbilidad', false),
+      // Paciente 3: vascular con isquemia critica
+      dxRow(p3Id, 'L97X',
+          'ÚLCERA DE MIEMBRO INFERIOR, NO CLASIFICADA EN OTRA PARTE', 'herida', true),
+      dxRow(p3Id, 'I702',
+          'ATEROSCLEROSIS DE LAS ARTERIAS DE LOS MIEMBROS', 'causa', false),
+      dxRow(p3Id, 'F172',
+          'TRASTORNOS MENTALES Y DEL COMPORTAMIENTO DEBIDOS AL USO DE TABACO, SÍNDROME DE DEPENDENCIA',
+          'comorbilidad', false),
+      // Paciente 4: quirurgica
+      dxRow(p4Id, 'T814',
+          'INFECCIÓN CONSECUTIVA A PROCEDIMIENTO, NO CLASIFICADA EN OTRA PARTE',
+          'consecuencia', false),
+      // Paciente 5: traumatica -> sin diagnósticos codificados aún.
+    ]);
+
     // ---------------- Consentimientos ----------------
     // Todos los pacientes demo tienen los 3 consentimientos otorgados para que
     // el flujo de valoración/fotografía/desbridamiento funcione en la demo. Los

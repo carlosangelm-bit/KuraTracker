@@ -65,5 +65,6 @@ flutter:
   assets:
     - assets/engine/kura_model_v2.json
     - assets/engine/kura_clinical_adjustments.json
+    - assets/data/cie10_heridas.json
     - assets/images/
     - assets/demo/

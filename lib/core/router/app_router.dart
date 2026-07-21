@@ -10,6 +10,7 @@ import '../../features/patients/patients_list_screen.dart';
 import '../../features/patients/patient_detail_screen.dart';
 import '../../features/patients/patient_form_screen.dart';
 import '../../features/patients/comorbidities_screen.dart';
+import '../../features/patients/diagnoses_screen.dart';
 import '../../features/consultation/consultation_hub_screen.dart';
 import '../../models/consultation.dart';
 import '../../features/wound_capture/wound_capture_screen.dart';
@@ -136,6 +137,12 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: '/patients/:patientId/comorbidities',
             builder: (context, state) => ComorbiditiesScreen(
+              patientId: state.pathParameters['patientId']!,
+            ),
+          ),
+          GoRoute(
+            path: '/patients/:patientId/diagnoses',
+            builder: (context, state) => DiagnosesScreen(
               patientId: state.pathParameters['patientId']!,
             ),
           ),

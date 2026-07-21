@@ -161,6 +161,7 @@ class Collections {
   static const staffPatientAssignments = 'staff_patient_assignments';
   static const patients = 'patients';
   static const patientComorbidities = 'patient_comorbidities';
+  static const patientDiagnoses = 'patient_diagnoses';
   static const consultations = 'consultations';
   static const wounds = 'wounds';
   static const woundAssessments = 'wound_assessments';
@@ -192,6 +193,7 @@ class Collections {
     staffPatientAssignments,
     patients,
     patientComorbidities,
+    patientDiagnoses,
     consultations,
     wounds,
     woundAssessments,
