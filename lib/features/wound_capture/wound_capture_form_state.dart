@@ -21,6 +21,12 @@ class WoundCaptureFormState {
   int? wifiIschemia;
   int? wifiInfection;
   CeapClass? ceapClass;
+  // Subtipo de úlcera vascular (venosa/arterial/mixta). Separa el manejo
+  // venoso (compresión) del arterial/isquémico (terapia seca).
+  SubtipoVascular? subtipoVascular;
+  // Determinación (Doppler/angiólogo) de lesión no revascularizable: gatilla
+  // terapia seca aunque el ITB no sea crítico.
+  bool noRevascularizable = false;
   WuwhsGrade? wuwhsGrade;
   AgenteCausal? agenteCausal;
   // Braden (riesgo de LPP), score total 6-23. Obligatorio en UI si la
@@ -149,6 +155,8 @@ class WoundCaptureFormState {
       ceapClass: ceapClass,
       wuwhsGrade: wuwhsGrade,
       agenteCausal: agenteCausal,
+      subtipoVascular: subtipoVascular,
+      noRevascularizable: noRevascularizable,
     );
   }
 
