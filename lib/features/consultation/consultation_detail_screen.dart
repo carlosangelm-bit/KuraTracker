@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 
 import '../../core/theme/kura_theme.dart';
 import '../../core/providers/session_provider.dart';
+import '../../models/app_user.dart';
 import '../../engine/models/kura_engine_enums.dart';
 import '../../models/consultation.dart';
 import '../../models/treatment_plan.dart';
@@ -118,6 +119,12 @@ class ConsultationDetailScreen extends ConsumerWidget {
                         consultationId: consultationId,
                         dateFmt: dateFmt,
                       )),
+                const SizedBox(height: 16),
+                _AmendmentsSection(
+                  patientId: patientId,
+                  consultationId: consultationId,
+                  dateFmt: dateFmt,
+                ),
               ],
             ),
           );
@@ -558,6 +565,198 @@ class _ScenarioBadge extends StatelessWidget {
       ),
       child: Text('Escenario $scenario',
           style: TextStyle(color: color, fontWeight: FontWeight.w700, fontSize: 12)),
+    );
+  }
+}
+
+/// Sección de NOTAS DE ENMIENDA / ACLARACIÓN de la consulta (NOM-004, Fase 4).
+/// Append-only: muestra las enmiendas existentes y permite agregar una nueva
+/// (nunca editar/borrar el original). Cada enmienda queda firmada + fechada.
+class _AmendmentsSection extends ConsumerStatefulWidget {
+  final String patientId;
+  final String consultationId;
+  final DateFormat dateFmt;
+  const _AmendmentsSection({
+    required this.patientId,
+    required this.consultationId,
+    required this.dateFmt,
+  });
+
+  @override
+  ConsumerState<_AmendmentsSection> createState() => _AmendmentsSectionState();
+}
+
+class _AmendmentsSectionState extends ConsumerState<_AmendmentsSection> {
+  Future<void> _addAmendment() async {
+    final result = await showDialog<_AmendmentResult>(
+      context: context,
+      builder: (_) => const _AddAmendmentDialog(),
+    );
+    if (result == null) return;
+    final session = ref.read(sessionProvider);
+    final repo = await DataRepository.instance();
+    var staffId = session.user?.staffId;
+    if (staffId == null && session.user?.role == AppRole.admin) {
+      staffId = await repo.ensureAdminStaffId(session.user!);
+    }
+    final staff = staffId == null ? null : repo.getStaff(staffId);
+    await repo.addAmendment(
+      patientId: widget.patientId,
+      consultationId: widget.consultationId,
+      body: result.body,
+      reason: result.reason,
+      staffId: staffId,
+      signedBy: session.user?.fullName,
+      signedLicense: staff?.cedulaProfesional,
+    );
+    if (mounted) {
+      setState(() {});
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Nota de enmienda agregada.')),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final repoAsync = ref.watch(dataRepositoryProvider);
+    return repoAsync.when(
+      loading: () => const SizedBox.shrink(),
+      error: (e, st) => const SizedBox.shrink(),
+      data: (repo) {
+        final amendments =
+            repo.listAmendmentsForConsultation(widget.consultationId);
+        return Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Expanded(
+                      child: Text('Enmiendas / aclaraciones',
+                          style: TextStyle(fontWeight: FontWeight.w700)),
+                    ),
+                    TextButton.icon(
+                      icon: const Icon(Icons.note_add_outlined, size: 18),
+                      label: const Text('Agregar aclaración'),
+                      onPressed: _addAmendment,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Las notas firmadas no se editan ni se borran; las correcciones '
+                  'se agregan como aclaración fechada y firmada (NOM-004).',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+                const SizedBox(height: 8),
+                if (amendments.isEmpty)
+                  Text('Sin enmiendas.',
+                      style: Theme.of(context).textTheme.bodySmall)
+                else
+                  ...amendments.map((a) => Container(
+                        margin: const EdgeInsets.only(top: 8),
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: KuraColors.chipBg,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(widget.dateFmt.format(a.createdAt.toLocal()),
+                                style: const TextStyle(
+                                    fontSize: 11, fontWeight: FontWeight.w700)),
+                            const SizedBox(height: 2),
+                            Text(a.body),
+                            if ((a.reason ?? '').isNotEmpty)
+                              Text('Motivo: ${a.reason}',
+                                  style: Theme.of(context).textTheme.bodySmall),
+                            if ((a.signedBy ?? '').isNotEmpty)
+                              Text(
+                                'Firma: ${a.signedBy}'
+                                '${(a.signedLicense ?? '').isNotEmpty ? ' · Céd. ${a.signedLicense}' : ''}',
+                                style: Theme.of(context).textTheme.bodySmall,
+                              ),
+                          ],
+                        ),
+                      )),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _AmendmentResult {
+  final String body;
+  final String? reason;
+  _AmendmentResult(this.body, this.reason);
+}
+
+class _AddAmendmentDialog extends StatefulWidget {
+  const _AddAmendmentDialog();
+
+  @override
+  State<_AddAmendmentDialog> createState() => _AddAmendmentDialogState();
+}
+
+class _AddAmendmentDialogState extends State<_AddAmendmentDialog> {
+  final _bodyCtrl = TextEditingController();
+  final _reasonCtrl = TextEditingController();
+
+  @override
+  void dispose() {
+    _bodyCtrl.dispose();
+    _reasonCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Nota de enmienda / aclaración'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TextField(
+            controller: _bodyCtrl,
+            maxLines: 4,
+            decoration: const InputDecoration(
+              labelText: 'Aclaración / corrección *',
+              hintText: 'Qué se corrige o aclara respecto a la nota original',
+            ),
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _reasonCtrl,
+            decoration: const InputDecoration(labelText: 'Motivo (opcional)'),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancelar')),
+        FilledButton(
+          onPressed: () {
+            final body = _bodyCtrl.text.trim();
+            if (body.isEmpty) return;
+            Navigator.pop(
+              context,
+              _AmendmentResult(
+                body,
+                _reasonCtrl.text.trim().isEmpty ? null : _reasonCtrl.text.trim(),
+              ),
+            );
+          },
+          child: const Text('Firmar y agregar'),
+        ),
+      ],
     );
   }
 }
