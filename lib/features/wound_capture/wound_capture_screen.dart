@@ -10,7 +10,9 @@ import '../../core/providers/session_provider.dart';
 import '../../engine/models/kura_engine_enums.dart';
 import '../../models/patient.dart';
 import '../../models/wound.dart' as wmodel;
+import '../../models/consent.dart';
 import '../../services/data_repository.dart';
+import '../consents/consents_screen.dart';
 import 'wound_capture_controller.dart';
 import 'wound_capture_form_state.dart';
 import 'widgets/bed_composition_sliders.dart';
@@ -123,6 +125,24 @@ class _WoundCaptureScreenState extends ConsumerState<WoundCaptureScreen> {
   }
 
   Future<void> _pickImage() async {
+    // Gating (Protocolo "Expedientes clínicos"): la toma de fotografía requiere
+    // el consentimiento de fotografía registrado.
+    final repo = await DataRepository.instance();
+    if (!repo.hasConsent(widget.patientId, ConsentType.fotografia)) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text(
+              'Registra el consentimiento de fotografía antes de tomar fotos.'),
+          action: SnackBarAction(
+            label: 'Registrar',
+            onPressed: () =>
+                context.go('/patients/${widget.patientId}/consents'),
+          ),
+        ),
+      );
+      return;
+    }
     try {
       final file = await _picker.pickImage(
           source: ImageSource.gallery, imageQuality: 85, maxWidth: 1600, maxHeight: 1600);
@@ -231,6 +251,32 @@ class _WoundCaptureScreenState extends ConsumerState<WoundCaptureScreen> {
     if (!formState.hasMinimumDataForPrognosis) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Completa al menos largo y ancho de la herida.')),
+      );
+      return;
+    }
+
+    // Gating de consentimientos (Protocolos "Expedientes clínicos" /
+    // "Desbridamiento"): la valoración y la fotografía requieren privacidad +
+    // fotografía; si la captura fue POSTERIOR al desbridamiento, además exige
+    // el consentimiento de desbridamiento.
+    final requeridos = <ConsentType>[
+      ConsentType.privacidad,
+      ConsentType.fotografia,
+      if (!formState.capturedBeforeDebridement) ConsentType.desbridamiento,
+    ];
+    final faltantes = repo.missingConsents(widget.patientId, requeridos);
+    if (faltantes.isNotEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+              'Faltan consentimientos: ${faltantes.map((t) => t.label).join(', ')}. '
+              'Regístralos antes de guardar la valoración.'),
+          action: SnackBarAction(
+            label: 'Registrar',
+            onPressed: () =>
+                context.go('/patients/${widget.patientId}/consents'),
+          ),
+        ),
       );
       return;
     }
@@ -366,6 +412,14 @@ class _WoundCaptureScreenState extends ConsumerState<WoundCaptureScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        // Gating (Protocolo "Expedientes clínicos"): la valoración y la
+        // fotografía requieren consentimiento de privacidad + fotografía.
+        ConsentGateBanner(
+          patientId: widget.patientId,
+          repo: repo,
+          required: const [ConsentType.privacidad, ConsentType.fotografia],
+          actionLabel: 'la valoración y la toma de fotografía',
+        ),
         _SectionCard(
           icon: Icons.camera_alt_outlined,
           title: 'Evidencia fotográfica',
@@ -828,6 +882,14 @@ class _WoundCaptureScreenState extends ConsumerState<WoundCaptureScreen> {
               const SizedBox(height: 8),
               const Text('Composición del lecho *', style: TextStyle(fontWeight: FontWeight.w700)),
               const SizedBox(height: 8),
+              // Gating (Protocolo "Desbridamiento"): registrar composición tras
+              // desbridamiento requiere el consentimiento de desbridamiento.
+              ConsentGateBanner(
+                patientId: widget.patientId,
+                repo: repo,
+                required: const [ConsentType.desbridamiento],
+                actionLabel: 'el desbridamiento',
+              ),
               BedCompositionSliders(
                 granulacion: formState.granulacionPct,
                 esfacelo: formState.esfaceloPct,

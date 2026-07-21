@@ -19,6 +19,9 @@ import '../../models/site.dart';
 import '../../models/treatment_plan.dart';
 import '../../services/data_repository.dart';
 import '../../services/photo_upload_service.dart';
+import '../../core/widgets/signature_pad.dart';
+import '../../models/consent.dart';
+import '../consents/consents_screen.dart';
 import '../wound_capture/widgets/bed_composition_sliders.dart';
 
 /// Formulario de "Registrar seguimiento" (visita visit_type='seguimiento'
@@ -178,6 +181,10 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
   // se piden como campos editables en cada nota).
   String? _signedByReadOnly;
   String? _signedLicenseReadOnly;
+  // Firma digital trazada por el profesional (además del nombre + cédula de
+  // solo lectura). Obligatoria para firmar la nota.
+  final SignatureController _signatureController = SignatureController();
+  bool _hasSignature = false;
 
   bool _saving = false;
 
@@ -286,7 +293,20 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
   }
 
   @override
+  void initState() {
+    super.initState();
+    // Rehabilita el botón de guardar solo cuando cambia el estado vacío/no
+    // vacío de la firma (no en cada punto trazado, para no reconstruir todo el
+    // formulario mientras se firma).
+    _signatureController.addListener(() {
+      final has = _signatureController.isNotEmpty;
+      if (has != _hasSignature) setState(() => _hasSignature = has);
+    });
+  }
+
+  @override
   void dispose() {
+    _signatureController.dispose();
     _lengthCtrl.dispose();
     _widthCtrl.dispose();
     _depthCtrl.dispose();
@@ -345,7 +365,12 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
         _signedByReadOnly != null &&
         _signedByReadOnly!.isNotEmpty &&
         _signedLicenseReadOnly != null &&
-        _signedLicenseReadOnly!.isNotEmpty;
+        _signedLicenseReadOnly!.isNotEmpty &&
+        _hasSignature &&
+        // Gating (Protocolo "Expedientes clínicos"): la toma de fotografía del
+        // seguimiento requiere el consentimiento de fotografía.
+        (repo == null ||
+            repo.hasConsent(widget.patientId, ConsentType.fotografia));
 
     return Scaffold(
       appBar: AppBar(title: const Text('Registrar seguimiento')),
@@ -357,6 +382,13 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                if (repo != null)
+                  ConsentGateBanner(
+                    patientId: widget.patientId,
+                    repo: repo,
+                    required: const [ConsentType.fotografia],
+                    actionLabel: 'la toma de fotografía del seguimiento',
+                  ),
                 Text('Fecha de la visita', style: _sectionStyle(context)),
                 const SizedBox(height: 8),
                 OutlinedButton.icon(
@@ -866,6 +898,9 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
       return 'Completa la cédula profesional en tu registro de personal (Administración) '
           'antes de guardar una nota de seguimiento.';
     }
+    if (!_hasSignature) {
+      return 'Firma digitalmente la nota (traza tu firma en el recuadro).';
+    }
     return '';
   }
 
@@ -1325,6 +1360,28 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
               ],
             ),
           ],
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              const Expanded(
+                child: Text('Firma digital *',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+              ),
+              TextButton.icon(
+                icon: const Icon(Icons.refresh, size: 16),
+                label: const Text('Limpiar'),
+                onPressed: () => _signatureController.clear(),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          SignaturePad(controller: _signatureController),
+          const SizedBox(height: 4),
+          const Text(
+            'Traza tu firma con el dedo, lápiz o ratón. Queda registrada junto a '
+            'tu nombre y cédula con fecha y hora.',
+            style: TextStyle(fontSize: 11, color: KuraColors.darkText),
+          ),
         ],
       ),
     );
@@ -1423,6 +1480,8 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
         followUpEvolution: _evolutionFinal,
         followUpSignedBy: _signedByReadOnly!,
         followUpSignedLicense: _signedLicenseReadOnly!,
+        followUpSignature: _signatureController.toJsonString(),
+        followUpSignedAt: DateTime.now(),
       );
 
       final measurement = await repo.createMeasurement({
