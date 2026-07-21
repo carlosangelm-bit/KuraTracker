@@ -21,6 +21,32 @@ class _PatientFormScreenState extends ConsumerState<PatientFormScreen> {
   final _caregiverNameCtrl = TextEditingController();
   final _caregiverPhoneCtrl = TextEditingController();
   final _notesCtrl = TextEditingController();
+  // Identificación NOM-004 (Fase 2).
+  final _curpCtrl = TextEditingController();
+  final _addressCtrl = TextEditingController();
+  final _occupationCtrl = TextEditingController();
+  final _responsibleNameCtrl = TextEditingController();
+  final _responsibleRelationshipCtrl = TextEditingController();
+  final _responsiblePhoneCtrl = TextEditingController();
+  final _weightCtrl = TextEditingController();
+  final _heightCtrl = TextEditingController();
+
+  @override
+  void dispose() {
+    _nameCtrl.dispose();
+    _caregiverNameCtrl.dispose();
+    _caregiverPhoneCtrl.dispose();
+    _notesCtrl.dispose();
+    _curpCtrl.dispose();
+    _addressCtrl.dispose();
+    _occupationCtrl.dispose();
+    _responsibleNameCtrl.dispose();
+    _responsibleRelationshipCtrl.dispose();
+    _responsiblePhoneCtrl.dispose();
+    _weightCtrl.dispose();
+    _heightCtrl.dispose();
+    super.dispose();
+  }
   DateTime? _birthDate;
   String _sex = 'F';
   String _mobility = 'ambulatorio';
@@ -103,6 +129,57 @@ class _PatientFormScreenState extends ConsumerState<PatientFormScreen> {
                         ],
                       ),
                       const SizedBox(height: 12),
+                      TextFormField(
+                        controller: _curpCtrl,
+                        textCapitalization: TextCapitalization.characters,
+                        maxLength: 18,
+                        decoration: const InputDecoration(
+                          labelText: 'CURP (recomendada)',
+                          helperText: '18 caracteres',
+                          counterText: '',
+                        ),
+                        validator: (v) {
+                          final s = v?.trim() ?? '';
+                          if (s.isEmpty) return null; // recomendada, no obligatoria
+                          return s.length == 18 ? null : 'La CURP debe tener 18 caracteres';
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: _addressCtrl,
+                        decoration:
+                            const InputDecoration(labelText: 'Domicilio (recomendado)'),
+                      ),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: _occupationCtrl,
+                        decoration: const InputDecoration(labelText: 'Ocupación'),
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextFormField(
+                              controller: _weightCtrl,
+                              keyboardType: const TextInputType.numberWithOptions(
+                                  decimal: true),
+                              decoration:
+                                  const InputDecoration(labelText: 'Peso (kg)'),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: TextFormField(
+                              controller: _heightCtrl,
+                              keyboardType: const TextInputType.numberWithOptions(
+                                  decimal: true),
+                              decoration:
+                                  const InputDecoration(labelText: 'Talla (cm)'),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
                       DropdownButtonFormField<String>(
                         value: _siteId,
                         decoration: const InputDecoration(labelText: 'Sitio principal'),
@@ -155,6 +232,39 @@ class _PatientFormScreenState extends ConsumerState<PatientFormScreen> {
                         value: _fragile,
                         activeColor: KuraColors.primary,
                         onChanged: (v) => setState(() => _fragile = v),
+                      ),
+                      const SizedBox(height: 20),
+                      Text('Responsable / tutor (menores o urgencias)',
+                          style: Theme.of(context)
+                              .textTheme
+                              .titleMedium
+                              ?.copyWith(fontWeight: FontWeight.w700)),
+                      const SizedBox(height: 8),
+                      TextFormField(
+                        controller: _responsibleNameCtrl,
+                        decoration:
+                            const InputDecoration(labelText: 'Nombre del responsable'),
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextFormField(
+                              controller: _responsibleRelationshipCtrl,
+                              decoration:
+                                  const InputDecoration(labelText: 'Parentesco'),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: TextFormField(
+                              controller: _responsiblePhoneCtrl,
+                              keyboardType: TextInputType.phone,
+                              decoration:
+                                  const InputDecoration(labelText: 'Teléfono'),
+                            ),
+                          ),
+                        ],
                       ),
                       const SizedBox(height: 12),
                       TextFormField(
@@ -221,6 +331,31 @@ class _PatientFormScreenState extends ConsumerState<PatientFormScreen> {
                                         : null,
                                     fragilePatient: _fragile,
                                     backgroundNotes: _notesCtrl.text.trim(),
+                                    curp: _curpCtrl.text.trim().isEmpty
+                                        ? null
+                                        : _curpCtrl.text.trim().toUpperCase(),
+                                    address: _addressCtrl.text.trim().isEmpty
+                                        ? null
+                                        : _addressCtrl.text.trim(),
+                                    occupation: _occupationCtrl.text.trim().isEmpty
+                                        ? null
+                                        : _occupationCtrl.text.trim(),
+                                    responsibleName:
+                                        _responsibleNameCtrl.text.trim().isEmpty
+                                            ? null
+                                            : _responsibleNameCtrl.text.trim(),
+                                    responsibleRelationship:
+                                        _responsibleRelationshipCtrl.text.trim().isEmpty
+                                            ? null
+                                            : _responsibleRelationshipCtrl.text.trim(),
+                                    responsiblePhone:
+                                        _responsiblePhoneCtrl.text.trim().isEmpty
+                                            ? null
+                                            : _responsiblePhoneCtrl.text.trim(),
+                                    weightKg: double.tryParse(
+                                        _weightCtrl.text.trim().replaceAll(',', '.')),
+                                    heightCm: double.tryParse(
+                                        _heightCtrl.text.trim().replaceAll(',', '.')),
                                   );
                                   var staffId = session.user?.staffId;
                                   if (staffId == null &&

@@ -14,6 +14,15 @@ class Patient {
   final bool fragilePatient;
   final String? backgroundNotes;
   final String? ekareExternalId;
+  // Identificación NOM-004 (Fase 2, migración 0031).
+  final String? curp;
+  final String? address; // domicilio
+  final String? occupation; // ocupación
+  final String? responsibleName; // responsable/tutor
+  final String? responsibleRelationship; // parentesco
+  final String? responsiblePhone;
+  final double? weightKg; // peso basal
+  final double? heightCm; // talla basal
   final bool isActive;
   final DateTime createdAt;
   // Centro (organizacion) dueno del expediente. Ver 0011_organizations.sql:
@@ -35,10 +44,26 @@ class Patient {
     this.fragilePatient = false,
     this.backgroundNotes,
     this.ekareExternalId,
+    this.curp,
+    this.address,
+    this.occupation,
+    this.responsibleName,
+    this.responsibleRelationship,
+    this.responsiblePhone,
+    this.weightKg,
+    this.heightCm,
     this.isActive = true,
     required this.createdAt,
     this.organizationId,
   });
+
+  /// IMC calculado a partir de peso/talla basales (kg/m²), o null si faltan.
+  double? get bmi {
+    final w = weightKg, h = heightCm;
+    if (w == null || h == null || h <= 0) return null;
+    final m = h / 100.0;
+    return w / (m * m);
+  }
 
   int? get age {
     if (birthDate == null) return null;
@@ -67,6 +92,14 @@ class Patient {
         fragilePatient: json['fragile_patient'] as bool? ?? false,
         backgroundNotes: json['background_notes'] as String?,
         ekareExternalId: json['ekare_external_id'] as String?,
+        curp: json['curp'] as String?,
+        address: json['address'] as String?,
+        occupation: json['occupation'] as String?,
+        responsibleName: json['responsible_name'] as String?,
+        responsibleRelationship: json['responsible_relationship'] as String?,
+        responsiblePhone: json['responsible_phone'] as String?,
+        weightKg: (json['weight_kg'] as num?)?.toDouble(),
+        heightCm: (json['height_cm'] as num?)?.toDouble(),
         isActive: json['is_active'] as bool? ?? true,
         createdAt: DateTime.parse(json['created_at'] as String),
         organizationId: json['organization_id'] as String?,
@@ -86,6 +119,14 @@ class Patient {
         'fragile_patient': fragilePatient,
         'background_notes': backgroundNotes,
         'ekare_external_id': ekareExternalId,
+        'curp': curp,
+        'address': address,
+        'occupation': occupation,
+        'responsible_name': responsibleName,
+        'responsible_relationship': responsibleRelationship,
+        'responsible_phone': responsiblePhone,
+        'weight_kg': weightKg,
+        'height_cm': heightCm,
         'is_active': isActive,
         'created_at': createdAt.toIso8601String(),
         'organization_id': organizationId,
