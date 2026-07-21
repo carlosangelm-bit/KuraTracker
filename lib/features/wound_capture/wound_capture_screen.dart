@@ -302,6 +302,18 @@ class _WoundCaptureScreenState extends ConsumerState<WoundCaptureScreen> {
           'ceap_class': formState.ceapClass?.name,
           'wuwhs_grade': formState.wuwhsGrade?.name,
           'agente_causal': formState.agenteCausal?.name,
+          // Clasificaciones/campos por etiología (Prompt 5, migración 0028).
+          'upd_subtipo': formState.updSubtipo?.name,
+          'texas_grade': formState.texasGrade?.name,
+          'texas_stage': formState.texasStage?.name,
+          'idsa_iwgdf': formState.idsaIwgdf?.name,
+          'sensibilidad_protectora': formState.sensibilidadProtectora?.name,
+          'rutherford': formState.rutherford?.name,
+          'npuap_estadio': formState.npuapEstadio?.name,
+          'clase_contaminacion': formState.claseContaminacion?.name,
+          'tipo_cierre': formState.tipoCierre?.name,
+          'drenaje_tipo': formState.drenajeTipo?.name,
+          'sutura_tipo': formState.suturaTipo?.name,
         });
       }
 
@@ -963,6 +975,37 @@ class _WoundCaptureScreenState extends ConsumerState<WoundCaptureScreen> {
     );
   }
 
+  /// Fila etiquetada de ChoiceChips para un enum (Prompt 5): reduce el
+  /// boilerplate de las clasificaciones por etiología. Mismo patrón visual que
+  /// los selectores existentes (Wrap + ChoiceChip).
+  Widget _enumChips<T>({
+    required String title,
+    required List<T> values,
+    required T? selected,
+    required String Function(T) label,
+    required ValueChanged<T> onSelected,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: values.map((v) {
+            return ChoiceChip(
+              label: Text(label(v)),
+              selected: selected == v,
+              selectedColor: KuraColors.primary.withOpacity(0.18),
+              onSelected: (_) => onSelected(v),
+            );
+          }).toList(),
+        ),
+      ],
+    );
+  }
+
   Widget _buildEtiologySpecificSection(
       WoundCaptureFormState formState, void Function(VoidCallback) update) {
     switch (formState.etiologia) {
@@ -1018,6 +1061,49 @@ class _WoundCaptureScreenState extends ConsumerState<WoundCaptureScreen> {
                 value: formState.wifiInfection,
                 onChanged: (v) => update(() => formState.wifiInfection = v),
               ),
+              const SizedBox(height: 16),
+              const Divider(),
+              const SizedBox(height: 8),
+              _enumChips<UpdSubtipo>(
+                title: 'Subtipo clínico',
+                values: UpdSubtipo.values,
+                selected: formState.updSubtipo,
+                label: (v) => v.label,
+                onSelected: (v) => update(() => formState.updSubtipo = v),
+              ),
+              const SizedBox(height: 12),
+              _enumChips<TexasGrade>(
+                title: 'Universidad de Texas — grado (profundidad)',
+                values: TexasGrade.values,
+                selected: formState.texasGrade,
+                label: (v) => v.label,
+                onSelected: (v) => update(() => formState.texasGrade = v),
+              ),
+              const SizedBox(height: 12),
+              _enumChips<TexasStage>(
+                title: 'Universidad de Texas — estadio',
+                values: TexasStage.values,
+                selected: formState.texasStage,
+                label: (v) => v.label,
+                onSelected: (v) => update(() => formState.texasStage = v),
+              ),
+              const SizedBox(height: 12),
+              _enumChips<IdsaIwgdf>(
+                title: 'Infección IDSA/IWGDF',
+                values: IdsaIwgdf.values,
+                selected: formState.idsaIwgdf,
+                label: (v) => v.label,
+                onSelected: (v) => update(() => formState.idsaIwgdf = v),
+              ),
+              const SizedBox(height: 12),
+              _enumChips<SensibilidadProtectora>(
+                title: 'Monofilamento 10 g / sensibilidad protectora',
+                values: SensibilidadProtectora.values,
+                selected: formState.sensibilidadProtectora,
+                label: (v) => v.label,
+                onSelected: (v) =>
+                    update(() => formState.sensibilidadProtectora = v),
+              ),
             ],
           ),
         );
@@ -1058,6 +1144,18 @@ class _WoundCaptureScreenState extends ConsumerState<WoundCaptureScreen> {
                   onChanged: (v) =>
                       update(() => formState.noRevascularizable = v),
                 ),
+              // Rutherford: aplica al subtipo ARTERIAL/mixto (isquemia).
+              if (formState.subtipoVascular == SubtipoVascular.arterial ||
+                  formState.subtipoVascular == SubtipoVascular.mixta) ...[
+                const SizedBox(height: 12),
+                _enumChips<Rutherford>(
+                  title: 'Categoría de Rutherford (isquemia arterial)',
+                  values: Rutherford.values,
+                  selected: formState.rutherford,
+                  label: (v) => v.label,
+                  onSelected: (v) => update(() => formState.rutherford = v),
+                ),
+              ],
               const SizedBox(height: 12),
               const Text('Clasificación CEAP'),
               const SizedBox(height: 8),
@@ -1080,21 +1178,53 @@ class _WoundCaptureScreenState extends ConsumerState<WoundCaptureScreen> {
       case Etiologia.quirurgica:
         return _SectionCard(
           icon: Icons.medical_services_outlined,
-          title: 'Herida quirúrgica — Grado WUWHS',
+          title: 'Herida quirúrgica — WUWHS + clasificación',
           subtitle: 'G4 activa interconsulta urgente automática',
           initiallyExpanded: true,
-          child: Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: WuwhsGrade.values.map((g) {
-              final selected = formState.wuwhsGrade == g;
-              return ChoiceChip(
-                label: Text(g.name.toUpperCase()),
-                selected: selected,
-                selectedColor: KuraColors.primary.withOpacity(0.18),
-                onSelected: (_) => update(() => formState.wuwhsGrade = g),
-              );
-            }).toList(),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _enumChips<WuwhsGrade>(
+                title: 'Grado WUWHS',
+                values: WuwhsGrade.values,
+                selected: formState.wuwhsGrade,
+                label: (v) => v.name.toUpperCase(),
+                onSelected: (v) => update(() => formState.wuwhsGrade = v),
+              ),
+              const SizedBox(height: 12),
+              _enumChips<ClaseContaminacion>(
+                title: 'Clase de contaminación (CDC)',
+                values: ClaseContaminacion.values,
+                selected: formState.claseContaminacion,
+                label: (v) => v.label,
+                onSelected: (v) =>
+                    update(() => formState.claseContaminacion = v),
+              ),
+              const SizedBox(height: 12),
+              _enumChips<TipoCierre>(
+                title: 'Tipo de cierre',
+                values: TipoCierre.values,
+                selected: formState.tipoCierre,
+                label: (v) => v.label,
+                onSelected: (v) => update(() => formState.tipoCierre = v),
+              ),
+              const SizedBox(height: 12),
+              _enumChips<DrenajeTipo>(
+                title: 'Drenaje',
+                values: DrenajeTipo.values,
+                selected: formState.drenajeTipo,
+                label: (v) => v.label,
+                onSelected: (v) => update(() => formState.drenajeTipo = v),
+              ),
+              const SizedBox(height: 12),
+              _enumChips<SuturaTipo>(
+                title: 'Sutura / afrontamiento',
+                values: SuturaTipo.values,
+                selected: formState.suturaTipo,
+                label: (v) => v.label,
+                onSelected: (v) => update(() => formState.suturaTipo = v),
+              ),
+            ],
           ),
         );
       case Etiologia.traumatica:
@@ -1126,6 +1256,16 @@ class _WoundCaptureScreenState extends ConsumerState<WoundCaptureScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              _enumChips<NpuapEstadio>(
+                title: 'Estadio NPUAP/EPUAP',
+                values: NpuapEstadio.values,
+                selected: formState.npuapEstadio,
+                label: (v) => v.label,
+                onSelected: (v) => update(() => formState.npuapEstadio = v),
+              ),
+              const SizedBox(height: 16),
+              const Divider(),
+              const SizedBox(height: 8),
               Text(
                 'Puntaje total: ${formState.bradenScore ?? '—'} / 23',
                 style: const TextStyle(fontWeight: FontWeight.w700),

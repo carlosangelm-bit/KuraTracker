@@ -33,6 +33,23 @@ class WoundCaptureFormState {
   // etiologia de la herida es LPP.
   int? bradenScore;
 
+  // ---- Clasificaciones/campos por etiología (Prompt 5) ----
+  // UPD (pie diabético)
+  UpdSubtipo? updSubtipo;
+  TexasGrade? texasGrade;
+  TexasStage? texasStage;
+  IdsaIwgdf? idsaIwgdf;
+  SensibilidadProtectora? sensibilidadProtectora;
+  // Vascular arterial
+  Rutherford? rutherford;
+  // LPP (estadio estructurado en vez de texto libre)
+  NpuapEstadio? npuapEstadio;
+  // Quirúrgica
+  ClaseContaminacion? claseContaminacion;
+  TipoCierre? tipoCierre;
+  DrenajeTipo? drenajeTipo;
+  SuturaTipo? suturaTipo;
+
   // ---- Evaluacion clinica ----
   double? glucoseMgDl;
   // HbA1c (hemoglobina glucosilada, %) - distinta de glucoseMgDl (glucosa

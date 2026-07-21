@@ -1239,6 +1239,18 @@ class DataRepository {
     return Wound.fromJson(saved);
   }
 
+  /// Egreso del episodio de una herida (Prompt 5): cierra la herida con un
+  /// motivo estructurado (cierre/alta voluntaria/abandono/defunción) y marca
+  /// closed_at. `motivoEgreso` es el `name` del enum MotivoEgreso.
+  Future<Wound> closeWound(String woundId, MotivoEgreso motivoEgreso) async {
+    final saved = await _store.updateRow(Collections.wounds, woundId, {
+      'is_active': false,
+      'closed_at': DateTime.now().toIso8601String(),
+      'discharge_reason': motivoEgreso.name,
+    });
+    return Wound.fromJson(saved);
+  }
+
   // ---------------- Evaluaciones ----------------
 
   List<WoundAssessment> listAssessmentsForWound(String woundId) => _store

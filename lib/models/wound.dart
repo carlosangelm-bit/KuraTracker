@@ -1,5 +1,15 @@
 import '../engine/models/kura_engine_enums.dart';
 
+/// Busca un valor de enum por su `name` (o null). Usado para las
+/// clasificaciones por etiología persistidas como texto (Prompt 5 / 0028).
+T? enumByName<T extends Enum>(List<T> values, Object? name) {
+  if (name == null) return null;
+  for (final v in values) {
+    if (v.name == name) return v;
+  }
+  return null;
+}
+
 extension EtiologiaDb on Etiologia {
   String get dbValue {
     switch (this) {
@@ -53,6 +63,24 @@ class Wound {
   final CeapClass? ceapClass;
   final WuwhsGrade? wuwhsGrade;
   final AgenteCausal? agenteCausal;
+  // ---- Clasificaciones/campos por etiología (Prompt 5, migración 0028) ----
+  // UPD (pie diabético)
+  final UpdSubtipo? updSubtipo;
+  final TexasGrade? texasGrade;
+  final TexasStage? texasStage;
+  final IdsaIwgdf? idsaIwgdf;
+  final SensibilidadProtectora? sensibilidadProtectora;
+  // Vascular arterial (sobre subtipo arterial del Prompt 1)
+  final Rutherford? rutherford;
+  // LPP (reemplaza el texto libre de estadio)
+  final NpuapEstadio? npuapEstadio;
+  // Quirúrgica
+  final ClaseContaminacion? claseContaminacion;
+  final TipoCierre? tipoCierre;
+  final DrenajeTipo? drenajeTipo;
+  final SuturaTipo? suturaTipo;
+  // Egreso del episodio (estructurado)
+  final MotivoEgreso? motivoEgreso;
   final bool isActive;
   final DateTime? closedAt;
   final DateTime createdAt;
@@ -72,6 +100,18 @@ class Wound {
     this.ceapClass,
     this.wuwhsGrade,
     this.agenteCausal,
+    this.updSubtipo,
+    this.texasGrade,
+    this.texasStage,
+    this.idsaIwgdf,
+    this.sensibilidadProtectora,
+    this.rutherford,
+    this.npuapEstadio,
+    this.claseContaminacion,
+    this.tipoCierre,
+    this.drenajeTipo,
+    this.suturaTipo,
+    this.motivoEgreso,
     this.isActive = true,
     this.closedAt,
     required this.createdAt,
@@ -102,6 +142,20 @@ class Wound {
         agenteCausal: json['agente_causal'] == null
             ? null
             : AgenteCausal.values.firstWhere((e) => e.name == json['agente_causal']),
+        updSubtipo: enumByName(UpdSubtipo.values, json['upd_subtipo']),
+        texasGrade: enumByName(TexasGrade.values, json['texas_grade']),
+        texasStage: enumByName(TexasStage.values, json['texas_stage']),
+        idsaIwgdf: enumByName(IdsaIwgdf.values, json['idsa_iwgdf']),
+        sensibilidadProtectora: enumByName(
+            SensibilidadProtectora.values, json['sensibilidad_protectora']),
+        rutherford: enumByName(Rutherford.values, json['rutherford']),
+        npuapEstadio: enumByName(NpuapEstadio.values, json['npuap_estadio']),
+        claseContaminacion: enumByName(
+            ClaseContaminacion.values, json['clase_contaminacion']),
+        tipoCierre: enumByName(TipoCierre.values, json['tipo_cierre']),
+        drenajeTipo: enumByName(DrenajeTipo.values, json['drenaje_tipo']),
+        suturaTipo: enumByName(SuturaTipo.values, json['sutura_tipo']),
+        motivoEgreso: enumByName(MotivoEgreso.values, json['discharge_reason']),
         isActive: json['is_active'] as bool? ?? true,
         closedAt: json['closed_at'] == null
             ? null
@@ -124,6 +178,18 @@ class Wound {
         'ceap_class': ceapClass?.name,
         'wuwhs_grade': wuwhsGrade?.name,
         'agente_causal': agenteCausal?.name,
+        'upd_subtipo': updSubtipo?.name,
+        'texas_grade': texasGrade?.name,
+        'texas_stage': texasStage?.name,
+        'idsa_iwgdf': idsaIwgdf?.name,
+        'sensibilidad_protectora': sensibilidadProtectora?.name,
+        'rutherford': rutherford?.name,
+        'npuap_estadio': npuapEstadio?.name,
+        'clase_contaminacion': claseContaminacion?.name,
+        'tipo_cierre': tipoCierre?.name,
+        'drenaje_tipo': drenajeTipo?.name,
+        'sutura_tipo': suturaTipo?.name,
+        'discharge_reason': motivoEgreso?.name,
         'is_active': isActive,
         'closed_at': closedAt?.toIso8601String(),
         'created_at': createdAt.toIso8601String(),
