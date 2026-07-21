@@ -254,10 +254,33 @@ class _PatientHeaderCard extends StatelessWidget {
                       ? (patient.caregiverName ?? 'Identificado')
                       : 'No identificado',
                 ),
+                if (patient.curp != null && patient.curp!.isNotEmpty)
+                  _InfoItem(label: 'CURP', value: patient.curp!),
+                if (patient.occupation != null && patient.occupation!.isNotEmpty)
+                  _InfoItem(label: 'Ocupación', value: patient.occupation!),
+                if (patient.weightKg != null || patient.heightCm != null)
+                  _InfoItem(
+                    label: 'Peso / Talla',
+                    value:
+                        '${patient.weightKg != null ? '${patient.weightKg} kg' : '-'} / '
+                        '${patient.heightCm != null ? '${patient.heightCm} cm' : '-'}'
+                        '${patient.bmi != null ? '  ·  IMC ${patient.bmi!.toStringAsFixed(1)}' : ''}',
+                  ),
+                if (patient.responsibleName != null &&
+                    patient.responsibleName!.isNotEmpty)
+                  _InfoItem(
+                    label: 'Responsable',
+                    value:
+                        '${patient.responsibleName!}${patient.responsibleRelationship != null && patient.responsibleRelationship!.isNotEmpty ? ' (${patient.responsibleRelationship})' : ''}',
+                  ),
                 if (patient.ekareExternalId != null)
                   _InfoItem(label: 'eKare ID', value: patient.ekareExternalId!),
               ],
             ),
+            if (patient.address != null && patient.address!.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              _InfoItem(label: 'Domicilio', value: patient.address!),
+            ],
             if (patient.backgroundNotes != null && patient.backgroundNotes!.isNotEmpty) ...[
               const SizedBox(height: 12),
               const Divider(),
