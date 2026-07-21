@@ -1,0 +1,57 @@
+name: Supabase migrations
+
+# Aplica automáticamente las migraciones de supabase/migrations/ al proyecto de
+# Supabase (prod) cuando se hace push a main y hay cambios en migraciones.
+# `supabase db push` aplica SOLO las migraciones pendientes, en orden, y lleva
+# registro en el schema supabase_migrations (idempotente: no re-aplica las ya
+# aplicadas). También se puede disparar a mano (workflow_dispatch).
+#
+# REQUISITOS (Settings → Secrets and variables → Actions):
+#   SUPABASE_ACCESS_TOKEN  Personal Access Token (supabase.com/dashboard/account/tokens)
+#   SUPABASE_PROJECT_REF   Ref del proyecto (Project Settings → General)
+#   SUPABASE_DB_PASSWORD   Contraseña de la base de datos (Project Settings → Database)
+#
+# SEGURIDAD: el job usa el environment "production"; si defines reglas de
+# protección (required reviewers) en Settings → Environments → production, cada
+# aplicación de migraciones exigirá aprobación manual antes de correr.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'supabase/migrations/**'
+  workflow_dispatch: {}
+
+concurrency:
+  group: supabase-migrations
+  cancel-in-progress: false
+
+jobs:
+  db-push:
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+      SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Verificar secrets
+        run: |
+          test -n "$SUPABASE_ACCESS_TOKEN" || { echo "Falta SUPABASE_ACCESS_TOKEN"; exit 1; }
+          test -n "$SUPABASE_PROJECT_REF"  || { echo "Falta SUPABASE_PROJECT_REF"; exit 1; }
+          test -n "$SUPABASE_DB_PASSWORD"  || { echo "Falta SUPABASE_DB_PASSWORD"; exit 1; }
+
+      - name: Link al proyecto
+        run: supabase link --project-ref "$SUPABASE_PROJECT_REF"
+
+      - name: Migraciones pendientes (informativo)
+        run: supabase migration list --linked || true
+
+      - name: Aplicar migraciones
+        run: supabase db push
