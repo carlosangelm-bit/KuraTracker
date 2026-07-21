@@ -11,7 +11,9 @@ import '../../engine/models/kura_engine_enums.dart';
 import '../../models/patient.dart';
 import '../../models/wound.dart' as wmodel;
 import '../../models/consent.dart';
+import '../../models/treatment_plan.dart';
 import '../../services/data_repository.dart';
+import '../../services/photo_upload_service.dart';
 import '../consents/consents_screen.dart';
 import 'wound_capture_controller.dart';
 import 'wound_capture_form_state.dart';
@@ -147,8 +149,12 @@ class _WoundCaptureScreenState extends ConsumerState<WoundCaptureScreen> {
       final file = await _picker.pickImage(
           source: ImageSource.gallery, imageQuality: 85, maxWidth: 1600, maxHeight: 1600);
       if (file != null) {
+        // Se leen los bytes AHORA para poder subirlos a Storage al guardar
+        // (en web file.path es una blob URL que no se puede leer luego).
+        final bytes = await file.readAsBytes();
         final controller = ref.read(woundCaptureControllerProvider(_draftKey).notifier);
         controller.state.photoPaths.add(file.path);
+        controller.state.photoBytesByPath[file.path] = bytes;
         controller.touch();
       }
     } catch (_) {
@@ -342,7 +348,7 @@ class _WoundCaptureScreenState extends ConsumerState<WoundCaptureScreen> {
               : formState.clinicalNotes!.trim(),
         });
 
-        await repo.createMeasurement({
+        final measurement = await repo.createMeasurement({
           'wound_id': wound.id,
           'consultation_id': consultationId,
           'measured_at': DateTime.now().toIso8601String().substring(0, 10),
@@ -369,6 +375,43 @@ class _WoundCaptureScreenState extends ConsumerState<WoundCaptureScreen> {
           'is_lower_extremity': formState.esExtremidadInferior,
           'albumin_g_dl': formState.albuminaGdl,
         });
+
+        // Fotos de la valoración: subir a Storage + registrar en wound_photos.
+        // ANTES no se persistían (solo se guardaba la ruta local y la foto se
+        // perdía), por eso "Foto basal" salía vacía. La primera queda marcada
+        // como basal (is_baseline). En un try aparte: si una foto falla, la
+        // valoración clínica YA se guardó y solo se avisa.
+        final photoPaths = List<String>.from(formState.photoPaths);
+        for (var i = 0; i < photoPaths.length; i++) {
+          final bytes = formState.photoBytesByPath[photoPaths[i]];
+          if (bytes == null) continue;
+          try {
+            final storagePath = await PhotoUploadService.uploadWoundPhoto(
+              woundId: wound.id,
+              consultationId: consultationId,
+              bytes: bytes,
+              fileName: 'valoracion_${i + 1}.jpg',
+            );
+            await repo.createPhoto({
+              'wound_id': wound.id,
+              'consultation_id': consultationId,
+              'measurement_id': measurement.id,
+              'storage_path': storagePath,
+              'taken_at': DateTime.now().toIso8601String(),
+              'is_baseline': i == 0,
+              'photo_stage': PhotoStage.conMedicion.dbValue,
+            });
+          } catch (e) {
+            debugPrint('Foto de valoración no guardada: $e');
+            if (context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                    content: Text(
+                        'La valoración se guardó, pero una foto no se pudo subir.')),
+              );
+            }
+          }
+        }
         // La bitacora de auditoria de wound_measurements la genera el
         // trigger AFTER INSERT de Postgres (audit_trigger_fn), no una
         // llamada manual desde el cliente: asi se garantiza que nadie pueda
@@ -460,7 +503,10 @@ class _WoundCaptureScreenState extends ConsumerState<WoundCaptureScreen> {
                             top: 2,
                             right: 2,
                             child: InkWell(
-                              onTap: () => update(() => formState.photoPaths.remove(p)),
+                              onTap: () => update(() {
+                                formState.photoPaths.remove(p);
+                                formState.photoBytesByPath.remove(p);
+                              }),
                               child: const CircleAvatar(
                                 radius: 10,
                                 backgroundColor: KuraColors.danger,
