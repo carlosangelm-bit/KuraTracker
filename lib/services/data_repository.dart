@@ -1036,6 +1036,75 @@ class DataRepository {
     return Patient.fromJson(saved);
   }
 
+  /// Actualiza los datos del expediente de un paciente EXISTENTE (edición /
+  /// completar expediente). Pensado sobre todo para los pacientes creados
+  /// automáticamente desde Acuity, que llegan solo con el nombre (y a veces el
+  /// email): el personal clínico los abre y completa identificación,
+  /// antecedentes, cuidador, etc.
+  ///
+  /// NO toca folio, organización, acuity_email ni created_at (identidad/origen
+  /// del registro). Cada cambio queda auditado por el trigger AFTER UPDATE de
+  /// Postgres (audit_trigger_fn, 0002) — la bitácora no se escribe desde el
+  /// cliente. La RLS (patients_update, 0011) exige ser admin de la organización
+  /// o el clínico asignado al paciente.
+  Future<Patient> updatePatient({
+    required String patientId,
+    required String fullName,
+    DateTime? birthDate,
+    String? sex,
+    String? primarySiteId,
+    String? mobility,
+    bool hasIdentifiedCaregiver = false,
+    String? caregiverName,
+    String? caregiverPhone,
+    bool fragilePatient = false,
+    String? backgroundNotes,
+    String? curp,
+    String? address,
+    String? occupation,
+    String? responsibleName,
+    String? responsibleRelationship,
+    String? responsiblePhone,
+    double? weightKg,
+    double? heightCm,
+    Set<AntecedenteHeredoFamiliar> familyHistory = const {},
+    String? familyHistoryNotes,
+    TabaquismoEstado? smoking,
+    ConsumoAlcohol? alcohol,
+    ActividadFisica? physicalActivity,
+    String? apnpNotes,
+  }) async {
+    final patch = {
+      'full_name': fullName,
+      'birth_date': birthDate?.toIso8601String().substring(0, 10),
+      'sex': sex,
+      'primary_site_id': primarySiteId,
+      'mobility': mobility,
+      'has_identified_caregiver': hasIdentifiedCaregiver,
+      'caregiver_name': caregiverName,
+      'caregiver_phone': caregiverPhone,
+      'fragile_patient': fragilePatient,
+      'background_notes': backgroundNotes,
+      'curp': curp,
+      'address': address,
+      'occupation': occupation,
+      'responsible_name': responsibleName,
+      'responsible_relationship': responsibleRelationship,
+      'responsible_phone': responsiblePhone,
+      'weight_kg': weightKg,
+      'height_cm': heightCm,
+      'family_history': familyHistory.map((e) => e.dbValue).toList(),
+      'family_history_notes': familyHistoryNotes,
+      'smoking': smoking?.dbValue,
+      'alcohol': alcohol?.dbValue,
+      'physical_activity': physicalActivity?.dbValue,
+      'apnp_notes': apnpNotes,
+    };
+    final saved =
+        await _store.updateRow(Collections.patients, patientId, patch);
+    return Patient.fromJson(saved);
+  }
+
   Future<void> assignPatientToStaff(String patientId, String staffId) async {
     final all = _store.getAll(Collections.staffPatientAssignments);
     final exists = all.any((a) => a['patient_id'] == patientId && a['staff_id'] == staffId);
