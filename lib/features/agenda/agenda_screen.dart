@@ -1614,6 +1614,10 @@ class _ManualAgenda extends ConsumerStatefulWidget {
 class _ManualAgendaState extends ConsumerState<_ManualAgenda> {
   bool _showHistory = false;
   String? _kuradorFilter;
+  // Vista Día/Semana (igual que la agenda de Acuity). null = auto por ancho.
+  _AgendaView? _view;
+  DateTime _weekStart = _mondayOf(DateTime.now());
+  DateTime? _selectedDay;
 
   Future<void> _openForm(DataRepository repo, {ManualAppointment? existing}) async {
     final orgId = widget.organizationId;
@@ -1689,6 +1693,9 @@ class _ManualAgendaState extends ConsumerState<_ManualAgenda> {
         : (ids.map((id) => MapEntry(id, staffNames[id] ?? 'Kurador')).toList()
           ..sort((a, b) => a.value.toLowerCase().compareTo(b.value.toLowerCase())));
 
+    final isWide = MediaQuery.sizeOf(context).width >= 900;
+    final view = _view ?? (isWide ? _AgendaView.semana : _AgendaView.dia);
+
     final today = _dayStart(DateTime.now());
     final visible = _showHistory
         ? filtered
@@ -1710,30 +1717,244 @@ class _ManualAgendaState extends ConsumerState<_ManualAgenda> {
           _ManualSummary(appointments: all),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-            child: Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              crossAxisAlignment: WrapCrossAlignment.center,
+            child: Column(
               children: [
-                FilterChip(
-                  label: const Text('Historial'),
-                  avatar: const Icon(Icons.history, size: 16),
-                  selected: _showHistory,
-                  selectedColor: KuraColors.primary.withOpacity(0.15),
-                  onSelected: (v) => setState(() => _showHistory = v),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    ChoiceChip(
+                      label: const Text('Día'),
+                      selected: view == _AgendaView.dia,
+                      selectedColor: KuraColors.primary.withOpacity(0.15),
+                      onSelected: (_) => setState(() => _view = _AgendaView.dia),
+                    ),
+                    ChoiceChip(
+                      label: const Text('Semana'),
+                      selected: view == _AgendaView.semana,
+                      selectedColor: KuraColors.primary.withOpacity(0.15),
+                      onSelected: (_) => setState(() => _view = _AgendaView.semana),
+                    ),
+                    if (view == _AgendaView.dia)
+                      FilterChip(
+                        label: const Text('Historial'),
+                        avatar: const Icon(Icons.history, size: 16),
+                        selected: _showHistory,
+                        selectedColor: KuraColors.primary.withOpacity(0.15),
+                        onSelected: (v) => setState(() => _showHistory = v),
+                      ),
+                    if (kuradorOptions.isNotEmpty) _kuradorDropdown(kuradorOptions),
+                  ],
                 ),
-                if (kuradorOptions.isNotEmpty) _kuradorDropdown(kuradorOptions),
+                if (view == _AgendaView.semana) ...[
+                  const SizedBox(height: 8),
+                  _weekNav(),
+                ],
               ],
             ),
           ),
           const Divider(height: 1),
           Expanded(
-            child: ordered.isEmpty
-                ? _AgendaEmpty(
-                    message: _showHistory ? 'Sin citas registradas.' : 'Sin citas próximas')
+            child: view == _AgendaView.dia
+                ? (ordered.isEmpty
+                    ? _AgendaEmpty(
+                        message: _showHistory ? 'Sin citas registradas.' : 'Sin citas próximas')
+                    : ListView(
+                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
+                        children: _grouped(repo, ordered, staffNames, patientName),
+                      ))
+                : _manualWeek(repo, filtered, staffNames, patientName, isWide),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _weekNav() {
+    final weekEnd = _weekStart.add(const Duration(days: 6));
+    final sameMonth = _weekStart.month == weekEnd.month;
+    final label = sameMonth
+        ? '${_weekStart.day}–${weekEnd.day} ${_mo[_weekStart.month - 1]}'
+        : '${_weekStart.day} ${_mo[_weekStart.month - 1]} – ${weekEnd.day} ${_mo[weekEnd.month - 1]}';
+    return Row(
+      children: [
+        IconButton(
+          icon: const Icon(Icons.chevron_left),
+          tooltip: 'Semana anterior',
+          onPressed: () => setState(() {
+            _weekStart = _dayStart(_weekStart.subtract(const Duration(days: 7)));
+            _selectedDay = null;
+          }),
+        ),
+        Expanded(
+          child: Center(
+              child: Text(label,
+                  style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13))),
+        ),
+        TextButton(
+          onPressed: () => setState(() {
+            _weekStart = _mondayOf(DateTime.now());
+            _selectedDay = null;
+          }),
+          child: const Text('Hoy'),
+        ),
+        IconButton(
+          icon: const Icon(Icons.chevron_right),
+          tooltip: 'Semana siguiente',
+          onPressed: () => setState(() {
+            _weekStart = _dayStart(_weekStart.add(const Duration(days: 7)));
+            _selectedDay = null;
+          }),
+        ),
+      ],
+    );
+  }
+
+  Widget _manualWeek(
+    DataRepository repo,
+    List<ManualAppointment> items,
+    Map<String, String> staffNames,
+    String Function(String?) patientName,
+    bool isWide,
+  ) {
+    final days = List.generate(7, (i) => _dayStart(_weekStart.add(Duration(days: i))));
+    List<ManualAppointment> forDay(DateTime d) =>
+        items.where((a) => _sameDay(a.datetime, d)).toList()
+          ..sort((a, b) => a.datetime.compareTo(b.datetime));
+
+    if (isWide) {
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(12, 8, 12, 96),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            for (final day in days)
+              Expanded(child: _manualWeekColumn(repo, day, forDay(day), staffNames, patientName)),
+          ],
+        ),
+      );
+    }
+
+    DateTime selected = _selectedDay ?? DateTime.now();
+    if (!days.any((d) => _sameDay(d, selected))) {
+      final now = DateTime.now();
+      selected = days.any((d) => _sameDay(d, now)) ? _dayStart(now) : days.first;
+    }
+    final dayAppts = forDay(selected);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SizedBox(
+          height: 64,
+          child: Row(
+            children: [
+              for (final day in days)
+                Expanded(
+                  child: _WeekStripCell(
+                    day: day,
+                    count: forDay(day).length,
+                    selected: _sameDay(day, selected),
+                    onTap: () => setState(() => _selectedDay = _dayStart(day)),
+                  ),
+                ),
+            ],
+          ),
+        ),
+        const Divider(height: 1),
+        Expanded(
+          child: dayAppts.isEmpty
+              ? _AgendaEmpty(message: 'Sin citas el ${_dayLabel(selected)}')
+              : ListView(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 96),
+                  children: [
+                    for (final a in dayAppts)
+                      _ManualTile(
+                        appointment: a,
+                        patientName: patientName(a.patientId),
+                        kuradorName: widget.isAdmin ? staffNames[a.staffId] : null,
+                        onEdit: () => _openForm(repo, existing: a),
+                        onCancel: () => _cancel(repo, a),
+                      ),
+                  ],
+                ),
+        ),
+      ],
+    );
+  }
+
+  Widget _manualWeekColumn(
+    DataRepository repo,
+    DateTime day,
+    List<ManualAppointment> appts,
+    Map<String, String> staffNames,
+    String Function(String?) patientName,
+  ) {
+    final isToday = _sameDay(day, DateTime.now());
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 4),
+      decoration: BoxDecoration(
+        color: isToday ? KuraColors.primary.withOpacity(0.05) : null,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: KuraColors.darkText.withOpacity(0.08)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 6),
+            child: Column(
+              children: [
+                Text(_wd[day.weekday - 1],
+                    style: TextStyle(fontSize: 11, color: KuraColors.darkText.withOpacity(0.6))),
+                Text('${day.day}',
+                    style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        color: isToday ? KuraColors.primary : KuraColors.darkText)),
+              ],
+            ),
+          ),
+          const Divider(height: 1),
+          Expanded(
+            child: appts.isEmpty
+                ? Center(
+                    child: Text('—', style: TextStyle(color: KuraColors.darkText.withOpacity(0.25))))
                 : ListView(
-                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
-                    children: _grouped(repo, ordered, staffNames, patientName),
+                    padding: const EdgeInsets.all(6),
+                    children: [
+                      for (final a in appts)
+                        InkWell(
+                          borderRadius: BorderRadius.circular(8),
+                          onTap: () => _openForm(repo, existing: a),
+                          child: Container(
+                            margin: const EdgeInsets.only(bottom: 6),
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: KuraColors.primary.withOpacity(0.10),
+                              borderRadius: BorderRadius.circular(8),
+                              border: const Border(
+                                  left: BorderSide(color: KuraColors.primary, width: 3)),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(DateFormat('HH:mm').format(a.datetime),
+                                    style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12)),
+                                Text(patientName(a.patientId),
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(fontSize: 12)),
+                                if (widget.isAdmin && staffNames[a.staffId] != null)
+                                  Text(staffNames[a.staffId]!,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                          fontSize: 10, color: KuraColors.darkText.withOpacity(0.55))),
+                              ],
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
           ),
         ],
