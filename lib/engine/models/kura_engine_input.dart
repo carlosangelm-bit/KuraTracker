@@ -46,6 +46,18 @@ class KuraEngineInput {
   final WuwhsGrade? wuwhsGrade;
   final AgenteCausal? agenteCausal;
 
+  /// Subtipo de la úlcera vascular (venosa/arterial/mixta). Solo relevante
+  /// cuando `etiologia == Etiologia.vascular`. Separa el manejo venoso
+  /// (compresión) del arterial/isquémico (terapia seca). `null` = no
+  /// clasificado: por compatibilidad histórica se trata como venosa, pero la
+  /// UI debe forzar la captura para heridas vasculares.
+  final SubtipoVascular? subtipoVascular;
+
+  /// Determinación clínica (Doppler / angiólogo) de que la lesión NO es
+  /// revascularizable. Gatilla terapia seca aunque el ITB no sea crítico.
+  /// Protocolo "Terapia seca".
+  final bool noRevascularizable;
+
   const KuraEngineInput({
     required this.etiologia,
     required this.entorno,
@@ -70,6 +82,8 @@ class KuraEngineInput {
     this.ceapClass,
     this.wuwhsGrade,
     this.agenteCausal,
+    this.subtipoVascular,
+    this.noRevascularizable = false,
   });
 
   /// Numero de comorbilidades confirmadas presentes (excluye no evaluadas
@@ -89,10 +103,47 @@ class KuraEngineInput {
   AbiCategory get abiCategory {
     final v = abiMinimo;
     if (v == null) return AbiCategory.na;
+    // Techo superior (Protocolo MMII): ITB > 1.4 = arterias incompresibles /
+    // calcificación, NO buena perfusión. Antes caía en `high` (>=0.80 sin
+    // techo) y recibía el bono pronóstico de buena perfusión, algo
+    // clínicamente incorrecto.
+    if (v > 1.4) return AbiCategory.incompresible;
     if (v >= 0.80) return AbiCategory.high;
     if (v >= 0.50) return AbiCategory.mod;
     return AbiCategory.low;
   }
+
+  /// Banda de compresión según ITB, calibrada a la tabla del protocolo
+  /// "Úlceras MMII". Independiente de `abiCategory` (que sirve al modelo
+  /// pronóstico). Ver `ItbCompresionBand` para los cortes exactos.
+  ItbCompresionBand get itbCompresionBand {
+    final v = abiMinimo;
+    if (v == null) return ItbCompresionBand.na;
+    if (v > 1.4) return ItbCompresionBand.incompresible;
+    if (v >= 0.9) return ItbCompresionBand.fuerte;
+    if (v >= 0.8) return ItbCompresionBand.precaucion;
+    if (v >= 0.6) return ItbCompresionBand.reducida;
+    return ItbCompresionBand.noAplica;
+  }
+
+  /// Derivación a angiología por perfusión anómala (Protocolo MMII):
+  /// ITB > 1.4 (incompresible) o ITB < 0.9. `na` (sin medición) y la banda
+  /// `fuerte` (0.9–1.4) no requieren derivación por este criterio.
+  bool get requiereDerivacionAngiologiaPorItb {
+    final v = abiMinimo;
+    if (v == null) return false;
+    return v > 1.4 || v < 0.9;
+  }
+
+  /// Úlcera de manejo con TERAPIA SECA (Protocolo "Terapia seca"): úlcera
+  /// arterial/isquémica, no revascularizable, o cualquier isquemia crítica
+  /// (ITB < 0.5). En estos casos se suprime la cura húmeda por defecto, se
+  /// contraindica la compresión y el desbridamiento cortante, y se protege
+  /// la escara seca estable.
+  bool get requiereTerapiaSeca =>
+      isquemiaCritica ||
+      (etiologia == Etiologia.vascular &&
+          (subtipoVascular == SubtipoVascular.arterial || noRevascularizable));
 
   AlbCategory get albCategory {
     final v = albuminaGdl;
@@ -168,6 +219,8 @@ class KuraEngineInput {
         'ceap_class': ceapClass?.name,
         'wuwhs_grade': wuwhsGrade?.name,
         'agente_causal': agenteCausal?.name,
+        'subtipo_vascular': subtipoVascular?.name,
+        'no_revascularizable': noRevascularizable,
       };
 
   factory KuraEngineInput.fromJson(Map<String, dynamic> json) {
@@ -221,6 +274,11 @@ class KuraEngineInput {
       agenteCausal: json['agente_causal'] == null
           ? null
           : AgenteCausal.values.firstWhere((e) => e.name == json['agente_causal']),
+      subtipoVascular: json['subtipo_vascular'] == null
+          ? null
+          : SubtipoVascular.values
+              .firstWhere((e) => e.name == json['subtipo_vascular']),
+      noRevascularizable: json['no_revascularizable'] as bool? ?? false,
     );
   }
 }
