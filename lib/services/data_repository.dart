@@ -7,6 +7,7 @@ import '../models/consultation.dart';
 import '../models/manual_appointment.dart';
 import '../models/organization.dart';
 import '../models/patient.dart';
+import '../models/referral.dart';
 import '../models/note_option_catalog.dart';
 import '../models/site.dart';
 import '../models/staff.dart';
@@ -1076,6 +1077,69 @@ class DataRepository {
 
   Future<void> updateConsultationDraftStatus(String id, bool isDraft) async {
     await _store.updateRow(Collections.consultations, id, {'is_draft': isDraft});
+  }
+
+  // ---------------- Referencias / interconsultas (Prompt 6) ----------------
+
+  /// Referencias de un paciente, de la más reciente a la más antigua.
+  List<Referral> listReferralsForPatient(String patientId) => _store
+      .getAll(Collections.referrals)
+      .where((r) => r['patient_id'] == patientId)
+      .map(Referral.fromJson)
+      .toList()
+    ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
+  Referral? getReferral(String id) {
+    final match =
+        _store.getAll(Collections.referrals).where((r) => r['id'] == id);
+    return match.isEmpty ? null : Referral.fromJson(match.first);
+  }
+
+  /// Crea una referencia. `staffId` y las firmas las pasa la pantalla desde la
+  /// sesión (mismo patrón que createConsultation).
+  Future<Referral> createReferral({
+    required String patientId,
+    required String? staffId,
+    String? woundId,
+    String? consultationId,
+    required String especialidad,
+    required String motivo,
+    Set<ReferralAdjunto> adjuntos = const {},
+    String? referralSignedBy,
+    String? referralSignedLicense,
+  }) async {
+    final referral = Referral(
+      id: _uuid.v4(),
+      patientId: patientId,
+      staffId: staffId,
+      woundId: woundId,
+      consultationId: consultationId,
+      especialidad: especialidad,
+      motivo: motivo,
+      adjuntos: adjuntos,
+      referralSignedBy: referralSignedBy,
+      referralSignedLicense: referralSignedLicense,
+      createdAt: DateTime.now(),
+    );
+    final saved =
+        await _store.insertRow(Collections.referrals, referral.toJson());
+    return Referral.fromJson(saved);
+  }
+
+  /// Registra el documento de RETORNO del especialista y marca la referencia
+  /// como respondida (Prompt 6).
+  Future<Referral> registerReferralReturn(
+    String id, {
+    String? returnDocRef,
+    String? returnNotes,
+  }) async {
+    final saved = await _store.updateRow(Collections.referrals, id, {
+      'return_doc_ref': returnDocRef,
+      'return_notes': returnNotes,
+      'returned_at': DateTime.now().toIso8601String(),
+      'status': ReferralStatus.respondida.dbValue,
+    });
+    return Referral.fromJson(saved);
   }
 
   // ---------------- Heridas ----------------

@@ -15,6 +15,8 @@ import '../../features/wound_capture/wound_capture_screen.dart';
 import '../../features/follow_up/follow_up_screen.dart';
 import '../../features/follow_up/follow_up_capture_screen.dart';
 import '../../features/consultation/consultation_detail_screen.dart';
+import '../../features/referrals/referrals_screen.dart';
+import '../../features/referrals/referral_create_screen.dart';
 import '../../features/reports/reports_screen.dart';
 import '../../features/agenda/agenda_screen.dart';
 import '../../features/admin/admin_home_screen.dart';
@@ -125,6 +127,20 @@ final routerProvider = Provider<GoRouter>((ref) {
             builder: (context, state) => FollowUpCaptureScreen(
               patientId: state.pathParameters['patientId']!,
               woundId: state.pathParameters['woundId']!,
+            ),
+          ),
+          GoRoute(
+            path: '/patients/:patientId/referrals',
+            builder: (context, state) => ReferralsScreen(
+              patientId: state.pathParameters['patientId']!,
+            ),
+          ),
+          GoRoute(
+            path: '/patients/:patientId/referrals/new',
+            builder: (context, state) => ReferralCreateScreen(
+              patientId: state.pathParameters['patientId']!,
+              woundId: state.uri.queryParameters['woundId'],
+              consultationId: state.uri.queryParameters['consultationId'],
             ),
           ),
           GoRoute(
