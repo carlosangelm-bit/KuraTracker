@@ -13,31 +13,6 @@ enum Etiologia {
   otra, // Otra (categoria base)
 }
 
-/// Subtipo de una úlcera de etiología vascular. Es un refinamiento DENTRO de
-/// `Etiologia.vascular` (no una etiología nueva): el modelo pronóstico
-/// (kura_prognosis_model) sigue viendo et_vasc=1 en los tres casos, mientras
-/// que el motor de reglas (8.4) usa el subtipo para separar el manejo
-/// venoso (compresión) del arterial/isquémico (terapia seca, sin compresión).
-///
-/// Protocolo "Úlceras MMII": la conflación venosa/arterial es un defecto
-/// clínico grave — la compresión venosa aplicada a una úlcera arterial puede
-/// agravar la isquemia. `na` = no clasificado (fallback conservador = venosa
-/// para compatibilidad histórica, pero la UI debe forzar la captura).
-enum SubtipoVascular { venosa, arterial, mixta }
-
-extension SubtipoVascularLabel on SubtipoVascular {
-  String get label {
-    switch (this) {
-      case SubtipoVascular.venosa:
-        return 'Venosa';
-      case SubtipoVascular.arterial:
-        return 'Arterial / isquémica';
-      case SubtipoVascular.mixta:
-        return 'Mixta (arteriovenosa)';
-    }
-  }
-}
-
 extension EtiologiaLabel on Etiologia {
   String get label {
     switch (this) {
@@ -57,33 +32,9 @@ extension EtiologiaLabel on Etiologia {
   }
 }
 
-/// Categoria de indice tobillo-brazo (ABI/ITB) usada por el MODELO
-/// PRONOSTICO (kura_clinical_adjustments). Solo aplica a heridas de
+/// Categoria de indice tobillo-brazo (ABI/ITB). Solo aplica a heridas de
 /// extremidad inferior. `na` = no evaluado / no aplica.
-///
-/// `incompresible` (ITB > 1.4) es el TECHO SUPERIOR añadido en
-/// fix/rules-arterial-dry-therapy: un ITB > 1.4 NO indica buena perfusión
-/// sino calcificación arterial / arterias incompresibles (frecuente en
-/// diabetes/IRC), por lo que NO debe recibir el bono pronóstico de "buena
-/// perfusión" que antes se le asignaba al caer en `high` (>=0.80 sin techo).
-/// Protocolo "Úlceras MMII": ITB > 1.4 → medición no interpretable, derivar
-/// angiología. Ver `ItbCompresionBand` para la lógica de compresión.
-enum AbiCategory { na, incompresible, high, mod, low }
-
-/// Banda de compresión según el índice tobillo-brazo (ITB), calibrada a la
-/// tabla del protocolo "Úlceras MMII". Es INDEPENDIENTE de `AbiCategory`
-/// (que sirve al modelo pronóstico): aquí los cortes rigen EXCLUSIVAMENTE la
-/// terapia compresiva y la derivación a angiología, con umbrales clínicos
-/// distintos a los del pronóstico.
-///
-/// Tabla (protocolo MMII):
-/// - `incompresible`  ITB > 1.4     → NO comprimir + derivar angiología.
-/// - `fuerte`         0.9 ≤ ITB ≤ 1.4 → compresión fuerte (30-40 mmHg).
-/// - `precaucion`     0.8 ≤ ITB < 0.9 → compresión con precaución + derivar.
-/// - `reducida`       0.6 ≤ ITB < 0.8 → compresión reducida (máx 20 mmHg) + derivar.
-/// - `noAplica`       ITB < 0.6     → NO aplicar compresión.
-/// - `na`             sin medición   → confirmar ITB antes de iniciar.
-enum ItbCompresionBand { na, incompresible, fuerte, precaucion, reducida, noAplica }
+enum AbiCategory { na, high, mod, low }
 
 /// Categoria de albumina serica. `na` = no disponible.
 enum AlbCategory { na, normal, mild, low }

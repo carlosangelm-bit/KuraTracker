@@ -41,32 +41,15 @@ class KuraTreatmentRulesEngine {
     // Rige EXCLUSIVAMENTE la suspension de la compresion venosa graduada.
     final infeccionSistemica = input.infeccionSistemica;
     final composicionDesbridable = input.necrosisPct + input.esfaceloPct;
-    // Terapia seca (Protocolo "Terapia seca"): úlcera arterial/isquémica, no
-    // revascularizable, o isquemia crítica. Suprime la cura húmeda por
-    // defecto, contraindica compresión y desbridamiento cortante, y protege
-    // la escara seca estable.
-    final terapiaSeca = input.requiereTerapiaSeca;
 
-    // ---- 1. Limpieza (cura húmeda) o Terapia seca (arterial/isquémica) ----
-    if (terapiaSeca) {
-      regimen.add(const RegimenComponente(
-        metodo: 'Terapia seca',
-        producto:
-            'Yodopovidona 10%, secado al aire, proteger escara estable',
-        justificacion:
-            'Úlcera arterial/isquémica o no revascularizable: se suprime la '
-            'cura húmeda por defecto. Mantener la escara seca estable como '
-            'barrera biológica (Protocolo "Terapia seca").',
-      ));
-    } else {
-      regimen.add(const RegimenComponente(
-        metodo: 'Limpieza de la herida',
-        producto: 'Solución salina / Prontosan',
-        justificacion: 'Limpieza en cada cambio de aposito (regla base).',
-      ));
-    }
+    // ---- 1. Limpieza en cada cambio de aposito (siempre) ----
+    regimen.add(const RegimenComponente(
+      metodo: 'Limpieza de la herida',
+      producto: 'Solución salina / Prontosan',
+      justificacion: 'Limpieza en cada cambio de aposito (regla base).',
+    ));
 
-    // ---- 2. Desbridamiento (condicional + reglas de seguridad ABI) ----
+    // ---- 2. Desbridamiento (condicional + regla de seguridad ABI) ----
     if (isquemiaCritica) {
       alertas.add(
         'ALERTA DE SEGURIDAD: ABI/ITB < 0.5 (isquemia critica). '
@@ -79,16 +62,6 @@ class KuraTreatmentRulesEngine {
             'antes de desbridar.',
         esUrgente: true,
       ));
-    } else if (terapiaSeca) {
-      // Arterial/isquémica o no revascularizable, sin isquemia crítica:
-      // contraindicar desbridamiento cortante y NO desbridar escara seca
-      // estable aunque necrosis >=15% (Protocolo "Terapia seca").
-      alertas.add(
-        'Terapia seca: desbridamiento CORTANTE CONTRAINDICADO. No desbridar '
-        'escara seca estable aunque necrosis/esfacelo >=15%. Desbridamiento '
-        'únicamente autolítico/enzimático "según Doppler/angiólogo" si '
-        'aparece esfacelo húmedo o signos de infección.',
-      );
     } else if (composicionDesbridable >= 15) {
       final metodo = input.entorno == Entorno.clinica
           ? 'Cortante / combinado'
@@ -104,10 +77,7 @@ class KuraTreatmentRulesEngine {
     }
 
     // ---- 3. Relleno si profundidad >=0.5cm o cavidad/tunelizacion ----
-    // No aplica en terapia seca: el relleno húmedo (alginato) contradice el
-    // secado al aire y la conservación de la escara seca estable.
-    if (!terapiaSeca &&
-        (input.depthCm >= 0.5 || input.tunelizacionOSocavamiento)) {
+    if (input.depthCm >= 0.5 || input.tunelizacionOSocavamiento) {
       regimen.add(RegimenComponente(
         metodo: 'Relleno de cavidad',
         producto: 'Alginato de calcio / gasa impregnada',
@@ -118,11 +88,8 @@ class KuraTreatmentRulesEngine {
     }
 
     // ---- 4. Aposito secundario absorbente si exudado moderado/abundante ----
-    // No aplica en terapia seca: el objetivo es mantener la escara seca, no
-    // gestionar humedad con apósitos absorbentes.
-    if (!terapiaSeca &&
-        (input.exudadoCantidad == ExudadoCantidad.moderado ||
-            input.exudadoCantidad == ExudadoCantidad.abundante)) {
+    if (input.exudadoCantidad == ExudadoCantidad.moderado ||
+        input.exudadoCantidad == ExudadoCantidad.abundante) {
       regimen.add(RegimenComponente(
         metodo: 'Apósito',
         producto: 'Espuma con borde adhesivo / alta absorción',
@@ -212,7 +179,6 @@ class KuraTreatmentRulesEngine {
           input: input,
           isquemiaCritica: isquemiaCritica,
           infeccionSistemica: infeccionSistemica,
-          terapiaSeca: terapiaSeca,
           regimen: regimen,
           interconsultas: interconsultas,
           alertas: alertas,
@@ -261,7 +227,7 @@ class KuraTreatmentRulesEngine {
       interconsultas.add(Interconsulta(
         especialidad: 'Geriatria',
         motivo: input.etiologia == Etiologia.vascular
-            ? 'Ulcera vascular (MMII): valoracion geriatrica integral recomendada.'
+            ? 'Ulcera venosa: valoracion geriatrica integral recomendada.'
             : 'Paciente fragil: valoracion geriatrica integral recomendada.',
       ));
     }
@@ -327,42 +293,16 @@ class KuraTreatmentRulesEngine {
     required KuraEngineInput input,
     required bool isquemiaCritica,
     required bool infeccionSistemica,
-    required bool terapiaSeca,
     required List<RegimenComponente> regimen,
     required List<Interconsulta> interconsultas,
     required List<String> alertas,
   }) {
-    // ---- Rama ARTERIAL / ISQUÉMICA / NO REVASCULARIZABLE (terapia seca) ----
-    // La compresión NUNCA se indica aquí: aplicar compresión venosa a una
-    // úlcera arterial puede agravar la isquemia (Protocolo "Úlceras MMII").
-    if (terapiaSeca) {
-      if (isquemiaCritica) {
-        // Se conserva la alerta histórica de contraindicación por isquemia
-        // crítica (ABI < 0.5); la interconsulta urgente a angiología ya se
-        // agregó en el paso 2 (desbridamiento).
-        alertas.add(
-          'Compresion graduada CONTRAINDICADA: ABI/ITB < 0.5 (isquemia critica).',
-        );
-      } else {
-        alertas.add(
-          'Compresión NUNCA indicada en úlcera arterial/isquémica o no '
-          'revascularizable (terapia seca).',
-        );
-        // Derivar a angiología para valorar revascularización / plan de
-        // terapia seca (Protocolo "Interconsultas").
-        interconsultas.add(Interconsulta(
-          especialidad: 'Angiologia / Cirugia vascular',
-          motivo:
-              'Úlcera arterial/isquémica o no revascularizable. Valorar '
-              'revascularización y confirmar plan de terapia seca (Doppler). '
-              'ITB=${_itbLabel(input)}.',
-          esUrgente: false,
-        ));
-      }
+    if (isquemiaCritica) {
+      alertas.add(
+        'Compresion graduada CONTRAINDICADA: ABI/ITB < 0.5 (isquemia critica).',
+      );
       return;
     }
-
-    // ---- Rama VENOSA / MIXTA (candidata a compresión) ----
     // kura_rules_v2 (correccion): la compresion solo se SUSPENDE ante
     // infeccion sistemica confirmada (celulitis, fiebre o malestar general).
     if (infeccionSistemica) {
@@ -383,79 +323,27 @@ class KuraTreatmentRulesEngine {
         'sistemica (celulitis/fiebre/malestar general).',
       );
     }
-
-    // Compresión calibrada a la tabla del protocolo "Úlceras MMII", con
-    // derivación a angiología cuando el ITB es anómalo (>1.4 o <0.9).
-    if (input.requiereDerivacionAngiologiaPorItb) {
-      interconsultas.add(Interconsulta(
-        especialidad: 'Angiologia / Cirugia vascular',
-        motivo: 'ITB anómalo (${_itbLabel(input)}): fuera del rango seguro '
-            'para compresión estándar (Protocolo "Úlceras MMII").',
-      ));
-    }
-
-    final band = input.itbCompresionBand;
-    switch (band) {
-      case ItbCompresionBand.incompresible:
-        // ITB > 1.4: arterias incompresibles/calcificación. NO comprimir.
-        alertas.add(
-          'Compresión NO aplicada: ITB > 1.4 (arterias incompresibles / '
-          'calcificación). Derivar a angiología (Protocolo "Úlceras MMII").',
-        );
-        return;
-      case ItbCompresionBand.noAplica:
-        // ITB < 0.6: perfusión insuficiente para compresión.
-        alertas.add(
-          'Compresión NO aplicada: ITB < 0.6 (perfusión insuficiente). '
-          'Derivar a angiología (Protocolo "Úlceras MMII").',
-        );
-        return;
-      case ItbCompresionBand.fuerte:
-        regimen.add(RegimenComponente(
-          metodo: 'Terapia compresiva',
-          producto: 'Compresión fuerte (30-40 mmHg)',
-          justificacion:
-              'Úlcera venosa/mixta, ITB ${_itbLabel(input)} (0.9-1.4): '
-              'compresión fuerte (Protocolo "Úlceras MMII").',
-        ));
+    final categoria = input.abiCategory;
+    String nivel;
+    switch (categoria) {
+      case AbiCategory.high:
+        nivel = 'Compresión fuerte (30-40 mmHg)';
         break;
-      case ItbCompresionBand.precaucion:
-        regimen.add(RegimenComponente(
-          metodo: 'Terapia compresiva',
-          producto: 'Compresión con precaución (multicomponente reducida)',
-          justificacion:
-              'Úlcera venosa/mixta, ITB ${_itbLabel(input)} (0.8-0.89): '
-              'compresión con precaución y vigilancia estrecha; derivar a '
-              'angiología (Protocolo "Úlceras MMII").',
-        ));
+      case AbiCategory.mod:
+        nivel = 'Compresión reducida (18-25 mmHg), supervisión estrecha';
         break;
-      case ItbCompresionBand.reducida:
-        regimen.add(RegimenComponente(
-          metodo: 'Terapia compresiva',
-          producto: 'Compresión reducida (máx 20 mmHg)',
-          justificacion:
-              'Úlcera venosa/mixta, ITB ${_itbLabel(input)} (0.6-0.8): '
-              'compresión reducida a máx 20 mmHg y derivar a angiología '
-              '(Protocolo "Úlceras MMII").',
-        ));
+      case AbiCategory.low:
+        nivel = 'No aplica (isquemia crítica)';
         break;
-      case ItbCompresionBand.na:
-        regimen.add(const RegimenComponente(
-          metodo: 'Terapia compresiva',
-          producto:
-              'Compresión moderada (20-30 mmHg) — confirmar ITB antes de iniciar',
-          justificacion:
-              'Úlcera venosa sin ITB documentado: medir ITB antes de iniciar '
-              'compresión (Protocolo "Úlceras MMII").',
-        ));
+      case AbiCategory.na:
+        nivel = 'Compresión moderada (20-30 mmHg) — confirmar ABI antes de iniciar';
         break;
     }
-  }
-
-  /// Etiqueta legible del ITB mínimo para justificaciones/interconsultas.
-  static String _itbLabel(KuraEngineInput input) {
-    final v = input.abiMinimo;
-    return v == null ? 'no documentado' : v.toStringAsFixed(2);
+    regimen.add(RegimenComponente(
+      metodo: 'Terapia compresiva',
+      producto: nivel,
+      justificacion: 'Ulcera venosa, ABI/ITB categoria: ${categoria.name}.',
+    ));
   }
 
   static void _applyQuirurgicaRules({

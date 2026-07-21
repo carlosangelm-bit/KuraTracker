@@ -72,11 +72,6 @@ class KuraClinicalAdjustments {
     switch (c) {
       case AbiCategory.na:
         return 'na';
-      case AbiCategory.incompresible:
-        // ITB > 1.4 (arterias incompresibles): medición no interpretable. Se
-        // mapea a 'na' para NO aplicar el bono pronóstico de buena perfusión
-        // que tendría 'high'. Ver AbiCategory.incompresible.
-        return 'na';
       case AbiCategory.high:
         return 'high';
       case AbiCategory.mod:
