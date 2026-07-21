@@ -14,6 +14,8 @@ import '../../models/consultation.dart';
 import '../../features/wound_capture/wound_capture_screen.dart';
 import '../../features/follow_up/follow_up_screen.dart';
 import '../../features/follow_up/follow_up_capture_screen.dart';
+import '../../features/adverse_events/adverse_events_screen.dart';
+import '../../features/adverse_events/adverse_events_capture_screen.dart';
 import '../../features/consultation/consultation_detail_screen.dart';
 import '../../features/reports/reports_screen.dart';
 import '../../features/agenda/agenda_screen.dart';
@@ -125,6 +127,20 @@ final routerProvider = Provider<GoRouter>((ref) {
             builder: (context, state) => FollowUpCaptureScreen(
               patientId: state.pathParameters['patientId']!,
               woundId: state.pathParameters['woundId']!,
+            ),
+          ),
+          GoRoute(
+            path: '/patients/:patientId/adverse-events',
+            builder: (context, state) => AdverseEventsScreen(
+              patientId: state.pathParameters['patientId']!,
+            ),
+          ),
+          GoRoute(
+            path: '/patients/:patientId/adverse-events/new',
+            builder: (context, state) => AdverseEventsCaptureScreen(
+              patientId: state.pathParameters['patientId']!,
+              woundId: state.uri.queryParameters['woundId'],
+              consultationId: state.uri.queryParameters['consultationId'],
             ),
           ),
           GoRoute(
