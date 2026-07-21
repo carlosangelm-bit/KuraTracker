@@ -97,12 +97,17 @@ class PatientComorbidity {
   final String patientId;
   final Comorbilidad code;
   final ComorbilidadEstado status;
+  // Atribución fecha + autor exigida por la NOM-004 (Fase 1 / migración 0030).
+  final DateTime? notedAt;
+  final String? notedBy; // staff.id que registró/actualizó
 
   const PatientComorbidity({
     required this.id,
     required this.patientId,
     required this.code,
     required this.status,
+    this.notedAt,
+    this.notedBy,
   });
 
   factory PatientComorbidity.fromJson(Map<String, dynamic> json) =>
@@ -111,6 +116,10 @@ class PatientComorbidity {
         patientId: json['patient_id'] as String,
         code: _codeFromDb(json['code'] as String),
         status: _statusFromDb(json['status'] as String),
+        notedAt: json['noted_at'] == null
+            ? null
+            : DateTime.parse(json['noted_at'] as String),
+        notedBy: json['noted_by'] as String?,
       );
 
   Map<String, dynamic> toJson() => {
@@ -118,6 +127,8 @@ class PatientComorbidity {
         'patient_id': patientId,
         'code': _codeToDb(code),
         'status': _statusToDb(status),
+        'noted_at': notedAt?.toIso8601String(),
+        'noted_by': notedBy,
       };
 
   static Comorbilidad _codeFromDb(String s) {
