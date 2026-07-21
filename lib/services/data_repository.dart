@@ -3,6 +3,7 @@ import 'package:uuid/uuid.dart';
 
 import '../core/config/app_config.dart';
 import '../models/adverse_event.dart';
+import '../models/antecedentes.dart';
 import '../models/app_user.dart';
 import '../models/consent.dart';
 import '../models/consultation.dart';
@@ -981,6 +982,12 @@ class DataRepository {
     String? responsiblePhone,
     double? weightKg,
     double? heightCm,
+    Set<AntecedenteHeredoFamiliar> familyHistory = const {},
+    String? familyHistoryNotes,
+    TabaquismoEstado? smoking,
+    ConsumoAlcohol? alcohol,
+    ActividadFisica? physicalActivity,
+    String? apnpNotes,
     String folioPrefix = 'EXP',
   }) async {
     final existing = _store.getAll(Collections.patients);
@@ -1012,6 +1019,12 @@ class DataRepository {
       'responsible_phone': responsiblePhone,
       'weight_kg': weightKg,
       'height_cm': heightCm,
+      'family_history': familyHistory.map((e) => e.dbValue).toList(),
+      'family_history_notes': familyHistoryNotes,
+      'smoking': smoking?.dbValue,
+      'alcohol': alcohol?.dbValue,
+      'physical_activity': physicalActivity?.dbValue,
+      'apnp_notes': apnpNotes,
       'is_active': true,
       'created_at': DateTime.now().toIso8601String(),
       'organization_id': organizationId,

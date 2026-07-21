@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/theme/kura_theme.dart';
 import '../../core/providers/session_provider.dart';
 import '../../engine/models/kura_engine_enums.dart';
+import '../../models/antecedentes.dart';
 import '../../models/app_user.dart';
 import 'comorbidity_selector.dart';
 
@@ -30,6 +31,13 @@ class _PatientFormScreenState extends ConsumerState<PatientFormScreen> {
   final _responsiblePhoneCtrl = TextEditingController();
   final _weightCtrl = TextEditingController();
   final _heightCtrl = TextEditingController();
+  // Antecedentes (Fase 3).
+  final Set<AntecedenteHeredoFamiliar> _familyHistory = {};
+  final _familyHistoryNotesCtrl = TextEditingController();
+  TabaquismoEstado? _smoking;
+  ConsumoAlcohol? _alcohol;
+  ActividadFisica? _physicalActivity;
+  final _apnpNotesCtrl = TextEditingController();
 
   @override
   void dispose() {
@@ -45,7 +53,39 @@ class _PatientFormScreenState extends ConsumerState<PatientFormScreen> {
     _responsiblePhoneCtrl.dispose();
     _weightCtrl.dispose();
     _heightCtrl.dispose();
+    _familyHistoryNotesCtrl.dispose();
+    _apnpNotesCtrl.dispose();
     super.dispose();
+  }
+
+  /// Fila etiquetada de ChoiceChips (selección única) para un enum de APNP.
+  Widget _apnpChips<T>({
+    required String title,
+    required List<T> values,
+    required T? selected,
+    required String Function(T) label,
+    required ValueChanged<T?> onSelected,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
+        const SizedBox(height: 6),
+        Wrap(
+          spacing: 8,
+          children: values.map((v) {
+            final sel = selected == v;
+            return ChoiceChip(
+              label: Text(label(v)),
+              selected: sel,
+              selectedColor: KuraColors.primary.withOpacity(0.16),
+              onSelected: (_) => onSelected(sel ? null : v),
+            );
+          }).toList(),
+        ),
+        const SizedBox(height: 12),
+      ],
+    );
   }
   DateTime? _birthDate;
   String _sex = 'F';
@@ -293,6 +333,75 @@ class _PatientFormScreenState extends ConsumerState<PatientFormScreen> {
                         onChanged: (code, estado) =>
                             setState(() => _comorbidities[code] = estado),
                       ),
+                      const SizedBox(height: 20),
+                      Text('Antecedentes heredo-familiares',
+                          style: Theme.of(context)
+                              .textTheme
+                              .titleMedium
+                              ?.copyWith(fontWeight: FontWeight.w700)),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: AntecedenteHeredoFamiliar.values.map((ahf) {
+                          final sel = _familyHistory.contains(ahf);
+                          return FilterChip(
+                            label: Text(ahf.label),
+                            selected: sel,
+                            selectedColor: KuraColors.primary.withOpacity(0.16),
+                            onSelected: (v) => setState(() {
+                              if (v) {
+                                _familyHistory.add(ahf);
+                              } else {
+                                _familyHistory.remove(ahf);
+                              }
+                            }),
+                          );
+                        }).toList(),
+                      ),
+                      const SizedBox(height: 8),
+                      TextFormField(
+                        controller: _familyHistoryNotesCtrl,
+                        maxLines: 2,
+                        decoration: const InputDecoration(
+                            labelText: 'Detalle heredo-familiares'),
+                      ),
+                      const SizedBox(height: 20),
+                      Text('Antecedentes personales no patológicos',
+                          style: Theme.of(context)
+                              .textTheme
+                              .titleMedium
+                              ?.copyWith(fontWeight: FontWeight.w700)),
+                      const SizedBox(height: 8),
+                      _apnpChips<TabaquismoEstado>(
+                        title: 'Tabaquismo',
+                        values: TabaquismoEstado.values,
+                        selected: _smoking,
+                        label: (v) => v.label,
+                        onSelected: (v) => setState(() => _smoking = v),
+                      ),
+                      _apnpChips<ConsumoAlcohol>(
+                        title: 'Alcohol',
+                        values: ConsumoAlcohol.values,
+                        selected: _alcohol,
+                        label: (v) => v.label,
+                        onSelected: (v) => setState(() => _alcohol = v),
+                      ),
+                      _apnpChips<ActividadFisica>(
+                        title: 'Actividad física',
+                        values: ActividadFisica.values,
+                        selected: _physicalActivity,
+                        label: (v) => v.label,
+                        onSelected: (v) => setState(() => _physicalActivity = v),
+                      ),
+                      TextFormField(
+                        controller: _apnpNotesCtrl,
+                        maxLines: 2,
+                        decoration: const InputDecoration(
+                          labelText:
+                              'Otros (toxicomanías, alimentación, vivienda, escolaridad)',
+                        ),
+                      ),
                       const SizedBox(height: 24),
                       FilledButton.icon(
                         icon: _saving
@@ -356,6 +465,17 @@ class _PatientFormScreenState extends ConsumerState<PatientFormScreen> {
                                         _weightCtrl.text.trim().replaceAll(',', '.')),
                                     heightCm: double.tryParse(
                                         _heightCtrl.text.trim().replaceAll(',', '.')),
+                                    familyHistory: _familyHistory,
+                                    familyHistoryNotes:
+                                        _familyHistoryNotesCtrl.text.trim().isEmpty
+                                            ? null
+                                            : _familyHistoryNotesCtrl.text.trim(),
+                                    smoking: _smoking,
+                                    alcohol: _alcohol,
+                                    physicalActivity: _physicalActivity,
+                                    apnpNotes: _apnpNotesCtrl.text.trim().isEmpty
+                                        ? null
+                                        : _apnpNotesCtrl.text.trim(),
                                   );
                                   var staffId = session.user?.staffId;
                                   if (staffId == null &&

@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 import '../../core/theme/kura_theme.dart';
 import '../../core/providers/session_provider.dart';
 import '../../engine/models/kura_engine_enums.dart';
+import '../../models/antecedentes.dart';
 import '../../models/patient.dart';
 import '../../models/wound.dart';
 import '../../models/consultation.dart';
@@ -292,6 +293,41 @@ class _PatientHeaderCard extends StatelessWidget {
                       color: KuraColors.darkText.withOpacity(0.6))),
               const SizedBox(height: 4),
               Text(patient.backgroundNotes!),
+            ],
+            if (patient.familyHistory.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Text('Antecedentes heredo-familiares',
+                  style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: KuraColors.darkText.withOpacity(0.6))),
+              const SizedBox(height: 4),
+              Wrap(
+                spacing: 8,
+                runSpacing: 4,
+                children: patient.familyHistory
+                    .map((a) => Chip(
+                          label: Text(a.label, style: const TextStyle(fontSize: 12)),
+                          backgroundColor: KuraColors.chipBg,
+                          visualDensity: VisualDensity.compact,
+                          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ))
+                    .toList(),
+              ),
+            ],
+            if (patient.smoking != null ||
+                patient.alcohol != null ||
+                patient.physicalActivity != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                [
+                  if (patient.smoking != null) 'Tabaquismo: ${patient.smoking!.label}',
+                  if (patient.alcohol != null) 'Alcohol: ${patient.alcohol!.label}',
+                  if (patient.physicalActivity != null)
+                    'Actividad: ${patient.physicalActivity!.label}',
+                ].join('  ·  '),
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
             ],
           ],
         ),

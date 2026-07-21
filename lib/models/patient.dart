@@ -1,4 +1,5 @@
 import '../engine/models/kura_engine_enums.dart';
+import 'antecedentes.dart';
 
 class Patient {
   final String id;
@@ -23,6 +24,13 @@ class Patient {
   final String? responsiblePhone;
   final double? weightKg; // peso basal
   final double? heightCm; // talla basal
+  // Antecedentes de la historia clínica (Fase 3, migración 0032).
+  final Set<AntecedenteHeredoFamiliar> familyHistory; // AHF
+  final String? familyHistoryNotes;
+  final TabaquismoEstado? smoking; // APNP
+  final ConsumoAlcohol? alcohol; // APNP
+  final ActividadFisica? physicalActivity; // APNP
+  final String? apnpNotes; // APNP libre
   final bool isActive;
   final DateTime createdAt;
   // Centro (organizacion) dueno del expediente. Ver 0011_organizations.sql:
@@ -52,6 +60,12 @@ class Patient {
     this.responsiblePhone,
     this.weightKg,
     this.heightCm,
+    this.familyHistory = const {},
+    this.familyHistoryNotes,
+    this.smoking,
+    this.alcohol,
+    this.physicalActivity,
+    this.apnpNotes,
     this.isActive = true,
     required this.createdAt,
     this.organizationId,
@@ -100,6 +114,16 @@ class Patient {
         responsiblePhone: json['responsible_phone'] as String?,
         weightKg: (json['weight_kg'] as num?)?.toDouble(),
         heightCm: (json['height_cm'] as num?)?.toDouble(),
+        familyHistory: ((json['family_history'] as List?) ?? const [])
+            .map((s) => AntecedenteHeredoFamiliarX.fromDb(s as String))
+            .whereType<AntecedenteHeredoFamiliar>()
+            .toSet(),
+        familyHistoryNotes: json['family_history_notes'] as String?,
+        smoking: TabaquismoEstadoX.fromDb(json['smoking'] as String?),
+        alcohol: ConsumoAlcoholX.fromDb(json['alcohol'] as String?),
+        physicalActivity:
+            ActividadFisicaX.fromDb(json['physical_activity'] as String?),
+        apnpNotes: json['apnp_notes'] as String?,
         isActive: json['is_active'] as bool? ?? true,
         createdAt: DateTime.parse(json['created_at'] as String),
         organizationId: json['organization_id'] as String?,
@@ -127,6 +151,12 @@ class Patient {
         'responsible_phone': responsiblePhone,
         'weight_kg': weightKg,
         'height_cm': heightCm,
+        'family_history': familyHistory.map((e) => e.dbValue).toList(),
+        'family_history_notes': familyHistoryNotes,
+        'smoking': smoking?.dbValue,
+        'alcohol': alcohol?.dbValue,
+        'physical_activity': physicalActivity?.dbValue,
+        'apnp_notes': apnpNotes,
         'is_active': isActive,
         'created_at': createdAt.toIso8601String(),
         'organization_id': organizationId,
