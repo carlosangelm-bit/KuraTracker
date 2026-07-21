@@ -18,6 +18,8 @@ import '../../features/adverse_events/adverse_events_screen.dart';
 import '../../features/adverse_events/adverse_events_capture_screen.dart';
 import '../../features/consultation/consultation_detail_screen.dart';
 import '../../features/consents/consents_screen.dart';
+import '../../features/referrals/referrals_screen.dart';
+import '../../features/referrals/referral_create_screen.dart';
 import '../../features/reports/reports_screen.dart';
 import '../../features/agenda/agenda_screen.dart';
 import '../../features/admin/admin_home_screen.dart';
@@ -148,6 +150,20 @@ final routerProvider = Provider<GoRouter>((ref) {
             path: '/patients/:patientId/consents',
             builder: (context, state) => ConsentsScreen(
               patientId: state.pathParameters['patientId']!,
+            ),
+          ),
+          GoRoute(
+            path: '/patients/:patientId/referrals',
+            builder: (context, state) => ReferralsScreen(
+              patientId: state.pathParameters['patientId']!,
+            ),
+          ),
+          GoRoute(
+            path: '/patients/:patientId/referrals/new',
+            builder: (context, state) => ReferralCreateScreen(
+              patientId: state.pathParameters['patientId']!,
+              woundId: state.uri.queryParameters['woundId'],
+              consultationId: state.uri.queryParameters['consultationId'],
             ),
           ),
           GoRoute(

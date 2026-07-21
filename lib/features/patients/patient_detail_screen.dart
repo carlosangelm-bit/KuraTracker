@@ -165,6 +165,30 @@ class _PatientDetailScreenState extends ConsumerState<PatientDetailScreen> {
                           )),
                     const SizedBox(height: 24),
                     _AdverseEventsSection(patientId: patient.id, repo: repo),
+                    const SizedBox(height: 16),
+                    Card(
+                      margin: EdgeInsets.zero,
+                      child: ListTile(
+                        onTap: () =>
+                            context.go('/patients/${patient.id}/referrals'),
+                        leading: const Icon(Icons.forward_to_inbox_outlined,
+                            color: KuraColors.primary),
+                        title: const Text('Referencias / interconsultas'),
+                        subtitle: Text(
+                          () {
+                            final refs =
+                                repo.listReferralsForPatient(patient.id);
+                            final pend = refs
+                                .where((r) => !r.isRespondida)
+                                .length;
+                            if (refs.isEmpty) return 'Generar formato de referencia';
+                            return '${refs.length} referencia(s)'
+                                '${pend > 0 ? ' · $pend pendiente(s) de respuesta' : ''}';
+                          }(),
+                        ),
+                        trailing: const Icon(Icons.chevron_right, size: 18),
+                      ),
+                    ),
                     const SizedBox(height: 40),
                   ]),
                 ),

@@ -110,6 +110,14 @@ class WoundCaptureFormState {
   // ---- Evidencia fotografica (rutas locales temporales / bytes) ----
   List<String> photoPaths = [];
 
+  // NOTA (Prompt 6, medición oficial): el área 2D se calcula como
+  // largo × ancho (estimado manual rectangular), NO con la fórmula de elipse
+  // (0.785). La MEDICIÓN CUANTITATIVA OFICIAL del seguimiento es el VOLUMEN por
+  // la fórmula de Kundin (V = L × A × P × 0.327, ver core/utils/wound_volume.dart),
+  // capturado en valoración y seguimiento; la planimetría de eKare es la fuente
+  // de área trazada cuando el dato proviene de eKare. No se cambia esta fórmula
+  // porque el modelo pronóstico consume logarea = log(1+area) ya calibrado
+  // (kura_prognosis_model). Ver docs/engine/medicion_oficial.md.
   double get areaCm2 => lengthCm * widthCm;
 
   /// Volumen auto-calculado por Kundin a partir de las medidas actuales
