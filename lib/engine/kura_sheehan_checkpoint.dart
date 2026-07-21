@@ -62,6 +62,43 @@ class KuraSheehanCheckpoint {
     8: (cierre: 75, alerta: 60),
   };
 
+  /// Hitos de cicatrización esperada POR ETIOLOGÍA (Protocolos "etiologías" /
+  /// Sheehan): semana de control y % de reducción de área esperado en ella.
+  ///   - Pie diabético (UPD): 8 semanas / 50%.
+  ///   - Vascular (MMII):      4 semanas / 40%.
+  ///   - LPP:                  8 semanas / 50%.
+  ///   - Quirúrgica:           4 semanas / 50%.
+  /// Etiologías sin hito propio (traumática/otra) usan la tabla genérica.
+  static const Map<Etiologia, ({int semanaHito, double pctCierre})>
+      _hitosPorEtiologia = {
+    Etiologia.pieDiabetico: (semanaHito: 8, pctCierre: 50),
+    Etiologia.vascular: (semanaHito: 4, pctCierre: 40),
+    Etiologia.lpp: (semanaHito: 8, pctCierre: 50),
+    Etiologia.quirurgica: (semanaHito: 4, pctCierre: 50),
+  };
+
+  /// Razón umbral de alerta respecto al de cierre (documentada, ajustable):
+  /// 0.6, consistente con la tabla genérica en semana 4 (30/50).
+  static const double _ratioAlerta = 0.6;
+
+  static ({int semanaHito, double pctCierre})? hitoParaEtiologia(
+          Etiologia etiologia) =>
+      _hitosPorEtiologia[etiologia];
+
+  /// Umbrales (cierre/alerta) para una etiología y semana dadas. El % de
+  /// cierre esperado escala linealmente de 0 (semana 0) al % del hito en su
+  /// semana de control, y se mantiene plano después; el de alerta es
+  /// [_ratioAlerta] del de cierre. Si la etiología no tiene hito propio, se
+  /// usa la tabla genérica por semana.
+  static ({double cierre, double alerta}) umbralesParaEtiologiaYSemana(
+      Etiologia etiologia, int semana) {
+    final hito = _hitosPorEtiologia[etiologia];
+    if (hito == null) return umbralesParaSemana(semana);
+    final ramp = (semana / hito.semanaHito).clamp(0.0, 1.0);
+    final cierre = hito.pctCierre * ramp;
+    return (cierre: cierre, alerta: cierre * _ratioAlerta);
+  }
+
   static ({double cierre, double alerta}) umbralesParaSemana(int semana) {
     final keys = _umbralesOficiales.keys.toList()..sort();
     if (_umbralesOficiales.containsKey(semana)) {
@@ -96,13 +133,18 @@ class KuraSheehanCheckpoint {
     required int semana,
     required double areaBasalCm2,
     required double areaActualCm2,
+    Etiologia? etiologia,
     bool infeccionActiva = false,
     bool bajaAdherencia = false,
     bool deterioroDelLecho = false,
     bool aumentoDeExudado = false,
     double penalizacionPorFactor = 5.0,
   }) {
-    final umbrales = umbralesParaSemana(semana);
+    // Con etiología: umbrales por hito de etiología (Prompt 4); sin ella, la
+    // tabla genérica por semana (comportamiento histórico).
+    final umbrales = etiologia != null
+        ? umbralesParaEtiologiaYSemana(etiologia, semana)
+        : umbralesParaSemana(semana);
 
     double pctReduccionBruta;
     if (areaBasalCm2 <= 0) {

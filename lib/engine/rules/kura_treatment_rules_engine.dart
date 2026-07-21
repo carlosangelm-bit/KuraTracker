@@ -234,6 +234,8 @@ class KuraTreatmentRulesEngine {
         );
         break;
       case Etiologia.lpp:
+        _applyLppRules(input: input, regimen: regimen);
+        break;
       case Etiologia.otra:
         break;
     }
@@ -257,12 +259,55 @@ class KuraTreatmentRulesEngine {
       ));
     }
 
-    if (input.etiologia == Etiologia.vascular || input.pacienteFragil) {
+    // Interconsulta a GERIATRIA (Protocolo "Interconsultas"): úlcera vascular
+    // (MMII), paciente frágil, LPP recurrente, cuidados paliativos o dolor
+    // crónico. Se listan todos los motivos aplicables.
+    final motivosGeriatria = <String>[
+      if (input.etiologia == Etiologia.vascular) 'úlcera vascular (MMII)',
+      if (input.pacienteFragil) 'paciente frágil',
+      if (input.etiologia == Etiologia.lpp && input.lppRecurrente)
+        'LPP recurrente',
+      if (input.cuidadosPaliativos) 'cuidados paliativos',
+      if (input.dolorCronico) 'dolor crónico',
+    ];
+    if (motivosGeriatria.isNotEmpty) {
       interconsultas.add(Interconsulta(
         especialidad: 'Geriatria',
-        motivo: input.etiologia == Etiologia.vascular
-            ? 'Ulcera vascular (MMII): valoracion geriatrica integral recomendada.'
-            : 'Paciente fragil: valoracion geriatrica integral recomendada.',
+        motivo: 'Valoración geriátrica integral recomendada: '
+            '${motivosGeriatria.join(', ')}.',
+      ));
+    }
+
+    // Interconsulta a ANGIOLOGIA por ITB anómalo (< 0.9 o > 1.4), para
+    // CUALQUIER etiología con extremidad inferior evaluada (Protocolo
+    // "Interconsultas"). Coordinado con el fix arterial (Prompt 1): las reglas
+    // vasculares y la de isquemia crítica ya pueden haber agregado una
+    // interconsulta a angiología; aquí se evita duplicarla.
+    final yaHayAngiologia = interconsultas
+        .any((i) => i.especialidad.toLowerCase().contains('angiolog'));
+    if (input.requiereDerivacionAngiologiaPorItb && !yaHayAngiologia) {
+      interconsultas.add(Interconsulta(
+        especialidad: 'Angiologia / Cirugia vascular',
+        motivo: 'ITB anómalo (${_itbLabel(input)}): < 0.9 o > 1.4, fuera del '
+            'rango seguro. Valoración angiológica (Protocolo "Interconsultas").',
+      ));
+    }
+
+    // Referencia por TÚNEL profundo (> 7 cm) o COMPROMISO ARTICULAR (Protocolo
+    // "Interconsultas").
+    if (input.requiereReferenciaPorTunel) {
+      interconsultas.add(Interconsulta(
+        especialidad: 'Cirugia',
+        motivo: 'Túnel profundo (${input.tunnelDepthCm!.toStringAsFixed(1)} cm '
+            '> 7 cm): descartar trayecto fistuloso/absceso; referencia '
+            'quirúrgica (Protocolo "Interconsultas").',
+      ));
+    }
+    if (input.requiereReferenciaPorArticulacion) {
+      interconsultas.add(const Interconsulta(
+        especialidad: 'Cirugia / Ortopedia',
+        motivo: 'Herida con compromiso articular: descartar artritis séptica / '
+            'exposición articular; referencia (Protocolo "Interconsultas").',
       ));
     }
 
@@ -319,6 +364,27 @@ class KuraTreatmentRulesEngine {
         especialidad: 'Cirugia / Ortopedia',
         motivo: 'Pie diabetico Wagner ${wagner.name.toUpperCase()}.',
         esUrgente: wagner == WagnerGrade.g4 || wagner == WagnerGrade.g5,
+      ));
+    }
+  }
+
+  static void _applyLppRules({
+    required KuraEngineInput input,
+    required List<RegimenComponente> regimen,
+  }) {
+    // Modalidad de tratamiento según el rango de Braden (Protocolo LPP):
+    // riesgo alto/muy alto (Braden <=12) -> a cargo de la clínica; riesgo
+    // moderado/bajo/sin riesgo (>=13) -> tratamiento compartido con el
+    // cuidador. Ver KuraEngineInput.bradenModalidad para las bandas.
+    final modalidad = input.bradenModalidad;
+    if (modalidad != null) {
+      regimen.add(RegimenComponente(
+        metodo: 'Modalidad de tratamiento (LPP)',
+        producto: modalidad.label,
+        justificacion:
+            'LPP con Braden ${input.bradenScore} (${input.bradenScore! <= 12 ? 'riesgo alto/muy alto' : 'riesgo moderado/bajo'}): '
+            'modalidad ${modalidad == ModalidadTratamiento.aCargoClinica ? 'a cargo de la clínica' : 'compartida'} '
+            '(Protocolo LPP).',
       ));
     }
   }
@@ -384,16 +450,10 @@ class KuraTreatmentRulesEngine {
       );
     }
 
-    // Compresión calibrada a la tabla del protocolo "Úlceras MMII", con
-    // derivación a angiología cuando el ITB es anómalo (>1.4 o <0.9).
-    if (input.requiereDerivacionAngiologiaPorItb) {
-      interconsultas.add(Interconsulta(
-        especialidad: 'Angiologia / Cirugia vascular',
-        motivo: 'ITB anómalo (${_itbLabel(input)}): fuera del rango seguro '
-            'para compresión estándar (Protocolo "Úlceras MMII").',
-      ));
-    }
-
+    // Compresión calibrada a la tabla del protocolo "Úlceras MMII". La
+    // derivación a angiología por ITB anómalo (>1.4 o <0.9) se centraliza en
+    // el paso 9 (interconsultas generales) para no duplicarla ni acotarla a la
+    // etiología vascular.
     final band = input.itbCompresionBand;
     switch (band) {
       case ItbCompresionBand.incompresible:
