@@ -2268,7 +2268,8 @@ class _ManualFormState extends State<_ManualForm> {
 
   Future<void> _pickPhoto() async {
     try {
-      final x = await _picker.pickImage(source: ImageSource.gallery, imageQuality: 85);
+      final x = await _picker.pickImage(
+          source: ImageSource.gallery, imageQuality: 85, maxWidth: 1600, maxHeight: 1600);
       if (x == null) return;
       final bytes = await x.readAsBytes();
       setState(() {

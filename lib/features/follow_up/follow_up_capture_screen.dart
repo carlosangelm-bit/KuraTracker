@@ -250,7 +250,8 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
 
   Future<void> _pickPhoto({required bool withMeasurement}) async {
     try {
-      final file = await _picker.pickImage(source: ImageSource.gallery, imageQuality: 85);
+      final file = await _picker.pickImage(
+          source: ImageSource.gallery, imageQuality: 85, maxWidth: 1600, maxHeight: 1600);
       if (file == null) return;
       final bytes = await file.readAsBytes();
       setState(() {
@@ -1393,6 +1394,7 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
       return;
     }
 
+    String? photoWarning;
     try {
       final wound = repo.getWound(widget.woundId);
       if (wound == null) {
@@ -1466,36 +1468,47 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
       });
 
       // 2 fotografias de seguimiento (Protocolo de Fotografias y Medicion):
-      // 1ra despues de limpiar (sin medicion), 2da con medicion.
-      final afterCleaningPath = await PhotoUploadService.uploadWoundPhoto(
-        woundId: widget.woundId,
-        consultationId: consultation.id,
-        bytes: _photoAfterCleaningBytes!,
-        fileName: _photoAfterCleaning?.name ?? 'seguimiento_despues_limpiar.jpg',
-      );
-      await repo.createPhoto({
-        'wound_id': widget.woundId,
-        'consultation_id': consultation.id,
-        'measurement_id': measurement.id,
-        'storage_path': afterCleaningPath,
-        'taken_at': _visitDate.toIso8601String(),
-        'photo_stage': PhotoStage.despuesLimpiar.dbValue,
-      });
+      // 1ra despues de limpiar (sin medicion), 2da con medicion. Las fotos se
+      // guardan en un try aparte: la consulta y la medicion YA se guardaron, asi
+      // que si una foto falla (p.ej. en modo demo la cuota de localStorage se
+      // llena con base64), el SEGUIMIENTO CLINICO no se pierde -- solo se avisa.
+      try {
+        final afterCleaningPath = await PhotoUploadService.uploadWoundPhoto(
+          woundId: widget.woundId,
+          consultationId: consultation.id,
+          bytes: _photoAfterCleaningBytes!,
+          fileName: _photoAfterCleaning?.name ?? 'seguimiento_despues_limpiar.jpg',
+        );
+        await repo.createPhoto({
+          'wound_id': widget.woundId,
+          'consultation_id': consultation.id,
+          'measurement_id': measurement.id,
+          'storage_path': afterCleaningPath,
+          'taken_at': _visitDate.toIso8601String(),
+          'photo_stage': PhotoStage.despuesLimpiar.dbValue,
+        });
 
-      final withMeasurementPath = await PhotoUploadService.uploadWoundPhoto(
-        woundId: widget.woundId,
-        consultationId: consultation.id,
-        bytes: _photoWithMeasurementBytes!,
-        fileName: _photoWithMeasurement?.name ?? 'seguimiento_con_medicion.jpg',
-      );
-      await repo.createPhoto({
-        'wound_id': widget.woundId,
-        'consultation_id': consultation.id,
-        'measurement_id': measurement.id,
-        'storage_path': withMeasurementPath,
-        'taken_at': _visitDate.toIso8601String(),
-        'photo_stage': PhotoStage.conMedicion.dbValue,
-      });
+        final withMeasurementPath = await PhotoUploadService.uploadWoundPhoto(
+          woundId: widget.woundId,
+          consultationId: consultation.id,
+          bytes: _photoWithMeasurementBytes!,
+          fileName: _photoWithMeasurement?.name ?? 'seguimiento_con_medicion.jpg',
+        );
+        await repo.createPhoto({
+          'wound_id': widget.woundId,
+          'consultation_id': consultation.id,
+          'measurement_id': measurement.id,
+          'storage_path': withMeasurementPath,
+          'taken_at': _visitDate.toIso8601String(),
+          'photo_stage': PhotoStage.conMedicion.dbValue,
+        });
+      } catch (e) {
+        debugPrint('Fotos de seguimiento no guardadas: $e');
+        photoWarning = e.toString().contains('Quota')
+            ? 'El seguimiento se registró, pero las fotos no se pudieron guardar '
+                '(memoria del modo demo llena). En producción se guardan en la nube.'
+            : 'El seguimiento se registró, pero hubo un problema al guardar las fotos.';
+      }
       // No se hace ningun INSERT manual a audit_log: la bitacora de
       // consultations/wound_measurements la genera el trigger AFTER INSERT
       // de Postgres (audit_trigger_fn, bug #5 ya corregido en el
@@ -1513,7 +1526,10 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
 
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Seguimiento registrado correctamente.')),
+        SnackBar(
+          content: Text(photoWarning ?? 'Seguimiento registrado correctamente.'),
+          backgroundColor: photoWarning != null ? KuraColors.warning : null,
+        ),
       );
       // Esta pantalla se navega declarativamente via GoRouter (no
       // Navigator.push), por lo que el regreso tambien debe ser un
