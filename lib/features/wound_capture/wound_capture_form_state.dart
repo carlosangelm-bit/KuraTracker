@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import '../../core/utils/wound_volume.dart';
 import '../../engine/models/kura_engine_enums.dart';
 import '../../engine/models/kura_engine_input.dart';
@@ -109,6 +111,10 @@ class WoundCaptureFormState {
 
   // ---- Evidencia fotografica (rutas locales temporales / bytes) ----
   List<String> photoPaths = [];
+  // Bytes de cada foto capturada, indexados por su ruta/URL local, para
+  // poder SUBIRLOS a Supabase Storage al guardar la valoración (antes solo se
+  // guardaba la ruta local y la foto se perdía; ver fix/valoracion-photo-upload).
+  Map<String, Uint8List> photoBytesByPath = {};
 
   // NOTA (Prompt 6, medición oficial): el área 2D se calcula como
   // largo × ancho (estimado manual rectangular), NO con la fórmula de elipse
