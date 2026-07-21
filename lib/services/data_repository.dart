@@ -1025,6 +1025,45 @@ class DataRepository {
     await _store.upsertRow(Collections.patientComorbidities, comorbidity.toJson());
   }
 
+  /// Registra o actualiza el estado de una comorbilidad (APP) de un paciente
+  /// (Fase 1, NOM-004). Una fila por (patient_id, code): si ya existe se
+  /// actualiza su estado, fechándolo (noted_at) y atribuyéndolo al profesional
+  /// (noted_by); si no, se inserta. El historial de cambios queda en audit_log
+  /// (trigger 0030). `staffId` lo pasa la pantalla desde la sesión.
+  Future<PatientComorbidity> setComorbidity({
+    required String patientId,
+    required Comorbilidad code,
+    required ComorbilidadEstado status,
+    required String? staffId,
+  }) async {
+    final pc = PatientComorbidity(
+      id: _uuid.v4(),
+      patientId: patientId,
+      code: code,
+      status: status,
+      notedAt: DateTime.now(),
+      notedBy: staffId,
+    );
+    final json = pc.toJson();
+    final existing = _store.getAll(Collections.patientComorbidities).where(
+        (c) => c['patient_id'] == patientId && c['code'] == json['code']);
+    if (existing.isNotEmpty) {
+      final saved = await _store.updateRow(
+        Collections.patientComorbidities,
+        existing.first['id'] as String,
+        {
+          'status': json['status'],
+          'noted_at': json['noted_at'],
+          'noted_by': json['noted_by'],
+        },
+      );
+      return PatientComorbidity.fromJson(saved);
+    }
+    final saved =
+        await _store.insertRow(Collections.patientComorbidities, json);
+    return PatientComorbidity.fromJson(saved);
+  }
+
   // ---------------- Consultas ----------------
 
   List<Consultation> listConsultationsForPatient(String patientId) => _store

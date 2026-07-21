@@ -4,6 +4,9 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/theme/kura_theme.dart';
 import '../../core/providers/session_provider.dart';
+import '../../engine/models/kura_engine_enums.dart';
+import '../../models/app_user.dart';
+import 'comorbidity_selector.dart';
 
 class PatientFormScreen extends ConsumerStatefulWidget {
   const PatientFormScreen({super.key});
@@ -24,6 +27,9 @@ class _PatientFormScreenState extends ConsumerState<PatientFormScreen> {
   bool _hasCaregiver = false;
   bool _fragile = false;
   String? _siteId;
+  // Comorbilidades (APP) capturadas en la apertura del expediente (NOM-004).
+  // Se pueden agregar/actualizar después desde el detalle del paciente.
+  final Map<Comorbilidad, ComorbilidadEstado> _comorbidities = {};
   bool _saving = false;
 
   @override
@@ -156,6 +162,27 @@ class _PatientFormScreenState extends ConsumerState<PatientFormScreen> {
                         maxLines: 3,
                         decoration: const InputDecoration(labelText: 'Antecedentes'),
                       ),
+                      const SizedBox(height: 20),
+                      Text('Comorbilidades (antecedentes personales patológicos)',
+                          style: Theme.of(context)
+                              .textTheme
+                              .titleMedium
+                              ?.copyWith(fontWeight: FontWeight.w700)),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Opcional al abrir el expediente; se pueden agregar o '
+                        'actualizar después. Solo las "Presente" influyen en el '
+                        'arquetipo del paciente.',
+                        style: TextStyle(
+                            fontSize: 12,
+                            color: KuraColors.darkText.withOpacity(0.6)),
+                      ),
+                      const SizedBox(height: 12),
+                      ComorbidityStatusSelector(
+                        values: _comorbidities,
+                        onChanged: (code, estado) =>
+                            setState(() => _comorbidities[code] = estado),
+                      ),
                       const SizedBox(height: 24),
                       FilledButton.icon(
                         icon: _saving
@@ -195,9 +222,31 @@ class _PatientFormScreenState extends ConsumerState<PatientFormScreen> {
                                     fragilePatient: _fragile,
                                     backgroundNotes: _notesCtrl.text.trim(),
                                   );
-                                  if (session.user?.staffId != null) {
+                                  var staffId = session.user?.staffId;
+                                  if (staffId == null &&
+                                      session.user?.role == AppRole.admin) {
+                                    staffId =
+                                        await repo.ensureAdminStaffId(session.user!);
+                                  }
+                                  if (staffId != null) {
                                     await repo.assignPatientToStaff(
-                                        patient.id, session.user!.staffId!);
+                                        patient.id, staffId);
+                                  }
+                                  // Comorbilidades (APP) capturadas al abrir:
+                                  // se persisten fechadas + atribuidas + auditadas.
+                                  // Solo las evaluadas (presente/negado), no las
+                                  // "no evaluado" (estado por defecto).
+                                  for (final entry in _comorbidities.entries) {
+                                    if (entry.value ==
+                                        ComorbilidadEstado.noEvaluado) {
+                                      continue;
+                                    }
+                                    await repo.setComorbidity(
+                                      patientId: patient.id,
+                                      code: entry.key,
+                                      status: entry.value,
+                                      staffId: staffId,
+                                    );
                                   }
                                   // La bitacora de auditoria la genera el
                                   // trigger AFTER INSERT de Postgres

@@ -72,7 +72,8 @@ class _PatientDetailScreenState extends ConsumerState<PatientDetailScreen> {
                   delegate: SliverChildListDelegate([
                     _PatientHeaderCard(patient: patient, dateFmt: _dateFmt),
                     const SizedBox(height: 16),
-                    if (comorbidities.isNotEmpty) _ComorbidityCard(comorbidities: comorbidities),
+                    _ComorbidityCard(
+                        patientId: patient.id, comorbidities: comorbidities),
                     const SizedBox(height: 16),
                     _ConsentsSummaryCard(patientId: patient.id, repo: repo),
                     const SizedBox(height: 16),
@@ -295,43 +296,58 @@ class _InfoItem extends StatelessWidget {
 }
 
 class _ComorbidityCard extends StatelessWidget {
+  final String patientId;
   final List<PatientComorbidity> comorbidities;
-  const _ComorbidityCard({required this.comorbidities});
+  const _ComorbidityCard({required this.patientId, required this.comorbidities});
 
   @override
   Widget build(BuildContext context) {
+    // Solo mostramos las evaluadas (presente/negado); las "no evaluado" son el
+    // estado por defecto y no aportan. Presente = cuenta para el arquetipo.
+    final evaluadas = comorbidities
+        .where((c) => c.status != ComorbilidadEstado.noEvaluado)
+        .toList();
     return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('Comorbilidades', style: TextStyle(fontWeight: FontWeight.w700)),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: comorbidities.map((c) {
-                Color color;
-                switch (c.status) {
-                  case ComorbilidadEstado.presente:
-                    color = KuraColors.danger;
-                    break;
-                  case ComorbilidadEstado.negado:
-                    color = KuraColors.success;
-                    break;
-                  case ComorbilidadEstado.noEvaluado:
-                    color = KuraColors.darkText.withOpacity(0.4);
-                    break;
-                }
-                return Chip(
-                  label: Text(c.code.label, style: const TextStyle(fontSize: 12)),
-                  avatar: Icon(Icons.circle, size: 10, color: color),
-                  backgroundColor: KuraColors.chipBg,
-                );
-              }).toList(),
-            ),
-          ],
+      margin: EdgeInsets.zero,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: () => context.go('/patients/$patientId/comorbidities'),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Expanded(
+                    child: Text('Comorbilidades (APP)',
+                        style: TextStyle(fontWeight: FontWeight.w700)),
+                  ),
+                  const Icon(Icons.chevron_right, size: 18),
+                ],
+              ),
+              const SizedBox(height: 8),
+              if (evaluadas.isEmpty)
+                Text('Registrar antecedentes personales patológicos',
+                    style: Theme.of(context).textTheme.bodySmall)
+              else
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: evaluadas.map((c) {
+                    final color = c.status == ComorbilidadEstado.presente
+                        ? KuraColors.danger
+                        : KuraColors.success;
+                    return Chip(
+                      label:
+                          Text(c.code.label, style: const TextStyle(fontSize: 12)),
+                      avatar: Icon(Icons.circle, size: 10, color: color),
+                      backgroundColor: KuraColors.chipBg,
+                    );
+                  }).toList(),
+                ),
+            ],
+          ),
         ),
       ),
     );
