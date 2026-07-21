@@ -2,6 +2,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kuratracker/engine/models/kura_engine_enums.dart';
 import 'package:kuratracker/engine/models/kura_engine_input.dart';
+import 'package:kuratracker/engine/models/kura_engine_output.dart';
 import 'package:kuratracker/engine/rules/kura_treatment_rules_engine.dart';
 
 void main() {
@@ -862,6 +863,250 @@ void main() {
       expect(venosa(abi: 0.7).itbCompresionBand, ItbCompresionBand.reducida);
       expect(venosa(abi: 0.6).itbCompresionBand, ItbCompresionBand.reducida);
       expect(venosa(abi: 0.5).itbCompresionBand, ItbCompresionBand.noAplica);
+    });
+  });
+
+  // ===========================================================================
+  // PROMPT 4 — Ajustes al motor de reglas (interconsultas, Braden, túnel/art.)
+  // Protocolos "Interconsultas", etiologías.
+  // ===========================================================================
+  KuraEngineInput base({
+    Etiologia etiologia = Etiologia.otra,
+    int? bradenScore,
+    bool lppRecurrente = false,
+    bool cuidadosPaliativos = false,
+    bool dolorCronico = false,
+    bool pacienteFragil = false,
+    double? tunnelDepthCm,
+    bool sobreArticulacion = false,
+    double? abiDer,
+    double? abiIzq,
+    bool esExtremidadInferior = false,
+    SubtipoVascular? subtipoVascular,
+  }) {
+    return KuraEngineInput(
+      etiologia: etiologia,
+      entorno: Entorno.clinica,
+      areaCm2: 10,
+      depthCm: 0.2,
+      necrosisPct: 0,
+      esfaceloPct: 0,
+      granulacionPct: 100,
+      epitelizacionPct: 0,
+      comorbilidades: const {},
+      bradenScore: bradenScore,
+      lppRecurrente: lppRecurrente,
+      cuidadosPaliativos: cuidadosPaliativos,
+      dolorCronico: dolorCronico,
+      pacienteFragil: pacienteFragil,
+      tunnelDepthCm: tunnelDepthCm,
+      sobreArticulacion: sobreArticulacion,
+      abiPieDerecho: abiDer,
+      abiPieIzquierdo: abiIzq,
+      esExtremidadInferior: esExtremidadInferior,
+      subtipoVascular: subtipoVascular,
+    );
+  }
+
+  bool hasEspecialidad(dynamic result, String needle) =>
+      (result.interconsultas as List<Interconsulta>).any((i) =>
+          i.especialidad.toLowerCase().contains(needle.toLowerCase()));
+
+  int countAngiologia(dynamic result) =>
+      (result.interconsultas as List<Interconsulta>)
+          .where((i) => i.especialidad.toLowerCase().contains('angiolog'))
+          .length;
+
+  group('Interconsulta a GERIATRIA (Protocolo Interconsultas)', () {
+    test('LPP recurrente genera geriatría', () {
+      final r = KuraTreatmentRulesEngine.generate(
+        input: base(etiologia: Etiologia.lpp, lppRecurrente: true),
+        scenario: KuraScenario.b,
+      );
+      expect(hasEspecialidad(r, 'geriatr'), isTrue);
+      expect(
+        r.interconsultas
+            .firstWhere((i) => i.especialidad == 'Geriatria')
+            .motivo,
+        contains('LPP recurrente'),
+      );
+    });
+
+    test('cuidados paliativos genera geriatría', () {
+      final r = KuraTreatmentRulesEngine.generate(
+        input: base(cuidadosPaliativos: true),
+        scenario: KuraScenario.c,
+      );
+      expect(hasEspecialidad(r, 'geriatr'), isTrue);
+    });
+
+    test('dolor crónico genera geriatría', () {
+      final r = KuraTreatmentRulesEngine.generate(
+        input: base(dolorCronico: true),
+        scenario: KuraScenario.b,
+      );
+      expect(hasEspecialidad(r, 'geriatr'), isTrue);
+    });
+
+    test('LPP NO recurrente sin otros factores NO genera geriatría', () {
+      final r = KuraTreatmentRulesEngine.generate(
+        input: base(etiologia: Etiologia.lpp, bradenScore: 15),
+        scenario: KuraScenario.a,
+      );
+      expect(hasEspecialidad(r, 'geriatr'), isFalse);
+    });
+  });
+
+  group('Interconsulta a ANGIOLOGIA por ITB (coordinada con fix arterial)', () {
+    test('pie diabético (no vascular) con ITB 0.85 genera angiología', () {
+      final r = KuraTreatmentRulesEngine.generate(
+        input: base(
+          etiologia: Etiologia.pieDiabetico,
+          esExtremidadInferior: true,
+          abiDer: 0.85,
+          abiIzq: 0.9,
+        ),
+        scenario: KuraScenario.b,
+      );
+      expect(hasEspecialidad(r, 'angiolog'), isTrue);
+    });
+
+    test('ITB normal (1.0) NO genera angiología', () {
+      final r = KuraTreatmentRulesEngine.generate(
+        input: base(
+          etiologia: Etiologia.pieDiabetico,
+          esExtremidadInferior: true,
+          abiDer: 1.0,
+          abiIzq: 1.05,
+        ),
+        scenario: KuraScenario.a,
+      );
+      expect(hasEspecialidad(r, 'angiolog'), isFalse);
+    });
+
+    test('venosa con ITB 0.85: EXACTAMENTE una angiología (sin duplicar)', () {
+      final r = KuraTreatmentRulesEngine.generate(
+        input: base(
+          etiologia: Etiologia.vascular,
+          subtipoVascular: SubtipoVascular.venosa,
+          esExtremidadInferior: true,
+          abiDer: 0.85,
+          abiIzq: 0.9,
+        ),
+        scenario: KuraScenario.b,
+      );
+      expect(countAngiologia(r), 1);
+    });
+
+    test('arterial con ITB 0.85: EXACTAMENTE una angiología (sin duplicar)', () {
+      final r = KuraTreatmentRulesEngine.generate(
+        input: base(
+          etiologia: Etiologia.vascular,
+          subtipoVascular: SubtipoVascular.arterial,
+          esExtremidadInferior: true,
+          abiDer: 0.85,
+          abiIzq: 0.9,
+        ),
+        scenario: KuraScenario.b,
+      );
+      expect(countAngiologia(r), 1);
+    });
+
+    test('ITB 1.5 (>1.4) genera angiología', () {
+      final r = KuraTreatmentRulesEngine.generate(
+        input: base(
+          etiologia: Etiologia.otra,
+          esExtremidadInferior: true,
+          abiDer: 1.5,
+          abiIzq: 1.5,
+        ),
+        scenario: KuraScenario.a,
+      );
+      expect(hasEspecialidad(r, 'angiolog'), isTrue);
+    });
+  });
+
+  group('Braden -> modalidad de tratamiento en LPP', () {
+    RegimenComponente? modalidad(dynamic r) {
+      final m = r.regimen
+          .where((c) => c.metodo == 'Modalidad de tratamiento (LPP)')
+          .toList();
+      return m.isEmpty ? null : m.first as RegimenComponente;
+    }
+
+    test('Braden <=12 (riesgo alto) -> a cargo de la clínica', () {
+      final r = KuraTreatmentRulesEngine.generate(
+        input: base(etiologia: Etiologia.lpp, bradenScore: 11),
+        scenario: KuraScenario.b,
+      );
+      final comp = modalidad(r);
+      expect(comp, isNotNull);
+      expect(comp!.producto.toLowerCase(), contains('clínica'));
+    });
+
+    test('Braden >=13 (riesgo moderado/bajo) -> tratamiento compartido', () {
+      final r = KuraTreatmentRulesEngine.generate(
+        input: base(etiologia: Etiologia.lpp, bradenScore: 16),
+        scenario: KuraScenario.b,
+      );
+      final comp = modalidad(r);
+      expect(comp, isNotNull);
+      expect(comp!.producto.toLowerCase(), contains('compartido'));
+    });
+
+    test('sin Braden no se agrega la modalidad', () {
+      final r = KuraTreatmentRulesEngine.generate(
+        input: base(etiologia: Etiologia.lpp),
+        scenario: KuraScenario.b,
+      );
+      expect(modalidad(r), isNull);
+    });
+
+    test('modalidad de LPP no aplica a otras etiologías', () {
+      final r = KuraTreatmentRulesEngine.generate(
+        input: base(etiologia: Etiologia.otra, bradenScore: 10),
+        scenario: KuraScenario.b,
+      );
+      expect(modalidad(r), isNull);
+    });
+  });
+
+  group('Referencia por túnel > 7 cm o articulación', () {
+    test('túnel 8 cm genera referencia a cirugía', () {
+      final r = KuraTreatmentRulesEngine.generate(
+        input: base(tunnelDepthCm: 8),
+        scenario: KuraScenario.b,
+      );
+      expect(
+        r.interconsultas.any((i) =>
+            i.especialidad.toLowerCase().contains('cirugia') &&
+            i.motivo.toLowerCase().contains('túnel')),
+        isTrue,
+      );
+    });
+
+    test('túnel 5 cm NO genera referencia por túnel', () {
+      final r = KuraTreatmentRulesEngine.generate(
+        input: base(tunnelDepthCm: 5),
+        scenario: KuraScenario.b,
+      );
+      expect(
+        r.interconsultas.any((i) => i.motivo.toLowerCase().contains('túnel')),
+        isFalse,
+      );
+    });
+
+    test('compromiso articular genera referencia a cirugía/ortopedia', () {
+      final r = KuraTreatmentRulesEngine.generate(
+        input: base(sobreArticulacion: true),
+        scenario: KuraScenario.b,
+      );
+      expect(
+        r.interconsultas.any((i) =>
+            i.especialidad.toLowerCase().contains('ortopedia') &&
+            i.motivo.toLowerCase().contains('articular')),
+        isTrue,
+      );
     });
   });
 }

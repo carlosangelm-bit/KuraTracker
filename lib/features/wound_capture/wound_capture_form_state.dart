@@ -182,6 +182,11 @@ class WoundCaptureFormState {
       agenteCausal: agenteCausal,
       subtipoVascular: subtipoVascular,
       noRevascularizable: noRevascularizable,
+      // Braden ya se captura en LPP; se pasa al motor para sugerir la
+      // modalidad de tratamiento (Prompt 4). Los demás campos nuevos del
+      // motor (lppRecurrente, cuidadosPaliativos, dolorCronico, tunnelDepthCm,
+      // sobreArticulacion) quedan pendientes de captura en el formulario.
+      bradenScore: bradenScore,
     );
   }
 

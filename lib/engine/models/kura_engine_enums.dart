@@ -88,6 +88,21 @@ enum ItbCompresionBand { na, incompresible, fuerte, precaucion, reducida, noApli
 /// Categoria de albumina serica. `na` = no disponible.
 enum AlbCategory { na, normal, mild, low }
 
+/// Modalidad de tratamiento de una LPP según el riesgo de Braden (Protocolo
+/// "Interconsultas"/LPP): a mayor riesgo, más control clínico.
+enum ModalidadTratamiento { compartido, aCargoClinica }
+
+extension ModalidadTratamientoLabel on ModalidadTratamiento {
+  String get label {
+    switch (this) {
+      case ModalidadTratamiento.compartido:
+        return 'Tratamiento compartido (clínica + cuidador)';
+      case ModalidadTratamiento.aCargoClinica:
+        return 'Tratamiento a cargo de la clínica';
+    }
+  }
+}
+
 /// Entorno donde se realiza el tratamiento; afecta el metodo de
 /// desbridamiento sugerido y la educacion al cuidador.
 enum Entorno { clinica, domicilio }

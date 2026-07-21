@@ -58,6 +58,28 @@ class KuraEngineInput {
   /// Protocolo "Terapia seca".
   final bool noRevascularizable;
 
+  /// Escala de Braden (6-23) para riesgo de LPP. Determina la modalidad de
+  /// tratamiento en LPP (compartido vs a cargo de clínica). Null = no evaluada.
+  final int? bradenScore;
+
+  /// LPP recurrente (reaparición en la misma zona / paciente con historial):
+  /// gatilla interconsulta a geriatría (Protocolo "Interconsultas").
+  final bool lppRecurrente;
+
+  /// Paciente en cuidados paliativos: gatilla interconsulta a geriatría.
+  final bool cuidadosPaliativos;
+
+  /// Dolor crónico asociado a la herida: gatilla interconsulta a geriatría.
+  final bool dolorCronico;
+
+  /// Longitud del túnel/tunelización en cm (medida con estilete). Un túnel
+  /// > 7 cm exige referencia (Protocolo "Interconsultas"). Null = no medido.
+  final double? tunnelDepthCm;
+
+  /// La herida compromete/está sobre una articulación: exige referencia
+  /// (riesgo de compromiso articular; Protocolo "Interconsultas").
+  final bool sobreArticulacion;
+
   const KuraEngineInput({
     required this.etiologia,
     required this.entorno,
@@ -84,6 +106,12 @@ class KuraEngineInput {
     this.agenteCausal,
     this.subtipoVascular,
     this.noRevascularizable = false,
+    this.bradenScore,
+    this.lppRecurrente = false,
+    this.cuidadosPaliativos = false,
+    this.dolorCronico = false,
+    this.tunnelDepthCm,
+    this.sobreArticulacion = false,
   });
 
   /// Numero de comorbilidades confirmadas presentes (excluye no evaluadas
@@ -195,6 +223,26 @@ class KuraEngineInput {
 
   bool get isquemiaCritica => abiCategory == AbiCategory.low;
 
+  /// Modalidad de tratamiento sugerida por el rango de Braden (Protocolo LPP).
+  /// Bandas estándar de Braden: <=12 = riesgo alto/muy alto -> a cargo de
+  /// clínica; >=13 = moderado/bajo/sin riesgo -> tratamiento compartido.
+  /// Null si no se capturó Braden.
+  ModalidadTratamiento? get bradenModalidad {
+    final b = bradenScore;
+    if (b == null) return null;
+    return b <= 12
+        ? ModalidadTratamiento.aCargoClinica
+        : ModalidadTratamiento.compartido;
+  }
+
+  /// Referencia obligatoria por túnel profundo (> 7 cm) — Protocolo
+  /// "Interconsultas".
+  bool get requiereReferenciaPorTunel => (tunnelDepthCm ?? 0) > 7.0;
+
+  /// Referencia obligatoria por compromiso articular — Protocolo
+  /// "Interconsultas".
+  bool get requiereReferenciaPorArticulacion => sobreArticulacion;
+
   Map<String, dynamic> toJson() => {
         'etiologia': etiologia.name,
         'entorno': entorno.name,
@@ -221,6 +269,12 @@ class KuraEngineInput {
         'agente_causal': agenteCausal?.name,
         'subtipo_vascular': subtipoVascular?.name,
         'no_revascularizable': noRevascularizable,
+        'braden_score': bradenScore,
+        'lpp_recurrente': lppRecurrente,
+        'cuidados_paliativos': cuidadosPaliativos,
+        'dolor_cronico': dolorCronico,
+        'tunnel_depth_cm': tunnelDepthCm,
+        'sobre_articulacion': sobreArticulacion,
       };
 
   factory KuraEngineInput.fromJson(Map<String, dynamic> json) {
@@ -279,6 +333,12 @@ class KuraEngineInput {
           : SubtipoVascular.values
               .firstWhere((e) => e.name == json['subtipo_vascular']),
       noRevascularizable: json['no_revascularizable'] as bool? ?? false,
+      bradenScore: (json['braden_score'] as num?)?.toInt(),
+      lppRecurrente: json['lpp_recurrente'] as bool? ?? false,
+      cuidadosPaliativos: json['cuidados_paliativos'] as bool? ?? false,
+      dolorCronico: json['dolor_cronico'] as bool? ?? false,
+      tunnelDepthCm: (json['tunnel_depth_cm'] as num?)?.toDouble(),
+      sobreArticulacion: json['sobre_articulacion'] as bool? ?? false,
     );
   }
 }
