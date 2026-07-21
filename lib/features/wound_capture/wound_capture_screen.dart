@@ -124,7 +124,8 @@ class _WoundCaptureScreenState extends ConsumerState<WoundCaptureScreen> {
 
   Future<void> _pickImage() async {
     try {
-      final file = await _picker.pickImage(source: ImageSource.gallery, imageQuality: 85);
+      final file = await _picker.pickImage(
+          source: ImageSource.gallery, imageQuality: 85, maxWidth: 1600, maxHeight: 1600);
       if (file != null) {
         final controller = ref.read(woundCaptureControllerProvider(_draftKey).notifier);
         controller.state.photoPaths.add(file.path);

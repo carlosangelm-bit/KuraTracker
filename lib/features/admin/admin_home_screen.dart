@@ -1595,7 +1595,8 @@ class _BrandingTabState extends State<BrandingTab> {
 
   Future<void> _pickLogo() async {
     try {
-      final x = await _picker.pickImage(source: ImageSource.gallery, imageQuality: 90);
+      final x = await _picker.pickImage(
+          source: ImageSource.gallery, imageQuality: 90, maxWidth: 800, maxHeight: 800);
       if (x == null) return;
       final bytes = await x.readAsBytes();
       setState(() {
