@@ -962,21 +962,57 @@ class _WoundCaptureScreenState extends ConsumerState<WoundCaptureScreen> {
       case Etiologia.vascular:
         return _SectionCard(
           icon: Icons.water_drop_outlined,
-          title: 'Úlcera vascular/venosa — Clasificación CEAP',
-          subtitle: 'Determina el nivel de compresión sugerido',
+          title: 'Úlcera vascular — Subtipo y clasificación',
+          subtitle:
+              'El subtipo separa el manejo venoso (compresión) del arterial (terapia seca)',
           initiallyExpanded: true,
-          child: Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: CeapClass.values.map((c) {
-              final selected = formState.ceapClass == c;
-              return ChoiceChip(
-                label: Text(c.name.toUpperCase()),
-                selected: selected,
-                selectedColor: KuraColors.primary.withOpacity(0.18),
-                onSelected: (_) => update(() => formState.ceapClass = c),
-              );
-            }).toList(),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Subtipo vascular'),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: SubtipoVascular.values.map((s) {
+                  final selected = formState.subtipoVascular == s;
+                  return ChoiceChip(
+                    label: Text(s.label),
+                    selected: selected,
+                    selectedColor: KuraColors.primary.withOpacity(0.18),
+                    onSelected: (_) =>
+                        update(() => formState.subtipoVascular = s),
+                  );
+                }).toList(),
+              ),
+              if (formState.subtipoVascular == SubtipoVascular.arterial ||
+                  formState.subtipoVascular == SubtipoVascular.mixta)
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('No revascularizable (Doppler/angiólogo)'),
+                  subtitle: const Text(
+                      'Activa terapia seca aunque el ITB no sea crítico'),
+                  value: formState.noRevascularizable,
+                  onChanged: (v) =>
+                      update(() => formState.noRevascularizable = v),
+                ),
+              const SizedBox(height: 12),
+              const Text('Clasificación CEAP'),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: CeapClass.values.map((c) {
+                  final selected = formState.ceapClass == c;
+                  return ChoiceChip(
+                    label: Text(c.name.toUpperCase()),
+                    selected: selected,
+                    selectedColor: KuraColors.primary.withOpacity(0.18),
+                    onSelected: (_) => update(() => formState.ceapClass = c),
+                  );
+                }).toList(),
+              ),
+            ],
           ),
         );
       case Etiologia.quirurgica:
