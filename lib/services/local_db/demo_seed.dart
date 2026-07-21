@@ -13,7 +13,7 @@ class DemoSeed {
   // sola vez en instalaciones demo previas (que tenían 'seeded' v1), evitando
   // duplicados y datos viejos. Solo aplica al modo demo local (SharedPreferences);
   // producción usa Supabase y nunca llama a este seed.
-  static const String _seedFlag = 'seeded_v3';
+  static const String _seedFlag = 'seeded_v4';
 
   static Future<void> ensureSeeded(LocalStore store) async {
     if (store.getBool(_seedFlag)) return;
@@ -1267,13 +1267,48 @@ class DemoSeed {
           'created_at': iso(dates.first),
         }
       ]);
+      // Notas de seguimiento (una por visita de seguimiento; el índice 0 es
+      // la valoración y no las usa). Cuentan una evolución real y llenan todos
+      // los campos de la nota que muestra el reporte PDF.
+      const followUpProc = [
+        '',
+        'Limpieza con solución salina 0.9%, desbridamiento cortante de esfacelo y colocación de apósito de espuma.',
+        'Limpieza, desbridamiento cortante parcial de esfacelo residual y apósito de espuma con plata.',
+        'Limpieza, retiro de esfacelo mínimo y colocación de apósito de hidrocoloide.',
+        'Limpieza suave y apósito de hidrocoloide fino; protección de piel perilesional con crema barrera.',
+      ];
+      const followUpMat = [
+        '',
+        'Solución salina 0.9%, gasas estériles, apósito de espuma (foam), película protectora.',
+        'Solución salina 0.9%, apósito de espuma con plata, gasas estériles.',
+        'Solución salina 0.9%, apósito de hidrocoloide, crema barrera de óxido de zinc.',
+        'Solución salina 0.9%, apósito de hidrocoloide fino, crema barrera.',
+      ];
+      const followUpEvo = [
+        '',
+        'Favorable. Lecho de 18.0 cm²; disminución de esfacelo y aparición de tejido de granulación.',
+        'Favorable. Lecho de 12.0 cm², predominio de granulación (~65%), exudado moderado en descenso.',
+        'Favorable. Lecho de 7.0 cm², granulación >75% e inicio de epitelización en bordes.',
+        'Muy favorable. Lecho de 3.5 cm², epitelización activa desde los bordes; sin signos de infección.',
+      ];
       final consults = <Map<String, dynamic>>[];
       final measures = <Map<String, dynamic>>[];
       final photos = <Map<String, dynamic>>[];
       for (var i = 0; i < 5; i++) {
         final type = i == 0 ? 'valoracion' : 'seguimiento';
-        consults.add(
-            consulta(consultIds[i], pid, staff1Id, siteDomicilioCdmx, type, dates[i]));
+        final row =
+            consulta(consultIds[i], pid, staff1Id, siteDomicilioCdmx, type, dates[i]);
+        if (type == 'seguimiento') {
+          row.addAll({
+            'follow_up_care_type': 'Curación avanzada en domicilio',
+            'follow_up_procedure_desc': followUpProc[i],
+            'follow_up_materials_used': followUpMat[i],
+            'follow_up_evolution': followUpEvo[i],
+            'follow_up_signed_by': 'Lic. J. Carlos Alejandre',
+            'follow_up_signed_license': '10456789',
+          });
+        }
+        consults.add(row);
         final c = comps[i];
         measures.add({
           ...meas(wid, consultIds[i], dates[i], areas[i], c[0], c[1], c[2], c[3], depths[i]),
@@ -1308,6 +1343,55 @@ class DemoSeed {
           'wound_edge': 'macerado',
           'perilesional_skin': ['macerada'],
         }
+      ]);
+      // Plan de tratamiento establecido (ligado a la última consulta; es el que
+      // toma el reporte vía _latestPlan). Con descripción y componentes.
+      final ricTpId = _uuid.v4();
+      await appendRows(Collections.treatmentPlans, [
+        {
+          'id': ricTpId,
+          'consultation_id': consultIds.last,
+          'wound_id': wid,
+          'used_kura_protocol': false,
+          'final_description':
+              'Curación avanzada en ambiente húmedo. Alivio de presión con '
+              'cambios posturales cada 2 h y superficie de redistribución. '
+              'Optimización nutricional con aporte proteico. Revisión cada 7 días.',
+        }
+      ]);
+      await appendRows(Collections.treatmentComponents, [
+        {
+          'id': _uuid.v4(),
+          'treatment_plan_id': ricTpId,
+          'method': 'Limpieza de la herida',
+          'product': 'Solución salina 0.9%',
+          'origin': 'manual',
+          'sort_order': 0,
+        },
+        {
+          'id': _uuid.v4(),
+          'treatment_plan_id': ricTpId,
+          'method': 'Desbridamiento',
+          'product': 'Cortante selectivo de esfacelo',
+          'origin': 'manual',
+          'sort_order': 1,
+        },
+        {
+          'id': _uuid.v4(),
+          'treatment_plan_id': ricTpId,
+          'method': 'Apósito primario',
+          'product': 'Hidrocoloide / espuma según nivel de exudado',
+          'origin': 'manual',
+          'sort_order': 2,
+        },
+        {
+          'id': _uuid.v4(),
+          'treatment_plan_id': ricTpId,
+          'method': 'Manejo de la presión',
+          'product': 'Cambios posturales c/2 h + cojín de redistribución',
+          'origin': 'manual',
+          'sort_order': 3,
+        },
       ]);
       await appendRows(Collections.staffPatientAssignments, [
         {'id': _uuid.v4(), 'staff_id': staff1Id, 'patient_id': pid},
