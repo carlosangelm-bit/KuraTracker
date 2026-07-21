@@ -69,7 +69,14 @@ class _ConsentsScreenState extends ConsumerState<ConsentsScreen> {
     final repoAsync = ref.watch(dataRepositoryProvider);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Consentimientos')),
+      appBar: AppBar(
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          tooltip: 'Volver al paciente',
+          onPressed: () => context.go('/patients/${widget.patientId}'),
+        ),
+        title: const Text('Consentimientos'),
+      ),
       body: repoAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, st) => Center(child: Text('Error: $e')),

@@ -65,6 +65,11 @@ class _ReferralsScreenState extends ConsumerState<ReferralsScreen> {
 
     return Scaffold(
       appBar: AppBar(
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          tooltip: 'Volver al paciente',
+          onPressed: () => context.go('/patients/${widget.patientId}'),
+        ),
         title: const Text('Referencias / interconsultas'),
         actions: [
           TextButton.icon(

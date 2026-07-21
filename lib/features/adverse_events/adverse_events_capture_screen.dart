@@ -177,7 +177,15 @@ class _AdverseEventsCaptureScreenState
     final repoAsync = ref.watch(dataRepositoryProvider);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Registrar evento adverso')),
+      appBar: AppBar(
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          tooltip: 'Volver a eventos adversos',
+          onPressed: () =>
+              context.go('/patients/${widget.patientId}/adverse-events'),
+        ),
+        title: const Text('Registrar evento adverso'),
+      ),
       body: repoAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, st) => Center(child: Text('Error: $e')),

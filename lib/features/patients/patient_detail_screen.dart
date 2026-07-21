@@ -50,6 +50,11 @@ class _PatientDetailScreenState extends ConsumerState<PatientDetailScreen> {
           return CustomScrollView(
             slivers: [
               SliverAppBar(
+                leading: IconButton(
+                  icon: const Icon(Icons.arrow_back),
+                  tooltip: 'Volver a pacientes',
+                  onPressed: () => context.go('/patients'),
+                ),
                 title: Text(patient.fullName),
                 pinned: true,
                 actions: [

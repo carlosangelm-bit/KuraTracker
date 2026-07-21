@@ -108,7 +108,15 @@ class _ReferralCreateScreenState extends ConsumerState<ReferralCreateScreen> {
     final repoAsync = ref.watch(dataRepositoryProvider);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Nueva referencia')),
+      appBar: AppBar(
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          tooltip: 'Volver a referencias',
+          onPressed: () =>
+              context.go('/patients/${widget.patientId}/referrals'),
+        ),
+        title: const Text('Nueva referencia'),
+      ),
       body: repoAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, st) => Center(child: Text('Error: $e')),

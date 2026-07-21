@@ -54,6 +54,11 @@ class _AdverseEventsScreenState extends ConsumerState<AdverseEventsScreen> {
 
     return Scaffold(
       appBar: AppBar(
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          tooltip: 'Volver al paciente',
+          onPressed: () => context.go('/patients/${widget.patientId}'),
+        ),
         title: const Text('Eventos adversos'),
         actions: [
           TextButton.icon(
