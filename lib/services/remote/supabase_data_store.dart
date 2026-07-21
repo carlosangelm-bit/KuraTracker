@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../local_db/local_store.dart' show Collections;
@@ -59,8 +60,19 @@ class SupabaseDataStore implements DataStore {
 
   @override
   Future<void> refreshCollection(String collection) async {
-    final rows = await _client.from(collection).select();
-    _cache[collection] = (rows as List).cast<Map<String, dynamic>>();
+    // Resiliencia: un error en UNA colección (p.ej. una tabla que aún no existe
+    // porque falta aplicar una migración, o un fallo transitorio de red) NO debe
+    // romper toda la hidratación (login / carga inicial). Se registra y se
+    // continúa; la feature de esa colección queda vacía hasta la próxima
+    // hidratación, pero el resto de la app sigue funcionando. Antes, sin este
+    // try/catch, un desfase código↔esquema tumbaba el login por completo.
+    try {
+      final rows = await _client.from(collection).select();
+      _cache[collection] = (rows as List).cast<Map<String, dynamic>>();
+    } catch (e) {
+      debugPrint('refreshCollection("$collection") falló, se omite: $e');
+      _cache.putIfAbsent(collection, () => <Map<String, dynamic>>[]);
+    }
   }
 
   @override
