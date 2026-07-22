@@ -191,7 +191,9 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
   double get _lengthCm => double.tryParse(_lengthCtrl.text.replaceAll(',', '.')) ?? 0;
   double get _widthCm => double.tryParse(_widthCtrl.text.replaceAll(',', '.')) ?? 0;
   double get _depthCm => double.tryParse(_depthCtrl.text.replaceAll(',', '.')) ?? 0;
-  double get _areaCm2 => _lengthCm * _widthCm;
+  // Área 2D por la elipse (L×A×0.785), validada por María 2026-07. Ver
+  // core/utils/wound_volume.dart.
+  double get _areaCm2 => WoundVolumeCalculator.ellipseArea(_lengthCm, _widthCm);
   double? get _volumeCm3 => double.tryParse(_volumeCtrl.text.replaceAll(',', '.'));
   // Herida profunda (Protocolo de Fotografias/Medicion): a mayor profundidad
   // se activa el modo de medicion 3D (volumen) ademas del 2D.
