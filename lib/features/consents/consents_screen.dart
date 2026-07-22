@@ -87,7 +87,8 @@ class _ConsentsScreenState extends ConsumerState<ConsentsScreen> {
               Text(
                 'Registra el consentimiento informado del paciente. La '
                 'valoración y la fotografía requieren privacidad + fotografía; '
-                'el desbridamiento requiere su propio consentimiento.',
+                'el desbridamiento requiere su propio consentimiento, que debe '
+                'firmarse ANTES del primer desbridamiento.',
                 style: Theme.of(context).textTheme.bodyMedium,
               ),
               const SizedBox(height: 16),

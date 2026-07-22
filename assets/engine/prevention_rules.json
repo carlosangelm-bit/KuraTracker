@@ -1,6 +1,6 @@
 {
-  "version": "2026-07-22e",
-  "note": "Algoritmo preventivo de LPP y complicaciones de heridas quirúrgicas (entorno hospitalario), basado en el reporte clínico aportado (GNEAUPP/EPUAP/NPIAP, IMSS, OMS/WHO SSI). LPP: determinístico por banda de Braden -> paquete de intervenciones ESCALONADO (prevención). Cada regla tiene 'questions' de VIGILANCIA con respuesta; si el profesional responde con la respuesta de 'alarm', se muestra la conducta de 'escalation' (prevención -> manejo/notificar/referir). BORRADOR pendiente de validación de María. Capa DOCUMENTAL: no altera el motor de tratamiento. 'when': bradenMin/bradenMax, comorbilidad, hasActiveWound, mobilityIn, fragile, bmiMax, woundEtiology, deterioration. severity: alto|medio|bajo. dimension: lpp|complicacion.",
+  "version": "2026-07-22f",
+  "note": "Algoritmo preventivo de LPP y complicaciones de heridas quirúrgicas (entorno hospitalario), basado en el reporte clínico aportado (GNEAUPP/EPUAP/NPIAP, IMSS, OMS/WHO SSI) y en el Continuo de Infección de la Herida IWII 2022 (contaminación -> colonización -> infección local [encubierta/sutil + clásica/manifiesta] -> infección en propagación -> infección sistémica). LPP: determinístico por banda de Braden -> paquete de intervenciones ESCALONADO (prevención). Cada regla tiene 'questions' de VIGILANCIA con respuesta; si el profesional responde con la respuesta de 'alarm', se muestra la conducta de 'escalation' (prevención -> manejo/notificar/referir). La regla 'complic_infeccion_iwii' es la guía general del continuo IWII 2022 para personal no especializado (qué buscar, en qué orden de gravedad y cuándo escalar). BORRADOR pendiente de validación de María. Capa DOCUMENTAL: no altera el motor de tratamiento. 'when': bradenMin/bradenMax, comorbilidad, hasActiveWound, mobilityIn, fragile, bmiMax, woundEtiology, deterioration. severity: alto|medio|bajo. dimension: lpp|complicacion.",
   "rules": [
     {
       "id": "lpp_muy_alto",
@@ -69,9 +69,9 @@
     {
       "id": "lpp_moderado",
       "dimension": "lpp",
-      "when": { "bradenMin": 13, "bradenMax": 14 },
+      "when": { "bradenMin": 13, "bradenMax": 17 },
       "severity": "medio",
-      "message": "LPP · Riesgo MODERADO (Braden 13–14)",
+      "message": "LPP · Riesgo MEDIO (Braden 13–17) — 1.er mes a cargo de la clínica; evaluar tunelizaciones/socavamientos",
       "questions": [
         { "text": "¿Hay eritema que NO blanquea en prominencias óseas?", "alarm": "Sí" },
         { "text": "¿Permanece más de 2–3 h en la misma posición?", "alarm": "Sí" },
@@ -98,9 +98,9 @@
     {
       "id": "lpp_bajo",
       "dimension": "lpp",
-      "when": { "bradenMin": 15, "bradenMax": 18 },
+      "when": { "bradenMin": 18, "bradenMax": 23 },
       "severity": "bajo",
-      "message": "LPP · Riesgo BAJO (Braden 15–18)",
+      "message": "LPP · Riesgo BAJO (Braden 18–23) — candidato a tratamiento compartido",
       "questions": [
         { "text": "¿Hay enrojecimiento en alguna prominencia ósea?", "alarm": "Sí" },
         { "text": "¿La piel está húmeda por incontinencia o sudoración?", "alarm": "Sí" }
@@ -166,6 +166,32 @@
         "actions": [
           { "id": "esc_nutricion_urgente", "label": "Interconsulta a nutrición prioritaria" },
           { "id": "esc_suplementar", "label": "Iniciar suplementación proteico-calórica" }
+        ]
+      }
+    },
+    {
+      "id": "complic_infeccion_iwii",
+      "dimension": "complicacion",
+      "when": { "hasActiveWound": true },
+      "severity": "medio",
+      "message": "Continuo de infección de la herida (IWII 2022) · Guía de vigilancia",
+      "questions": [
+        { "text": "Infección local ENCUBIERTA (sutil): ¿retraso de la cicatrización, tejido de granulación friable o rojo intenso, mal olor incipiente o dolor creciente sin causa clara?", "alarm": "Sí" },
+        { "text": "Infección local CLÁSICA (manifiesta): ¿eritema perilesional (≤2 cm), calor, edema, exudado purulento/aumentado o dehiscencia?", "alarm": "Sí" },
+        { "text": "Infección en PROPAGACIÓN: ¿eritema >2 cm alrededor de la herida, induración, linfangitis o crepitación/absceso?", "alarm": "Sí" },
+        { "text": "Infección SISTÉMICA: ¿fiebre ≥38 °C, malestar general, taquicardia o signos de sepsis?", "alarm": "Sí" }
+      ],
+      "actions": [
+        { "id": "iwii_limpieza", "label": "Limpieza/desbridamiento y control de biocarga según el nivel del continuo" },
+        { "id": "iwii_vigilancia", "label": "Vigilancia estructurada por el continuo IWII 2022 en cada curación" },
+        { "id": "iwii_documentar", "label": "Documentar signos y nivel del continuo en la nota de evolución" }
+      ],
+      "escalation": {
+        "message": "Infección local manifiesta, en propagación o sistémica (IWII 2022): escalar el manejo. La propagación/sistémica requiere actuar sin demora y valorar reporte como evento adverso.",
+        "actions": [
+          { "id": "esc_iwii_cultivo", "label": "Tomar cultivo y valorar antibioticoterapia según nivel" },
+          { "id": "esc_iwii_notificar", "label": "Notificar al médico tratante" },
+          { "id": "esc_iwii_evento_adverso", "label": "Si hay propagación/sistémica: registrar evento adverso (posible centinela ≤24 h)" }
         ]
       }
     },

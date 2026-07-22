@@ -181,6 +181,7 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
   // se piden como campos editables en cada nota).
   String? _signedByReadOnly;
   String? _signedLicenseReadOnly;
+  String? _signedSpecialtyReadOnly;
   // Firma digital trazada por el profesional (además del nombre + cédula de
   // solo lectura). Obligatoria para firmar la nota.
   final SignatureController _signatureController = SignatureController();
@@ -191,7 +192,9 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
   double get _lengthCm => double.tryParse(_lengthCtrl.text.replaceAll(',', '.')) ?? 0;
   double get _widthCm => double.tryParse(_widthCtrl.text.replaceAll(',', '.')) ?? 0;
   double get _depthCm => double.tryParse(_depthCtrl.text.replaceAll(',', '.')) ?? 0;
-  double get _areaCm2 => _lengthCm * _widthCm;
+  // Área 2D por la elipse (L×A×0.785), validada por María 2026-07. Ver
+  // core/utils/wound_volume.dart.
+  double get _areaCm2 => WoundVolumeCalculator.ellipseArea(_lengthCm, _widthCm);
   double? get _volumeCm3 => double.tryParse(_volumeCtrl.text.replaceAll(',', '.'));
   // Herida profunda (Protocolo de Fotografias/Medicion): a mayor profundidad
   // se activa el modo de medicion 3D (volumen) ademas del 2D.
@@ -288,7 +291,9 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
     _signedByReadOnly = session.user?.fullName;
     final staffId = session.user?.staffId;
     if (repo != null && staffId != null) {
-      _signedLicenseReadOnly = repo.getStaff(staffId)?.cedulaProfesional;
+      final staff = repo.getStaff(staffId);
+      _signedLicenseReadOnly = staff?.cedulaProfesional;
+      _signedSpecialtyReadOnly = staff?.especialidad;
     }
   }
 
@@ -1343,6 +1348,21 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
               ),
             ],
           ),
+          if (_signedSpecialtyReadOnly != null &&
+              _signedSpecialtyReadOnly!.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                const Icon(Icons.medical_services_outlined,
+                    size: 16, color: KuraColors.darkText),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text('Especialidad: $_signedSpecialtyReadOnly',
+                      style: const TextStyle(fontWeight: FontWeight.w600)),
+                ),
+              ],
+            ),
+          ],
           if (!hasLicense) ...[
             const SizedBox(height: 8),
             Row(
@@ -1480,6 +1500,7 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
         followUpEvolution: _evolutionFinal,
         followUpSignedBy: _signedByReadOnly!,
         followUpSignedLicense: _signedLicenseReadOnly!,
+        followUpSignedSpecialty: _signedSpecialtyReadOnly,
         followUpSignature: _signatureController.toJsonString(),
         followUpSignedAt: DateTime.now(),
       );

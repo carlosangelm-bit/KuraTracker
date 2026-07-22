@@ -51,6 +51,8 @@ class WoundCaptureFormState {
   TipoCierre? tipoCierre;
   DrenajeTipo? drenajeTipo;
   SuturaTipo? suturaTipo;
+  int? drenajeNum; // nº de drenajes
+  int? suturaNum; // nº de puntos / grapas
 
   // ---- Evaluacion clinica ----
   double? glucoseMgDl;
@@ -121,10 +123,11 @@ class WoundCaptureFormState {
   // (0.785). La MEDICIÓN CUANTITATIVA OFICIAL del seguimiento es el VOLUMEN por
   // la fórmula de Kundin (V = L × A × P × 0.327, ver core/utils/wound_volume.dart),
   // capturado en valoración y seguimiento; la planimetría de eKare es la fuente
-  // de área trazada cuando el dato proviene de eKare. No se cambia esta fórmula
-  // porque el modelo pronóstico consume logarea = log(1+area) ya calibrado
-  // (kura_prognosis_model). Ver docs/engine/medicion_oficial.md.
-  double get areaCm2 => lengthCm * widthCm;
+  // de área trazada cuando el dato proviene de eKare.
+  // Área 2D estimada por la elipse (L × A × 0.785), validada por María 2026-07.
+  // Alimenta el modelo pronóstico (logarea); las predicciones se corren hasta
+  // recalibrar (decisión aceptada). Ver core/utils/wound_volume.dart.
+  double get areaCm2 => WoundVolumeCalculator.ellipseArea(lengthCm, widthCm);
 
   /// Volumen auto-calculado por Kundin a partir de las medidas actuales
   /// (largo/ancho/profundidad). null si la herida es superficial

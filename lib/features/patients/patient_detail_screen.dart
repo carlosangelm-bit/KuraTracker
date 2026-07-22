@@ -30,6 +30,59 @@ class PatientDetailScreen extends ConsumerStatefulWidget {
 class _PatientDetailScreenState extends ConsumerState<PatientDetailScreen> {
   final _dateFmt = DateFormat('dd/MM/yyyy');
 
+  /// Plan de alta / egreso de una herida: elige el motivo de egreso + una
+  /// explicación libre y cierra la herida (Prompt 5 / feedback de María).
+  Future<void> _openDischargePlan(
+      BuildContext context, DataRepository repo, Wound wound) async {
+    var motivo = MotivoEgreso.cierre;
+    final noteCtrl = TextEditingController();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Plan de alta de la herida'),
+        content: StatefulBuilder(
+          builder: (ctx, setDlg) => Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              DropdownButtonFormField<MotivoEgreso>(
+                value: motivo,
+                decoration: const InputDecoration(
+                    labelText: 'Motivo de egreso', border: OutlineInputBorder()),
+                items: [
+                  for (final m in MotivoEgreso.values)
+                    DropdownMenuItem(value: m, child: Text(m.label)),
+                ],
+                onChanged: (v) => setDlg(() => motivo = v ?? MotivoEgreso.cierre),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: noteCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Plan de alta / explicación (opcional)',
+                  border: OutlineInputBorder(),
+                ),
+                maxLines: 3,
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancelar')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Egresar herida')),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    await repo.closeWound(wound.id, motivo,
+        dischargeNote: noteCtrl.text.trim().isEmpty ? null : noteCtrl.text.trim());
+    if (mounted) setState(() {});
+  }
+
   @override
   Widget build(BuildContext context) {
     final repoAsync = ref.watch(dataRepositoryProvider);
@@ -126,6 +179,7 @@ class _PatientDetailScreenState extends ConsumerState<PatientDetailScreen> {
                             // activa: su seguimiento se muestra embebido abajo.
                             showFollowUpButton:
                                 singleActiveWound == null || w.id != singleActiveWound.id,
+                            onDischarge: () => _openDischargePlan(context, repo, w),
                           )),
                     // Seguimiento EMBEBIDO cuando hay una sola herida activa.
                     if (singleActiveWound != null) ...[
@@ -580,11 +634,15 @@ class _WoundCard extends StatelessWidget {
   // Se oculta cuando el seguimiento ya se muestra EMBEBIDO abajo (paciente con
   // una sola herida activa) — el botón navegaría a la misma información.
   final bool showFollowUpButton;
+  // Abre el "Plan de alta" (egreso de la herida). Lo provee el padre para poder
+  // refrescar tras cerrar la herida.
+  final VoidCallback? onDischarge;
   const _WoundCard({
     required this.patientId,
     required this.wound,
     required this.repo,
     this.showFollowUpButton = true,
+    this.onDischarge,
   });
 
   @override
@@ -664,8 +722,39 @@ class _WoundCard extends StatelessWidget {
                   onPressed: () =>
                       context.go('/patients/$patientId/wound/${wound.id}/capture'),
                 ),
+                if (wound.isActive && onDischarge != null)
+                  TextButton.icon(
+                    icon: const Icon(Icons.assignment_turned_in_outlined, size: 18),
+                    label: const Text('Plan de alta'),
+                    onPressed: onDischarge,
+                  ),
               ],
             ),
+            if (!wound.isActive && wound.motivoEgreso != null) ...[
+              const SizedBox(height: 8),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: KuraColors.chipBg,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Egresada · ${wound.motivoEgreso!.label}',
+                        style: const TextStyle(
+                            fontWeight: FontWeight.w700, fontSize: 12)),
+                    if ((wound.dischargeNote ?? '').isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 2),
+                        child: Text(wound.dischargeNote!,
+                            style: Theme.of(context).textTheme.bodySmall),
+                      ),
+                  ],
+                ),
+              ),
+            ],
           ],
         ),
       ),

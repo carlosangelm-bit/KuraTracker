@@ -669,6 +669,8 @@ class _StaffFormDialogState extends State<_StaffFormDialog> {
       TextEditingController(text: widget.existing?.roleTitle ?? 'Kurador');
   late final TextEditingController _cedulaCtrl =
       TextEditingController(text: widget.existing?.cedulaProfesional ?? '');
+  late final TextEditingController _especialidadCtrl =
+      TextEditingController(text: widget.existing?.especialidad ?? '');
   String? _siteId;
   String? _profileId;
   bool _saving = false;
@@ -686,6 +688,7 @@ class _StaffFormDialogState extends State<_StaffFormDialog> {
     _nameCtrl.dispose();
     _roleCtrl.dispose();
     _cedulaCtrl.dispose();
+    _especialidadCtrl.dispose();
     super.dispose();
   }
 
@@ -697,6 +700,7 @@ class _StaffFormDialogState extends State<_StaffFormDialog> {
     });
     try {
       final cedula = _cedulaCtrl.text.trim();
+      final especialidad = _especialidadCtrl.text.trim();
       if (widget.existing == null) {
         await widget.repo.createStaff(
           fullName: _nameCtrl.text.trim(),
@@ -705,6 +709,7 @@ class _StaffFormDialogState extends State<_StaffFormDialog> {
           primarySiteId: _siteId,
           profileId: _profileId,
           cedulaProfesional: cedula.isEmpty ? null : cedula,
+          especialidad: especialidad.isEmpty ? null : especialidad,
         );
       } else {
         await widget.repo.updateStaff(
@@ -717,6 +722,8 @@ class _StaffFormDialogState extends State<_StaffFormDialog> {
           clearProfileId: _profileId == null,
           cedulaProfesional: cedula.isEmpty ? null : cedula,
           clearCedulaProfesional: cedula.isEmpty,
+          especialidad: especialidad.isEmpty ? null : especialidad,
+          clearEspecialidad: especialidad.isEmpty,
         );
       }
       if (mounted) Navigator.pop(context, true);
@@ -763,6 +770,14 @@ class _StaffFormDialogState extends State<_StaffFormDialog> {
                   decoration: const InputDecoration(
                     labelText: 'Cédula profesional',
                     hintText: 'Requerida para firmar notas de seguimiento',
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _especialidadCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Especialidad',
+                    hintText: 'Aparece en la firma de la nota (NOM-024/004)',
                   ),
                 ),
                 const SizedBox(height: 12),

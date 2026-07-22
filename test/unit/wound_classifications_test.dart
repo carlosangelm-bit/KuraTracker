@@ -30,7 +30,7 @@ void main() {
         npuapEstadio: NpuapEstadio.lesionTisularProfunda,
         claseContaminacion: ClaseContaminacion.contaminada,
         tipoCierre: TipoCierre.segunda,
-        drenajeTipo: DrenajeTipo.aspiracionCerrada,
+        drenajeTipo: DrenajeTipo.jackson,
         suturaTipo: SuturaTipo.grapas,
         motivoEgreso: MotivoEgreso.defuncion,
       );
@@ -45,7 +45,7 @@ void main() {
       expect(back.npuapEstadio, NpuapEstadio.lesionTisularProfunda);
       expect(back.claseContaminacion, ClaseContaminacion.contaminada);
       expect(back.tipoCierre, TipoCierre.segunda);
-      expect(back.drenajeTipo, DrenajeTipo.aspiracionCerrada);
+      expect(back.drenajeTipo, DrenajeTipo.jackson);
       expect(back.suturaTipo, SuturaTipo.grapas);
       expect(back.motivoEgreso, MotivoEgreso.defuncion);
     });
