@@ -1,3 +1,5 @@
+import 'center_type.dart';
+
 /// Centro/clinica (tenant). Ver 0011_organizations.sql (tabla
 /// organizations) y 0012_master_role.sql (RLS que permite a un usuario
 /// `master` leer/crear/editar/eliminar TODAS las organizaciones, no solo
@@ -11,6 +13,8 @@ class Organization {
   // Branding para reportes (0024): color principal (hex) y logo.
   final String? brandPrimaryColor;
   final String? brandLogoPath;
+  // Tipo de centro (0040): determina paleta y módulos por defecto.
+  final CenterType centerType;
 
   const Organization({
     required this.id,
@@ -19,6 +23,7 @@ class Organization {
     this.schedulingMode = 'none',
     this.brandPrimaryColor,
     this.brandLogoPath,
+    this.centerType = CenterType.clinicaHeridas,
   });
 
   factory Organization.fromJson(Map<String, dynamic> json) => Organization(
@@ -28,6 +33,7 @@ class Organization {
         schedulingMode: (json['scheduling_mode'] as String?) ?? 'none',
         brandPrimaryColor: json['brand_primary_color'] as String?,
         brandLogoPath: json['brand_logo_path'] as String?,
+        centerType: CenterTypeX.fromDb(json['center_type'] as String?),
       );
 
   Map<String, dynamic> toJson() => {
@@ -37,5 +43,6 @@ class Organization {
         'scheduling_mode': schedulingMode,
         'brand_primary_color': brandPrimaryColor,
         'brand_logo_path': brandLogoPath,
+        'center_type': centerType.dbValue,
       };
 }

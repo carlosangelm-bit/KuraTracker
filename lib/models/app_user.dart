@@ -4,7 +4,7 @@
 // note_option_catalog) de TODOS los centros. NO tiene acceso a datos
 // clinicos de pacientes ajenos -- esas policies (0003/0011) no le dan
 // ninguna excepcion.
-enum AppRole { admin, clinico, master }
+enum AppRole { admin, clinico, master, cuidador }
 
 extension AppRoleLabel on AppRole {
   String get label {
@@ -15,6 +15,8 @@ extension AppRoleLabel on AppRole {
         return 'Personal sanitario';
       case AppRole.master:
         return 'Administrador de plataforma';
+      case AppRole.cuidador:
+        return 'Cuidador';
     }
   }
 

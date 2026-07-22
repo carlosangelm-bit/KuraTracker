@@ -4,9 +4,10 @@ import 'package:go_router/go_router.dart';
 
 import '../design/tokens.dart';
 import '../providers/session_provider.dart';
-import '../theme/kura_theme.dart';
 import '../widgets/kura_glass_card.dart';
 import '../../models/app_user.dart';
+import '../../models/center_type.dart';
+import '../../services/data_repository.dart';
 
 /// Alto del contenido de la barra de navegacion flotante. Las pantallas
 /// scrolleables del shell suman esto (mas el inset inferior del sistema) a su
@@ -114,7 +115,7 @@ class AppShell extends ConsumerWidget {
                   labelType: NavigationRailLabelType.all,
                   leading: Padding(
                     padding: const EdgeInsets.symmetric(vertical: 16),
-                    child: _brandTitle(compact: true),
+                    child: _brandTitle(context, ref, session, compact: true),
                   ),
                   trailing: Expanded(
                     child: Align(
@@ -184,24 +185,36 @@ class AppShell extends ConsumerWidget {
     );
   }
 
-  Widget _brandTitle({bool compact = false}) {
-    return Row(
+  Widget _brandTitle(BuildContext context, WidgetRef ref, SessionState session,
+      {bool compact = false}) {
+    final t = BrandTokens.of(context);
+    final canSwitch = session.canSwitchCenter;
+    final row = Row(
       mainAxisSize: MainAxisSize.min,
       children: [
         Container(
           padding: const EdgeInsets.all(6),
           decoration: BoxDecoration(
-            color: KuraColors.primary,
+            color: t.brandPrimary,
             borderRadius: BorderRadius.circular(10),
           ),
           child: const Icon(Icons.healing, color: Colors.white, size: 20),
         ),
         if (!compact) ...[
           const SizedBox(width: 8),
-          const Text('KuraTracker',
-              style: TextStyle(fontWeight: FontWeight.w800, color: KuraColors.darkText)),
+          Text('KuraTracker',
+              style: TextStyle(fontWeight: FontWeight.w800, color: t.textPrimary)),
         ],
+        // Indicador de que el ícono es un switcher cuando hay varios centros.
+        if (canSwitch)
+          Icon(Icons.unfold_more, size: 16, color: t.textSecondary),
       ],
+    );
+    if (!canSwitch) return row;
+    return InkWell(
+      borderRadius: BorderRadius.circular(10),
+      onTap: () => showCenterSwitcher(context, ref),
+      child: Padding(padding: const EdgeInsets.all(4), child: row),
     );
   }
 
@@ -209,12 +222,15 @@ class AppShell extends ConsumerWidget {
       {bool vertical = false}) {
     final user = session.user;
     if (user == null) return const SizedBox.shrink();
+    final t = BrandTokens.of(context);
     return PopupMenuButton<String>(
       tooltip: user.fullName,
       onSelected: (value) {
         if (value == 'logout') {
           ref.read(sessionProvider.notifier).logout();
           context.go('/login');
+        } else if (value == 'switch') {
+          showCenterSwitcher(context, ref);
         }
       },
       itemBuilder: (context) => [
@@ -224,17 +240,86 @@ class AppShell extends ConsumerWidget {
         ),
         PopupMenuItem(enabled: false, child: Text(user.role.label)),
         const PopupMenuDivider(),
+        if (session.canSwitchCenter)
+          const PopupMenuItem(value: 'switch', child: Text('Cambiar de centro')),
         const PopupMenuItem(value: 'logout', child: Text('Cerrar sesión')),
       ],
       child: CircleAvatar(
-        backgroundColor: KuraColors.primary.withOpacity(0.15),
+        backgroundColor: t.brandPrimary.withOpacity(0.15),
         child: Text(
           user.fullName.isNotEmpty ? user.fullName[0].toUpperCase() : '?',
-          style: const TextStyle(color: KuraColors.primary, fontWeight: FontWeight.w800),
+          style: TextStyle(color: t.brandPrimary, fontWeight: FontWeight.w800),
         ),
       ),
     );
   }
+}
+
+/// Color de marca asociado a un tipo de centro (para los chips del switcher).
+Color centerTypeColor(CenterType type) => BrandTokens.forCenterType(type).brandPrimary;
+
+/// Abre el selector de centro (switcher del ícono de apósitos / menú de
+/// usuario). Lista las membresías del usuario con su nombre y un chip de tipo
+/// coloreado; al elegir uno, cambia el centro activo (repinta la paleta).
+Future<void> showCenterSwitcher(BuildContext context, WidgetRef ref) async {
+  final session = ref.read(sessionProvider);
+  final user = session.user;
+  if (user == null || !session.canSwitchCenter) return;
+  final repo = await DataRepository.instance();
+  if (!context.mounted) return;
+
+  await showModalBottomSheet<void>(
+    context: context,
+    showDragHandle: true,
+    builder: (sheetCtx) {
+      final t = BrandTokens.of(sheetCtx);
+      return SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
+              child: Text('Cambiar de centro',
+                  style: TextStyle(
+                      fontSize: 18, fontWeight: FontWeight.w800, color: t.textPrimary)),
+            ),
+            ...session.memberships.map((m) {
+              final org = repo.organizationById(m.organizationId);
+              final type = org?.centerType ?? CenterType.clinicaHeridas;
+              final isActive = m.organizationId == user.organizationId;
+              return ListTile(
+                leading: CircleAvatar(
+                  backgroundColor: centerTypeColor(type).withOpacity(0.15),
+                  child: Icon(Icons.healing, color: centerTypeColor(type), size: 20),
+                ),
+                title: Text(org?.name ?? 'Centro'),
+                subtitle: Text('${type.label} · ${m.role.label}'),
+                trailing: isActive
+                    ? Icon(Icons.check_circle, color: t.brandPrimary)
+                    : null,
+                onTap: isActive
+                    ? null
+                    : () async {
+                        Navigator.of(sheetCtx).pop();
+                        final ok = await ref
+                            .read(sessionProvider.notifier)
+                            .switchCenter(m.organizationId);
+                        if (context.mounted && !ok) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                                content: Text('No se pudo cambiar de centro')),
+                          );
+                        }
+                      },
+              );
+            }),
+            const SizedBox(height: 8),
+          ],
+        ),
+      );
+    },
+  );
 }
 
 class _NavItem {
@@ -254,8 +339,10 @@ class UserMenuButton extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final user = ref.watch(sessionProvider).user;
+    final session = ref.watch(sessionProvider);
+    final user = session.user;
     if (user == null) return const SizedBox.shrink();
+    final t = BrandTokens.of(context);
     return Padding(
       padding: const EdgeInsets.only(right: 8),
       child: PopupMenuButton<String>(
@@ -264,6 +351,8 @@ class UserMenuButton extends ConsumerWidget {
           if (value == 'logout') {
             ref.read(sessionProvider.notifier).logout();
             context.go('/login');
+          } else if (value == 'switch') {
+            showCenterSwitcher(context, ref);
           }
         },
         itemBuilder: (context) => [
@@ -273,14 +362,16 @@ class UserMenuButton extends ConsumerWidget {
           ),
           PopupMenuItem(enabled: false, child: Text(user.role.label)),
           const PopupMenuDivider(),
+          if (session.canSwitchCenter)
+            const PopupMenuItem(value: 'switch', child: Text('Cambiar de centro')),
           const PopupMenuItem(value: 'logout', child: Text('Cerrar sesión')),
         ],
         child: CircleAvatar(
           radius: 16,
-          backgroundColor: KuraColors.primary.withOpacity(0.15),
+          backgroundColor: t.brandPrimary.withOpacity(0.15),
           child: Text(
             user.fullName.isNotEmpty ? user.fullName[0].toUpperCase() : '?',
-            style: const TextStyle(color: KuraColors.primary, fontWeight: FontWeight.w800),
+            style: TextStyle(color: t.brandPrimary, fontWeight: FontWeight.w800),
           ),
         ),
       ),

@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import 'core/theme/kura_theme.dart';
 import 'core/router/app_router.dart';
 import 'core/config/app_config.dart';
+import 'core/providers/session_provider.dart';
 import 'services/supabase/supabase_bootstrap.dart';
 
 /// Hardening (bug "pantalla en blanco al crear concepto de catalogo",
@@ -117,10 +118,13 @@ class KuraTrackerApp extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final router = ref.watch(routerProvider);
+    // Paleta reactiva al tipo de centro ACTIVO (morado/azul/rosa). Al alternar
+    // de centro desde el ícono de apósitos, el tema se reconstruye.
+    final centerType = ref.watch(activeCenterTypeProvider);
     return MaterialApp.router(
       title: 'KuraTracker',
       debugShowCheckedModeBanner: false,
-      theme: KuraTheme.light,
+      theme: KuraTheme.forType(centerType),
       routerConfig: router,
     );
   }

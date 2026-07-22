@@ -5,11 +5,13 @@ import '../core/config/app_config.dart';
 import '../models/adverse_event.dart';
 import '../models/antecedentes.dart';
 import '../models/app_user.dart';
+import '../models/center_type.dart';
 import '../models/clinical_amendment.dart';
 import '../models/consent.dart';
 import '../models/consultation.dart';
 import '../models/manual_appointment.dart';
 import '../models/organization.dart';
+import '../models/user_center_membership.dart';
 import '../models/patient.dart';
 import '../models/patient_admission.dart';
 import '../models/patient_diagnosis.dart';
@@ -240,6 +242,85 @@ class DataRepository {
 
   List<Organization> listOrganizations() =>
       _store.getAll(Collections.organizations).map(Organization.fromJson).toList();
+
+  /// Organización (centro) por id, o null si no está en la cache.
+  Organization? organizationById(String? organizationId) {
+    if (organizationId == null) return null;
+    for (final o in listOrganizations()) {
+      if (o.id == organizationId) return o;
+    }
+    return null;
+  }
+
+  /// Tipo del centro dado (default clinica_heridas si no se resuelve). Alimenta
+  /// la paleta reactiva (ver activeCenterTypeProvider) y los módulos por defecto.
+  CenterType centerTypeFor(String? organizationId) =>
+      organizationById(organizationId)?.centerType ?? CenterType.clinicaHeridas;
+
+  // -------------------- Multi-centro: membresías + switch --------------------
+  // (0040_center_types_memberships.sql). Un usuario puede pertenecer a varios
+  // centros; el centro ACTIVO vive en profiles.organization_id. El switch lo
+  // hace el RPC set_active_center validando membresía.
+
+  /// Membresías (centros a los que puede entrar) del perfil dado.
+  List<UserCenterMembership> listMembershipsFor(String profileId) => _store
+      .getAll(Collections.userCenterMemberships)
+      .map(UserCenterMembership.fromJson)
+      .where((m) => m.profileId == profileId && m.isActive)
+      .toList();
+
+  /// Cambia el centro ACTIVO del usuario autenticado a [organizationId] (debe
+  /// tener membresía activa). En Supabase usa el RPC set_active_center (que
+  /// también fija el rol de esa membresía) y re-hidrata la cache; en demo
+  /// actualiza el perfil directamente.
+  Future<void> setActiveCenter(String profileId, String organizationId) async {
+    final store = _store;
+    if (store is SupabaseDataStore) {
+      await store.callRpc('set_active_center', {'target_org': organizationId});
+      await hydrateAfterLogin();
+    } else {
+      // Demo: aplicar el rol de la membresía al perfil, igual que el RPC.
+      final membership = listMembershipsFor(profileId)
+          .where((m) => m.organizationId == organizationId);
+      final role = membership.isEmpty ? null : membership.first.role.dbValue;
+      await _store.updateRow(Collections.profiles, profileId, {
+        'organization_id': organizationId,
+        if (role != null) 'role': role,
+      });
+    }
+  }
+
+  /// Fija el tipo de un centro (solo master; la RLS de organizations permite
+  /// UPDATE al master, ver 0012). Cambia paleta y módulos por defecto.
+  Future<void> setCenterType(String organizationId, CenterType type) async {
+    await _store.updateRow(
+        Collections.organizations, organizationId, {'center_type': type.dbValue});
+  }
+
+  /// Membresías de un centro (para gestionarlas desde Plataforma).
+  List<UserCenterMembership> listMembershipsForOrg(String organizationId) => _store
+      .getAll(Collections.userCenterMemberships)
+      .map(UserCenterMembership.fromJson)
+      .where((m) => m.organizationId == organizationId)
+      .toList();
+
+  /// Otorga a un usuario acceso (membresía) a un centro con un rol. Solo
+  /// admin/master (RLS de user_center_memberships). Habilita que el usuario
+  /// aparezca en el switcher de ese centro.
+  Future<void> addMembership(String profileId, String organizationId, AppRole role) async {
+    await _store.insertRow(Collections.userCenterMemberships, {
+      'id': _uuid.v4(),
+      'profile_id': profileId,
+      'organization_id': organizationId,
+      'role': role.dbValue,
+      'is_active': true,
+    });
+  }
+
+  /// Revoca una membresía (por id).
+  Future<void> removeMembership(String membershipId) async {
+    await _store.deleteRow(Collections.userCenterMemberships, membershipId);
+  }
 
   /// Crea una organizacion (centro) nueva. Uso exclusivo del area
   /// "Plataforma" (solo master, ver PlatformHomeScreen): a diferencia del
