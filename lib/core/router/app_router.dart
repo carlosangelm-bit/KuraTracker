@@ -115,6 +115,7 @@ final routerProvider = Provider<GoRouter>((ref) {
               return ConsultationHubScreen(
                 patientId: state.pathParameters['patientId']!,
                 initialVisitType: visitType,
+                scheduledAppointmentRef: state.uri.queryParameters['appt'],
               );
             },
           ),
