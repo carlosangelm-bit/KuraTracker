@@ -54,20 +54,36 @@ extension RiskLevelX on RiskLevel {
       };
 }
 
-/// Una alerta preventiva disparada por una regla del catálogo.
-class PreventionAlert {
+/// Una acción preventiva concreta sugerida por una regla (registrable con
+/// fecha/autor en preventive_action_log). `id` es estable dentro de la regla.
+class PreventiveAction {
   final String id;
+  final String label;
+  const PreventiveAction({required this.id, required this.label});
+
+  factory PreventiveAction.fromJson(Map<String, dynamic> j) => PreventiveAction(
+        id: j['id'] as String,
+        label: j['label'] as String,
+      );
+}
+
+/// Una alerta preventiva disparada por una regla del catálogo. Incluye la guía
+/// para el profesional: `questions` (qué preguntarse) y `actions` (qué hacer).
+class PreventionAlert {
+  final String id; // = rule id
   final RiskDimension dimension;
   final RiskSeverity severity;
   final String message;
-  final String recommendation;
+  final List<String> questions;
+  final List<PreventiveAction> actions;
 
   const PreventionAlert({
     required this.id,
     required this.dimension,
     required this.severity,
     required this.message,
-    required this.recommendation,
+    this.questions = const [],
+    this.actions = const [],
   });
 }
 
@@ -95,7 +111,8 @@ class _Rule {
   final RiskDimension dimension;
   final RiskSeverity severity;
   final String message;
-  final String recommendation;
+  final List<String> questions;
+  final List<PreventiveAction> actions;
   final Map<String, dynamic> when;
 
   const _Rule({
@@ -103,7 +120,8 @@ class _Rule {
     required this.dimension,
     required this.severity,
     required this.message,
-    required this.recommendation,
+    required this.questions,
+    required this.actions,
     required this.when,
   });
 
@@ -112,7 +130,12 @@ class _Rule {
         dimension: RiskDimensionX.fromDb(j['dimension'] as String),
         severity: RiskSeverityX.fromDb(j['severity'] as String),
         message: j['message'] as String,
-        recommendation: (j['recommendation'] as String?) ?? '',
+        questions: ((j['questions'] as List?) ?? const [])
+            .map((e) => e.toString())
+            .toList(),
+        actions: ((j['actions'] as List?) ?? const [])
+            .map((e) => PreventiveAction.fromJson((e as Map).cast<String, dynamic>()))
+            .toList(),
         when: (j['when'] as Map?)?.cast<String, dynamic>() ?? const {},
       );
 }
@@ -170,7 +193,8 @@ class PreventionRulesCatalog {
           dimension: r.dimension,
           severity: r.severity,
           message: r.message,
-          recommendation: r.recommendation,
+          questions: r.questions,
+          actions: r.actions,
         ));
       }
     }

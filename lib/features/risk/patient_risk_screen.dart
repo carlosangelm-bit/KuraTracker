@@ -193,6 +193,154 @@ class _PatientRiskScreenState extends ConsumerState<PatientRiskScreen> {
     if (mounted) setState(() {});
   }
 
+  Future<void> _logAction(
+      DataRepository repo, PreventionAlert alert, PreventiveAction action) async {
+    final session = ref.read(sessionProvider);
+    await repo.logPreventiveAction(
+      patientId: widget.patientId,
+      organizationId: session.user?.organizationId,
+      ruleId: alert.id,
+      actionId: action.id,
+      actionLabel: action.label,
+      staffId: await _staffId(repo),
+    );
+    if (mounted) {
+      setState(() {});
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Acción registrada.')),
+      );
+    }
+  }
+
+  /// Sección de alertas de una dimensión (LPP / complicación).
+  Widget _alertSection(
+      DataRepository repo, String title, List<PreventionAlert> alerts) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(top: 8, bottom: 6),
+          child: Text(title,
+              style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14)),
+        ),
+        ...alerts.map((a) => _alertCard(repo, a)),
+      ],
+    );
+  }
+
+  Widget _alertCard(DataRepository repo, PreventionAlert a) {
+    final color = riskSeverityColor(a.severity);
+    return Card(
+      margin: const EdgeInsets.only(bottom: 10),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(top: 2, right: 8),
+                  child:
+                      Icon(Icons.warning_amber_rounded, size: 16, color: color),
+                ),
+                Expanded(
+                  child: Text(a.message,
+                      style: const TextStyle(fontWeight: FontWeight.w700)),
+                ),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: color.withOpacity(0.14),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(a.severity.label,
+                      style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: color)),
+                ),
+              ],
+            ),
+            if (a.questions.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Text('Qué preguntarte',
+                  style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: KuraColors.darkText.withOpacity(0.7))),
+              const SizedBox(height: 4),
+              ...a.questions.map((q) => Padding(
+                    padding: const EdgeInsets.only(bottom: 3),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('•  '),
+                        Expanded(
+                            child: Text(q,
+                                style:
+                                    Theme.of(context).textTheme.bodySmall)),
+                      ],
+                    ),
+                  )),
+            ],
+            if (a.actions.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Text('Acciones',
+                  style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: KuraColors.darkText.withOpacity(0.7))),
+              const SizedBox(height: 4),
+              ...a.actions.map((act) => _actionRow(repo, a, act)),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _actionRow(
+      DataRepository repo, PreventionAlert a, PreventiveAction act) {
+    final last = repo.lastAppliedAt(widget.patientId, a.id, act.id);
+    final done = last != null;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Icon(done ? Icons.check_circle : Icons.radio_button_unchecked,
+              size: 16,
+              color: done ? KuraColors.success : KuraColors.darkText.withOpacity(0.4)),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(act.label,
+                    style: const TextStyle(fontSize: 13)),
+                if (done)
+                  Text('Última: ${_dateFmt.format(last)}',
+                      style: TextStyle(
+                          fontSize: 11,
+                          color: KuraColors.darkText.withOpacity(0.55))),
+              ],
+            ),
+          ),
+          TextButton(
+            style: TextButton.styleFrom(
+                visualDensity: VisualDensity.compact,
+                foregroundColor: KuraColors.primary),
+            onPressed: () => _logAction(repo, a, act),
+            child: Text(done ? 'Registrar de nuevo' : 'Registrar'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final repoAsync = ref.watch(dataRepositoryProvider);
@@ -270,12 +418,11 @@ class _PatientRiskScreenState extends ConsumerState<PatientRiskScreen> {
                   )
                 else ...[
                   if (result.lpp.isNotEmpty)
-                    _AlertGroup(
-                        title: 'Riesgo de lesión por presión', alerts: result.lpp),
+                    _alertSection(
+                        repo, 'Riesgo de lesión por presión', result.lpp),
                   if (result.complicacion.isNotEmpty)
-                    _AlertGroup(
-                        title: 'Riesgo de complicación',
-                        alerts: result.complicacion),
+                    _alertSection(
+                        repo, 'Riesgo de complicación', result.complicacion),
                 ],
                 const SizedBox(height: 16),
                 Text(
@@ -363,68 +510,3 @@ class _InfoTile extends StatelessWidget {
   }
 }
 
-class _AlertGroup extends StatelessWidget {
-  final String title;
-  final List<PreventionAlert> alerts;
-  const _AlertGroup({required this.title, required this.alerts});
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.only(top: 8, bottom: 6),
-          child: Text(title,
-              style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14)),
-        ),
-        ...alerts.map((a) {
-          final color = riskSeverityColor(a.severity);
-          return Card(
-            margin: const EdgeInsets.only(bottom: 8),
-            child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.only(top: 3, right: 8),
-                        child: Icon(Icons.warning_amber_rounded,
-                            size: 16, color: color),
-                      ),
-                      Expanded(
-                        child: Text(a.message,
-                            style: const TextStyle(fontWeight: FontWeight.w600)),
-                      ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: color.withOpacity(0.14),
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: Text(a.severity.label,
-                            style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w700,
-                                color: color)),
-                      ),
-                    ],
-                  ),
-                  if (a.recommendation.isNotEmpty) ...[
-                    const SizedBox(height: 6),
-                    Text(a.recommendation,
-                        style: Theme.of(context).textTheme.bodySmall),
-                  ],
-                ],
-              ),
-            ),
-          );
-        }),
-      ],
-    );
-  }
-}
