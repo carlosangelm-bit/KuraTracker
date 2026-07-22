@@ -7,6 +7,8 @@ import '../models/antecedentes.dart';
 import '../models/app_user.dart';
 import '../models/center_type.dart';
 import '../models/clinical_amendment.dart';
+import '../models/module_key.dart';
+import '../models/module_setting.dart';
 import '../models/consent.dart';
 import '../models/consultation.dart';
 import '../models/manual_appointment.dart';
@@ -320,6 +322,114 @@ class DataRepository {
   /// Revoca una membresía (por id).
   Future<void> removeMembership(String membershipId) async {
     await _store.deleteRow(Collections.userCenterMemberships, membershipId);
+  }
+
+  // -------------------- Módulos configurables (Fase 2) --------------------
+  // (0041_module_settings.sql). Overrides de habilitación por centro/sitio/
+  // usuario; sin fila => default por tipo de centro (ModuleKey.defaultFor).
+
+  List<ModuleSetting> listModuleSettings({String? organizationId}) => _store
+      .getAll(Collections.moduleSettings)
+      .map(ModuleSetting.fromJson)
+      .where((m) => organizationId == null || m.organizationId == organizationId)
+      .toList();
+
+  /// Crea o actualiza el override de un módulo para un alcance
+  /// (centro / sitio / usuario). Pasar [enabled] null borra el override
+  /// (vuelve a heredar el nivel superior / default por tipo). Solo admin/master.
+  Future<void> setModuleSetting({
+    required String organizationId,
+    String? siteId,
+    String? profileId,
+    required ModuleKey module,
+    required bool? enabled,
+    String? updatedBy,
+  }) async {
+    final existing = _store.getAll(Collections.moduleSettings).map(ModuleSetting.fromJson).where(
+          (m) =>
+              m.organizationId == organizationId &&
+              m.siteId == siteId &&
+              m.profileId == profileId &&
+              m.moduleKey == module.dbValue,
+        );
+    if (enabled == null) {
+      if (existing.isNotEmpty) {
+        await _store.deleteRow(Collections.moduleSettings, existing.first.id);
+      }
+      return;
+    }
+    if (existing.isNotEmpty) {
+      await _store.updateRow(Collections.moduleSettings, existing.first.id, {
+        'enabled': enabled,
+        'updated_by': updatedBy,
+      });
+    } else {
+      await _store.insertRow(Collections.moduleSettings, {
+        'id': _uuid.v4(),
+        'organization_id': organizationId,
+        'site_id': siteId,
+        'profile_id': profileId,
+        'module_key': module.dbValue,
+        'enabled': enabled,
+        'updated_by': updatedBy,
+      });
+    }
+  }
+
+  /// Estado EFECTIVO de un módulo para (centro, sitio, usuario), resolviendo
+  /// usuario > sitio > centro > default-por-tipo.
+  bool isModuleEnabled(
+    ModuleKey module, {
+    required String? organizationId,
+    String? siteId,
+    String? profileId,
+  }) {
+    if (organizationId == null) {
+      return module.defaultFor(CenterType.clinicaHeridas);
+    }
+    final settings = listModuleSettings(organizationId: organizationId)
+        .where((m) => m.moduleKey == module.dbValue)
+        .toList();
+    ModuleSetting? matchWhere(bool Function(ModuleSetting) test) {
+      for (final m in settings) {
+        if (test(m)) return m;
+      }
+      return null;
+    }
+
+    // usuario > sitio > centro
+    final userOverride =
+        profileId == null ? null : matchWhere((m) => m.profileId == profileId);
+    if (userOverride != null) return userOverride.enabled;
+    final siteOverride = siteId == null ? null : matchWhere((m) => m.siteId == siteId);
+    if (siteOverride != null) return siteOverride.enabled;
+    final centerOverride =
+        matchWhere((m) => m.siteId == null && m.profileId == null);
+    if (centerOverride != null) return centerOverride.enabled;
+
+    return module.defaultFor(centerTypeFor(organizationId));
+  }
+
+  /// Sitio primario del usuario (vía su fila de staff), para resolver overrides
+  /// de módulo a nivel sitio. null si no tiene staff/sitio.
+  String? primarySiteIdForProfile(String? profileId) {
+    if (profileId == null) return null;
+    for (final s in _store.getAll(Collections.staff)) {
+      if (s['profile_id'] == profileId) return s['primary_site_id'] as String?;
+    }
+    return null;
+  }
+
+  /// Conjunto de módulos habilitados para el contexto dado (para el nav).
+  Set<ModuleKey> enabledModules({
+    required String? organizationId,
+    String? siteId,
+    String? profileId,
+  }) {
+    return ModuleKey.values
+        .where((m) => isModuleEnabled(m,
+            organizationId: organizationId, siteId: siteId, profileId: profileId))
+        .toSet();
   }
 
   /// Crea una organizacion (centro) nueva. Uso exclusivo del area

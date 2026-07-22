@@ -7,7 +7,9 @@ import '../../core/router/app_shell.dart' show UserMenuButton, centerTypeColor;
 import '../../core/widgets/kura_primary_fab.dart';
 import '../../models/app_user.dart';
 import '../../models/center_type.dart';
+import '../../models/module_key.dart';
 import '../../models/organization.dart';
+import '../../models/site.dart';
 import '../../models/user_center_membership.dart';
 import '../../services/data_repository.dart';
 import '../admin/admin_home_screen.dart'
@@ -43,7 +45,7 @@ class _PlatformHomeScreenState extends ConsumerState<PlatformHomeScreen>
   // DefaultTabController: TabBar en AppBar.bottom queda como hermano,
   // no ancestro/descendiente, de un DefaultTabController que solo
   // envuelve el body).
-  late final TabController _tabController = TabController(length: 6, vsync: this)
+  late final TabController _tabController = TabController(length: 7, vsync: this)
     ..addListener(() {
       if (_tabController.indexIsChanging) return;
       if (_tabController.index != _tab) {
@@ -94,6 +96,7 @@ class _PlatformHomeScreenState extends ConsumerState<PlatformHomeScreen>
             Tab(text: 'Sitios'),
             Tab(text: 'Catálogo'),
             Tab(text: 'Marca'),
+            Tab(text: 'Módulos'),
           ],
           onTap: (i) => setState(() => _tab = i),
         ),
@@ -149,7 +152,12 @@ class _PlatformHomeScreenState extends ConsumerState<PlatformHomeScreen>
                   2 => StaffTab(repo: repo, organizationId: _selectedOrgId),
                   3 => SitesTab(repo: repo, organizationId: _selectedOrgId),
                   4 => NoteCatalogTab(repo: repo, organizationId: _selectedOrgId),
-                  _ => BrandingTab(repo: repo, organizationId: _selectedOrgId),
+                  5 => BrandingTab(repo: repo, organizationId: _selectedOrgId),
+                  _ => _ModulesTab(
+                      repo: repo,
+                      organizationId: _selectedOrgId,
+                      updatedBy: ref.watch(sessionProvider).user?.id,
+                    ),
                 },
               ),
             ],
@@ -342,6 +350,180 @@ class _OrganizationsTab extends StatelessWidget {
         label: 'Nuevo centro',
       ),
     );
+  }
+}
+
+/// Pestaña "Módulos": el master enciende/apaga módulos por centro, sitio o
+/// usuario. Sin override => hereda el default del tipo de centro (0040/0041).
+/// Los defaults por tipo son solo sugerencia: se puede, p.ej., encender
+/// Prevención en una clínica de heridas. Apagar solo oculta (datos intactos).
+class _ModulesTab extends StatefulWidget {
+  final DataRepository repo;
+  final String? organizationId;
+  final String? updatedBy;
+  const _ModulesTab({required this.repo, required this.organizationId, this.updatedBy});
+
+  @override
+  State<_ModulesTab> createState() => _ModulesTabState();
+}
+
+enum _ModuleScope { centro, sitio, usuario }
+
+class _ModulesTabState extends State<_ModulesTab> {
+  _ModuleScope _scope = _ModuleScope.centro;
+  String? _siteId;
+  String? _profileId;
+  bool _busy = false;
+
+  Organization? get _org => widget.repo.organizationById(widget.organizationId);
+
+  @override
+  Widget build(BuildContext context) {
+    final orgId = widget.organizationId;
+    if (orgId == null || _org == null) {
+      return const Center(child: Text('Selecciona un centro.'));
+    }
+    final org = _org!;
+    final sites = widget.repo.listSites(organizationId: orgId).where((s) => s.isActive).toList();
+    final users =
+        widget.repo.listUsers().where((u) => u.organizationId == orgId && u.role != AppRole.master).toList();
+
+    // Contexto del override según el alcance elegido.
+    final scopeSiteId = _scope == _ModuleScope.sitio ? _siteId : null;
+    final scopeProfileId = _scope == _ModuleScope.usuario ? _profileId : null;
+    final scopeSelected = _scope == _ModuleScope.centro ||
+        (_scope == _ModuleScope.sitio && scopeSiteId != null) ||
+        (_scope == _ModuleScope.usuario && scopeProfileId != null);
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 88),
+      children: [
+        Text('Módulos de ${org.name}',
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
+        const SizedBox(height: 4),
+        Text('Tipo: ${org.centerType.label}. Sin ajuste = hereda el valor por tipo.',
+            style: const TextStyle(fontSize: 12, color: Colors.black54)),
+        const SizedBox(height: 12),
+        SegmentedButton<_ModuleScope>(
+          segments: const [
+            ButtonSegment(value: _ModuleScope.centro, label: Text('Centro')),
+            ButtonSegment(value: _ModuleScope.sitio, label: Text('Sitio')),
+            ButtonSegment(value: _ModuleScope.usuario, label: Text('Usuario')),
+          ],
+          selected: {_scope},
+          onSelectionChanged: (s) => setState(() => _scope = s.first),
+        ),
+        const SizedBox(height: 12),
+        if (_scope == _ModuleScope.sitio)
+          DropdownButtonFormField<String>(
+            value: _siteId,
+            decoration: const InputDecoration(labelText: 'Sitio'),
+            items: sites
+                .map((Site s) => DropdownMenuItem(value: s.id, child: Text(s.name)))
+                .toList(),
+            onChanged: (v) => setState(() => _siteId = v),
+          ),
+        if (_scope == _ModuleScope.usuario)
+          DropdownButtonFormField<String>(
+            value: _profileId,
+            decoration: const InputDecoration(labelText: 'Usuario'),
+            items: users
+                .map((u) => DropdownMenuItem(value: u.id, child: Text(u.fullName)))
+                .toList(),
+            onChanged: (v) => setState(() => _profileId = v),
+          ),
+        const SizedBox(height: 12),
+        if (!scopeSelected)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 24),
+            child: Center(child: Text('Elige un sitio o usuario para configurar.')),
+          )
+        else
+          ...ModuleKey.values.map((m) => _moduleRow(
+                m,
+                orgId: orgId,
+                siteId: scopeSiteId,
+                profileId: scopeProfileId,
+              )),
+      ],
+    );
+  }
+
+  Widget _moduleRow(ModuleKey m,
+      {required String orgId, String? siteId, String? profileId}) {
+    // Override actual EXACTO en este alcance (si existe).
+    final settings = widget.repo.listModuleSettings(organizationId: orgId).where((s) =>
+        s.moduleKey == m.dbValue && s.siteId == siteId && s.profileId == profileId);
+    final override = settings.isEmpty ? null : settings.first.enabled;
+
+    // Valor heredado (lo que aplicaría sin override en este alcance): se calcula
+    // resolviendo el nivel inmediatamente superior.
+    final inherited = _inheritedValue(m, orgId: orgId, siteId: siteId, profileId: profileId);
+
+    // Estado del selector: null = Heredado.
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(m.label, style: const TextStyle(fontWeight: FontWeight.w600)),
+                  Text('Heredado: ${inherited ? "encendido" : "apagado"}',
+                      style: const TextStyle(fontSize: 11, color: Colors.black54)),
+                ],
+              ),
+            ),
+            DropdownButton<String>(
+              value: override == null ? 'inherit' : (override ? 'on' : 'off'),
+              underline: const SizedBox.shrink(),
+              onChanged: _busy
+                  ? null
+                  : (v) async {
+                      final enabled = v == 'inherit' ? null : v == 'on';
+                      setState(() => _busy = true);
+                      try {
+                        await widget.repo.setModuleSetting(
+                          organizationId: orgId,
+                          siteId: siteId,
+                          profileId: profileId,
+                          module: m,
+                          enabled: enabled,
+                          updatedBy: widget.updatedBy,
+                        );
+                      } finally {
+                        if (mounted) setState(() => _busy = false);
+                      }
+                    },
+              items: const [
+                DropdownMenuItem(value: 'inherit', child: Text('Heredado')),
+                DropdownMenuItem(value: 'on', child: Text('Encendido')),
+                DropdownMenuItem(value: 'off', child: Text('Apagado')),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Valor que aplicaría SIN override en el alcance actual (el nivel superior).
+  bool _inheritedValue(ModuleKey m,
+      {required String orgId, String? siteId, String? profileId}) {
+    if (profileId != null) {
+      // usuario hereda de: sitio del usuario (si tuviera) -> centro -> default
+      return widget.repo.isModuleEnabled(m,
+          organizationId: orgId,
+          siteId: widget.repo.primarySiteIdForProfile(profileId));
+    }
+    if (siteId != null) {
+      // sitio hereda de: centro -> default
+      return widget.repo.isModuleEnabled(m, organizationId: orgId);
+    }
+    // centro hereda de: default por tipo
+    return m.defaultFor(_org!.centerType);
   }
 }
 

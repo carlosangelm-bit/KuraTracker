@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../providers/session_provider.dart';
 import '../../models/app_user.dart';
+import '../../models/module_key.dart';
 import '../../features/auth/login_screen.dart';
 import '../../features/dashboard/dashboard_screen.dart';
 import '../../features/patients/patients_list_screen.dart';
@@ -76,6 +77,17 @@ final routerProvider = Provider<GoRouter>((ref) {
         // que teclee '/platform' a mano no debe quedarse ahi -- se le manda
         // a su dashboard normal.
         return '/';
+      }
+
+      // Gating por módulo (Fase 2): si la ruta pertenece a un módulo apagado
+      // para el centro/sitio/usuario, se redirige al dashboard. Solo aplica a
+      // no-master (el master no navega rutas clínicas). No bloquea datos (eso
+      // lo hace la RLS); es coherencia de navegación con el nav visible.
+      if (loggedIn && !isMaster) {
+        final module = ModuleKeyX.forRoute(location);
+        if (module != null && !ref.read(enabledModulesProvider).contains(module)) {
+          return '/';
+        }
       }
 
       return null;
