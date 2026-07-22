@@ -320,6 +320,8 @@ class _WoundCaptureScreenState extends ConsumerState<WoundCaptureScreen> {
           'tipo_cierre': formState.tipoCierre?.name,
           'drenaje_tipo': formState.drenajeTipo?.name,
           'sutura_tipo': formState.suturaTipo?.name,
+          'drenaje_num': formState.drenajeNum,
+          'sutura_num': formState.suturaNum,
         });
       }
 
@@ -1262,6 +1264,17 @@ class _WoundCaptureScreenState extends ConsumerState<WoundCaptureScreen> {
                 label: (v) => v.label,
                 onSelected: (v) => update(() => formState.drenajeTipo = v),
               ),
+              if (formState.drenajeTipo != null &&
+                  formState.drenajeTipo != DrenajeTipo.ninguno) ...[
+                const SizedBox(height: 8),
+                TextFormField(
+                  decoration:
+                      const InputDecoration(labelText: 'Nº de drenajes'),
+                  keyboardType: TextInputType.number,
+                  onChanged: (v) =>
+                      update(() => formState.drenajeNum = int.tryParse(v)),
+                ),
+              ],
               const SizedBox(height: 12),
               _enumChips<SuturaTipo>(
                 title: 'Sutura / afrontamiento',
@@ -1270,6 +1283,17 @@ class _WoundCaptureScreenState extends ConsumerState<WoundCaptureScreen> {
                 label: (v) => v.label,
                 onSelected: (v) => update(() => formState.suturaTipo = v),
               ),
+              if (formState.suturaTipo != null &&
+                  formState.suturaTipo != SuturaTipo.ninguna) ...[
+                const SizedBox(height: 8),
+                TextFormField(
+                  decoration: const InputDecoration(
+                      labelText: 'Nº de puntos / grapas'),
+                  keyboardType: TextInputType.number,
+                  onChanged: (v) =>
+                      update(() => formState.suturaNum = int.tryParse(v)),
+                ),
+              ],
             ],
           ),
         );

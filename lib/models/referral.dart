@@ -23,7 +23,15 @@ extension ReferralStatusLabel on ReferralStatus {
 
 /// Adjuntos posibles de una referencia (checklist). Se persisten como objeto
 /// JSON booleano en `referrals.adjuntos` (clave = [jsonKey]).
-enum ReferralAdjunto { reporteEkare, resumenClinico, cultivo, itb, laboratorios }
+enum ReferralAdjunto {
+  reporteEkare,
+  resumenClinico,
+  cultivo,
+  itb,
+  laboratorios,
+  estudiosGabinete,
+  informesPreviosEspecialidades,
+}
 
 extension ReferralAdjuntoLabel on ReferralAdjunto {
   String get jsonKey {
@@ -38,6 +46,10 @@ extension ReferralAdjuntoLabel on ReferralAdjunto {
         return 'itb';
       case ReferralAdjunto.laboratorios:
         return 'laboratorios';
+      case ReferralAdjunto.estudiosGabinete:
+        return 'estudios_gabinete';
+      case ReferralAdjunto.informesPreviosEspecialidades:
+        return 'informes_previos_especialidades';
     }
   }
 
@@ -53,6 +65,10 @@ extension ReferralAdjuntoLabel on ReferralAdjunto {
         return 'ITB / Doppler';
       case ReferralAdjunto.laboratorios:
         return 'Laboratorios';
+      case ReferralAdjunto.estudiosGabinete:
+        return 'Estudios de gabinete';
+      case ReferralAdjunto.informesPreviosEspecialidades:
+        return 'Informes previos de otras especialidades';
     }
   }
 

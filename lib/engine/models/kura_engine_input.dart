@@ -223,14 +223,15 @@ class KuraEngineInput {
 
   bool get isquemiaCritica => abiCategory == AbiCategory.low;
 
-  /// Modalidad de tratamiento sugerida por el rango de Braden (Protocolo LPP).
-  /// Bandas estándar de Braden: <=12 = riesgo alto/muy alto -> a cargo de
-  /// clínica; >=13 = moderado/bajo/sin riesgo -> tratamiento compartido.
-  /// Null si no se capturó Braden.
+  /// Modalidad de tratamiento sugerida por el rango de Braden (Protocolo LPP,
+  /// bandas validadas por María 2026-07): riesgo bajo (18–23) -> tratamiento
+  /// COMPARTIDO; riesgo medio (13–17), alto (10–12) y muy alto (≤9) -> A CARGO
+  /// DE LA CLÍNICA (en el medio, al menos el primer mes + evaluar
+  /// tunelizaciones/socavamientos). Null si no se capturó Braden.
   ModalidadTratamiento? get bradenModalidad {
     final b = bradenScore;
     if (b == null) return null;
-    return b <= 12
+    return b <= 17
         ? ModalidadTratamiento.aCargoClinica
         : ModalidadTratamiento.compartido;
   }

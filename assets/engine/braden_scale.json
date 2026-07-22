@@ -78,8 +78,7 @@
   "risk_levels": [
     { "id": "muy_alto", "label": "Riesgo muy alto", "min_score": 6,  "max_score": 9 },
     { "id": "alto",     "label": "Riesgo alto",     "min_score": 10, "max_score": 12 },
-    { "id": "moderado", "label": "Riesgo moderado", "min_score": 13, "max_score": 14 },
-    { "id": "bajo",     "label": "Riesgo bajo",     "min_score": 15, "max_score": 18 },
-    { "id": "minimo",   "label": "Sin riesgo significativo", "min_score": 19, "max_score": 23 }
+    { "id": "medio",    "label": "Riesgo medio",    "min_score": 13, "max_score": 17 },
+    { "id": "bajo",     "label": "Riesgo bajo",     "min_score": 18, "max_score": 23 }
   ]
 }

@@ -69,9 +69,9 @@
     {
       "id": "lpp_moderado",
       "dimension": "lpp",
-      "when": { "bradenMin": 13, "bradenMax": 14 },
+      "when": { "bradenMin": 13, "bradenMax": 17 },
       "severity": "medio",
-      "message": "LPP · Riesgo MODERADO (Braden 13–14)",
+      "message": "LPP · Riesgo MEDIO (Braden 13–17) — 1.er mes a cargo de la clínica; evaluar tunelizaciones/socavamientos",
       "questions": [
         { "text": "¿Hay eritema que NO blanquea en prominencias óseas?", "alarm": "Sí" },
         { "text": "¿Permanece más de 2–3 h en la misma posición?", "alarm": "Sí" },
@@ -98,9 +98,9 @@
     {
       "id": "lpp_bajo",
       "dimension": "lpp",
-      "when": { "bradenMin": 15, "bradenMax": 18 },
+      "when": { "bradenMin": 18, "bradenMax": 23 },
       "severity": "bajo",
-      "message": "LPP · Riesgo BAJO (Braden 15–18)",
+      "message": "LPP · Riesgo BAJO (Braden 18–23) — candidato a tratamiento compartido",
       "questions": [
         { "text": "¿Hay enrojecimiento en alguna prominencia ósea?", "alarm": "Sí" },
         { "text": "¿La piel está húmeda por incontinencia o sudoración?", "alarm": "Sí" }
