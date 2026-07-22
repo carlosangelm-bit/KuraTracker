@@ -570,6 +570,7 @@ class DataRepository {
     String? primarySiteId,
     String? profileId,
     String? cedulaProfesional,
+    String? especialidad,
   }) async {
     final existing = _store.getAll(Collections.staff);
     final year = DateTime.now().year;
@@ -588,6 +589,7 @@ class DataRepository {
       'is_active': true,
       'created_at': DateTime.now().toIso8601String(),
       'cedula_profesional': cedulaProfesional,
+      'especialidad': especialidad,
       'organization_id': organizationId,
     };
     final saved = await _store.insertRow(Collections.staff, data);
@@ -612,10 +614,17 @@ class DataRepository {
     bool clearProfileId = false,
     String? cedulaProfesional,
     bool clearCedulaProfesional = false,
+    String? especialidad,
+    bool clearEspecialidad = false,
   }) async {
     final patch = <String, dynamic>{};
     if (fullName != null) patch['full_name'] = fullName;
     if (roleTitle != null) patch['role_title'] = roleTitle;
+    if (clearEspecialidad) {
+      patch['especialidad'] = null;
+    } else if (especialidad != null) {
+      patch['especialidad'] = especialidad;
+    }
     if (clearPrimarySiteId) {
       patch['primary_site_id'] = null;
     } else if (primarySiteId != null) {
@@ -1515,6 +1524,7 @@ class DataRepository {
     String? followUpEvolution,
     String? followUpSignedBy,
     String? followUpSignedLicense,
+    String? followUpSignedSpecialty,
     String? followUpSignature,
     DateTime? followUpSignedAt,
     // Cita de la agenda que originó esta consulta (0035), formato
@@ -1538,6 +1548,7 @@ class DataRepository {
       'follow_up_evolution': followUpEvolution,
       'follow_up_signed_by': followUpSignedBy,
       'follow_up_signed_license': followUpSignedLicense,
+      'follow_up_signed_specialty': followUpSignedSpecialty,
       'follow_up_signature': followUpSignature,
       'follow_up_signed_at': followUpSignedAt?.toIso8601String(),
       'scheduled_appointment_ref': scheduledAppointmentRef,
@@ -1810,11 +1821,13 @@ class DataRepository {
   /// Egreso del episodio de una herida (Prompt 5): cierra la herida con un
   /// motivo estructurado (cierre/alta voluntaria/abandono/defunción) y marca
   /// closed_at. `motivoEgreso` es el `name` del enum MotivoEgreso.
-  Future<Wound> closeWound(String woundId, MotivoEgreso motivoEgreso) async {
+  Future<Wound> closeWound(String woundId, MotivoEgreso motivoEgreso,
+      {String? dischargeNote}) async {
     final saved = await _store.updateRow(Collections.wounds, woundId, {
       'is_active': false,
       'closed_at': DateTime.now().toIso8601String(),
       'discharge_reason': motivoEgreso.name,
+      'discharge_note': dischargeNote,
     });
     return Wound.fromJson(saved);
   }
