@@ -350,13 +350,63 @@ class _PatientRiskScreenState extends ConsumerState<PatientRiskScreen> {
                 ],
                 if (a.actions.isNotEmpty) ...[
                   const SizedBox(height: 12),
-                  _sectionLabel(Icons.checklist_rtl, 'Acciones'),
+                  _sectionLabel(Icons.checklist_rtl,
+                      a.escalation == null ? 'Acciones' : 'Prevención'),
                   const SizedBox(height: 6),
                   ...a.actions.map((act) => _actionRow(repo, a, act)),
+                ],
+                if (a.escalation != null && _hasAlarm(a)) ...[
+                  const SizedBox(height: 12),
+                  _escalationBlock(repo, a),
                 ],
               ],
             ),
           ),
+        ],
+      ),
+    );
+  }
+
+  /// true si el profesional respondió con la respuesta de alarma a alguna
+  /// pregunta de la alerta.
+  bool _hasAlarm(PreventionAlert a) {
+    for (var i = 0; i < a.questions.length; i++) {
+      final q = a.questions[i];
+      if (q.alarm != null && _answers['${a.id}::$i'] == q.alarm) return true;
+    }
+    return false;
+  }
+
+  /// Conducta de escalamiento (se muestra cuando hay un hallazgo de alarma).
+  Widget _escalationBlock(DataRepository repo, PreventionAlert a) {
+    final esc = a.escalation!;
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 6),
+      decoration: BoxDecoration(
+        color: KuraColors.danger.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: KuraColors.danger.withOpacity(0.4)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.priority_high_rounded,
+                  size: 16, color: KuraColors.danger),
+              const SizedBox(width: 6),
+              Text('CONDUCTA ANTE HALLAZGOS DE ALARMA',
+                  style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.4,
+                      color: KuraColors.danger)),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(esc.message, style: const TextStyle(fontSize: 13)),
+          const SizedBox(height: 6),
+          ...esc.actions.map((act) => _actionRow(repo, a, act)),
         ],
       ),
     );
@@ -521,11 +571,41 @@ class _PatientRiskScreenState extends ConsumerState<PatientRiskScreen> {
             final result = repo.computeRisk(widget.patientId, catalog);
             final admission = repo.activeAdmission(widget.patientId);
             final braden = repo.latestRiskAssessment(widget.patientId);
+            final anyEscalation = result.alerts
+                .any((a) => a.escalation != null && _hasAlarm(a));
 
             return ListView(
               padding: const EdgeInsets.all(20),
               children: [
                 _RiskLevelBanner(level: result.level),
+                if (anyEscalation) ...[
+                  const SizedBox(height: 10),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 14, vertical: 12),
+                    decoration: BoxDecoration(
+                      color: KuraColors.danger.withOpacity(0.12),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: KuraColors.danger),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.priority_high_rounded,
+                            color: KuraColors.danger),
+                        const SizedBox(width: 10),
+                        const Expanded(
+                          child: Text(
+                            'Se detectaron signos de alarma. Revisa la conducta '
+                            'de escalamiento en las alertas marcadas.',
+                            style: TextStyle(
+                                fontWeight: FontWeight.w700,
+                                color: KuraColors.danger),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 16),
                 _InfoTile(
                   icon: Icons.local_hotel_outlined,
