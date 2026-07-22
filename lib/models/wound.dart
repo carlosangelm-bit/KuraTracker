@@ -79,6 +79,9 @@ class Wound {
   final TipoCierre? tipoCierre;
   final DrenajeTipo? drenajeTipo;
   final SuturaTipo? suturaTipo;
+  // Nº de drenajes y de puntos/grapas sobre la herida quirúrgica (0038).
+  final int? drenajeNum;
+  final int? suturaNum;
   // Egreso del episodio (estructurado)
   final MotivoEgreso? motivoEgreso;
   final bool isActive;
@@ -111,6 +114,8 @@ class Wound {
     this.tipoCierre,
     this.drenajeTipo,
     this.suturaTipo,
+    this.drenajeNum,
+    this.suturaNum,
     this.motivoEgreso,
     this.isActive = true,
     this.closedAt,
@@ -155,6 +160,8 @@ class Wound {
         tipoCierre: enumByName(TipoCierre.values, json['tipo_cierre']),
         drenajeTipo: enumByName(DrenajeTipo.values, json['drenaje_tipo']),
         suturaTipo: enumByName(SuturaTipo.values, json['sutura_tipo']),
+        drenajeNum: (json['drenaje_num'] as num?)?.toInt(),
+        suturaNum: (json['sutura_num'] as num?)?.toInt(),
         motivoEgreso: enumByName(MotivoEgreso.values, json['discharge_reason']),
         isActive: json['is_active'] as bool? ?? true,
         closedAt: json['closed_at'] == null
@@ -189,6 +196,8 @@ class Wound {
         'tipo_cierre': tipoCierre?.name,
         'drenaje_tipo': drenajeTipo?.name,
         'sutura_tipo': suturaTipo?.name,
+        'drenaje_num': drenajeNum,
+        'sutura_num': suturaNum,
         'discharge_reason': motivoEgreso?.name,
         'is_active': isActive,
         'closed_at': closedAt?.toIso8601String(),

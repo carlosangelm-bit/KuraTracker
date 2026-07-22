@@ -250,13 +250,15 @@ enum AgenteCausal { mordedura, armaFuego, aplastamiento, punzocortante, otro }
 // ===========================================================================
 
 /// Subtipo clínico del pie diabético (UPD).
-enum UpdSubtipo { neuropatica, isquemica, neuroinfecciosa, neuroisquemica }
+enum UpdSubtipo { neuropatica, infecciosa, isquemica, neuroinfecciosa, neuroisquemica }
 
 extension UpdSubtipoLabel on UpdSubtipo {
   String get label {
     switch (this) {
       case UpdSubtipo.neuropatica:
         return 'Neuropática';
+      case UpdSubtipo.infecciosa:
+        return 'Infecciosa';
       case UpdSubtipo.isquemica:
         return 'Isquémica';
       case UpdSubtipo.neuroinfecciosa:
@@ -426,8 +428,8 @@ extension TipoCierreLabel on TipoCierre {
   }
 }
 
-/// Tipo de drenaje quirúrgico (estructurado).
-enum DrenajeTipo { ninguno, penrose, aspiracionCerrada, tubular, otro }
+/// Tipo de drenaje quirúrgico (catálogo validado por María 2026-07).
+enum DrenajeTipo { ninguno, penrose, jackson, blake, pleurovac, hemovac, otro }
 
 extension DrenajeTipoLabel on DrenajeTipo {
   String get label {
@@ -436,19 +438,26 @@ extension DrenajeTipoLabel on DrenajeTipo {
         return 'Sin drenaje';
       case DrenajeTipo.penrose:
         return 'Penrose';
-      case DrenajeTipo.aspiracionCerrada:
-        return 'Aspiración cerrada (Jackson-Pratt/Blake)';
-      case DrenajeTipo.tubular:
-        return 'Tubular / sonda';
+      case DrenajeTipo.jackson:
+        return 'Jackson-Pratt';
+      case DrenajeTipo.blake:
+        return 'Blake';
+      case DrenajeTipo.pleurovac:
+        return 'Pleurovac';
+      case DrenajeTipo.hemovac:
+        return 'Hemovac';
       case DrenajeTipo.otro:
         return 'Otro';
     }
   }
 }
 
-/// Tipo de sutura/afrontamiento (estructurado).
+/// Tipo de sutura/afrontamiento (estructurado). Cierre por primera intención:
+/// intradérmica, dérmica, grapas (validado por María 2026-07).
 enum SuturaTipo {
   ninguna,
+  intradermica,
+  dermica,
   puntosSeparados,
   continua,
   colchonero,
@@ -462,6 +471,10 @@ extension SuturaTipoLabel on SuturaTipo {
     switch (this) {
       case SuturaTipo.ninguna:
         return 'Sin sutura';
+      case SuturaTipo.intradermica:
+        return 'Intradérmica';
+      case SuturaTipo.dermica:
+        return 'Dérmica';
       case SuturaTipo.puntosSeparados:
         return 'Puntos separados';
       case SuturaTipo.continua:

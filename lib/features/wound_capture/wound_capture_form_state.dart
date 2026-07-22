@@ -51,6 +51,8 @@ class WoundCaptureFormState {
   TipoCierre? tipoCierre;
   DrenajeTipo? drenajeTipo;
   SuturaTipo? suturaTipo;
+  int? drenajeNum; // nº de drenajes
+  int? suturaNum; // nº de puntos / grapas
 
   // ---- Evaluacion clinica ----
   double? glucoseMgDl;
