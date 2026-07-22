@@ -1,0 +1,85 @@
+{
+  "scale_name": "Braden",
+  "total_score_min": 6,
+  "total_score_max": 23,
+  "items": [
+    {
+      "id": "percepcion_sensorial",
+      "label": "Percepción sensorial",
+      "min_score": 1,
+      "max_score": 4,
+      "options": [
+        { "score": 1, "label": "Completamente limitada" },
+        { "score": 2, "label": "Muy limitada" },
+        { "score": 3, "label": "Ligeramente limitada" },
+        { "score": 4, "label": "Sin deterioro" }
+      ]
+    },
+    {
+      "id": "humedad",
+      "label": "Humedad",
+      "min_score": 1,
+      "max_score": 4,
+      "options": [
+        { "score": 1, "label": "Constante humedad" },
+        { "score": 2, "label": "Muy húmedo" },
+        { "score": 3, "label": "Ocasionalmente húmedo" },
+        { "score": 4, "label": "Raramente húmedo" }
+      ]
+    },
+    {
+      "id": "actividad",
+      "label": "Actividad",
+      "min_score": 1,
+      "max_score": 4,
+      "options": [
+        { "score": 1, "label": "En cama" },
+        { "score": 2, "label": "En silla" },
+        { "score": 3, "label": "Deambula ocasionalmente" },
+        { "score": 4, "label": "Deambula frecuentemente" }
+      ]
+    },
+    {
+      "id": "movilidad",
+      "label": "Movilidad",
+      "min_score": 1,
+      "max_score": 4,
+      "options": [
+        { "score": 1, "label": "Completamente inmóvil" },
+        { "score": 2, "label": "Muy limitada" },
+        { "score": 3, "label": "Ligeramente limitada" },
+        { "score": 4, "label": "Sin limitaciones" }
+      ]
+    },
+    {
+      "id": "nutricion",
+      "label": "Nutrición",
+      "min_score": 1,
+      "max_score": 4,
+      "options": [
+        { "score": 1, "label": "Muy pobre" },
+        { "score": 2, "label": "Probablemente inadecuada" },
+        { "score": 3, "label": "Adecuada" },
+        { "score": 4, "label": "Excelente" }
+      ]
+    },
+    {
+      "id": "friccion_cizallamiento",
+      "label": "Fricción / cizallamiento",
+      "min_score": 1,
+      "max_score": 3,
+      "options": [
+        { "score": 1, "label": "Problema significativo" },
+        { "score": 2, "label": "Problema potencial" },
+        { "score": 3, "label": "Problema mínimo o inexistente" }
+      ]
+    }
+  ],
+  "risk_levels": [
+    { "id": "muy_alto", "label": "Riesgo muy alto", "min_score": 6,  "max_score": 9 },
+    { "id": "alto",     "label": "Riesgo alto",     "min_score": 10, "max_score": 12 },
+    { "id": "moderado", "label": "Riesgo moderado", "min_score": 13, "max_score": 14 },
+    { "id": "bajo",     "label": "Riesgo bajo",     "min_score": 15, "max_score": 18 },
+    { "id": "minimo",   "label": "Sin riesgo significativo", "min_score": 19, "max_score": 23 }
+  ]
+}
