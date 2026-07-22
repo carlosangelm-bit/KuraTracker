@@ -13,7 +13,7 @@ class DemoSeed {
   // sola vez en instalaciones demo previas (que tenían 'seeded' v1), evitando
   // duplicados y datos viejos. Solo aplica al modo demo local (SharedPreferences);
   // producción usa Supabase y nunca llama a este seed.
-  static const String _seedFlag = 'seeded_v6';
+  static const String _seedFlag = 'seeded_v7';
 
   static Future<void> ensureSeeded(LocalStore store) async {
     if (store.getBool(_seedFlag)) return;
@@ -46,19 +46,40 @@ class DemoSeed {
     // selector de centro en PlatformHomeScreen tenga algo real que
     // mostrar al cambiar de organizacion.
     final organizationId2 = _uuid.v4();
+    // Centros de demo para los tipos hospital y cuidadores (0040). Permiten
+    // probar el switcher del ícono de apósitos (paleta morado/azul/rosa) y, en
+    // fases siguientes, la agenda de prevención por tipo de centro.
+    final organizationIdHospital = _uuid.v4();
+    final organizationIdCuidadores = _uuid.v4();
 
     await store.saveAll(Collections.organizations, [
       {
         'id': organizationId,
         'name': 'Kura+',
         'is_active': true,
+        'center_type': 'clinica_heridas',
         'created_at': iso(now.subtract(const Duration(days: 400))),
       },
       {
         'id': organizationId2,
         'name': 'Clínica Vitalis',
         'is_active': true,
+        'center_type': 'clinica_heridas',
         'created_at': iso(now.subtract(const Duration(days: 30))),
+      },
+      {
+        'id': organizationIdHospital,
+        'name': 'Hospital General Demo',
+        'is_active': true,
+        'center_type': 'hospital',
+        'created_at': iso(now.subtract(const Duration(days: 20))),
+      },
+      {
+        'id': organizationIdCuidadores,
+        'name': 'Cuidados en Casa Demo',
+        'is_active': true,
+        'center_type': 'cuidadores',
+        'created_at': iso(now.subtract(const Duration(days: 10))),
       },
     ]);
 
@@ -132,6 +153,10 @@ class DemoSeed {
     // verificar en la demo que un admin normal de OTRO centro sigue sin
     // ver nada de Kura+ (y viceversa), mientras que el master ve ambos.
     final adminVitalisProfileId = _uuid.v4();
+    // Cuidador demo (0040): cuenta con rol 'cuidador' en el centro de tipo
+    // cuidadores. En Fase 1 aún no tiene pantallas propias (llegan en Fase 3);
+    // existe para poblar la gestión de miembros y el switcher.
+    final cuidadorProfileId = _uuid.v4();
 
     await store.saveAll(Collections.profiles, [
       {
@@ -178,6 +203,80 @@ class DemoSeed {
         'email': 'admin@vitalis.mx',
         'is_active': true,
         'premium_enabled': false,
+      },
+      {
+        'id': cuidadorProfileId,
+        'organization_id': organizationIdCuidadores,
+        'role': 'cuidador',
+        'full_name': 'Cuidador Demo',
+        'email': 'cuidador@curamas.mx',
+        'is_active': true,
+        'premium_enabled': false,
+      },
+    ]);
+
+    // ---------------- Membresías de centro (0040) ----------------
+    // Refleja lo que en producción hace el backfill de la migración: cada
+    // usuario tiene membresía a su centro y rol actuales. Además, el admin
+    // Procomsa recibe membresía (como admin) al Hospital y a Cuidadores para
+    // poder DEMOSTRAR el switcher del ícono de apósitos (paleta morado→azul→
+    // rosa) al alternar entre los tres tipos de centro.
+    await store.saveAll(Collections.userCenterMemberships, [
+      {
+        'id': _uuid.v4(),
+        'profile_id': adminProfileId,
+        'organization_id': organizationId,
+        'role': 'admin',
+        'is_active': true,
+        'created_at': iso(now),
+      },
+      {
+        'id': _uuid.v4(),
+        'profile_id': adminProfileId,
+        'organization_id': organizationIdHospital,
+        'role': 'admin',
+        'is_active': true,
+        'created_at': iso(now),
+      },
+      {
+        'id': _uuid.v4(),
+        'profile_id': adminProfileId,
+        'organization_id': organizationIdCuidadores,
+        'role': 'admin',
+        'is_active': true,
+        'created_at': iso(now),
+      },
+      {
+        'id': _uuid.v4(),
+        'profile_id': clinico1ProfileId,
+        'organization_id': organizationId,
+        'role': 'clinico',
+        'is_active': true,
+        'created_at': iso(now),
+      },
+      {
+        'id': _uuid.v4(),
+        'profile_id': clinico2ProfileId,
+        'organization_id': organizationId,
+        'role': 'clinico',
+        'is_active': true,
+        'created_at': iso(now),
+      },
+      {
+        'id': _uuid.v4(),
+        'profile_id': adminVitalisProfileId,
+        'organization_id': organizationId2,
+        'role': 'admin',
+        'is_active': true,
+        'created_at': iso(now),
+      },
+      {
+        'id': _uuid.v4(),
+        'profile_id': cuidadorProfileId,
+        'organization_id': organizationIdCuidadores,
+        'role': 'cuidador',
+        'is_active': true,
+        'created_at': iso(now),
       },
     ]);
 

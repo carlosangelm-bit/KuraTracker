@@ -3,9 +3,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/theme/kura_theme.dart';
 import '../../core/providers/session_provider.dart';
-import '../../core/router/app_shell.dart' show UserMenuButton;
+import '../../core/router/app_shell.dart' show UserMenuButton, centerTypeColor;
 import '../../core/widgets/kura_primary_fab.dart';
+import '../../models/app_user.dart';
+import '../../models/center_type.dart';
 import '../../models/organization.dart';
+import '../../models/user_center_membership.dart';
 import '../../services/data_repository.dart';
 import '../admin/admin_home_screen.dart'
     show UsersTab, StaffTab, SitesTab, NoteCatalogTab, BrandingTab;
@@ -268,18 +271,18 @@ class _OrganizationsTab extends StatelessWidget {
                 final isSelected = o.id == selectedOrgId;
                 return Card(
                   color: isSelected ? KuraColors.primary.withOpacity(0.08) : null,
-                  child: ListTile(
-                    leading: CircleAvatar(
-                      backgroundColor: KuraColors.primary.withOpacity(0.12),
-                      child: const Icon(Icons.hub_outlined, color: KuraColors.primary),
-                    ),
-                    title: Text(o.name),
-                    subtitle: Text(o.isActive ? 'Activo' : 'Inactivo'),
-                    trailing: Wrap(
-                      spacing: 4,
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      children: [
-                        Column(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      ListTile(
+                        leading: CircleAvatar(
+                          backgroundColor: centerTypeColor(o.centerType).withOpacity(0.12),
+                          child: Icon(Icons.hub_outlined, color: centerTypeColor(o.centerType)),
+                        ),
+                        title: Text(o.name),
+                        subtitle: Text(o.isActive ? 'Activo' : 'Inactivo'),
+                        trailing: Column(
+                          mainAxisSize: MainAxisSize.min,
                           children: [
                             const Text('Activo', style: TextStyle(fontSize: 10)),
                             Switch(
@@ -292,9 +295,43 @@ class _OrganizationsTab extends StatelessWidget {
                             ),
                           ],
                         ),
-                      ],
-                    ),
-                    onTap: () => onSelect(o.id),
+                        onTap: () => onSelect(o.id),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 0, 8, 8),
+                        child: Row(
+                          children: [
+                            const Text('Tipo:', style: TextStyle(fontSize: 13)),
+                            const SizedBox(width: 8),
+                            DropdownButton<CenterType>(
+                              value: o.centerType,
+                              items: CenterType.values
+                                  .map((t) => DropdownMenuItem(
+                                        value: t,
+                                        child: Text(t.label,
+                                            style: const TextStyle(fontSize: 13)),
+                                      ))
+                                  .toList(),
+                              onChanged: (t) async {
+                                if (t == null) return;
+                                await repo.setCenterType(o.id, t);
+                                onChanged();
+                              },
+                            ),
+                            const Spacer(),
+                            TextButton.icon(
+                              icon: const Icon(Icons.group_add_outlined, size: 18),
+                              label: const Text('Miembros'),
+                              onPressed: () => showDialog<void>(
+                                context: context,
+                                builder: (dialogCtx) =>
+                                    _MembershipsDialog(repo: repo, org: o),
+                              ).then((_) => onChanged()),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
                 );
               },
@@ -304,6 +341,108 @@ class _OrganizationsTab extends StatelessWidget {
         icon: Icons.add_business_outlined,
         label: 'Nuevo centro',
       ),
+    );
+  }
+}
+
+/// Gestión de miembros de un centro: qué usuarios pueden entrar (switcher) y
+/// con qué rol. Un usuario con membresía en ≥2 centros puede alternar entre
+/// ellos desde el ícono de apósitos. Solo master/admin (RLS 0040).
+class _MembershipsDialog extends StatefulWidget {
+  final DataRepository repo;
+  final Organization org;
+  const _MembershipsDialog({required this.repo, required this.org});
+
+  @override
+  State<_MembershipsDialog> createState() => _MembershipsDialogState();
+}
+
+class _MembershipsDialogState extends State<_MembershipsDialog> {
+  bool _busy = false;
+
+  // Roles asignables a una membresía (no se ofrece 'master': es cross-centro
+  // y no se gestiona por membresía de centro).
+  static const _assignableRoles = [AppRole.admin, AppRole.clinico, AppRole.cuidador];
+
+  Future<void> _toggle(AppUser user, bool grant, {UserCenterMembership? existing}) async {
+    setState(() => _busy = true);
+    try {
+      if (grant) {
+        await widget.repo.addMembership(user.id, widget.org.id, AppRole.clinico);
+      } else if (existing != null) {
+        await widget.repo.removeMembership(existing.id);
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _setRole(UserCenterMembership m, AppRole role) async {
+    setState(() => _busy = true);
+    try {
+      // Reemplaza la membresía por una con el nuevo rol (upsert simple).
+      await widget.repo.removeMembership(m.id);
+      await widget.repo.addMembership(m.profileId, widget.org.id, role);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final users = widget.repo.listUsers().where((u) => u.role != AppRole.master).toList();
+    final memberships = {
+      for (final m in widget.repo.listMembershipsForOrg(widget.org.id)) m.profileId: m,
+    };
+    return AlertDialog(
+      title: Text('Miembros · ${widget.org.name}'),
+      content: SizedBox(
+        width: MediaQuery.sizeOf(context).width < 520 ? double.maxFinite : 460,
+        child: users.isEmpty
+            ? const Text('No hay usuarios visibles.')
+            : ListView(
+                shrinkWrap: true,
+                children: users.map((u) {
+                  final m = memberships[u.id];
+                  final isMember = m != null;
+                  return ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(u.fullName),
+                    subtitle: Text(u.email, overflow: TextOverflow.ellipsis),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (isMember)
+                          DropdownButton<AppRole>(
+                            value: _assignableRoles.contains(m.role) ? m.role : AppRole.clinico,
+                            underline: const SizedBox.shrink(),
+                            items: _assignableRoles
+                                .map((r) => DropdownMenuItem(
+                                      value: r,
+                                      child: Text(r.label, style: const TextStyle(fontSize: 12)),
+                                    ))
+                                .toList(),
+                            onChanged: _busy ? null : (r) => r == null ? null : _setRole(m, r),
+                          ),
+                        Switch(
+                          value: isMember,
+                          activeColor: KuraColors.primary,
+                          onChanged: _busy
+                              ? null
+                              : (v) => _toggle(u, v, existing: m),
+                        ),
+                      ],
+                    ),
+                  );
+                }).toList(),
+              ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cerrar'),
+        ),
+      ],
     );
   }
 }

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../models/center_type.dart';
+
 /// Sistema de diseño de KuraTracker basado en TOKENS SEMÁNTICOS.
 ///
 /// Regla de oro (ver lib/core/design/README.md):
@@ -122,6 +124,68 @@ class BrandTokens extends ThemeExtension<BrandTokens> {
     statusSuccess: KuraPalette.statusSuccess,
     statusNeutral: Color(0xFF9E968E),
   );
+
+  /// Marca HOSPITAL (azul). Misma estructura que [kura]; solo cambian los
+  /// tonos de marca/hero. Superficies y estado clínico se conservan (el
+  /// semáforo de Sheehan es clínico, no decorativo, e igual en todos los tipos).
+  /// BORRADOR de color (0xFF2563EB, blue-600), ajustable tras validar la Fase 1.
+  static const BrandTokens hospital = BrandTokens(
+    brandPrimary: Color(0xFF2563EB), // azul hospital
+    onBrand: KuraPalette.onBrand,
+    heroTop: Color(0xFF12245E), // índigo profundo
+    heroBottom: Color(0xFF2563EB),
+    background: Color(0xFFF3F6FC), // neutro frío azulado
+    surface: KuraPalette.surface,
+    surfaceGlassHigh: Color(0xB8FFFFFF),
+    surfaceGlassLow: Color(0x8CFFFFFF),
+    glassBorder: Color(0x99FFFFFF),
+    textPrimary: Color(0xFF17203A),
+    textSecondary: Color(0xFF5C657A),
+    textDisabled: Color(0xFFA6ADBF),
+    border: Color(0xFFDDE4F0),
+    focus: Color(0xFF2563EB),
+    info: KuraPalette.info,
+    statusDanger: KuraPalette.statusDanger,
+    statusWarning: KuraPalette.statusWarning,
+    statusSuccess: KuraPalette.statusSuccess,
+    statusNeutral: Color(0xFF9AA1B0),
+  );
+
+  /// Marca CUIDADORES (rosa). BORRADOR de color (0xFFDB2777, pink-600),
+  /// ajustable tras validar la Fase 1.
+  static const BrandTokens cuidadores = BrandTokens(
+    brandPrimary: Color(0xFFDB2777), // rosa cuidadores
+    onBrand: KuraPalette.onBrand,
+    heroTop: Color(0xFF5A1140), // magenta profundo
+    heroBottom: Color(0xFFDB2777),
+    background: Color(0xFFFCF4F8), // neutro rosado casi blanco
+    surface: KuraPalette.surface,
+    surfaceGlassHigh: Color(0xB8FFFFFF),
+    surfaceGlassLow: Color(0x8CFFFFFF),
+    glassBorder: Color(0x99FFFFFF),
+    textPrimary: Color(0xFF2E1A26),
+    textSecondary: Color(0xFF77636E),
+    textDisabled: Color(0xFFBFAAB5),
+    border: Color(0xFFF0DEE7),
+    focus: Color(0xFFDB2777),
+    info: KuraPalette.info,
+    statusDanger: KuraPalette.statusDanger,
+    statusWarning: KuraPalette.statusWarning,
+    statusSuccess: KuraPalette.statusSuccess,
+    statusNeutral: Color(0xFFAE9AA4),
+  );
+
+  /// Tokens de la marca que corresponde al tipo de centro activo.
+  static BrandTokens forCenterType(CenterType type) {
+    switch (type) {
+      case CenterType.hospital:
+        return hospital;
+      case CenterType.cuidadores:
+        return cuidadores;
+      case CenterType.clinicaHeridas:
+        return kura;
+    }
+  }
 
   /// Acceso desde cualquier widget. Cae a [kura] si el tema no registró la
   /// extensión (p.ej. en tests que arman un MaterialApp mínimo).

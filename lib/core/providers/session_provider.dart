@@ -2,6 +2,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../models/app_user.dart';
+import '../../models/center_type.dart';
+import '../../models/user_center_membership.dart';
 import '../../services/data_repository.dart';
 import '../../engine/cie10_catalog.dart';
 import '../../engine/risk/prevention_risk_engine.dart';
@@ -14,16 +16,38 @@ import '../config/app_config.dart';
 class SessionState {
   final AppUser? user;
   final bool isLoading;
+  // Centros a los que el usuario puede entrar (0040). Alimenta el switcher del
+  // ícono de apósitos. Vacío o de 1 elemento => no hay a dónde cambiar.
+  final List<UserCenterMembership> memberships;
+  // Tipo del centro ACTIVO (deriva de organizations.center_type del
+  // organization_id del usuario). Determina la paleta (morado/azul/rosa).
+  final CenterType activeCenterType;
 
-  const SessionState({this.user, this.isLoading = false});
+  const SessionState({
+    this.user,
+    this.isLoading = false,
+    this.memberships = const [],
+    this.activeCenterType = CenterType.clinicaHeridas,
+  });
 
   bool get isAuthenticated => user != null;
   bool get isAdmin => user?.role == AppRole.admin;
   bool get isMaster => user?.role == AppRole.master;
 
-  SessionState copyWith({AppUser? user, bool? isLoading}) => SessionState(
+  /// El usuario puede alternar de centro si tiene ≥2 membresías activas.
+  bool get canSwitchCenter => memberships.length >= 2;
+
+  SessionState copyWith({
+    AppUser? user,
+    bool? isLoading,
+    List<UserCenterMembership>? memberships,
+    CenterType? activeCenterType,
+  }) =>
+      SessionState(
         user: user ?? this.user,
         isLoading: isLoading ?? this.isLoading,
+        memberships: memberships ?? this.memberships,
+        activeCenterType: activeCenterType ?? this.activeCenterType,
       );
 }
 
@@ -36,6 +60,20 @@ class SessionController extends StateNotifier<SessionState> {
 
   /// Si Supabase ya tiene una sesion persistida (p.ej. tras refrescar la
   /// pagina en Flutter Web), la recupera sin pedir login de nuevo.
+  /// Construye el estado de sesión completo (usuario + membresías + tipo de
+  /// centro activo) desde la cache ya hidratada. Centraliza la resolución del
+  /// multi-centro para restore/login/refresh/switch.
+  SessionState _buildSession(DataRepository repo, AppUser user) {
+    final memberships =
+        user.id.isEmpty ? const <UserCenterMembership>[] : repo.listMembershipsFor(user.id);
+    return SessionState(
+      user: user,
+      isLoading: false,
+      memberships: memberships,
+      activeCenterType: repo.centerTypeFor(user.organizationId),
+    );
+  }
+
   Future<void> _restoreSupabaseSession() async {
     final authUser = Supabase.instance.client.auth.currentUser;
     if (authUser == null) return;
@@ -46,7 +84,7 @@ class SessionController extends StateNotifier<SessionState> {
       var user = repo.findUserByEmail(authUser.email ?? '');
       if (user != null && user.isActive) {
         user = await _ensureStaffIdForAdmin(repo, user);
-        state = SessionState(user: user, isLoading: false);
+        state = _buildSession(repo, user);
         return;
       }
     } catch (_) {
@@ -101,7 +139,7 @@ class SessionController extends StateNotifier<SessionState> {
       var user = repo.findUserByEmail(email);
       if (user != null && user.isActive) {
         user = await _ensureStaffIdForAdmin(repo, user);
-        state = SessionState(user: user, isLoading: false);
+        state = _buildSession(repo, user);
         return true;
       }
       // Autenticado en Supabase Auth pero sin perfil activo visible
@@ -118,7 +156,7 @@ class SessionController extends StateNotifier<SessionState> {
     await Future.delayed(const Duration(milliseconds: 400));
     if (user != null && user.isActive) {
       user = await _ensureStaffIdForAdmin(repo, user);
-      state = SessionState(user: user, isLoading: false);
+      state = _buildSession(repo, user);
       return true;
     }
     state = state.copyWith(isLoading: false);
@@ -139,7 +177,28 @@ class SessionController extends StateNotifier<SessionState> {
     final repo = await DataRepository.instance();
     final refreshed = repo.findUserByEmail(state.user!.email);
     if (refreshed != null) {
-      state = state.copyWith(user: refreshed);
+      state = _buildSession(repo, refreshed);
+    }
+  }
+
+  /// Cambia el centro ACTIVO del usuario (ícono de apósitos). Valida membresía
+  /// vía el RPC set_active_center (Supabase) o actualiza el perfil en demo, y
+  /// reconstruye la sesión → repinta la paleta y recomputa lo que dependa del
+  /// centro. Devuelve false si falla (p.ej. sin membresía).
+  Future<bool> switchCenter(String organizationId) async {
+    final user = state.user;
+    if (user == null) return false;
+    if (user.organizationId == organizationId) return true;
+    state = state.copyWith(isLoading: true);
+    try {
+      final repo = await DataRepository.instance();
+      await repo.setActiveCenter(user.id, organizationId);
+      final refreshed = repo.findUserByEmail(user.email) ?? user;
+      state = _buildSession(repo, refreshed);
+      return true;
+    } catch (_) {
+      state = state.copyWith(isLoading: false);
+      return false;
     }
   }
 }
@@ -150,6 +209,12 @@ final sessionProvider = StateNotifierProvider<SessionController, SessionState>(
 
 final dataRepositoryProvider = FutureProvider<DataRepository>((ref) {
   return DataRepository.instance();
+});
+
+/// Tipo del centro ACTIVO. Lo observa el MaterialApp para elegir la paleta
+/// (morado/azul/rosa) de forma reactiva al cambiar de centro.
+final activeCenterTypeProvider = Provider<CenterType>((ref) {
+  return ref.watch(sessionProvider).activeCenterType;
 });
 
 /// Catálogo CIE-10 de heridas crónicas (asset empaquetado, reference data

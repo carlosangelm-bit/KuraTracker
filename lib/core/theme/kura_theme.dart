@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../../models/center_type.dart';
 import '../design/tokens.dart';
 
 /// Compatibilidad hacia atrás: `KuraColors` es ahora un ALIAS DELGADO sobre los
@@ -32,8 +33,17 @@ class KuraColors {
 }
 
 class KuraTheme {
-  static ThemeData get light {
-    const tokens = BrandTokens.kura;
+  /// Tema por defecto (clínica de heridas, morado). Alias de compatibilidad
+  /// hacia atrás; el código nuevo/reactivo usa [forType].
+  static ThemeData get light => forType(CenterType.clinicaHeridas);
+
+  /// Construye el tema para el tipo de centro dado. La marca (acento/hero/
+  /// superficies) proviene de [BrandTokens.forCenterType]; el resto de la
+  /// estructura del tema es idéntica entre tipos. Al cambiar de centro, el
+  /// MaterialApp reconstruye con el tema correspondiente (paleta morado/azul/
+  /// rosa). El estado clínico (semáforo) NO cambia por tipo: es clínico.
+  static ThemeData forType(CenterType type) {
+    final tokens = BrandTokens.forCenterType(type);
     final base = ThemeData(
       useMaterial3: true,
       colorScheme: ColorScheme.fromSeed(
@@ -44,40 +54,40 @@ class KuraTheme {
       ),
       scaffoldBackgroundColor: tokens.background,
       // Tokens semánticos disponibles vía BrandTokens.of(context).
-      extensions: const <ThemeExtension<dynamic>>[tokens],
+      extensions: <ThemeExtension<dynamic>>[tokens],
     );
 
     final textTheme = GoogleFonts.nunitoTextTheme(base.textTheme).apply(
-      bodyColor: KuraColors.darkText,
-      displayColor: KuraColors.darkText,
+      bodyColor: tokens.textPrimary,
+      displayColor: tokens.textPrimary,
     );
 
     return base.copyWith(
       textTheme: textTheme,
       appBarTheme: AppBarTheme(
-        backgroundColor: KuraColors.lightBg,
-        foregroundColor: KuraColors.darkText,
+        backgroundColor: tokens.background,
+        foregroundColor: tokens.textPrimary,
         elevation: 0,
         surfaceTintColor: Colors.transparent,
         titleTextStyle: GoogleFonts.nunito(
-          color: KuraColors.darkText,
+          color: tokens.textPrimary,
           fontSize: 20,
           fontWeight: FontWeight.w800,
         ),
       ),
       cardTheme: CardThemeData(
-        color: KuraColors.surface,
+        color: tokens.surface,
         elevation: 0,
         surfaceTintColor: Colors.transparent,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
-          side: const BorderSide(color: KuraColors.borderSubtle),
+          side: BorderSide(color: tokens.border),
         ),
         margin: EdgeInsets.zero,
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
-          backgroundColor: KuraColors.primary,
+          backgroundColor: tokens.brandPrimary,
           foregroundColor: Colors.white,
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -86,14 +96,14 @@ class KuraTheme {
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
-          foregroundColor: KuraColors.primary,
-          side: const BorderSide(color: KuraColors.primary),
+          foregroundColor: tokens.brandPrimary,
+          side: BorderSide(color: tokens.brandPrimary),
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         ),
       ),
       textButtonTheme: TextButtonThemeData(
-        style: TextButton.styleFrom(foregroundColor: KuraColors.primary),
+        style: TextButton.styleFrom(foregroundColor: tokens.brandPrimary),
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
@@ -101,36 +111,36 @@ class KuraTheme {
         contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: KuraColors.borderSubtle),
+          borderSide: BorderSide(color: tokens.border),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: KuraColors.borderSubtle),
+          borderSide: BorderSide(color: tokens.border),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: KuraColors.primary, width: 2),
+          borderSide: BorderSide(color: tokens.brandPrimary, width: 2),
         ),
       ),
       chipTheme: base.chipTheme.copyWith(
         backgroundColor: KuraColors.chipBg,
-        selectedColor: KuraColors.primary.withOpacity(0.15),
-        labelStyle: const TextStyle(color: KuraColors.darkText),
+        selectedColor: tokens.brandPrimary.withOpacity(0.15),
+        labelStyle: TextStyle(color: tokens.textPrimary),
         side: BorderSide.none,
       ),
-      dividerTheme: const DividerThemeData(color: KuraColors.borderSubtle),
+      dividerTheme: DividerThemeData(color: tokens.border),
       navigationRailTheme: NavigationRailThemeData(
-        backgroundColor: KuraColors.surface,
-        selectedIconTheme: const IconThemeData(color: KuraColors.primary),
-        selectedLabelTextStyle: const TextStyle(
-          color: KuraColors.primary,
+        backgroundColor: tokens.surface,
+        selectedIconTheme: IconThemeData(color: tokens.brandPrimary),
+        selectedLabelTextStyle: TextStyle(
+          color: tokens.brandPrimary,
           fontWeight: FontWeight.w700,
         ),
-        unselectedLabelTextStyle: const TextStyle(color: KuraColors.darkText),
+        unselectedLabelTextStyle: TextStyle(color: tokens.textPrimary),
       ),
-      snackBarTheme: const SnackBarThemeData(
-        backgroundColor: KuraColors.darkText,
-        contentTextStyle: TextStyle(color: Colors.white),
+      snackBarTheme: SnackBarThemeData(
+        backgroundColor: tokens.textPrimary,
+        contentTextStyle: const TextStyle(color: Colors.white),
         behavior: SnackBarBehavior.floating,
       ),
     );
