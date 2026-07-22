@@ -5,6 +5,7 @@ import '../../models/app_user.dart';
 import '../../services/data_repository.dart';
 import '../../engine/cie10_catalog.dart';
 import '../../engine/risk/prevention_risk_engine.dart';
+import '../../engine/risk/braden_scale.dart';
 import '../config/app_config.dart';
 
 /// Estado de sesion. En modo Supabase (produccion), refleja
@@ -163,4 +164,10 @@ final cie10CatalogProvider = FutureProvider<Cie10Catalog>((ref) {
 /// de riesgo del expediente.
 final preventionRulesProvider = FutureProvider<PreventionRulesCatalog>((ref) {
   return PreventionRulesCatalog.load();
+});
+
+/// Definición de la escala de Braden (asset). Alimenta el formulario por
+/// subescalas de la ficha de riesgo.
+final bradenScaleProvider = FutureProvider<BradenScale>((ref) {
+  return BradenScale.load();
 });

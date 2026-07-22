@@ -146,13 +146,166 @@ class _RiskBoardScreenState extends ConsumerState<RiskBoardScreen> {
           ),
         const Divider(height: 1),
         Expanded(
-          child: ListView.builder(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-            itemCount: filtered.length,
-            itemBuilder: (context, i) => _RiskBoardTile(entry: filtered[i]),
+          child: LayoutBuilder(
+            builder: (context, c) {
+              // Desktop: panel de tarjetas (todos los pacientes de un vistazo).
+              // Móvil: lista compacta.
+              if (c.maxWidth >= 900) {
+                return SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+                  child: Wrap(
+                    spacing: 12,
+                    runSpacing: 12,
+                    children: [
+                      for (final e in filtered)
+                        SizedBox(width: 340, child: _RiskCardWide(entry: e)),
+                    ],
+                  ),
+                );
+              }
+              return ListView.builder(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+                itemCount: filtered.length,
+                itemBuilder: (context, i) => _RiskBoardTile(entry: filtered[i]),
+              );
+            },
           ),
         ),
       ],
+    );
+  }
+}
+
+/// Tarjeta de paciente en el panel desktop: resumen relevante + la principal
+/// acción sugerida. Al abrir muestra la guía completa (ficha de riesgo).
+class _RiskCardWide extends StatelessWidget {
+  final _RiskEntry entry;
+  const _RiskCardWide({required this.entry});
+
+  @override
+  Widget build(BuildContext context) {
+    final color = riskLevelColor(entry.risk.level);
+    final adm = entry.admission;
+    final n = entry.risk.alerts.length;
+    // Alerta de mayor severidad = preocupación principal.
+    final sorted = [...entry.risk.alerts]
+      ..sort((a, b) => b.severity.weight.compareTo(a.severity.weight));
+    final top = sorted.isEmpty ? null : sorted.first;
+    final topAction =
+        (top != null && top.actions.isNotEmpty) ? top.actions.first.label : null;
+
+    return Card(
+      margin: EdgeInsets.zero,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: () => context.go('/patients/${entry.patient.id}/risk'),
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  CircleAvatar(
+                    radius: 16,
+                    backgroundColor: color.withOpacity(0.16),
+                    child: Icon(Icons.shield_outlined, color: color, size: 18),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(entry.patient.fullName,
+                        style: const TextStyle(fontWeight: FontWeight.w700),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: color.withOpacity(0.14),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(entry.risk.level.label,
+                        style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: color)),
+                  ),
+                  const Spacer(),
+                  if (n > 0)
+                    Text('$n alerta${n == 1 ? '' : 's'}',
+                        style: TextStyle(
+                            fontSize: 12,
+                            color: KuraColors.darkText.withOpacity(0.6))),
+                ],
+              ),
+              if (adm?.unit != null || adm?.bed != null) ...[
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    Icon(Icons.local_hotel_outlined,
+                        size: 14, color: KuraColors.darkText.withOpacity(0.5)),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: Text(
+                        [
+                          if (adm?.unit != null) adm!.unit!,
+                          if (adm?.bed != null) 'Cama ${adm!.bed}',
+                        ].join(' · '),
+                        style: TextStyle(
+                            fontSize: 12,
+                            color: KuraColors.darkText.withOpacity(0.6)),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+              if (top != null) ...[
+                const Divider(height: 18),
+                Text(top.message,
+                    style: const TextStyle(
+                        fontSize: 13, fontWeight: FontWeight.w600),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis),
+                if (topAction != null) ...[
+                  const SizedBox(height: 6),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Icon(Icons.arrow_right_alt,
+                          size: 16, color: KuraColors.primary),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: Text(topAction,
+                            style: const TextStyle(
+                                fontSize: 12, color: KuraColors.primary),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis),
+                      ),
+                    ],
+                  ),
+                ],
+              ],
+              const SizedBox(height: 10),
+              Align(
+                alignment: Alignment.centerRight,
+                child: Text('Ver guía  ›',
+                    style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: KuraColors.primary)),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

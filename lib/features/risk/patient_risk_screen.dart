@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 import '../../core/theme/kura_theme.dart';
 import '../../core/providers/session_provider.dart';
 import '../../engine/risk/prevention_risk_engine.dart';
+import '../../engine/risk/braden_scale.dart';
 import '../../models/app_user.dart';
 import '../../models/patient_admission.dart';
 import '../../services/data_repository.dart';
@@ -35,75 +36,125 @@ class _PatientRiskScreenState extends ConsumerState<PatientRiskScreen> {
     return id;
   }
 
-  Future<void> _assessBraden(DataRepository repo) async {
-    final ctrl = TextEditingController();
+  /// Formulario de Braden por subescalas: el profesional elige una opción por
+  /// ítem y la app calcula el total y la banda de riesgo. Guarda el total
+  /// (braden_score) y las subescalas (braden_subscores).
+  Future<void> _assessBraden(DataRepository repo, BradenScale scale) async {
+    final selections = <String, int>{};
     final notesCtrl = TextEditingController();
-    final saved = await showModalBottomSheet<bool>(
+
+    final result = await showModalBottomSheet<Map<String, int>>(
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
-      builder: (ctx) => Padding(
-        padding: EdgeInsets.only(
-          left: 20,
-          right: 20,
-          top: 4,
-          bottom: MediaQuery.of(ctx).viewInsets.bottom + 20,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('Valoración de riesgo (Braden)',
-                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
-            const SizedBox(height: 4),
-            Text('Escala 6–23. Menor puntaje = mayor riesgo de lesión por presión.',
-                style: Theme.of(ctx).textTheme.bodySmall),
-            const SizedBox(height: 12),
-            TextField(
-              controller: ctrl,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(
-                labelText: 'Puntaje de Braden (6–23)',
-                border: OutlineInputBorder(),
-                isDense: true,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheet) {
+          final answered = selections.length == scale.items.length;
+          final total =
+              selections.values.fold<int>(0, (a, b) => a + b);
+          final band = answered ? scale.riskLabelFor(total) : null;
+          return Padding(
+            padding: EdgeInsets.only(
+              left: 20,
+              right: 20,
+              top: 4,
+              bottom: MediaQuery.of(ctx).viewInsets.bottom + 20,
+            ),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                  maxHeight: MediaQuery.of(ctx).size.height * 0.85),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Valoración de Braden',
+                      style:
+                          TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
+                  const SizedBox(height: 2),
+                  Text('Elige una opción por ítem; el total se calcula solo.',
+                      style: Theme.of(ctx).textTheme.bodySmall),
+                  const SizedBox(height: 12),
+                  Flexible(
+                    child: SingleChildScrollView(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          for (final item in scale.items) ...[
+                            Text(item.label,
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.w600)),
+                            const SizedBox(height: 6),
+                            Wrap(
+                              spacing: 6,
+                              runSpacing: 6,
+                              children: [
+                                for (final o in item.options)
+                                  ChoiceChip(
+                                    label: Text('${o.score} · ${o.label}',
+                                        style: const TextStyle(fontSize: 12)),
+                                    selected: selections[item.id] == o.score,
+                                    selectedColor:
+                                        KuraColors.primary.withOpacity(0.16),
+                                    onSelected: (_) => setSheet(
+                                        () => selections[item.id] = o.score),
+                                  ),
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+                          ],
+                          TextField(
+                            controller: notesCtrl,
+                            decoration: const InputDecoration(
+                              labelText: 'Notas (opcional)',
+                              border: OutlineInputBorder(),
+                              isDense: true,
+                            ),
+                            maxLines: 2,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          answered
+                              ? 'Total: $total  ·  ${band ?? ''}'
+                              : 'Faltan ${scale.items.length - selections.length} ítem(s)',
+                          style: TextStyle(
+                              fontWeight: FontWeight.w700,
+                              color: answered
+                                  ? KuraColors.primary
+                                  : KuraColors.darkText.withOpacity(0.6)),
+                        ),
+                      ),
+                      FilledButton(
+                        onPressed: answered
+                            ? () => Navigator.of(ctx).pop(
+                                Map<String, int>.from(selections))
+                            : null,
+                        child: const Text('Guardar'),
+                      ),
+                    ],
+                  ),
+                ],
               ),
             ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: notesCtrl,
-              decoration: const InputDecoration(
-                labelText: 'Notas (opcional)',
-                border: OutlineInputBorder(),
-                isDense: true,
-              ),
-              maxLines: 2,
-            ),
-            const SizedBox(height: 16),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton(
-                onPressed: () => Navigator.of(ctx).pop(true),
-                child: const Text('Guardar valoración'),
-              ),
-            ),
-          ],
-        ),
+          );
+        },
       ),
     );
-    if (saved != true || !mounted) return;
-    final braden = int.tryParse(ctrl.text.trim());
-    if (braden == null || braden < 6 || braden > 23) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text('El puntaje de Braden debe estar entre 6 y 23.')));
-      }
-      return;
-    }
+
+    if (result == null || !mounted) return;
+    final total = result.values.fold<int>(0, (a, b) => a + b);
     final session = ref.read(sessionProvider);
     await repo.addRiskAssessment(
       patientId: widget.patientId,
       organizationId: session.user?.organizationId,
-      bradenScore: braden,
+      bradenScore: total,
+      bradenSubscores: result,
       notes: notesCtrl.text.trim().isEmpty ? null : notesCtrl.text.trim(),
       staffId: await _staffId(repo),
     );
@@ -193,10 +244,159 @@ class _PatientRiskScreenState extends ConsumerState<PatientRiskScreen> {
     if (mounted) setState(() {});
   }
 
+  Future<void> _logAction(
+      DataRepository repo, PreventionAlert alert, PreventiveAction action) async {
+    final session = ref.read(sessionProvider);
+    await repo.logPreventiveAction(
+      patientId: widget.patientId,
+      organizationId: session.user?.organizationId,
+      ruleId: alert.id,
+      actionId: action.id,
+      actionLabel: action.label,
+      staffId: await _staffId(repo),
+    );
+    if (mounted) {
+      setState(() {});
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Acción registrada.')),
+      );
+    }
+  }
+
+  /// Sección de alertas de una dimensión (LPP / complicación).
+  Widget _alertSection(
+      DataRepository repo, String title, List<PreventionAlert> alerts) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(top: 8, bottom: 6),
+          child: Text(title,
+              style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14)),
+        ),
+        ...alerts.map((a) => _alertCard(repo, a)),
+      ],
+    );
+  }
+
+  Widget _alertCard(DataRepository repo, PreventionAlert a) {
+    final color = riskSeverityColor(a.severity);
+    return Card(
+      margin: const EdgeInsets.only(bottom: 10),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(top: 2, right: 8),
+                  child:
+                      Icon(Icons.warning_amber_rounded, size: 16, color: color),
+                ),
+                Expanded(
+                  child: Text(a.message,
+                      style: const TextStyle(fontWeight: FontWeight.w700)),
+                ),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: color.withOpacity(0.14),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(a.severity.label,
+                      style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: color)),
+                ),
+              ],
+            ),
+            if (a.questions.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Text('Qué preguntarte',
+                  style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: KuraColors.darkText.withOpacity(0.7))),
+              const SizedBox(height: 4),
+              ...a.questions.map((q) => Padding(
+                    padding: const EdgeInsets.only(bottom: 3),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('•  '),
+                        Expanded(
+                            child: Text(q,
+                                style:
+                                    Theme.of(context).textTheme.bodySmall)),
+                      ],
+                    ),
+                  )),
+            ],
+            if (a.actions.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Text('Acciones',
+                  style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: KuraColors.darkText.withOpacity(0.7))),
+              const SizedBox(height: 4),
+              ...a.actions.map((act) => _actionRow(repo, a, act)),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _actionRow(
+      DataRepository repo, PreventionAlert a, PreventiveAction act) {
+    final last = repo.lastAppliedAt(widget.patientId, a.id, act.id);
+    final done = last != null;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Icon(done ? Icons.check_circle : Icons.radio_button_unchecked,
+              size: 16,
+              color: done ? KuraColors.success : KuraColors.darkText.withOpacity(0.4)),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(act.label,
+                    style: const TextStyle(fontSize: 13)),
+                if (done)
+                  Text('Última: ${_dateFmt.format(last)}',
+                      style: TextStyle(
+                          fontSize: 11,
+                          color: KuraColors.darkText.withOpacity(0.55))),
+              ],
+            ),
+          ),
+          TextButton(
+            style: TextButton.styleFrom(
+                visualDensity: VisualDensity.compact,
+                foregroundColor: KuraColors.primary),
+            onPressed: () => _logAction(repo, a, act),
+            child: Text(done ? 'Registrar de nuevo' : 'Registrar'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final repoAsync = ref.watch(dataRepositoryProvider);
     final rulesAsync = ref.watch(preventionRulesProvider);
+    final scale = ref.watch(bradenScaleProvider).valueOrNull;
 
     return Scaffold(
       appBar: AppBar(
@@ -249,9 +449,12 @@ class _PatientRiskScreenState extends ConsumerState<PatientRiskScreen> {
                   title: 'Valoración de Braden',
                   body: braden?.bradenScore == null
                       ? 'Sin valoración registrada'
-                      : 'Braden ${braden!.bradenScore} · ${_dateFmt.format(braden.assessedAt)}',
+                      : 'Braden ${braden!.bradenScore}'
+                          '${scale?.riskLabelFor(braden.bradenScore!) != null ? ' · ${scale!.riskLabelFor(braden.bradenScore!)}' : ''}'
+                          ' · ${_dateFmt.format(braden.assessedAt)}',
                   action: TextButton(
-                    onPressed: () => _assessBraden(repo),
+                    onPressed:
+                        scale == null ? null : () => _assessBraden(repo, scale),
                     child: const Text('Valorar'),
                   ),
                 ),
@@ -270,12 +473,11 @@ class _PatientRiskScreenState extends ConsumerState<PatientRiskScreen> {
                   )
                 else ...[
                   if (result.lpp.isNotEmpty)
-                    _AlertGroup(
-                        title: 'Riesgo de lesión por presión', alerts: result.lpp),
+                    _alertSection(
+                        repo, 'Riesgo de lesión por presión', result.lpp),
                   if (result.complicacion.isNotEmpty)
-                    _AlertGroup(
-                        title: 'Riesgo de complicación',
-                        alerts: result.complicacion),
+                    _alertSection(
+                        repo, 'Riesgo de complicación', result.complicacion),
                 ],
                 const SizedBox(height: 16),
                 Text(
@@ -363,68 +565,3 @@ class _InfoTile extends StatelessWidget {
   }
 }
 
-class _AlertGroup extends StatelessWidget {
-  final String title;
-  final List<PreventionAlert> alerts;
-  const _AlertGroup({required this.title, required this.alerts});
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.only(top: 8, bottom: 6),
-          child: Text(title,
-              style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14)),
-        ),
-        ...alerts.map((a) {
-          final color = riskSeverityColor(a.severity);
-          return Card(
-            margin: const EdgeInsets.only(bottom: 8),
-            child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.only(top: 3, right: 8),
-                        child: Icon(Icons.warning_amber_rounded,
-                            size: 16, color: color),
-                      ),
-                      Expanded(
-                        child: Text(a.message,
-                            style: const TextStyle(fontWeight: FontWeight.w600)),
-                      ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: color.withOpacity(0.14),
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: Text(a.severity.label,
-                            style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w700,
-                                color: color)),
-                      ),
-                    ],
-                  ),
-                  if (a.recommendation.isNotEmpty) ...[
-                    const SizedBox(height: 6),
-                    Text(a.recommendation,
-                        style: Theme.of(context).textTheme.bodySmall),
-                  ],
-                ],
-              ),
-            ),
-          );
-        }),
-      ],
-    );
-  }
-}

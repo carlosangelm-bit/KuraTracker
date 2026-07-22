@@ -13,6 +13,7 @@ import '../models/organization.dart';
 import '../models/patient.dart';
 import '../models/patient_admission.dart';
 import '../models/patient_diagnosis.dart';
+import '../models/preventive_action_log.dart';
 import '../models/risk_assessment.dart';
 import '../models/referral.dart';
 import '../models/note_option_catalog.dart';
@@ -1422,6 +1423,56 @@ class DataRepository {
       activeWounds: activeWounds,
       // deterioration: hook de fase 2 (requiere historial de consultas).
     );
+  }
+
+  // -- Bitácora de acciones preventivas realizadas --
+  List<PreventiveActionLog> listPreventiveActions(String patientId) => _store
+      .getAll(Collections.preventiveActionLog)
+      .where((a) => a['patient_id'] == patientId)
+      .map(PreventiveActionLog.fromJson)
+      .toList()
+    ..sort((a, b) => b.appliedAt.compareTo(a.appliedAt));
+
+  /// Última vez que se registró la acción [actionId] de la regla [ruleId] para
+  /// el paciente (o null si nunca). Las medidas preventivas se repiten, por eso
+  /// interesa la ÚLTIMA aplicación, no un booleano.
+  DateTime? lastAppliedAt(String patientId, String ruleId, String actionId) {
+    DateTime? latest;
+    for (final a in _store.getAll(Collections.preventiveActionLog)) {
+      if (a['patient_id'] == patientId &&
+          a['rule_id'] == ruleId &&
+          a['action_id'] == actionId) {
+        final t = DateTime.tryParse(a['applied_at'] as String? ?? '');
+        if (t != null && (latest == null || t.isAfter(latest))) latest = t;
+      }
+    }
+    return latest;
+  }
+
+  Future<PreventiveActionLog> logPreventiveAction({
+    required String patientId,
+    required String? organizationId,
+    required String ruleId,
+    required String actionId,
+    required String actionLabel,
+    String? notes,
+    required String? staffId,
+  }) async {
+    final data = {
+      'id': _uuid.v4(),
+      'organization_id': organizationId,
+      'patient_id': patientId,
+      'rule_id': ruleId,
+      'action_id': actionId,
+      'action_label': actionLabel,
+      'applied_at': DateTime.now().toIso8601String(),
+      'applied_by': staffId,
+      'notes': notes,
+      'created_at': DateTime.now().toIso8601String(),
+    };
+    final saved =
+        await _store.insertRow(Collections.preventiveActionLog, data);
+    return PreventiveActionLog.fromJson(saved);
   }
 
   // ---------------- Consultas ----------------
