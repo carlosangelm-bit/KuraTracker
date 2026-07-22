@@ -1,59 +1,90 @@
 {
-  "version": "2026-07-22c",
-  "note": "BORRADOR de reglas de prevención/riesgo (basado en evidencia). PENDIENTE de validación clínica de María, INCLUIDAS preguntas, respuestas y acciones. Capa DOCUMENTAL: no altera el motor de tratamiento. Panel-guía para personal que no necesariamente diagnostica. Cada 'question' tiene {text, options?, alarm?}: options por defecto ['Sí','No']; 'alarm' es la respuesta que indica atención (para resaltarla). 'actions' = qué hacer (registrable con fecha/autor). Condiciones 'when': bradenMin/bradenMax, comorbilidad (name de Comorbilidad), hasActiveWound, mobilityIn (ambulatorio|silla_ruedas|encamado), fragile, bmiMax, woundEtiology (lpp|vascular|quirurgica|traumatica|pieDiabetico|otra), deterioration. severity: alto|medio|bajo. dimension: lpp|complicacion.",
+  "version": "2026-07-22d",
+  "note": "Algoritmo preventivo de LPP y complicaciones de heridas quirúrgicas (entorno hospitalario), basado en el reporte clínico aportado (GNEAUPP/EPUAP/NPIAP, IMSS, OMS/WHO SSI). LPP: determinístico por banda de Braden -> paquete de intervenciones ESCALONADO (cada banda incluye las medidas de las bandas inferiores). Herida quirúrgica: vigilancia ISQ (definiciones CDC/NHSN) + conducta. BORRADOR: pendiente de validación/calibración clínica de María. Capa DOCUMENTAL: no altera el motor de tratamiento. 'question' = {text, options?, alarm?} (alarm = respuesta que indica atención). 'actions' = medidas (registrables con fecha/autor). 'when': bradenMin/bradenMax (inclusive), comorbilidad, hasActiveWound, mobilityIn, fragile, bmiMax, woundEtiology, deterioration. severity: alto|medio|bajo. dimension: lpp|complicacion. Umbral de activación del protocolo LPP: Braden ≤16 (≤18 en críticos); revalorar cada 48–72 h, diario en UCI y siempre tras cirugía mayor / cambio de movilidad / deterioro / traslado.",
   "rules": [
     {
-      "id": "lpp_braden_muy_alto",
+      "id": "lpp_muy_alto",
       "dimension": "lpp",
       "when": { "bradenMin": 6, "bradenMax": 9 },
       "severity": "alto",
-      "message": "Riesgo MUY ALTO de lesión por presión (Braden ≤9)",
+      "message": "LPP · Riesgo MUY ALTO (Braden ≤9)",
       "questions": [
         { "text": "¿Hay eritema que NO blanquea en sacro, talones u otras prominencias?", "alarm": "Sí" },
+        { "text": "¿El paciente puede cambiar de posición por sí mismo?", "alarm": "No" },
+        { "text": "¿La piel está húmeda por incontinencia o sudoración?", "alarm": "Sí" },
+        { "text": "¿La última valoración de Braden tiene menos de 72 h?", "alarm": "No" }
+      ],
+      "actions": [
+        { "id": "cambios_2h_registro", "label": "Cambios posturales cada 2 h con registro horario" },
+        { "id": "colchon_antiescaras", "label": "Colchón antiescaras / SEMP dinámica de celdas grandes o reemplazo" },
+        { "id": "valoracion_piel_completa_diaria", "label": "Valoración diaria de piel completa" },
+        { "id": "aporte_proteico_ajuste", "label": "Ajuste proteico 1.25–1.5 g/kg/día" },
+        { "id": "aposito_preventivo", "label": "Apósitos preventivos (hidrocelulares) en sacro y talones" },
+        { "id": "agho", "label": "Ácidos grasos hiperoxigenados (AGHO) en zonas de riesgo" },
+        { "id": "control_humedad", "label": "Control de humedad (incontinencia/sudoración/drenajes) con productos barrera" },
+        { "id": "higiene_ph_neutro", "label": "Higiene con pH neutro; NO masajear prominencias óseas" },
+        { "id": "educacion_prevencion", "label": "Educación a paciente/cuidador y evitar dispositivos tipo rosca/flotador" }
+      ]
+    },
+    {
+      "id": "lpp_alto",
+      "dimension": "lpp",
+      "when": { "bradenMin": 10, "bradenMax": 12 },
+      "severity": "alto",
+      "message": "LPP · Riesgo ALTO (Braden 10–12)",
+      "questions": [
+        { "text": "¿Hay eritema que NO blanquea en prominencias óseas?", "alarm": "Sí" },
         { "text": "¿El paciente puede cambiar de posición por sí mismo?", "alarm": "No" },
         { "text": "¿La piel está húmeda por incontinencia o sudoración?", "alarm": "Sí" }
       ],
       "actions": [
-        { "id": "superficie_apoyo", "label": "Colocar superficie de redistribución de presión (colchón/cojín)" },
-        { "id": "cambios_posturales_2h", "label": "Cambios posturales cada 2 horas (registrar horario)" },
-        { "id": "aposito_presion", "label": "Apósito liberador de presión en sacro y talones" },
+        { "id": "cambios_2h_registro", "label": "Cambios posturales cada 2 h con registro horario" },
+        { "id": "semp_dinamica", "label": "Superficie dinámica de aire alternante (SEMP)" },
+        { "id": "aporte_proteico_ajuste", "label": "Ajuste proteico 1.25–1.5 g/kg/día" },
+        { "id": "valoracion_mna", "label": "Valoración nutricional (MNA) y suplementación si hay déficit" },
+        { "id": "aposito_preventivo", "label": "Apósitos preventivos (hidrocelulares) en sacro y talones" },
         { "id": "agho", "label": "Ácidos grasos hiperoxigenados (AGHO) en zonas de riesgo" },
-        { "id": "manejo_humedad", "label": "Manejo de humedad (barrera cutánea, cambio de absorbente)" }
+        { "id": "exam_piel_diario", "label": "Examen diario de la piel en prominencias y bajo dispositivos" },
+        { "id": "control_humedad", "label": "Control de humedad con productos barrera" }
       ]
     },
     {
-      "id": "lpp_braden_alto",
-      "dimension": "lpp",
-      "when": { "bradenMin": 10, "bradenMax": 12 },
-      "severity": "alto",
-      "message": "Riesgo ALTO de lesión por presión (Braden 10–12)",
-      "questions": [
-        { "text": "¿Hay enrojecimiento persistente en prominencias óseas?", "alarm": "Sí" },
-        { "text": "¿Se reposiciona al paciente al menos cada 2 horas?", "alarm": "No" },
-        { "text": "¿La piel se mantiene seca e íntegra?", "alarm": "No" }
-      ],
-      "actions": [
-        { "id": "cambios_posturales_2h", "label": "Cambios posturales cada 2 horas" },
-        { "id": "superficie_apoyo", "label": "Superficie especial de apoyo" },
-        { "id": "aposito_presion", "label": "Apósito liberador de presión en prominencias" },
-        { "id": "agho", "label": "Ácidos grasos hiperoxigenados (AGHO) en zonas de riesgo" },
-        { "id": "hidratacion_piel", "label": "Hidratación de la piel" }
-      ]
-    },
-    {
-      "id": "lpp_braden_moderado",
+      "id": "lpp_moderado",
       "dimension": "lpp",
       "when": { "bradenMin": 13, "bradenMax": 14 },
       "severity": "medio",
-      "message": "Riesgo MODERADO de lesión por presión (Braden 13–14)",
+      "message": "LPP · Riesgo MODERADO (Braden 13–14)",
       "questions": [
-        { "text": "¿Permanece más de 2 horas en la misma posición?", "alarm": "Sí" },
+        { "text": "¿Hay eritema que NO blanquea en prominencias óseas?", "alarm": "Sí" },
+        { "text": "¿Permanece más de 2–3 h en la misma posición?", "alarm": "Sí" },
         { "text": "¿Hay humedad o fricción sobre la piel?", "alarm": "Sí" }
       ],
       "actions": [
-        { "id": "cambios_posturales", "label": "Programar cambios posturales" },
-        { "id": "vigilar_piel", "label": "Vigilar integridad de la piel por turno" },
-        { "id": "reevaluar_braden", "label": "Reevaluar Braden en 24–48 h" }
+        { "id": "cambios_2_3h", "label": "Cambios posturales cada 2–3 h" },
+        { "id": "semp_estatica", "label": "Superficie estática de alta tecnología (SEMP)" },
+        { "id": "valoracion_mna", "label": "Valoración nutricional (MNA)" },
+        { "id": "agho", "label": "Ácidos grasos hiperoxigenados (AGHO) en zonas de riesgo" },
+        { "id": "aposito_preventivo", "label": "Apósitos preventivos en sacro y talones" },
+        { "id": "exam_piel_diario", "label": "Examen diario de la piel" },
+        { "id": "control_humedad", "label": "Control de humedad con productos barrera" }
+      ]
+    },
+    {
+      "id": "lpp_bajo",
+      "dimension": "lpp",
+      "when": { "bradenMin": 15, "bradenMax": 18 },
+      "severity": "bajo",
+      "message": "LPP · Riesgo BAJO (Braden 15–18)",
+      "questions": [
+        { "text": "¿Hay enrojecimiento en alguna prominencia ósea?", "alarm": "Sí" },
+        { "text": "¿La piel está húmeda por incontinencia o sudoración?", "alarm": "Sí" }
+      ],
+      "actions": [
+        { "id": "cambios_4h", "label": "Cambios posturales cada 4 h" },
+        { "id": "agho", "label": "Hidratación con ácidos grasos hiperoxigenados (AGHO) en sacro/talones" },
+        { "id": "aposito_preventivo", "label": "Apósitos preventivos en sacro y talones" },
+        { "id": "exam_piel_diario", "label": "Examen diario de la piel" },
+        { "id": "educacion_prevencion", "label": "Educación a paciente/cuidador" }
       ]
     },
     {
@@ -61,16 +92,17 @@
       "dimension": "lpp",
       "when": { "mobilityIn": ["encamado", "silla_ruedas"] },
       "severity": "medio",
-      "message": "Inmovilidad (encamado / silla de ruedas): riesgo de LPP",
+      "message": "LPP · Inmovilidad (encamado / silla de ruedas)",
       "questions": [
-        { "text": "¿Permanece más de 2 horas en la misma posición?", "alarm": "Sí" },
-        { "text": "¿Cuenta con superficie de apoyo adecuada?", "alarm": "No" },
+        { "text": "¿Permanece más de 2 h en la misma posición (o >15 min en sedestación sin moverse)?", "alarm": "Sí" },
+        { "text": "¿Cuenta con superficie de apoyo adecuada (SEMP)?", "alarm": "No" },
         { "text": "¿Se le ha realizado la escala de Braden?", "alarm": "No" }
       ],
       "actions": [
-        { "id": "cambios_posturales_2h", "label": "Plan de cambios posturales cada 2 horas" },
-        { "id": "superficie_apoyo", "label": "Valorar superficie de apoyo" },
-        { "id": "valorar_braden", "label": "Realizar valoración de Braden si no se ha hecho" }
+        { "id": "cambios_2h_registro", "label": "Plan de cambios posturales cada 2 h (cada 15 min en sedestación si puede)" },
+        { "id": "semp_estatica", "label": "Valorar superficie de apoyo (SEMP) según riesgo" },
+        { "id": "valorar_braden", "label": "Realizar valoración de Braden si no se ha hecho" },
+        { "id": "exam_piel_diario", "label": "Examen diario de la piel" }
       ]
     },
     {
@@ -78,42 +110,37 @@
       "dimension": "lpp",
       "when": { "comorbilidad": "malnutricion" },
       "severity": "medio",
-      "message": "Malnutrición: piel vulnerable a lesión por presión",
+      "message": "LPP · Malnutrición (factor de riesgo)",
       "questions": [
         { "text": "¿Ha perdido peso recientemente?", "alarm": "Sí" },
         { "text": "¿Come menos del 50% de sus alimentos?", "alarm": "Sí" }
       ],
       "actions": [
-        { "id": "interconsulta_nutricion", "label": "Interconsulta a nutrición" },
-        { "id": "aporte_proteico", "label": "Optimizar aporte proteico-calórico" }
+        { "id": "valoracion_mna", "label": "Valoración nutricional (MNA)" },
+        { "id": "aporte_proteico_ajuste", "label": "Ajuste proteico 1.25–1.5 g/kg/día y suplementación si déficit" },
+        { "id": "interconsulta_nutricion", "label": "Interconsulta a nutrición" }
       ]
     },
     {
-      "id": "lpp_imc_bajo",
-      "dimension": "lpp",
-      "when": { "bmiMax": 18.5 },
+      "id": "complic_quirurgica",
+      "dimension": "complicacion",
+      "when": { "woundEtiology": "quirurgica", "hasActiveWound": true },
       "severity": "medio",
-      "message": "IMC bajo (<18.5): mayor riesgo de LPP",
+      "message": "Herida quirúrgica · Vigilancia de infección del sitio quirúrgico (ISQ)",
       "questions": [
-        { "text": "¿Se palpan las prominencias óseas con poco tejido de protección?", "alarm": "Sí" }
+        { "text": "¿Hay enrojecimiento, calor o dolor creciente alrededor de la incisión?", "alarm": "Sí" },
+        { "text": "¿Hay secreción purulenta o mal olor?", "alarm": "Sí" },
+        { "text": "¿Los bordes de la herida están afrontados (sin separación)?", "alarm": "No" },
+        { "text": "¿Fiebre >38 °C?", "alarm": "Sí" }
       ],
       "actions": [
-        { "id": "valoracion_nutricional", "label": "Valoración nutricional" },
-        { "id": "proteccion_prominencias", "label": "Acolchado / protección de prominencias óseas" }
-      ]
-    },
-    {
-      "id": "lpp_fragil",
-      "dimension": "lpp",
-      "when": { "fragile": true },
-      "severity": "medio",
-      "message": "Paciente frágil: mayor vulnerabilidad cutánea",
-      "questions": [
-        { "text": "¿Hay un cuidador que apoye la movilización y el cuidado de la piel?", "alarm": "No" }
-      ],
-      "actions": [
-        { "id": "cuidado_piel", "label": "Extremar cuidados de piel y movilización" },
-        { "id": "involucrar_cuidador", "label": "Capacitar/involucrar al cuidador en la prevención" }
+        { "id": "vigilancia_sitio_qx", "label": "Vigilancia diaria del sitio quirúrgico (incluye zonas bajo dispositivos)" },
+        { "id": "curacion_esteril", "label": "Curación con técnica estéril" },
+        { "id": "control_glucemia_postop", "label": "Control glucémico postoperatorio (objetivo 110–150 mg/dL)" },
+        { "id": "normotermia", "label": "Mantener normotermia (>35.5 °C)" },
+        { "id": "cultivo_si_signos", "label": "Cultivo y valoración de antibiótico si hay signos de infección" },
+        { "id": "clasificar_isq", "label": "Clasificar ISQ (superficial / profunda / órgano-espacio) si se confirma" },
+        { "id": "referir_isq", "label": "Referir/valorar por cirugía si dehiscencia o infección profunda" }
       ]
     },
     {
@@ -121,7 +148,7 @@
       "dimension": "complicacion",
       "when": { "comorbilidad": "enfermedadArterialPeriferica", "hasActiveWound": true },
       "severity": "alto",
-      "message": "Enfermedad arterial periférica: riesgo de isquemia / necrosis",
+      "message": "Enfermedad arterial periférica · Riesgo de isquemia / necrosis",
       "questions": [
         { "text": "¿La piel alrededor de la herida está fría, pálida o azulada?", "alarm": "Sí" },
         { "text": "¿Hay dolor en reposo o al elevar la pierna?", "alarm": "Sí" },
@@ -138,7 +165,7 @@
       "dimension": "complicacion",
       "when": { "comorbilidad": "inmunosupresion", "hasActiveWound": true },
       "severity": "alto",
-      "message": "Inmunosupresión: alto riesgo de infección de la herida",
+      "message": "Inmunosupresión · Alto riesgo de infección de la herida",
       "questions": [
         { "text": "¿Hay aumento de dolor, calor, enrojecimiento o secreción?", "alarm": "Sí" },
         { "text": "¿Fiebre o malestar general?", "alarm": "Sí" }
@@ -154,7 +181,7 @@
       "dimension": "complicacion",
       "when": { "woundEtiology": "pieDiabetico", "comorbilidad": "diabetesMellitus" },
       "severity": "alto",
-      "message": "Pie diabético: riesgo de progresión (infección / amputación)",
+      "message": "Pie diabético · Riesgo de progresión (infección / amputación)",
       "questions": [
         { "text": "¿Hay eritema, calor, secreción o mal olor?", "alarm": "Sí" },
         { "text": "¿El paciente percibe la herida (sensibilidad protectora)?", "alarm": "No" },
@@ -168,29 +195,11 @@
       ]
     },
     {
-      "id": "complic_quirurgica",
-      "dimension": "complicacion",
-      "when": { "woundEtiology": "quirurgica", "hasActiveWound": true },
-      "severity": "medio",
-      "message": "Herida quirúrgica: vigilancia de infección / dehiscencia",
-      "questions": [
-        { "text": "¿Hay enrojecimiento, calor o dolor creciente alrededor de la incisión?", "alarm": "Sí" },
-        { "text": "¿Hay secreción (serosa/purulenta) o mal olor?", "alarm": "Sí" },
-        { "text": "¿Los bordes de la herida están afrontados (sin separación)?", "alarm": "No" },
-        { "text": "¿Fiebre >38°C?", "alarm": "Sí" }
-      ],
-      "actions": [
-        { "id": "vigilar_signos_infeccion", "label": "Vigilar signos de infección del sitio quirúrgico" },
-        { "id": "curacion_esteril", "label": "Curación con técnica estéril" },
-        { "id": "referir_si_alarma", "label": "Referir si hay signos de alarma (dehiscencia/infección)" }
-      ]
-    },
-    {
       "id": "complic_dm",
       "dimension": "complicacion",
       "when": { "comorbilidad": "diabetesMellitus", "hasActiveWound": true },
       "severity": "medio",
-      "message": "Diabetes: riesgo de infección y cicatrización lenta",
+      "message": "Diabetes · Riesgo de infección y cicatrización lenta",
       "questions": [
         { "text": "¿Las glucemias están en control?", "alarm": "No" },
         { "text": "¿Hay signos incipientes de infección?", "alarm": "Sí" }
@@ -206,13 +215,13 @@
       "dimension": "complicacion",
       "when": { "comorbilidad": "malnutricion", "hasActiveWound": true },
       "severity": "medio",
-      "message": "Malnutrición: cicatrización comprometida",
+      "message": "Malnutrición · Cicatrización comprometida",
       "questions": [
         { "text": "¿El aporte proteico es suficiente?", "alarm": "No" }
       ],
       "actions": [
         { "id": "interconsulta_nutricion", "label": "Interconsulta a nutrición" },
-        { "id": "aporte_proteico", "label": "Asegurar aporte proteico / suplementación" }
+        { "id": "aporte_proteico_ajuste", "label": "Ajuste proteico 1.25–1.5 g/kg/día / suplementación" }
       ]
     },
     {
@@ -220,7 +229,7 @@
       "dimension": "complicacion",
       "when": { "comorbilidad": "insuficienciaRenalCronica", "hasActiveWound": true },
       "severity": "medio",
-      "message": "Insuficiencia renal crónica: cicatrización lenta y riesgo de infección",
+      "message": "Insuficiencia renal crónica · Cicatrización lenta y riesgo de infección",
       "questions": [
         { "text": "¿El estado hídrico y nutricional son adecuados?", "alarm": "No" }
       ],
@@ -234,7 +243,7 @@
       "dimension": "complicacion",
       "when": { "comorbilidad": "tabaquismoActivo", "hasActiveWound": true },
       "severity": "medio",
-      "message": "Tabaquismo activo: perfusión y cicatrización comprometidas",
+      "message": "Tabaquismo activo · Perfusión y cicatrización comprometidas",
       "questions": [
         { "text": "¿El paciente está dispuesto a dejar de fumar?" }
       ],
