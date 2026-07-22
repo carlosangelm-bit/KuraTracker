@@ -52,13 +52,13 @@ extension AdverseEventAlarmSignLabel on AdverseEventAlarmSign {
   String get label {
     switch (this) {
       case AdverseEventAlarmSign.fiebre38:
-        return 'Fiebre ≥38°';
+        return 'Fiebre ≥38° (infección sistémica · IWII 2022)';
       case AdverseEventAlarmSign.sangrado10min:
         return 'Sangrado >10 min';
       case AdverseEventAlarmSign.linfangitis:
-        return 'Linfangitis';
+        return 'Linfangitis / eritema >2 cm (infección en propagación · IWII 2022)';
       case AdverseEventAlarmSign.signosSistemicos:
-        return 'Signos sistémicos';
+        return 'Signos sistémicos / sepsis (infección sistémica · IWII 2022)';
     }
   }
 
