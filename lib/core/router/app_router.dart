@@ -11,6 +11,8 @@ import '../../features/patients/patient_detail_screen.dart';
 import '../../features/patients/patient_form_screen.dart';
 import '../../features/patients/comorbidities_screen.dart';
 import '../../features/patients/diagnoses_screen.dart';
+import '../../features/risk/risk_board_screen.dart';
+import '../../features/risk/patient_risk_screen.dart';
 import '../../features/consultation/consultation_hub_screen.dart';
 import '../../models/consultation.dart';
 import '../../features/wound_capture/wound_capture_screen.dart';
@@ -196,6 +198,13 @@ final routerProvider = Provider<GoRouter>((ref) {
           ),
           GoRoute(path: '/reports', builder: (context, state) => const ReportsScreen()),
           GoRoute(path: '/agenda', builder: (context, state) => const AgendaScreen()),
+          GoRoute(path: '/risk', builder: (context, state) => const RiskBoardScreen()),
+          GoRoute(
+            path: '/patients/:patientId/risk',
+            builder: (context, state) => PatientRiskScreen(
+              patientId: state.pathParameters['patientId']!,
+            ),
+          ),
           GoRoute(path: '/admin', builder: (context, state) => const AdminHomeScreen()),
           GoRoute(
             path: '/platform',

@@ -42,6 +42,7 @@ class AppShell extends ConsumerWidget {
       const _NavItem('/', Icons.dashboard_outlined, Icons.dashboard, 'Inicio'),
       const _NavItem('/patients', Icons.people_outline, Icons.people, 'Pacientes'),
       const _NavItem('/agenda', Icons.event_outlined, Icons.event, 'Agenda'),
+      const _NavItem('/risk', Icons.shield_outlined, Icons.shield, 'Prevención'),
       const _NavItem('/reports', Icons.description_outlined, Icons.description, 'Reportes'),
     ];
     if (user?.role == AppRole.admin) {

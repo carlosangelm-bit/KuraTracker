@@ -13,7 +13,7 @@ class DemoSeed {
   // sola vez en instalaciones demo previas (que tenían 'seeded' v1), evitando
   // duplicados y datos viejos. Solo aplica al modo demo local (SharedPreferences);
   // producción usa Supabase y nunca llama a este seed.
-  static const String _seedFlag = 'seeded_v5';
+  static const String _seedFlag = 'seeded_v6';
 
   static Future<void> ensureSeeded(LocalStore store) async {
     if (store.getBool(_seedFlag)) return;
@@ -417,6 +417,60 @@ class DemoSeed {
           'INFECCIÓN CONSECUTIVA A PROCEDIMIENTO, NO CLASIFICADA EN OTRA PARTE',
           'consecuencia', false),
       // Paciente 5: traumatica -> sin diagnósticos codificados aún.
+    ]);
+
+    // ---------------- Prevención / Riesgo (módulo v1) ----------------
+    // Internamientos (unidad/cama) para poblar el tablero de riesgo.
+    await store.saveAll(Collections.patientAdmissions, [
+      {
+        'id': _uuid.v4(),
+        'organization_id': organizationId,
+        'patient_id': p2Id, // LPP sacra, encamada
+        'unit': 'Medicina Interna',
+        'bed': '12',
+        'admitted_at': iso(now.subtract(const Duration(days: 6))),
+        'discharged_at': null,
+        'status': 'activo',
+        'notes': null,
+        'created_at': iso(now.subtract(const Duration(days: 6))),
+      },
+      {
+        'id': _uuid.v4(),
+        'organization_id': organizationId,
+        'patient_id': p1Id, // pie diabetico
+        'unit': 'Cirugía',
+        'bed': '4',
+        'admitted_at': iso(now.subtract(const Duration(days: 2))),
+        'discharged_at': null,
+        'status': 'activo',
+        'notes': null,
+        'created_at': iso(now.subtract(const Duration(days: 2))),
+      },
+    ]);
+    // Valoraciones de Braden (la más reciente alimenta el motor de prevención).
+    await store.saveAll(Collections.riskAssessments, [
+      {
+        'id': _uuid.v4(),
+        'organization_id': organizationId,
+        'patient_id': p2Id,
+        'braden_score': 11, // riesgo alto de LPP
+        'braden_subscores': null,
+        'assessed_at': iso(now.subtract(const Duration(days: 1))),
+        'assessed_by': null,
+        'notes': 'Paciente encamada, incontinencia.',
+        'created_at': iso(now.subtract(const Duration(days: 1))),
+      },
+      {
+        'id': _uuid.v4(),
+        'organization_id': organizationId,
+        'patient_id': p1Id,
+        'braden_score': 16, // riesgo bajo
+        'braden_subscores': null,
+        'assessed_at': iso(now.subtract(const Duration(days: 1))),
+        'assessed_by': null,
+        'notes': null,
+        'created_at': iso(now.subtract(const Duration(days: 1))),
+      },
     ]);
 
     // ---------------- Consentimientos ----------------

@@ -11,7 +11,9 @@ import '../models/consultation.dart';
 import '../models/manual_appointment.dart';
 import '../models/organization.dart';
 import '../models/patient.dart';
+import '../models/patient_admission.dart';
 import '../models/patient_diagnosis.dart';
+import '../models/risk_assessment.dart';
 import '../models/referral.dart';
 import '../models/note_option_catalog.dart';
 import '../models/site.dart';
@@ -21,6 +23,7 @@ import '../models/wound.dart';
 import '../engine/models/kura_engine_output.dart';
 import '../engine/models/kura_engine_enums.dart';
 import '../engine/cie10_catalog.dart';
+import '../engine/risk/prevention_risk_engine.dart';
 import 'local_db/demo_seed.dart';
 import 'local_db/local_store.dart';
 import 'remote/data_store.dart';
@@ -1297,6 +1300,128 @@ class DataRepository {
   /// `setDiagnosisStatus(descartado)`.
   Future<void> deleteDiagnosis(String diagnosisId) async {
     await _store.deleteRow(Collections.patientDiagnoses, diagnosisId);
+  }
+
+  // ---------------- Prevención / Riesgo (módulo v1) ----------------
+  // Capa DOCUMENTAL/asesor: no altera el motor de tratamiento. Persiste los
+  // INSUMOS (internamiento + valoración Braden); las alertas se computan al
+  // vuelo con prevention_risk_engine.dart. Ver 0036_prevention_module.sql.
+
+  // -- Internamiento --
+  List<PatientAdmission> listAdmissions(String patientId) => _store
+      .getAll(Collections.patientAdmissions)
+      .where((a) => a['patient_id'] == patientId)
+      .map(PatientAdmission.fromJson)
+      .toList()
+    ..sort((a, b) => b.admittedAt.compareTo(a.admittedAt));
+
+  /// Internamiento ACTIVO del paciente (o null si no está internado).
+  PatientAdmission? activeAdmission(String patientId) {
+    final match = _store.getAll(Collections.patientAdmissions).where((a) =>
+        a['patient_id'] == patientId && (a['status'] as String?) == 'activo');
+    return match.isEmpty ? null : PatientAdmission.fromJson(match.first);
+  }
+
+  /// Todos los internamientos activos (para el tablero de riesgo), filtrable
+  /// por organización.
+  List<PatientAdmission> listActiveAdmissions({String? organizationId}) => _store
+      .getAll(Collections.patientAdmissions)
+      .where((a) =>
+          (a['status'] as String?) == 'activo' &&
+          (organizationId == null || a['organization_id'] == organizationId))
+      .map(PatientAdmission.fromJson)
+      .toList();
+
+  /// Ingresa (interna) a un paciente. Respeta "un solo activo": egresa primero
+  /// cualquier internamiento activo previo.
+  Future<PatientAdmission> admitPatient({
+    required String patientId,
+    required String? organizationId,
+    String? unit,
+    String? bed,
+    String? notes,
+  }) async {
+    final current = activeAdmission(patientId);
+    if (current != null) await dischargePatient(current.id);
+    final data = {
+      'id': _uuid.v4(),
+      'organization_id': organizationId,
+      'patient_id': patientId,
+      'unit': unit,
+      'bed': bed,
+      'admitted_at': DateTime.now().toIso8601String(),
+      'discharged_at': null,
+      'status': AdmissionStatus.activo.dbValue,
+      'notes': notes,
+      'created_at': DateTime.now().toIso8601String(),
+    };
+    final saved = await _store.insertRow(Collections.patientAdmissions, data);
+    return PatientAdmission.fromJson(saved);
+  }
+
+  Future<void> dischargePatient(String admissionId) async {
+    await _store.updateRow(Collections.patientAdmissions, admissionId, {
+      'status': AdmissionStatus.egresado.dbValue,
+      'discharged_at': DateTime.now().toIso8601String(),
+    });
+  }
+
+  // -- Valoración de riesgo (Braden) --
+  List<RiskAssessment> listRiskAssessments(String patientId) => _store
+      .getAll(Collections.riskAssessments)
+      .where((r) => r['patient_id'] == patientId)
+      .map(RiskAssessment.fromJson)
+      .toList()
+    ..sort((a, b) => b.assessedAt.compareTo(a.assessedAt));
+
+  RiskAssessment? latestRiskAssessment(String patientId) {
+    final all = listRiskAssessments(patientId);
+    return all.isEmpty ? null : all.first;
+  }
+
+  Future<RiskAssessment> addRiskAssessment({
+    required String patientId,
+    required String? organizationId,
+    int? bradenScore,
+    Map<String, dynamic>? bradenSubscores,
+    String? notes,
+    required String? staffId,
+  }) async {
+    final data = {
+      'id': _uuid.v4(),
+      'organization_id': organizationId,
+      'patient_id': patientId,
+      'braden_score': bradenScore,
+      'braden_subscores': bradenSubscores,
+      'assessed_at': DateTime.now().toIso8601String(),
+      'assessed_by': staffId,
+      'notes': notes,
+      'created_at': DateTime.now().toIso8601String(),
+    };
+    final saved = await _store.insertRow(Collections.riskAssessments, data);
+    return RiskAssessment.fromJson(saved);
+  }
+
+  /// Computa el riesgo de un paciente AL VUELO (no se persiste): junta sus
+  /// comorbilidades presentes + última Braden + heridas activas y aplica el
+  /// catálogo de reglas. Devuelve nivel + alertas preventivas.
+  PreventionRiskResult computeRisk(
+      String patientId, PreventionRulesCatalog catalog) {
+    final patient = getPatient(patientId);
+    if (patient == null) return PreventionRiskResult.empty;
+    final presentes = listComorbidities(patientId)
+        .where((c) => c.status == ComorbilidadEstado.presente)
+        .map((c) => c.code)
+        .toSet();
+    final activeWounds =
+        listWoundsForPatient(patientId).where((w) => w.isActive).toList();
+    return catalog.evaluate(
+      patient: patient,
+      comorbilidadesPresentes: presentes,
+      latestBraden: latestRiskAssessment(patientId)?.bradenScore,
+      activeWounds: activeWounds,
+      // deterioration: hook de fase 2 (requiere historial de consultas).
+    );
   }
 
   // ---------------- Consultas ----------------

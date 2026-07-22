@@ -6,8 +6,10 @@ import 'package:intl/intl.dart';
 import '../../core/theme/kura_theme.dart';
 import '../../core/providers/session_provider.dart';
 import '../../engine/models/kura_engine_enums.dart';
+import '../../engine/risk/prevention_risk_engine.dart';
 import '../../models/antecedentes.dart';
 import '../../models/patient_diagnosis.dart';
+import '../risk/risk_theme.dart';
 import '../../models/patient.dart';
 import '../../models/wound.dart';
 import '../../models/consultation.dart';
@@ -86,6 +88,8 @@ class _PatientDetailScreenState extends ConsumerState<PatientDetailScreen> {
                         patientId: patient.id, comorbidities: comorbidities),
                     const SizedBox(height: 16),
                     _DiagnosesCard(patientId: patient.id, diagnoses: diagnoses),
+                    const SizedBox(height: 16),
+                    _RiskCard(patientId: patient.id),
                     const SizedBox(height: 16),
                     _ConsentsSummaryCard(patientId: patient.id, repo: repo),
                     const SizedBox(height: 16),
@@ -416,6 +420,62 @@ class _ComorbidityCard extends StatelessWidget {
                     );
                   }).toList(),
                 ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Tarjeta de prevención/riesgo del expediente. Muestra el nivel de riesgo
+/// computado y el nº de alertas; navega a la ficha de riesgo. Capa DOCUMENTAL.
+class _RiskCard extends ConsumerWidget {
+  final String patientId;
+  const _RiskCard({required this.patientId});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final repo = ref.watch(dataRepositoryProvider).valueOrNull;
+    final rules = ref.watch(preventionRulesProvider).valueOrNull;
+    PreventionRiskResult? result;
+    if (repo != null && rules != null) {
+      result = repo.computeRisk(patientId, rules);
+    }
+    final level = result?.level ?? RiskLevel.sinRiesgo;
+    final color = riskLevelColor(level);
+    final n = result?.alerts.length ?? 0;
+    return Card(
+      margin: EdgeInsets.zero,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: () => context.go('/patients/$patientId/risk'),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              Icon(Icons.shield_outlined, color: color, size: 20),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Prevención y riesgo',
+                        style: TextStyle(fontWeight: FontWeight.w700)),
+                    const SizedBox(height: 2),
+                    Text(
+                      result == null
+                          ? 'Ver alertas preventivas'
+                          : '${level.label}${n > 0 ? ' · $n alerta${n == 1 ? '' : 's'}' : ''}',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: result != null && level != RiskLevel.sinRiesgo
+                              ? color
+                              : null),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(Icons.chevron_right, size: 18),
             ],
           ),
         ),

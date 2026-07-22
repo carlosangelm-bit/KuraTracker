@@ -1,0 +1,126 @@
+{
+  "version": "2026-07-22",
+  "note": "BORRADOR de reglas de prevención/riesgo (basado en evidencia). PENDIENTE de validación/calibración clínica de María antes de producción. Capa DOCUMENTAL: no altera el motor de tratamiento. Condiciones de 'when' soportadas por prevention_risk_engine.dart: bradenMin, bradenMax (inclusive), comorbilidad (name de Comorbilidad), hasActiveWound (bool), mobilityIn (lista de ambulatorio|silla_ruedas|encamado), fragile (bool), bmiMax, woundEtiology (name de Etiologia), deterioration (bool). Una regla dispara si TODAS sus condiciones se cumplen. severity: alto|medio|bajo. dimension: lpp|complicacion.",
+  "rules": [
+    {
+      "id": "lpp_braden_muy_alto",
+      "dimension": "lpp",
+      "when": { "bradenMin": 6, "bradenMax": 9 },
+      "severity": "alto",
+      "message": "Riesgo MUY ALTO de lesión por presión (Braden ≤9)",
+      "recommendation": "Superficie de redistribución de presión, cambios posturales c/2h, protección de sacro y talones, valoración nutricional y de la piel por turno."
+    },
+    {
+      "id": "lpp_braden_alto",
+      "dimension": "lpp",
+      "when": { "bradenMin": 10, "bradenMax": 12 },
+      "severity": "alto",
+      "message": "Riesgo ALTO de lesión por presión (Braden 10–12)",
+      "recommendation": "Cambios posturales c/2h, superficie especial, protección de prominencias óseas, mantener piel seca e hidratada."
+    },
+    {
+      "id": "lpp_braden_moderado",
+      "dimension": "lpp",
+      "when": { "bradenMin": 13, "bradenMax": 14 },
+      "severity": "medio",
+      "message": "Riesgo MODERADO de lesión por presión (Braden 13–14)",
+      "recommendation": "Programar cambios posturales, vigilar humedad e integridad de la piel, reevaluar Braden en 24–48 h."
+    },
+    {
+      "id": "lpp_inmovilidad",
+      "dimension": "lpp",
+      "when": { "mobilityIn": ["encamado", "silla_ruedas"] },
+      "severity": "medio",
+      "message": "Inmovilidad (encamado / silla de ruedas): riesgo de LPP",
+      "recommendation": "Plan de cambios posturales y movilización; considerar superficie de apoyo; valorar Braden si no se ha hecho."
+    },
+    {
+      "id": "lpp_malnutricion",
+      "dimension": "lpp",
+      "when": { "comorbilidad": "malnutricion" },
+      "severity": "medio",
+      "message": "Malnutrición: piel vulnerable a lesión por presión",
+      "recommendation": "Interconsulta a nutrición; optimizar aporte proteico-calórico; vigilar prominencias óseas."
+    },
+    {
+      "id": "lpp_imc_bajo",
+      "dimension": "lpp",
+      "when": { "bmiMax": 18.5 },
+      "severity": "medio",
+      "message": "IMC bajo (<18.5): mayor riesgo de LPP",
+      "recommendation": "Valoración nutricional; acolchado de prominencias óseas; vigilancia estrecha de la piel."
+    },
+    {
+      "id": "lpp_fragil",
+      "dimension": "lpp",
+      "when": { "fragile": true },
+      "severity": "medio",
+      "message": "Paciente frágil: mayor vulnerabilidad cutánea",
+      "recommendation": "Extremar cuidados de la piel y movilización; involucrar al cuidador en la prevención."
+    },
+    {
+      "id": "complic_eap_isquemia",
+      "dimension": "complicacion",
+      "when": { "comorbilidad": "enfermedadArterialPeriferica", "hasActiveWound": true },
+      "severity": "alto",
+      "message": "Enfermedad arterial periférica: riesgo de isquemia / necrosis de la herida",
+      "recommendation": "NO aplicar compresión sin descartar isquemia; valorar ABI/perfusión; considerar referencia a angiología."
+    },
+    {
+      "id": "complic_inmunosupresion",
+      "dimension": "complicacion",
+      "when": { "comorbilidad": "inmunosupresion", "hasActiveWound": true },
+      "severity": "alto",
+      "message": "Inmunosupresión: alto riesgo de infección de la herida",
+      "recommendation": "Vigilancia estrecha de signos de infección; asepsia rigurosa; umbral bajo para cultivo y antibioticoterapia."
+    },
+    {
+      "id": "complic_deterioro",
+      "dimension": "complicacion",
+      "when": { "deterioration": true, "hasActiveWound": true },
+      "severity": "alto",
+      "message": "Deterioro objetivo de la herida respecto a la valoración previa",
+      "recommendation": "Reevaluar plan de tratamiento; descartar infección/isquemia; considerar interconsulta."
+    },
+    {
+      "id": "complic_pie_diabetico",
+      "dimension": "complicacion",
+      "when": { "woundEtiology": "pieDiabetico", "comorbilidad": "diabetesMellitus" },
+      "severity": "alto",
+      "message": "Pie diabético: riesgo de progresión (infección / amputación)",
+      "recommendation": "Descarga de presión, control glucémico estricto, vigilancia de infección profunda, valorar IDSA/IWGDF."
+    },
+    {
+      "id": "complic_dm",
+      "dimension": "complicacion",
+      "when": { "comorbilidad": "diabetesMellitus", "hasActiveWound": true },
+      "severity": "medio",
+      "message": "Diabetes: riesgo de infección y cicatrización lenta",
+      "recommendation": "Optimizar control glucémico; vigilar signos de infección; educación al paciente/cuidador."
+    },
+    {
+      "id": "complic_malnutricion",
+      "dimension": "complicacion",
+      "when": { "comorbilidad": "malnutricion", "hasActiveWound": true },
+      "severity": "medio",
+      "message": "Malnutrición: cicatrización comprometida",
+      "recommendation": "Interconsulta a nutrición; asegurar aporte proteico; considerar suplementación."
+    },
+    {
+      "id": "complic_irc",
+      "dimension": "complicacion",
+      "when": { "comorbilidad": "insuficienciaRenalCronica", "hasActiveWound": true },
+      "severity": "medio",
+      "message": "Insuficiencia renal crónica: cicatrización lenta y riesgo de infección",
+      "recommendation": "Vigilancia de infección; coordinar con nefrología; cuidado del estado hídrico y nutricional."
+    },
+    {
+      "id": "complic_tabaquismo",
+      "dimension": "complicacion",
+      "when": { "comorbilidad": "tabaquismoActivo", "hasActiveWound": true },
+      "severity": "medio",
+      "message": "Tabaquismo activo: perfusión y cicatrización comprometidas",
+      "recommendation": "Consejo de cesación tabáquica; vigilar perfusión de la herida."
+    }
+  ]
+}
