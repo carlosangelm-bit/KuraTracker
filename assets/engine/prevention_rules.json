@@ -1,6 +1,6 @@
 {
-  "version": "2026-07-22d",
-  "note": "Algoritmo preventivo de LPP y complicaciones de heridas quirúrgicas (entorno hospitalario), basado en el reporte clínico aportado (GNEAUPP/EPUAP/NPIAP, IMSS, OMS/WHO SSI). LPP: determinístico por banda de Braden -> paquete de intervenciones ESCALONADO (cada banda incluye las medidas de las bandas inferiores). Herida quirúrgica: vigilancia ISQ (definiciones CDC/NHSN) + conducta. BORRADOR: pendiente de validación/calibración clínica de María. Capa DOCUMENTAL: no altera el motor de tratamiento. 'question' = {text, options?, alarm?} (alarm = respuesta que indica atención). 'actions' = medidas (registrables con fecha/autor). 'when': bradenMin/bradenMax (inclusive), comorbilidad, hasActiveWound, mobilityIn, fragile, bmiMax, woundEtiology, deterioration. severity: alto|medio|bajo. dimension: lpp|complicacion. Umbral de activación del protocolo LPP: Braden ≤16 (≤18 en críticos); revalorar cada 48–72 h, diario en UCI y siempre tras cirugía mayor / cambio de movilidad / deterioro / traslado.",
+  "version": "2026-07-22e",
+  "note": "Algoritmo preventivo de LPP y complicaciones de heridas quirúrgicas (entorno hospitalario), basado en el reporte clínico aportado (GNEAUPP/EPUAP/NPIAP, IMSS, OMS/WHO SSI). LPP: determinístico por banda de Braden -> paquete de intervenciones ESCALONADO (prevención). Cada regla tiene 'questions' de VIGILANCIA con respuesta; si el profesional responde con la respuesta de 'alarm', se muestra la conducta de 'escalation' (prevención -> manejo/notificar/referir). BORRADOR pendiente de validación de María. Capa DOCUMENTAL: no altera el motor de tratamiento. 'when': bradenMin/bradenMax, comorbilidad, hasActiveWound, mobilityIn, fragile, bmiMax, woundEtiology, deterioration. severity: alto|medio|bajo. dimension: lpp|complicacion.",
   "rules": [
     {
       "id": "lpp_muy_alto",
@@ -24,7 +24,16 @@
         { "id": "control_humedad", "label": "Control de humedad (incontinencia/sudoración/drenajes) con productos barrera" },
         { "id": "higiene_ph_neutro", "label": "Higiene con pH neutro; NO masajear prominencias óseas" },
         { "id": "educacion_prevencion", "label": "Educación a paciente/cuidador y evitar dispositivos tipo rosca/flotador" }
-      ]
+      ],
+      "escalation": {
+        "message": "Hallazgo de alarma: posible lesión por presión ya presente o daño cutáneo en curso. Escalar de prevención a MANEJO.",
+        "actions": [
+          { "id": "esc_estadificar", "label": "Valorar y estadificar la lesión (categoría/estadio) y registrarla como herida" },
+          { "id": "esc_notificar", "label": "Notificar al médico/responsable del caso" },
+          { "id": "esc_cuidado_local", "label": "Iniciar cuidado local (apósito adecuado; NO masajear la zona)" },
+          { "id": "esc_reevaluar", "label": "Reevaluar Braden e intensificar prevención" }
+        ]
+      }
     },
     {
       "id": "lpp_alto",
@@ -46,7 +55,16 @@
         { "id": "agho", "label": "Ácidos grasos hiperoxigenados (AGHO) en zonas de riesgo" },
         { "id": "exam_piel_diario", "label": "Examen diario de la piel en prominencias y bajo dispositivos" },
         { "id": "control_humedad", "label": "Control de humedad con productos barrera" }
-      ]
+      ],
+      "escalation": {
+        "message": "Hallazgo de alarma: posible lesión por presión ya presente o daño cutáneo en curso. Escalar de prevención a MANEJO.",
+        "actions": [
+          { "id": "esc_estadificar", "label": "Valorar y estadificar la lesión y registrarla como herida" },
+          { "id": "esc_notificar", "label": "Notificar al médico/responsable" },
+          { "id": "esc_cuidado_local", "label": "Iniciar cuidado local (apósito adecuado; NO masajear)" },
+          { "id": "esc_reevaluar", "label": "Reevaluar Braden e intensificar prevención" }
+        ]
+      }
     },
     {
       "id": "lpp_moderado",
@@ -67,7 +85,15 @@
         { "id": "aposito_preventivo", "label": "Apósitos preventivos en sacro y talones" },
         { "id": "exam_piel_diario", "label": "Examen diario de la piel" },
         { "id": "control_humedad", "label": "Control de humedad con productos barrera" }
-      ]
+      ],
+      "escalation": {
+        "message": "Hallazgo de alarma: signos de daño cutáneo o presión sostenida. Escalar la conducta.",
+        "actions": [
+          { "id": "esc_estadificar", "label": "Valorar la piel; si hay lesión, estadificar y registrar como herida" },
+          { "id": "esc_subir_banda", "label": "Intensificar medidas (frecuencia de cambios / SEMP) y reevaluar Braden" },
+          { "id": "esc_notificar", "label": "Notificar al responsable si hay lesión" }
+        ]
+      }
     },
     {
       "id": "lpp_bajo",
@@ -85,7 +111,14 @@
         { "id": "aposito_preventivo", "label": "Apósitos preventivos en sacro y talones" },
         { "id": "exam_piel_diario", "label": "Examen diario de la piel" },
         { "id": "educacion_prevencion", "label": "Educación a paciente/cuidador" }
-      ]
+      ],
+      "escalation": {
+        "message": "Hallazgo de alarma en paciente de bajo riesgo: reforzar prevención y vigilar la zona.",
+        "actions": [
+          { "id": "esc_subir_banda", "label": "Aumentar frecuencia de cambios posturales y proteger la zona" },
+          { "id": "esc_reevaluar", "label": "Reevaluar Braden (el riesgo pudo aumentar)" }
+        ]
+      }
     },
     {
       "id": "lpp_inmovilidad",
@@ -103,7 +136,15 @@
         { "id": "semp_estatica", "label": "Valorar superficie de apoyo (SEMP) según riesgo" },
         { "id": "valorar_braden", "label": "Realizar valoración de Braden si no se ha hecho" },
         { "id": "exam_piel_diario", "label": "Examen diario de la piel" }
-      ]
+      ],
+      "escalation": {
+        "message": "Brecha en la prevención (sin SEMP / sin Braden / >2 h sin cambio). Corregir de inmediato.",
+        "actions": [
+          { "id": "esc_semp_ahora", "label": "Colocar superficie de apoyo (SEMP) ahora" },
+          { "id": "esc_braden_ahora", "label": "Realizar la valoración de Braden ahora" },
+          { "id": "esc_cambios_ahora", "label": "Iniciar cambios posturales con registro horario" }
+        ]
+      }
     },
     {
       "id": "lpp_malnutricion",
@@ -119,7 +160,14 @@
         { "id": "valoracion_mna", "label": "Valoración nutricional (MNA)" },
         { "id": "aporte_proteico_ajuste", "label": "Ajuste proteico 1.25–1.5 g/kg/día y suplementación si déficit" },
         { "id": "interconsulta_nutricion", "label": "Interconsulta a nutrición" }
-      ]
+      ],
+      "escalation": {
+        "message": "Desnutrición activa: priorizar soporte nutricional.",
+        "actions": [
+          { "id": "esc_nutricion_urgente", "label": "Interconsulta a nutrición prioritaria" },
+          { "id": "esc_suplementar", "label": "Iniciar suplementación proteico-calórica" }
+        ]
+      }
     },
     {
       "id": "complic_quirurgica",
@@ -137,11 +185,17 @@
         { "id": "vigilancia_sitio_qx", "label": "Vigilancia diaria del sitio quirúrgico (incluye zonas bajo dispositivos)" },
         { "id": "curacion_esteril", "label": "Curación con técnica estéril" },
         { "id": "control_glucemia_postop", "label": "Control glucémico postoperatorio (objetivo 110–150 mg/dL)" },
-        { "id": "normotermia", "label": "Mantener normotermia (>35.5 °C)" },
-        { "id": "cultivo_si_signos", "label": "Cultivo y valoración de antibiótico si hay signos de infección" },
-        { "id": "clasificar_isq", "label": "Clasificar ISQ (superficial / profunda / órgano-espacio) si se confirma" },
-        { "id": "referir_isq", "label": "Referir/valorar por cirugía si dehiscencia o infección profunda" }
-      ]
+        { "id": "normotermia", "label": "Mantener normotermia (>35.5 °C)" }
+      ],
+      "escalation": {
+        "message": "Signos de alarma de ISQ (infección/dehiscencia). Escalar sin demora.",
+        "actions": [
+          { "id": "esc_cultivo", "label": "Tomar cultivo del sitio quirúrgico" },
+          { "id": "esc_referir_cirugia", "label": "Notificar / referir a cirugía" },
+          { "id": "esc_antibiotico", "label": "Valorar antibioticoterapia" },
+          { "id": "esc_clasificar_isq", "label": "Clasificar ISQ (superficial / profunda / órgano-espacio)" }
+        ]
+      }
     },
     {
       "id": "complic_eap_isquemia",
@@ -158,7 +212,15 @@
         { "id": "no_compresion", "label": "NO aplicar compresión sin descartar isquemia" },
         { "id": "valorar_abi", "label": "Valorar ABI / perfusión" },
         { "id": "referir_angiologia", "label": "Considerar referencia a angiología" }
-      ]
+      ],
+      "escalation": {
+        "message": "Signos de isquemia: riesgo de necrosis. Escalar con prioridad.",
+        "actions": [
+          { "id": "esc_suspender_compresion", "label": "Suspender cualquier compresión" },
+          { "id": "esc_referir_vascular", "label": "Referir a angiología con prioridad" },
+          { "id": "esc_valorar_revasc", "label": "Valorar estudio vascular / revascularización" }
+        ]
+      }
     },
     {
       "id": "complic_inmunosupresion",
@@ -174,7 +236,14 @@
         { "id": "vigilar_infeccion", "label": "Vigilancia estrecha de signos de infección" },
         { "id": "asepsia", "label": "Técnica de curación aséptica rigurosa" },
         { "id": "cultivo_si_signos", "label": "Umbral bajo para cultivo / antibioticoterapia" }
-      ]
+      ],
+      "escalation": {
+        "message": "Signos de infección en paciente inmunosuprimido: actuar sin demora.",
+        "actions": [
+          { "id": "esc_cultivo_atb", "label": "Tomar cultivo e iniciar/valorar antibiótico" },
+          { "id": "esc_notificar_tratante", "label": "Notificar al médico tratante" }
+        ]
+      }
     },
     {
       "id": "complic_pie_diabetico",
@@ -192,7 +261,15 @@
         { "id": "control_glucemico", "label": "Control glucémico estricto" },
         { "id": "vigilar_infeccion_profunda", "label": "Vigilar infección profunda / osteomielitis" },
         { "id": "valorar_idsa", "label": "Clasificar IDSA/IWGDF y valorar referencia" }
-      ]
+      ],
+      "escalation": {
+        "message": "Signos de infección o pérdida de sensibilidad: riesgo de progresión.",
+        "actions": [
+          { "id": "esc_referir_pd", "label": "Referir (pie diabético) y clasificar IDSA/IWGDF" },
+          { "id": "esc_descarga_estricta", "label": "Descarga estricta de presión" },
+          { "id": "esc_cultivo_atb_pd", "label": "Valorar cultivo / antibiótico" }
+        ]
+      }
     },
     {
       "id": "complic_dm",
@@ -208,7 +285,14 @@
         { "id": "control_glucemico", "label": "Optimizar control glucémico" },
         { "id": "vigilar_infeccion", "label": "Vigilar signos de infección" },
         { "id": "educacion", "label": "Educación al paciente/cuidador sobre cuidado de la herida" }
-      ]
+      ],
+      "escalation": {
+        "message": "Descontrol glucémico o signos de infección: intensificar.",
+        "actions": [
+          { "id": "esc_ajustar_glucemia", "label": "Ajustar control glucémico" },
+          { "id": "esc_cultivo_dm", "label": "Valorar cultivo / antibiótico si progresa" }
+        ]
+      }
     },
     {
       "id": "complic_malnutricion",
@@ -222,7 +306,13 @@
       "actions": [
         { "id": "interconsulta_nutricion", "label": "Interconsulta a nutrición" },
         { "id": "aporte_proteico_ajuste", "label": "Ajuste proteico 1.25–1.5 g/kg/día / suplementación" }
-      ]
+      ],
+      "escalation": {
+        "message": "Aporte proteico insuficiente: priorizar soporte nutricional.",
+        "actions": [
+          { "id": "esc_nutricion_urgente", "label": "Interconsulta a nutrición prioritaria y suplementación" }
+        ]
+      }
     },
     {
       "id": "complic_irc",
@@ -236,7 +326,13 @@
       "actions": [
         { "id": "vigilar_infeccion", "label": "Vigilancia de infección" },
         { "id": "coordinar_nefrologia", "label": "Coordinar con nefrología" }
-      ]
+      ],
+      "escalation": {
+        "message": "Estado hídrico/nutricional inadecuado: coordinar manejo.",
+        "actions": [
+          { "id": "esc_coordinar_nefro", "label": "Coordinar con nefrología / nutrición" }
+        ]
+      }
     },
     {
       "id": "complic_tabaquismo",
@@ -266,7 +362,14 @@
         { "id": "reevaluar_plan", "label": "Reevaluar el plan de tratamiento" },
         { "id": "descartar_infeccion_isquemia", "label": "Descartar infección / isquemia" },
         { "id": "interconsulta", "label": "Considerar interconsulta" }
-      ]
+      ],
+      "escalation": {
+        "message": "Deterioro con signos de infección/necrosis: reevaluación urgente.",
+        "actions": [
+          { "id": "esc_interconsulta_urgente", "label": "Interconsulta / reevaluación urgente del plan" },
+          { "id": "esc_cultivo_det", "label": "Valorar cultivo y estudios según sospecha" }
+        ]
+      }
     }
   ]
 }

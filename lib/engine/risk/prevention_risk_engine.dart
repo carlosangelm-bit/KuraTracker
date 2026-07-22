@@ -93,8 +93,26 @@ class PreventiveAction {
       );
 }
 
+/// Conducta de ESCALAMIENTO: se muestra cuando el profesional responde con un
+/// signo de alarma a alguna pregunta de vigilancia. Cambia la salida
+/// (prevención -> manejo/notificar/referir).
+class PreventionEscalation {
+  final String message;
+  final List<PreventiveAction> actions;
+  const PreventionEscalation({required this.message, this.actions = const []});
+
+  factory PreventionEscalation.fromJson(Map<String, dynamic> j) =>
+      PreventionEscalation(
+        message: (j['message'] as String?) ?? 'Hallazgo de alarma: escalar la conducta.',
+        actions: ((j['actions'] as List?) ?? const [])
+            .map((e) => PreventiveAction.fromJson((e as Map).cast<String, dynamic>()))
+            .toList(),
+      );
+}
+
 /// Una alerta preventiva disparada por una regla del catálogo. Incluye la guía
-/// para el profesional: `questions` (qué preguntarse) y `actions` (qué hacer).
+/// para el profesional: `questions` (qué preguntarse), `actions` (paquete base)
+/// y `escalation` (conducta cuando una respuesta indica alarma).
 class PreventionAlert {
   final String id; // = rule id
   final RiskDimension dimension;
@@ -102,6 +120,7 @@ class PreventionAlert {
   final String message;
   final List<PreventionQuestion> questions;
   final List<PreventiveAction> actions;
+  final PreventionEscalation? escalation;
 
   const PreventionAlert({
     required this.id,
@@ -110,6 +129,7 @@ class PreventionAlert {
     required this.message,
     this.questions = const [],
     this.actions = const [],
+    this.escalation,
   });
 }
 
@@ -139,6 +159,7 @@ class _Rule {
   final String message;
   final List<PreventionQuestion> questions;
   final List<PreventiveAction> actions;
+  final PreventionEscalation? escalation;
   final Map<String, dynamic> when;
 
   const _Rule({
@@ -148,6 +169,7 @@ class _Rule {
     required this.message,
     required this.questions,
     required this.actions,
+    required this.escalation,
     required this.when,
   });
 
@@ -162,6 +184,10 @@ class _Rule {
         actions: ((j['actions'] as List?) ?? const [])
             .map((e) => PreventiveAction.fromJson((e as Map).cast<String, dynamic>()))
             .toList(),
+        escalation: j['escalation'] == null
+            ? null
+            : PreventionEscalation.fromJson(
+                (j['escalation'] as Map).cast<String, dynamic>()),
         when: (j['when'] as Map?)?.cast<String, dynamic>() ?? const {},
       );
 }
@@ -221,6 +247,7 @@ class PreventionRulesCatalog {
           message: r.message,
           questions: r.questions,
           actions: r.actions,
+          escalation: r.escalation,
         ));
       }
     }
