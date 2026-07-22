@@ -65,6 +65,10 @@ class Consultation {
   // migración 0027_followup_signature.sql.
   final String? followUpSignature;
   final DateTime? followUpSignedAt;
+  // Referencia a la cita de la agenda que originó esta consulta, formato
+  // "<origen>:<id>" (acuity:<id> | manual:<uuid>). NULL = alta directa desde el
+  // expediente. Ver migración 0035_consultation_appointment_link.sql.
+  final String? scheduledAppointmentRef;
 
   const Consultation({
     required this.id,
@@ -84,6 +88,7 @@ class Consultation {
     this.followUpSignedLicense,
     this.followUpSignature,
     this.followUpSignedAt,
+    this.scheduledAppointmentRef,
   });
 
   factory Consultation.fromJson(Map<String, dynamic> json) => Consultation(
@@ -106,6 +111,7 @@ class Consultation {
         followUpSignedAt: json['follow_up_signed_at'] == null
             ? null
             : DateTime.parse(json['follow_up_signed_at'] as String),
+        scheduledAppointmentRef: json['scheduled_appointment_ref'] as String?,
       );
 
   Map<String, dynamic> toJson() => {
@@ -126,5 +132,6 @@ class Consultation {
         'follow_up_signed_license': followUpSignedLicense,
         'follow_up_signature': followUpSignature,
         'follow_up_signed_at': followUpSignedAt?.toIso8601String(),
+        'scheduled_appointment_ref': scheduledAppointmentRef,
       };
 }

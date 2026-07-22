@@ -7,7 +7,6 @@ import '../../core/theme/kura_theme.dart';
 import '../../core/providers/session_provider.dart';
 import '../../models/app_user.dart';
 import '../../models/consultation.dart';
-import '../../services/data_repository.dart';
 
 /// Encabezado rapido de consulta (fecha, sitio, tipo de visita) — luego
 /// entra directo al flujo unificado de captura de herida (foto-primero).
@@ -19,10 +18,15 @@ class ConsultationHubScreen extends ConsumerStatefulWidget {
   // ya es VisitType.valoracion, pero se acepta explicito via query param
   // para no depender solo del default si este cambia en el futuro.
   final VisitType initialVisitType;
+  // Cita de la agenda que originó esta consulta (0035), formato
+  // "acuity:<id>" | "manual:<uuid>". Se pasa cuando se entra desde la agenda
+  // con "Iniciar consulta"; la consulta creada queda ligada a esa cita.
+  final String? scheduledAppointmentRef;
   const ConsultationHubScreen({
     super.key,
     required this.patientId,
     this.initialVisitType = VisitType.valoracion,
+    this.scheduledAppointmentRef,
   });
 
   @override
@@ -175,6 +179,10 @@ class _ConsultationHubScreenState extends ConsumerState<ConsultationHubScreen> {
                                 visitType: _visitType,
                                 visitDate: _visitDate,
                                 isDraft: true,
+                                // Liga la consulta a la cita de la agenda si se
+                                // entró con "Iniciar consulta" (0035).
+                                scheduledAppointmentRef:
+                                    widget.scheduledAppointmentRef,
                               );
                               if (mounted) {
                                 context.go(

@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 
@@ -36,6 +37,97 @@ class AgendaScreen extends ConsumerStatefulWidget {
 }
 
 enum _AgendaView { dia, semana }
+
+// ---------------------------------------------------------------------------
+// Navegación cita -> expediente / consulta (0035). Compartido por la agenda de
+// Acuity y la manual.
+// ---------------------------------------------------------------------------
+
+/// Navega al expediente del paciente vinculado a la cita.
+void _goToPatient(BuildContext context, String? patientId) {
+  if (patientId == null) {
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+      content: Text('Esta cita aún no tiene un paciente vinculado.'),
+    ));
+    return;
+  }
+  context.go('/patients/$patientId');
+}
+
+/// Botón inteligente: si ya existe la consulta ligada a esta cita, la abre; si
+/// no, entra a "nueva consulta" pre-ligada a la cita ([apptRef], formato
+/// "acuity:<id>" | "manual:<uuid>").
+void _goToScheduledConsultation({
+  required BuildContext context,
+  required DataRepository? repo,
+  required String? patientId,
+  required String apptRef,
+}) {
+  if (patientId == null) {
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+      content: Text('Vincula primero un paciente a esta cita para registrar la consulta.'),
+    ));
+    return;
+  }
+  final existing = repo?.consultationForAppointmentRef(apptRef);
+  if (existing != null) {
+    context.go('/patients/$patientId/consultation/${existing.id}');
+  } else {
+    context.go(
+      '/patients/$patientId/consultation/new?appt=${Uri.encodeQueryComponent(apptRef)}',
+    );
+  }
+}
+
+/// Fila de dos botones ("Paciente" + consulta) para el bloque de una cita.
+class _BlockActions extends StatelessWidget {
+  final DataRepository? repo;
+  final String? patientId;
+  final String apptRef;
+  const _BlockActions({
+    required this.repo,
+    required this.patientId,
+    required this.apptRef,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final consultaExists = repo?.consultationForAppointmentRef(apptRef) != null;
+    return Wrap(
+      spacing: 8,
+      runSpacing: 4,
+      children: [
+        TextButton.icon(
+          style: TextButton.styleFrom(
+            visualDensity: VisualDensity.compact,
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            foregroundColor: KuraColors.primary,
+          ),
+          icon: const Icon(Icons.person_outline, size: 16),
+          label: const Text('Paciente', style: TextStyle(fontSize: 12)),
+          onPressed: () => _goToPatient(context, patientId),
+        ),
+        TextButton.icon(
+          style: TextButton.styleFrom(
+            visualDensity: VisualDensity.compact,
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            foregroundColor: KuraColors.primary,
+          ),
+          icon: Icon(consultaExists ? Icons.open_in_new : Icons.play_circle_outline,
+              size: 16),
+          label: Text(consultaExists ? 'Ver consulta' : 'Iniciar consulta',
+              style: const TextStyle(fontSize: 12)),
+          onPressed: () => _goToScheduledConsultation(
+            context: context,
+            repo: repo,
+            patientId: patientId,
+            apptRef: apptRef,
+          ),
+        ),
+      ],
+    );
+  }
+}
 
 class _AgendaScreenState extends ConsumerState<AgendaScreen> {
   // null = automático según el ancho (día en móvil, semana en escritorio).
@@ -117,14 +209,12 @@ class _AgendaScreenState extends ConsumerState<AgendaScreen> {
     final isWide = width >= 900;
     final view = _view ?? (isWide ? _AgendaView.semana : _AgendaView.dia);
 
-    // Nombres de Kurador por staff_id (solo relevante para el admin).
+    // Repo para navegación cita->consulta y (admin) nombres de Kurador.
+    final repo = ref.watch(dataRepositoryProvider).valueOrNull;
     final staffNames = <String, String>{};
-    if (isAdmin) {
-      final repo = ref.watch(dataRepositoryProvider).valueOrNull;
-      if (repo != null) {
-        for (final s in repo.listStaff()) {
-          staffNames[s.id] = s.fullName;
-        }
+    if (isAdmin && repo != null) {
+      for (final s in repo.listStaff()) {
+        staffNames[s.id] = s.fullName;
       }
     }
 
@@ -165,6 +255,7 @@ class _AgendaScreenState extends ConsumerState<AgendaScreen> {
                   isAdmin: isAdmin,
                   staffNames: staffNames,
                   service: service,
+                  repo: repo,
                 )
               : _WeekAgenda(
                   appointments: filtered,
@@ -175,6 +266,7 @@ class _AgendaScreenState extends ConsumerState<AgendaScreen> {
                   isAdmin: isAdmin,
                   staffNames: staffNames,
                   service: service,
+                  repo: repo,
                 ),
         ),
       ],
@@ -430,6 +522,7 @@ class _DayAgenda extends StatelessWidget {
   final bool isAdmin;
   final Map<String, String> staffNames;
   final AcuityService service;
+  final DataRepository? repo;
 
   const _DayAgenda({
     required this.appointments,
@@ -437,6 +530,7 @@ class _DayAgenda extends StatelessWidget {
     required this.isAdmin,
     required this.staffNames,
     required this.service,
+    required this.repo,
   });
 
   @override
@@ -467,6 +561,7 @@ class _DayAgenda extends StatelessWidget {
           appointment: a,
           service: service,
           kuradorName: isAdmin ? staffNames[a.staffId] : null,
+          repo: repo,
         ));
       }
     });
@@ -519,6 +614,7 @@ class _WeekAgenda extends StatelessWidget {
   final bool isAdmin;
   final Map<String, String> staffNames;
   final AcuityService service;
+  final DataRepository? repo;
 
   const _WeekAgenda({
     required this.appointments,
@@ -529,6 +625,7 @@ class _WeekAgenda extends StatelessWidget {
     required this.isAdmin,
     required this.staffNames,
     required this.service,
+    required this.repo,
   });
 
   List<Appointment> _forDay(DateTime day) =>
@@ -557,6 +654,7 @@ class _WeekAgenda extends StatelessWidget {
                 isAdmin: isAdmin,
                 staffNames: staffNames,
                 service: service,
+                repo: repo,
               ),
             ),
         ],
@@ -605,6 +703,7 @@ class _WeekAgenda extends StatelessWidget {
                         appointment: a,
                         service: service,
                         kuradorName: isAdmin ? staffNames[a.staffId] : null,
+                        repo: repo,
                       ),
                   ],
                 ),
@@ -694,6 +793,7 @@ class _WeekColumn extends StatelessWidget {
   final bool isAdmin;
   final Map<String, String> staffNames;
   final AcuityService service;
+  final DataRepository? repo;
 
   const _WeekColumn({
     required this.day,
@@ -701,6 +801,7 @@ class _WeekColumn extends StatelessWidget {
     required this.isAdmin,
     required this.staffNames,
     required this.service,
+    required this.repo,
   });
 
   @override
@@ -753,6 +854,7 @@ class _WeekColumn extends StatelessWidget {
                           appointment: a,
                           service: service,
                           kuradorName: isAdmin ? staffNames[a.staffId] : null,
+                          repo: repo,
                         ),
                     ],
                   ),
@@ -768,13 +870,18 @@ class _WeekChip extends StatelessWidget {
   final Appointment appointment;
   final AcuityService service;
   final String? kuradorName;
-  const _WeekChip({required this.appointment, required this.service, this.kuradorName});
+  final DataRepository? repo;
+  const _WeekChip(
+      {required this.appointment,
+      required this.service,
+      this.kuradorName,
+      required this.repo});
 
   @override
   Widget build(BuildContext context) {
     return InkWell(
       borderRadius: BorderRadius.circular(8),
-      onTap: () => _showAppointmentActions(context, service, appointment),
+      onTap: () => _showAppointmentActions(context, service, appointment, repo),
       child: Container(
         margin: const EdgeInsets.only(bottom: 6),
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
@@ -814,10 +921,12 @@ class _AppointmentTile extends StatelessWidget {
   final Appointment appointment;
   final AcuityService service;
   final String? kuradorName;
+  final DataRepository? repo;
   const _AppointmentTile({
     required this.appointment,
     required this.service,
     this.kuradorName,
+    required this.repo,
   });
 
   @override
@@ -877,6 +986,11 @@ class _AppointmentTile extends StatelessWidget {
                         _MiniChip(icon: Icons.person_outline, label: kuradorName!),
                     ],
                   ),
+                  _BlockActions(
+                    repo: repo,
+                    patientId: appointment.patientId,
+                    apptRef: 'acuity:${appointment.id}',
+                  ),
                 ],
               ),
             ),
@@ -933,7 +1047,10 @@ class _MiniChip extends StatelessWidget {
 /// Acciones (reagendar/cancelar) para una cita, mostradas al tocar un chip de
 /// la vista Semana ancha (que no tiene menú propio por espacio).
 void _showAppointmentActions(
-    BuildContext context, AcuityService service, Appointment a) {
+    BuildContext context, AcuityService service, Appointment a,
+    [DataRepository? repo]) {
+  final apptRef = 'acuity:${a.id}';
+  final consultaExists = repo?.consultationForAppointmentRef(apptRef) != null;
   showModalBottomSheet<void>(
     context: context,
     builder: (sheetCtx) => SafeArea(
@@ -946,6 +1063,29 @@ void _showAppointmentActions(
             subtitle: Text(a.datetime == null
                 ? '—'
                 : DateFormat('dd/MM/yyyy · HH:mm').format(a.datetime!)),
+          ),
+          const Divider(height: 1),
+          ListTile(
+            leading: const Icon(Icons.person_outline, color: KuraColors.primary),
+            title: const Text('Ir al paciente'),
+            onTap: () {
+              Navigator.pop(sheetCtx);
+              _goToPatient(context, a.patientId);
+            },
+          ),
+          ListTile(
+            leading: Icon(consultaExists ? Icons.open_in_new : Icons.play_circle_outline,
+                color: KuraColors.primary),
+            title: Text(consultaExists ? 'Ir a la consulta' : 'Iniciar consulta'),
+            onTap: () {
+              Navigator.pop(sheetCtx);
+              _goToScheduledConsultation(
+                context: context,
+                repo: repo,
+                patientId: a.patientId,
+                apptRef: apptRef,
+              );
+            },
           ),
           const Divider(height: 1),
           ListTile(
@@ -1875,6 +2015,7 @@ class _ManualAgendaState extends ConsumerState<_ManualAgenda> {
                         kuradorName: widget.isAdmin ? staffNames[a.staffId] : null,
                         onEdit: () => _openForm(repo, existing: a),
                         onCancel: () => _cancel(repo, a),
+                        repo: repo,
                       ),
                   ],
                 ),
@@ -2008,6 +2149,7 @@ class _ManualAgendaState extends ConsumerState<_ManualAgenda> {
           kuradorName: widget.isAdmin ? staffNames[a.staffId] : null,
           onEdit: () => _openForm(repo, existing: a),
           onCancel: () => _cancel(repo, a),
+          repo: repo,
         ));
       }
     });
@@ -2098,12 +2240,14 @@ class _ManualTile extends StatelessWidget {
   final String? kuradorName;
   final VoidCallback onEdit;
   final VoidCallback onCancel;
+  final DataRepository? repo;
   const _ManualTile({
     required this.appointment,
     required this.patientName,
     required this.kuradorName,
     required this.onEdit,
     required this.onCancel,
+    required this.repo,
   });
 
   @override
@@ -2156,6 +2300,11 @@ class _ManualTile extends StatelessWidget {
                         if (kuradorName != null)
                           _MiniChip(icon: Icons.person_outline, label: kuradorName!),
                       ],
+                    ),
+                    _BlockActions(
+                      repo: repo,
+                      patientId: appointment.patientId,
+                      apptRef: 'manual:${appointment.id}',
                     ),
                   ],
                 ),

@@ -1313,6 +1313,16 @@ class DataRepository {
     return match.isEmpty ? null : Consultation.fromJson(match.first);
   }
 
+  /// Consulta ligada a una cita de la agenda, por su referencia
+  /// ("acuity:<id>" | "manual:<uuid>"), o null si aún no se ha realizado.
+  /// Usado por la agenda para el botón inteligente "Iniciar / Ir a la consulta".
+  Consultation? consultationForAppointmentRef(String ref) {
+    final match = _store
+        .getAll(Collections.consultations)
+        .where((c) => c['scheduled_appointment_ref'] == ref);
+    return match.isEmpty ? null : Consultation.fromJson(match.first);
+  }
+
   Future<Consultation> createConsultation({
     required String patientId,
     required String staffId,
@@ -1331,6 +1341,10 @@ class DataRepository {
     String? followUpSignedLicense,
     String? followUpSignature,
     DateTime? followUpSignedAt,
+    // Cita de la agenda que originó esta consulta (0035), formato
+    // "acuity:<id>" | "manual:<uuid>". La pasa el hub de consulta cuando se
+    // entra desde la agenda ("Iniciar consulta").
+    String? scheduledAppointmentRef,
   }) async {
     final data = {
       'id': _uuid.v4(),
@@ -1350,6 +1364,7 @@ class DataRepository {
       'follow_up_signed_license': followUpSignedLicense,
       'follow_up_signature': followUpSignature,
       'follow_up_signed_at': followUpSignedAt?.toIso8601String(),
+      'scheduled_appointment_ref': scheduledAppointmentRef,
     };
     final saved = await _store.insertRow(Collections.consultations, data);
     return Consultation.fromJson(saved);
