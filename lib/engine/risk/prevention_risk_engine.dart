@@ -54,6 +54,32 @@ extension RiskLevelX on RiskLevel {
       };
 }
 
+/// Una pregunta guía con opciones de respuesta. `alarm` es la respuesta que
+/// indica que hay que actuar (para resaltarla en la UI); null = informativa.
+class PreventionQuestion {
+  final String text;
+  final List<String> options;
+  final String? alarm;
+
+  const PreventionQuestion({
+    required this.text,
+    this.options = const ['Sí', 'No'],
+    this.alarm,
+  });
+
+  factory PreventionQuestion.fromJson(dynamic j) {
+    // Compat: una pregunta puede venir como texto plano o como objeto.
+    if (j is String) return PreventionQuestion(text: j);
+    final m = (j as Map).cast<String, dynamic>();
+    return PreventionQuestion(
+      text: m['text'] as String,
+      options: ((m['options'] as List?)?.map((e) => e.toString()).toList()) ??
+          const ['Sí', 'No'],
+      alarm: m['alarm'] as String?,
+    );
+  }
+}
+
 /// Una acción preventiva concreta sugerida por una regla (registrable con
 /// fecha/autor en preventive_action_log). `id` es estable dentro de la regla.
 class PreventiveAction {
@@ -74,7 +100,7 @@ class PreventionAlert {
   final RiskDimension dimension;
   final RiskSeverity severity;
   final String message;
-  final List<String> questions;
+  final List<PreventionQuestion> questions;
   final List<PreventiveAction> actions;
 
   const PreventionAlert({
@@ -111,7 +137,7 @@ class _Rule {
   final RiskDimension dimension;
   final RiskSeverity severity;
   final String message;
-  final List<String> questions;
+  final List<PreventionQuestion> questions;
   final List<PreventiveAction> actions;
   final Map<String, dynamic> when;
 
@@ -131,7 +157,7 @@ class _Rule {
         severity: RiskSeverityX.fromDb(j['severity'] as String),
         message: j['message'] as String,
         questions: ((j['questions'] as List?) ?? const [])
-            .map((e) => e.toString())
+            .map((e) => PreventionQuestion.fromJson(e))
             .toList(),
         actions: ((j['actions'] as List?) ?? const [])
             .map((e) => PreventiveAction.fromJson((e as Map).cast<String, dynamic>()))
