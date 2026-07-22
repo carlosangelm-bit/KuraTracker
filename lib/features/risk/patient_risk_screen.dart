@@ -26,6 +26,9 @@ class PatientRiskScreen extends ConsumerStatefulWidget {
 
 class _PatientRiskScreenState extends ConsumerState<PatientRiskScreen> {
   final _dateFmt = DateFormat('dd/MM/yyyy HH:mm');
+  // Respuestas elegidas por el profesional a las preguntas guía (en sesión, no
+  // se persisten): clave = "<ruleId>::<índice>" -> opción elegida.
+  final Map<String, String> _answers = {};
 
   Future<String?> _staffId(DataRepository repo) async {
     final session = ref.read(sessionProvider);
@@ -281,74 +284,159 @@ class _PatientRiskScreenState extends ConsumerState<PatientRiskScreen> {
 
   Widget _alertCard(DataRepository repo, PreventionAlert a) {
     final color = riskSeverityColor(a.severity);
-    return Card(
-      margin: const EdgeInsets.only(bottom: 10),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: KuraColors.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: color.withOpacity(0.25)),
+        boxShadow: [
+          BoxShadow(
+            color: KuraColors.darkText.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Cabecera con barra de color por severidad.
+          Container(
+            padding: const EdgeInsets.fromLTRB(14, 12, 12, 12),
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.08),
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(16)),
+              border: Border(left: BorderSide(color: color, width: 4)),
+            ),
+            child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Padding(
-                  padding: const EdgeInsets.only(top: 2, right: 8),
-                  child:
-                      Icon(Icons.warning_amber_rounded, size: 16, color: color),
-                ),
+                Icon(Icons.warning_amber_rounded, size: 18, color: color),
+                const SizedBox(width: 8),
                 Expanded(
                   child: Text(a.message,
-                      style: const TextStyle(fontWeight: FontWeight.w700)),
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w700, fontSize: 14)),
                 ),
+                const SizedBox(width: 8),
                 Container(
                   padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
                   decoration: BoxDecoration(
-                    color: color.withOpacity(0.14),
+                    color: color,
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: Text(a.severity.label,
-                      style: TextStyle(
+                      style: const TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.w700,
-                          color: color)),
+                          color: Colors.white)),
                 ),
               ],
             ),
-            if (a.questions.isNotEmpty) ...[
-              const SizedBox(height: 10),
-              Text('Qué preguntarte',
-                  style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                      color: KuraColors.darkText.withOpacity(0.7))),
-              const SizedBox(height: 4),
-              ...a.questions.map((q) => Padding(
-                    padding: const EdgeInsets.only(bottom: 3),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text('•  '),
-                        Expanded(
-                            child: Text(q,
-                                style:
-                                    Theme.of(context).textTheme.bodySmall)),
-                      ],
-                    ),
-                  )),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (a.questions.isNotEmpty) ...[
+                  _sectionLabel(Icons.help_outline, 'Qué preguntarte'),
+                  const SizedBox(height: 8),
+                  for (var i = 0; i < a.questions.length; i++)
+                    _questionRow(a, i, a.questions[i]),
+                ],
+                if (a.actions.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  _sectionLabel(Icons.checklist_rtl, 'Acciones'),
+                  const SizedBox(height: 6),
+                  ...a.actions.map((act) => _actionRow(repo, a, act)),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _sectionLabel(IconData icon, String text) {
+    return Row(
+      children: [
+        Icon(icon, size: 14, color: KuraColors.darkText.withOpacity(0.55)),
+        const SizedBox(width: 6),
+        Text(text.toUpperCase(),
+            style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 0.4,
+                color: KuraColors.darkText.withOpacity(0.55))),
+      ],
+    );
+  }
+
+  Widget _questionRow(PreventionAlert a, int index, PreventionQuestion q) {
+    final key = '${a.id}::$index';
+    final selected = _answers[key];
+    final isAlarm = q.alarm != null && selected == q.alarm;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: isAlarm
+            ? KuraColors.danger.withOpacity(0.07)
+            : KuraColors.chipBg.withOpacity(0.5),
+        borderRadius: BorderRadius.circular(10),
+        border: isAlarm
+            ? Border.all(color: KuraColors.danger.withOpacity(0.4))
+            : null,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Text(q.text, style: const TextStyle(fontSize: 13)),
+              ),
+              if (isAlarm)
+                const Padding(
+                  padding: EdgeInsets.only(left: 6, top: 1),
+                  child: Icon(Icons.priority_high_rounded,
+                      size: 16, color: KuraColors.danger),
+                ),
             ],
-            if (a.actions.isNotEmpty) ...[
-              const SizedBox(height: 10),
-              Text('Acciones',
-                  style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                      color: KuraColors.darkText.withOpacity(0.7))),
-              const SizedBox(height: 4),
-              ...a.actions.map((act) => _actionRow(repo, a, act)),
+          ),
+          const SizedBox(height: 6),
+          Wrap(
+            spacing: 6,
+            children: [
+              for (final opt in q.options)
+                ChoiceChip(
+                  label: Text(opt, style: const TextStyle(fontSize: 12)),
+                  selected: selected == opt,
+                  visualDensity: VisualDensity.compact,
+                  selectedColor: (opt == q.alarm
+                          ? KuraColors.danger
+                          : KuraColors.primary)
+                      .withOpacity(0.18),
+                  labelStyle: TextStyle(
+                    color: selected == opt
+                        ? (opt == q.alarm
+                            ? KuraColors.danger
+                            : KuraColors.primary)
+                        : null,
+                    fontWeight:
+                        selected == opt ? FontWeight.w700 : FontWeight.normal,
+                  ),
+                  onSelected: (_) => setState(() => _answers[key] = opt),
+                ),
             ],
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -357,21 +445,23 @@ class _PatientRiskScreenState extends ConsumerState<PatientRiskScreen> {
       DataRepository repo, PreventionAlert a, PreventiveAction act) {
     final last = repo.lastAppliedAt(widget.patientId, a.id, act.id);
     final done = last != null;
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 3),
+    return Container(
+      margin: const EdgeInsets.only(bottom: 6),
+      padding: const EdgeInsets.fromLTRB(4, 4, 4, 4),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Icon(done ? Icons.check_circle : Icons.radio_button_unchecked,
-              size: 16,
-              color: done ? KuraColors.success : KuraColors.darkText.withOpacity(0.4)),
+              size: 18,
+              color: done
+                  ? KuraColors.success
+                  : KuraColors.darkText.withOpacity(0.35)),
           const SizedBox(width: 8),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(act.label,
-                    style: const TextStyle(fontSize: 13)),
+                Text(act.label, style: const TextStyle(fontSize: 13)),
                 if (done)
                   Text('Última: ${_dateFmt.format(last)}',
                       style: TextStyle(
@@ -380,13 +470,23 @@ class _PatientRiskScreenState extends ConsumerState<PatientRiskScreen> {
               ],
             ),
           ),
-          TextButton(
-            style: TextButton.styleFrom(
-                visualDensity: VisualDensity.compact,
-                foregroundColor: KuraColors.primary),
-            onPressed: () => _logAction(repo, a, act),
-            child: Text(done ? 'Registrar de nuevo' : 'Registrar'),
-          ),
+          const SizedBox(width: 6),
+          done
+              ? OutlinedButton(
+                  style: OutlinedButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      foregroundColor: KuraColors.primary,
+                      side: BorderSide(
+                          color: KuraColors.primary.withOpacity(0.5))),
+                  onPressed: () => _logAction(repo, a, act),
+                  child: const Text('De nuevo'),
+                )
+              : FilledButton.tonal(
+                  style: FilledButton.styleFrom(
+                      visualDensity: VisualDensity.compact),
+                  onPressed: () => _logAction(repo, a, act),
+                  child: const Text('Registrar'),
+                ),
         ],
       ),
     );

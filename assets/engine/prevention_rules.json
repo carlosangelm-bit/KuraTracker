@@ -1,6 +1,6 @@
 {
-  "version": "2026-07-22b",
-  "note": "BORRADOR de reglas de prevención/riesgo (basado en evidencia). PENDIENTE de validación/calibración clínica de María, INCLUIDAS las preguntas guía y las acciones. Capa DOCUMENTAL: no altera el motor de tratamiento. Panel-guía para personal que no necesariamente diagnostica: 'questions' = qué preguntarse; 'actions' = qué hacer (cada una registrable con fecha/autor, ver preventive_action_log). Condiciones 'when' soportadas: bradenMin, bradenMax (inclusive), comorbilidad (name de Comorbilidad), hasActiveWound, mobilityIn (ambulatorio|silla_ruedas|encamado), fragile, bmiMax, woundEtiology (name de Etiologia: lpp|vascular|quirurgica|traumatica|pieDiabetico|otra), deterioration. severity: alto|medio|bajo. dimension: lpp|complicacion.",
+  "version": "2026-07-22c",
+  "note": "BORRADOR de reglas de prevención/riesgo (basado en evidencia). PENDIENTE de validación clínica de María, INCLUIDAS preguntas, respuestas y acciones. Capa DOCUMENTAL: no altera el motor de tratamiento. Panel-guía para personal que no necesariamente diagnostica. Cada 'question' tiene {text, options?, alarm?}: options por defecto ['Sí','No']; 'alarm' es la respuesta que indica atención (para resaltarla). 'actions' = qué hacer (registrable con fecha/autor). Condiciones 'when': bradenMin/bradenMax, comorbilidad (name de Comorbilidad), hasActiveWound, mobilityIn (ambulatorio|silla_ruedas|encamado), fragile, bmiMax, woundEtiology (lpp|vascular|quirurgica|traumatica|pieDiabetico|otra), deterioration. severity: alto|medio|bajo. dimension: lpp|complicacion.",
   "rules": [
     {
       "id": "lpp_braden_muy_alto",
@@ -9,9 +9,9 @@
       "severity": "alto",
       "message": "Riesgo MUY ALTO de lesión por presión (Braden ≤9)",
       "questions": [
-        "¿Hay eritema que NO blanquea al presionar en sacro, talones u otras prominencias?",
-        "¿El paciente puede cambiar de posición por sí mismo?",
-        "¿La piel está húmeda por incontinencia o sudoración?"
+        { "text": "¿Hay eritema que NO blanquea en sacro, talones u otras prominencias?", "alarm": "Sí" },
+        { "text": "¿El paciente puede cambiar de posición por sí mismo?", "alarm": "No" },
+        { "text": "¿La piel está húmeda por incontinencia o sudoración?", "alarm": "Sí" }
       ],
       "actions": [
         { "id": "superficie_apoyo", "label": "Colocar superficie de redistribución de presión (colchón/cojín)" },
@@ -28,9 +28,9 @@
       "severity": "alto",
       "message": "Riesgo ALTO de lesión por presión (Braden 10–12)",
       "questions": [
-        "¿Hay enrojecimiento persistente en prominencias óseas?",
-        "¿Con qué frecuencia se reposiciona al paciente?",
-        "¿La piel se mantiene seca e íntegra?"
+        { "text": "¿Hay enrojecimiento persistente en prominencias óseas?", "alarm": "Sí" },
+        { "text": "¿Se reposiciona al paciente al menos cada 2 horas?", "alarm": "No" },
+        { "text": "¿La piel se mantiene seca e íntegra?", "alarm": "No" }
       ],
       "actions": [
         { "id": "cambios_posturales_2h", "label": "Cambios posturales cada 2 horas" },
@@ -47,8 +47,8 @@
       "severity": "medio",
       "message": "Riesgo MODERADO de lesión por presión (Braden 13–14)",
       "questions": [
-        "¿El paciente permanece mucho tiempo en la misma posición?",
-        "¿Hay factores de humedad o fricción?"
+        { "text": "¿Permanece más de 2 horas en la misma posición?", "alarm": "Sí" },
+        { "text": "¿Hay humedad o fricción sobre la piel?", "alarm": "Sí" }
       ],
       "actions": [
         { "id": "cambios_posturales", "label": "Programar cambios posturales" },
@@ -63,9 +63,9 @@
       "severity": "medio",
       "message": "Inmovilidad (encamado / silla de ruedas): riesgo de LPP",
       "questions": [
-        "¿Cuántas horas pasa en la misma posición?",
-        "¿Cuenta con superficie de apoyo adecuada?",
-        "¿Se le ha realizado la escala de Braden?"
+        { "text": "¿Permanece más de 2 horas en la misma posición?", "alarm": "Sí" },
+        { "text": "¿Cuenta con superficie de apoyo adecuada?", "alarm": "No" },
+        { "text": "¿Se le ha realizado la escala de Braden?", "alarm": "No" }
       ],
       "actions": [
         { "id": "cambios_posturales_2h", "label": "Plan de cambios posturales cada 2 horas" },
@@ -80,8 +80,8 @@
       "severity": "medio",
       "message": "Malnutrición: piel vulnerable a lesión por presión",
       "questions": [
-        "¿Ha perdido peso recientemente?",
-        "¿Come menos del 50% de sus alimentos?"
+        { "text": "¿Ha perdido peso recientemente?", "alarm": "Sí" },
+        { "text": "¿Come menos del 50% de sus alimentos?", "alarm": "Sí" }
       ],
       "actions": [
         { "id": "interconsulta_nutricion", "label": "Interconsulta a nutrición" },
@@ -95,7 +95,7 @@
       "severity": "medio",
       "message": "IMC bajo (<18.5): mayor riesgo de LPP",
       "questions": [
-        "¿Se palpan las prominencias óseas con poco tejido de protección?"
+        { "text": "¿Se palpan las prominencias óseas con poco tejido de protección?", "alarm": "Sí" }
       ],
       "actions": [
         { "id": "valoracion_nutricional", "label": "Valoración nutricional" },
@@ -109,7 +109,7 @@
       "severity": "medio",
       "message": "Paciente frágil: mayor vulnerabilidad cutánea",
       "questions": [
-        "¿Hay cuidador que apoye la movilización y el cuidado de la piel?"
+        { "text": "¿Hay un cuidador que apoye la movilización y el cuidado de la piel?", "alarm": "No" }
       ],
       "actions": [
         { "id": "cuidado_piel", "label": "Extremar cuidados de piel y movilización" },
@@ -123,9 +123,9 @@
       "severity": "alto",
       "message": "Enfermedad arterial periférica: riesgo de isquemia / necrosis",
       "questions": [
-        "¿La piel alrededor de la herida está fría, pálida o azulada?",
-        "¿Hay dolor en reposo o al elevar la pierna?",
-        "¿Se palpan los pulsos del pie?"
+        { "text": "¿La piel alrededor de la herida está fría, pálida o azulada?", "alarm": "Sí" },
+        { "text": "¿Hay dolor en reposo o al elevar la pierna?", "alarm": "Sí" },
+        { "text": "¿Se palpan los pulsos del pie?", "alarm": "No" }
       ],
       "actions": [
         { "id": "no_compresion", "label": "NO aplicar compresión sin descartar isquemia" },
@@ -140,8 +140,8 @@
       "severity": "alto",
       "message": "Inmunosupresión: alto riesgo de infección de la herida",
       "questions": [
-        "¿Hay aumento de dolor, calor, enrojecimiento o secreción?",
-        "¿Fiebre o malestar general?"
+        { "text": "¿Hay aumento de dolor, calor, enrojecimiento o secreción?", "alarm": "Sí" },
+        { "text": "¿Fiebre o malestar general?", "alarm": "Sí" }
       ],
       "actions": [
         { "id": "vigilar_infeccion", "label": "Vigilancia estrecha de signos de infección" },
@@ -156,9 +156,9 @@
       "severity": "alto",
       "message": "Pie diabético: riesgo de progresión (infección / amputación)",
       "questions": [
-        "¿Hay eritema, calor, secreción o mal olor?",
-        "¿El paciente percibe la herida (sensibilidad protectora)?",
-        "¿Hay callo o zona de presión sobre la lesión?"
+        { "text": "¿Hay eritema, calor, secreción o mal olor?", "alarm": "Sí" },
+        { "text": "¿El paciente percibe la herida (sensibilidad protectora)?", "alarm": "No" },
+        { "text": "¿Hay callo o zona de presión sobre la lesión?", "alarm": "Sí" }
       ],
       "actions": [
         { "id": "descarga_presion", "label": "Descarga de presión (plantilla/férula/reposo)" },
@@ -174,10 +174,10 @@
       "severity": "medio",
       "message": "Herida quirúrgica: vigilancia de infección / dehiscencia",
       "questions": [
-        "¿Hay enrojecimiento, calor o dolor creciente alrededor de la incisión?",
-        "¿Hay secreción (serosa/purulenta) o mal olor?",
-        "¿Los bordes están afrontados o hay separación (dehiscencia)?",
-        "¿Fiebre >38°C?"
+        { "text": "¿Hay enrojecimiento, calor o dolor creciente alrededor de la incisión?", "alarm": "Sí" },
+        { "text": "¿Hay secreción (serosa/purulenta) o mal olor?", "alarm": "Sí" },
+        { "text": "¿Los bordes de la herida están afrontados (sin separación)?", "alarm": "No" },
+        { "text": "¿Fiebre >38°C?", "alarm": "Sí" }
       ],
       "actions": [
         { "id": "vigilar_signos_infeccion", "label": "Vigilar signos de infección del sitio quirúrgico" },
@@ -192,8 +192,8 @@
       "severity": "medio",
       "message": "Diabetes: riesgo de infección y cicatrización lenta",
       "questions": [
-        "¿Glucemias en control?",
-        "¿Signos incipientes de infección?"
+        { "text": "¿Las glucemias están en control?", "alarm": "No" },
+        { "text": "¿Hay signos incipientes de infección?", "alarm": "Sí" }
       ],
       "actions": [
         { "id": "control_glucemico", "label": "Optimizar control glucémico" },
@@ -208,7 +208,7 @@
       "severity": "medio",
       "message": "Malnutrición: cicatrización comprometida",
       "questions": [
-        "¿Aporte proteico suficiente?"
+        { "text": "¿El aporte proteico es suficiente?", "alarm": "No" }
       ],
       "actions": [
         { "id": "interconsulta_nutricion", "label": "Interconsulta a nutrición" },
@@ -222,7 +222,7 @@
       "severity": "medio",
       "message": "Insuficiencia renal crónica: cicatrización lenta y riesgo de infección",
       "questions": [
-        "¿Estado hídrico y nutricional adecuados?"
+        { "text": "¿El estado hídrico y nutricional son adecuados?", "alarm": "No" }
       ],
       "actions": [
         { "id": "vigilar_infeccion", "label": "Vigilancia de infección" },
@@ -236,7 +236,7 @@
       "severity": "medio",
       "message": "Tabaquismo activo: perfusión y cicatrización comprometidas",
       "questions": [
-        "¿El paciente está dispuesto a dejar de fumar?"
+        { "text": "¿El paciente está dispuesto a dejar de fumar?" }
       ],
       "actions": [
         { "id": "cesacion_tabaquica", "label": "Consejo de cesación tabáquica" },
@@ -250,8 +250,8 @@
       "severity": "alto",
       "message": "Deterioro objetivo de la herida respecto a la valoración previa",
       "questions": [
-        "¿Aumentó el área, la profundidad o el exudado?",
-        "¿Aparecieron signos de infección o necrosis?"
+        { "text": "¿Aumentó el área, la profundidad o el exudado?", "alarm": "Sí" },
+        { "text": "¿Aparecieron signos de infección o necrosis?", "alarm": "Sí" }
       ],
       "actions": [
         { "id": "reevaluar_plan", "label": "Reevaluar el plan de tratamiento" },
