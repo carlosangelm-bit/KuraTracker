@@ -293,21 +293,26 @@ class KuraTreatmentRulesEngine {
       ));
     }
 
-    // Referencia por TÚNEL profundo (> 7 cm) o COMPROMISO ARTICULAR (Protocolo
-    // "Interconsultas").
+    // Túnel profundo (> 7 cm) o COMPROMISO ARTICULAR. Feedback de María: NO es
+    // una interconsulta directa; primero apoyarse en estudios (USG de tejidos
+    // blandos, fistulografía, RMN) y valorar la IC según sitio anatómico y
+    // etiología (Cirugía general / Ortopedia).
     if (input.requiereReferenciaPorTunel) {
       interconsultas.add(Interconsulta(
-        especialidad: 'Cirugia',
+        especialidad: 'Estudios de imagen / valorar IC (Cirugía general u Ortopedia)',
         motivo: 'Túnel profundo (${input.tunnelDepthCm!.toStringAsFixed(1)} cm '
-            '> 7 cm): descartar trayecto fistuloso/absceso; referencia '
-            'quirúrgica (Protocolo "Interconsultas").',
+            '> 7 cm): descartar trayecto fistuloso/absceso. Sugerido: USG de '
+            'tejidos blandos, fistulografía o RMN; valorar interconsulta '
+            '(Cirugía general/Ortopedia) según hallazgos, sitio anatómico y '
+            'etiología.',
       ));
     }
     if (input.requiereReferenciaPorArticulacion) {
       interconsultas.add(const Interconsulta(
-        especialidad: 'Cirugia / Ortopedia',
-        motivo: 'Herida con compromiso articular: descartar artritis séptica / '
-            'exposición articular; referencia (Protocolo "Interconsultas").',
+        especialidad: 'Estudios de imagen / valorar IC (Cirugía general u Ortopedia)',
+        motivo: 'Compromiso articular: descartar artritis séptica / exposición '
+            'articular. Sugerido: USG de tejidos blandos o RMN; valorar '
+            'interconsulta (Cirugía general/Ortopedia) según sitio y etiología.',
       ));
     }
 
