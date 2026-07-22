@@ -60,6 +60,7 @@ class Consultation {
   final String? followUpEvolution;
   final String? followUpSignedBy;
   final String? followUpSignedLicense;
+  final String? followUpSignedSpecialty; // especialidad (NOM-024/004, 0039)
   // Firma digital del profesional (JSON de trazos del pad de firma) + marca de
   // tiempo. Complementan la firma de solo lectura (nombre + cédula). Ver
   // migración 0027_followup_signature.sql.
@@ -86,6 +87,7 @@ class Consultation {
     this.followUpEvolution,
     this.followUpSignedBy,
     this.followUpSignedLicense,
+    this.followUpSignedSpecialty,
     this.followUpSignature,
     this.followUpSignedAt,
     this.scheduledAppointmentRef,
@@ -107,6 +109,7 @@ class Consultation {
         followUpEvolution: json['follow_up_evolution'] as String?,
         followUpSignedBy: json['follow_up_signed_by'] as String?,
         followUpSignedLicense: json['follow_up_signed_license'] as String?,
+        followUpSignedSpecialty: json['follow_up_signed_specialty'] as String?,
         followUpSignature: json['follow_up_signature'] as String?,
         followUpSignedAt: json['follow_up_signed_at'] == null
             ? null
@@ -130,6 +133,7 @@ class Consultation {
         'follow_up_evolution': followUpEvolution,
         'follow_up_signed_by': followUpSignedBy,
         'follow_up_signed_license': followUpSignedLicense,
+        'follow_up_signed_specialty': followUpSignedSpecialty,
         'follow_up_signature': followUpSignature,
         'follow_up_signed_at': followUpSignedAt?.toIso8601String(),
         'scheduled_appointment_ref': scheduledAppointmentRef,

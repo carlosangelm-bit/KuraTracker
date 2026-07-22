@@ -10,6 +10,8 @@ class StaffMember {
   // Numero de cedula profesional; usado para prellenar la firma de la nota
   // de seguimiento obligatoria (Instructivo de Archivo).
   final String? cedulaProfesional;
+  // Especialidad del profesional (para la firma NOM-024/004). Ver 0039.
+  final String? especialidad;
   // Centro (organizacion) al que pertenece este personal. Se guarda de
   // forma explicita (no solo derivada via profileId) porque puede haber
   // personal administrativo SIN cuenta de acceso vinculada (profileId
@@ -27,6 +29,7 @@ class StaffMember {
     this.isActive = true,
     required this.createdAt,
     this.cedulaProfesional,
+    this.especialidad,
     this.organizationId,
   });
 
@@ -40,6 +43,7 @@ class StaffMember {
         isActive: json['is_active'] as bool? ?? true,
         createdAt: DateTime.parse(json['created_at'] as String),
         cedulaProfesional: json['cedula_profesional'] as String?,
+        especialidad: json['especialidad'] as String?,
         organizationId: json['organization_id'] as String?,
       );
 
@@ -53,6 +57,7 @@ class StaffMember {
         'is_active': isActive,
         'created_at': createdAt.toIso8601String(),
         'cedula_profesional': cedulaProfesional,
+        'especialidad': especialidad,
         'organization_id': organizationId,
       };
 }

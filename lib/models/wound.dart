@@ -81,6 +81,7 @@ class Wound {
   final SuturaTipo? suturaTipo;
   // Egreso del episodio (estructurado)
   final MotivoEgreso? motivoEgreso;
+  final String? dischargeNote; // Plan de alta / explicación del egreso (0039)
   final bool isActive;
   final DateTime? closedAt;
   final DateTime createdAt;
@@ -112,6 +113,7 @@ class Wound {
     this.drenajeTipo,
     this.suturaTipo,
     this.motivoEgreso,
+    this.dischargeNote,
     this.isActive = true,
     this.closedAt,
     required this.createdAt,
@@ -156,6 +158,7 @@ class Wound {
         drenajeTipo: enumByName(DrenajeTipo.values, json['drenaje_tipo']),
         suturaTipo: enumByName(SuturaTipo.values, json['sutura_tipo']),
         motivoEgreso: enumByName(MotivoEgreso.values, json['discharge_reason']),
+        dischargeNote: json['discharge_note'] as String?,
         isActive: json['is_active'] as bool? ?? true,
         closedAt: json['closed_at'] == null
             ? null
@@ -190,6 +193,7 @@ class Wound {
         'drenaje_tipo': drenajeTipo?.name,
         'sutura_tipo': suturaTipo?.name,
         'discharge_reason': motivoEgreso?.name,
+        'discharge_note': dischargeNote,
         'is_active': isActive,
         'closed_at': closedAt?.toIso8601String(),
         'created_at': createdAt.toIso8601String(),

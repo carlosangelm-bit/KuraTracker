@@ -181,6 +181,7 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
   // se piden como campos editables en cada nota).
   String? _signedByReadOnly;
   String? _signedLicenseReadOnly;
+  String? _signedSpecialtyReadOnly;
   // Firma digital trazada por el profesional (además del nombre + cédula de
   // solo lectura). Obligatoria para firmar la nota.
   final SignatureController _signatureController = SignatureController();
@@ -288,7 +289,9 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
     _signedByReadOnly = session.user?.fullName;
     final staffId = session.user?.staffId;
     if (repo != null && staffId != null) {
-      _signedLicenseReadOnly = repo.getStaff(staffId)?.cedulaProfesional;
+      final staff = repo.getStaff(staffId);
+      _signedLicenseReadOnly = staff?.cedulaProfesional;
+      _signedSpecialtyReadOnly = staff?.especialidad;
     }
   }
 
@@ -1343,6 +1346,21 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
               ),
             ],
           ),
+          if (_signedSpecialtyReadOnly != null &&
+              _signedSpecialtyReadOnly!.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                const Icon(Icons.medical_services_outlined,
+                    size: 16, color: KuraColors.darkText),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text('Especialidad: $_signedSpecialtyReadOnly',
+                      style: const TextStyle(fontWeight: FontWeight.w600)),
+                ),
+              ],
+            ),
+          ],
           if (!hasLicense) ...[
             const SizedBox(height: 8),
             Row(
@@ -1480,6 +1498,7 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
         followUpEvolution: _evolutionFinal,
         followUpSignedBy: _signedByReadOnly!,
         followUpSignedLicense: _signedLicenseReadOnly!,
+        followUpSignedSpecialty: _signedSpecialtyReadOnly,
         followUpSignature: _signatureController.toJsonString(),
         followUpSignedAt: DateTime.now(),
       );
