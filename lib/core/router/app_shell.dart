@@ -7,6 +7,7 @@ import '../providers/session_provider.dart';
 import '../widgets/kura_glass_card.dart';
 import '../../models/app_user.dart';
 import '../../models/center_type.dart';
+import '../../models/module_key.dart';
 import '../../services/data_repository.dart';
 
 /// Alto del contenido de la barra de navegacion flotante. Las pantallas
@@ -25,7 +26,7 @@ class AppShell extends ConsumerWidget {
 
   const AppShell({super.key, required this.child, required this.currentPath});
 
-  List<_NavItem> _itemsFor(AppUser? user) {
+  List<_NavItem> _itemsFor(AppUser? user, Set<ModuleKey> modules) {
     // El master (administrador de plataforma) es exclusivamente
     // estructural (organizations/sites/staff/note_option_catalog, ver
     // 0012_master_role.sql): no tiene pacientes/reportes propios, asi
@@ -39,18 +40,31 @@ class AppShell extends ConsumerWidget {
       ];
     }
 
+    // Inicio siempre visible. Los demás items clínicos se muestran solo si su
+    // módulo está habilitado para el centro/sitio/usuario (Fase 2). Apagar un
+    // módulo solo lo oculta; sus datos permanecen.
     final items = <_NavItem>[
       const _NavItem('/', Icons.dashboard_outlined, Icons.dashboard, 'Inicio'),
-      const _NavItem('/patients', Icons.people_outline, Icons.people, 'Pacientes'),
-      const _NavItem('/agenda', Icons.event_outlined, Icons.event, 'Agenda'),
-      const _NavItem('/risk', Icons.shield_outlined, Icons.shield, 'Prevención'),
-      const _NavItem('/reports', Icons.description_outlined, Icons.description, 'Reportes'),
     ];
+    if (modules.contains(ModuleKey.patients)) {
+      items.add(const _NavItem('/patients', Icons.people_outline, Icons.people, 'Pacientes'));
+    }
+    if (modules.contains(ModuleKey.agenda)) {
+      items.add(const _NavItem('/agenda', Icons.event_outlined, Icons.event, 'Agenda'));
+    }
+    if (modules.contains(ModuleKey.prevention)) {
+      items.add(const _NavItem('/risk', Icons.shield_outlined, Icons.shield, 'Prevención'));
+    }
+    if (modules.contains(ModuleKey.reports)) {
+      items.add(const _NavItem('/reports', Icons.description_outlined, Icons.description, 'Reportes'));
+    }
     if (user?.role == AppRole.admin) {
       items.add(const _NavItem(
           '/admin', Icons.admin_panel_settings_outlined, Icons.admin_panel_settings, 'Administración'));
     }
-    items.add(const _NavItem('/import-export', Icons.sync_alt_outlined, Icons.sync_alt, 'eKare'));
+    if (modules.contains(ModuleKey.ekare)) {
+      items.add(const _NavItem('/import-export', Icons.sync_alt_outlined, Icons.sync_alt, 'eKare'));
+    }
     return items;
   }
 
@@ -66,7 +80,8 @@ class AppShell extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final session = ref.watch(sessionProvider);
-    final items = _itemsFor(session.user);
+    final modules = ref.watch(enabledModulesProvider);
+    final items = _itemsFor(session.user, modules);
     final selectedIndex = _indexFor(currentPath, items);
     final isWide = MediaQuery.of(context).size.width >= 900;
     // La barra flotante solo se muestra en pantallas de NIVEL SUPERIOR (las

@@ -3,6 +3,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../models/app_user.dart';
 import '../../models/center_type.dart';
+import '../../models/module_key.dart';
 import '../../models/user_center_membership.dart';
 import '../../services/data_repository.dart';
 import '../../engine/cie10_catalog.dart';
@@ -215,6 +216,27 @@ final dataRepositoryProvider = FutureProvider<DataRepository>((ref) {
 /// (morado/azul/rosa) de forma reactiva al cambiar de centro.
 final activeCenterTypeProvider = Provider<CenterType>((ref) {
   return ref.watch(sessionProvider).activeCenterType;
+});
+
+/// Conjunto de módulos habilitados para el usuario en su centro ACTIVO (Fase 2).
+/// Lo consumen el shell (para el nav) y el router (para bloquear rutas de
+/// módulos apagados). Se recomputa al cambiar de centro (watch sessionProvider).
+/// Fallback seguro a los defaults del tipo de centro si el repo aún no cargó.
+final enabledModulesProvider = Provider<Set<ModuleKey>>((ref) {
+  final session = ref.watch(sessionProvider);
+  final user = session.user;
+  if (user == null) return const {};
+  final repo = ref.watch(dataRepositoryProvider).valueOrNull;
+  if (repo == null) {
+    return ModuleKey.values
+        .where((m) => m.defaultFor(session.activeCenterType))
+        .toSet();
+  }
+  return repo.enabledModules(
+    organizationId: user.organizationId,
+    siteId: repo.primarySiteIdForProfile(user.id),
+    profileId: user.id,
+  );
 });
 
 /// Catálogo CIE-10 de heridas crónicas (asset empaquetado, reference data
