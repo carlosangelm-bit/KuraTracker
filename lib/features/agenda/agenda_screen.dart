@@ -51,7 +51,7 @@ void _goToPatient(BuildContext context, String? patientId) {
     ));
     return;
   }
-  context.go('/patients/$patientId');
+  context.push('/patients/$patientId');
 }
 
 /// Botón inteligente: si ya existe la consulta ligada a esta cita, la abre; si

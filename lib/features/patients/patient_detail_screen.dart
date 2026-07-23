@@ -117,8 +117,12 @@ class _PatientDetailScreenState extends ConsumerState<PatientDetailScreen> {
               SliverAppBar(
                 leading: IconButton(
                   icon: const Icon(Icons.arrow_back),
-                  tooltip: 'Volver a pacientes',
-                  onPressed: () => context.go('/patients'),
+                  tooltip: 'Volver',
+                  // Vuelve al PASO ANTERIOR real (lista, Inicio, agenda, etc.);
+                  // si no hay pila (enlace directo), cae a la lista de pacientes.
+                  onPressed: () => context.canPop()
+                      ? context.pop()
+                      : context.go('/patients'),
                 ),
                 title: Text(patient.fullName),
                 pinned: true,
@@ -661,7 +665,7 @@ class _RiskCard extends ConsumerWidget {
       margin: EdgeInsets.zero,
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
-        onTap: () => context.go('/patients/$patientId/risk'),
+        onTap: () => context.push('/patients/$patientId/risk'),
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Row(

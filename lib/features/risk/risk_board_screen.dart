@@ -289,7 +289,7 @@ class _RiskCardWide extends StatelessWidget {
       margin: EdgeInsets.zero,
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
-        onTap: () => context.go('/patients/${entry.patient.id}/risk'),
+        onTap: () => context.push('/patients/${entry.patient.id}/risk'),
         child: Padding(
           padding: const EdgeInsets.all(14),
           child: Column(
@@ -504,7 +504,7 @@ class _RiskBoardTile extends StatelessWidget {
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
       child: ListTile(
-        onTap: () => context.go('/patients/${entry.patient.id}/risk'),
+        onTap: () => context.push('/patients/${entry.patient.id}/risk'),
         leading: CircleAvatar(
           backgroundColor: color.withOpacity(0.16),
           child: Icon(Icons.shield_outlined, color: color, size: 20),

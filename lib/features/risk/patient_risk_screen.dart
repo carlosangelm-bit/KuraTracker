@@ -306,12 +306,25 @@ class _PatientRiskScreenState extends ConsumerState<PatientRiskScreen> {
 
     return Scaffold(
       appBar: AppBar(
+        // Atrás = volver al PASO ANTERIOR real (dashboard, tablero de riesgo,
+        // etc.) usando la pila de navegación; si no hay pila (p. ej. enlace
+        // directo), cae al perfil del paciente. El perfil completo tiene su
+        // propio botón explícito en las acciones.
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
-          tooltip: 'Volver al paciente',
-          onPressed: () => context.go('/patients/${widget.patientId}'),
+          tooltip: 'Volver',
+          onPressed: () => context.canPop()
+              ? context.pop()
+              : context.go('/patients/${widget.patientId}'),
         ),
         title: const Text('Prevención y riesgo'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.badge_outlined),
+            tooltip: 'Perfil del paciente',
+            onPressed: () => context.go('/patients/${widget.patientId}'),
+          ),
+        ],
       ),
       body: repoAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
