@@ -30,6 +30,9 @@ import '../../features/agenda/agenda_screen.dart';
 import '../../features/admin/admin_home_screen.dart';
 import '../../features/import_export/import_export_screen.dart';
 import '../../features/platform/platform_home_screen.dart';
+import '../../features/prevention_agenda/prevention_agenda_screen.dart';
+import '../../features/caregiver/caregiver_home_screen.dart';
+import '../../features/caregiver/caregiver_patient_screen.dart';
 import 'app_shell.dart';
 
 /// Notificador puente para que GoRouter reaccione a cambios de sesion
@@ -61,7 +64,15 @@ final routerProvider = Provider<GoRouter>((ref) {
       // ver regla de oro en 0012_master_role.sql): al iniciar sesion se le
       // manda directo a su area de trabajo real, '/platform'.
       final isMaster = session.user?.role == AppRole.master;
-      if (loggedIn && goingToLogin) return isMaster ? '/platform' : '/';
+      // El CUIDADOR (Fase 3) es un rol restringido: su única área es
+      // '/caregiver' (monitoreo de los pacientes que el centro le asignó, solo
+      // lectura + sus tareas). No ve el dashboard clínico ni el resto de la nav.
+      final isCaregiver = session.user?.role == AppRole.cuidador;
+      if (loggedIn && goingToLogin) {
+        if (isMaster) return '/platform';
+        if (isCaregiver) return '/caregiver';
+        return '/';
+      }
 
       final location = state.matchedLocation;
       if (loggedIn && isMaster) {
@@ -71,6 +82,14 @@ final routerProvider = Provider<GoRouter>((ref) {
         final isClinicalRoute =
             location == '/' || location.startsWith('/patients') || location == '/reports';
         if (isClinicalRoute) return '/platform';
+      } else if (loggedIn && isCaregiver) {
+        // El cuidador solo puede estar en su área; cualquier otra ruta lo
+        // regresa a '/caregiver' (defensa de UX; la RLS 0042 ya le niega el
+        // resto de los datos).
+        if (!location.startsWith('/caregiver')) return '/caregiver';
+      } else if (loggedIn && location.startsWith('/caregiver')) {
+        // Un no-cuidador que teclee '/caregiver' no tiene nada ahí.
+        return '/';
       } else if (loggedIn && location.startsWith('/platform')) {
         // Hardening (no es hueco de datos: la RLS is_master() de 0012 ya le
         // niega todo a un no-master; esto solo pule la UX): un admin/clinico
@@ -81,11 +100,15 @@ final routerProvider = Provider<GoRouter>((ref) {
 
       // Gating por módulo (Fase 2): si la ruta pertenece a un módulo apagado
       // para el centro/sitio/usuario, se redirige al dashboard. Solo aplica a
-      // no-master (el master no navega rutas clínicas). No bloquea datos (eso
-      // lo hace la RLS); es coherencia de navegación con el nav visible.
-      if (loggedIn && !isMaster) {
+      // no-master/no-cuidador (esos no navegan rutas de módulos). No bloquea
+      // datos (eso lo hace la RLS); es coherencia con el nav visible.
+      if (loggedIn && !isMaster && !isCaregiver) {
         final module = ModuleKeyX.forRoute(location);
-        if (module != null && !ref.read(enabledModulesProvider).contains(module)) {
+        // La agenda de prevención es submódulo de Prevención.
+        final needsPrevention = location.startsWith('/prevention-agenda');
+        final modules = ref.read(enabledModulesProvider);
+        if ((module != null && !modules.contains(module)) ||
+            (needsPrevention && !modules.contains(ModuleKey.prevention))) {
           return '/';
         }
       }
@@ -211,6 +234,18 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(path: '/reports', builder: (context, state) => const ReportsScreen()),
           GoRoute(path: '/agenda', builder: (context, state) => const AgendaScreen()),
           GoRoute(path: '/risk', builder: (context, state) => const RiskBoardScreen()),
+          GoRoute(
+              path: '/prevention-agenda',
+              builder: (context, state) => const PreventionAgendaScreen()),
+          GoRoute(
+              path: '/caregiver',
+              builder: (context, state) => const CaregiverHomeScreen()),
+          GoRoute(
+            path: '/caregiver/patient/:patientId',
+            builder: (context, state) => CaregiverPatientScreen(
+              patientId: state.pathParameters['patientId']!,
+            ),
+          ),
           GoRoute(
             path: '/patients/:patientId/risk',
             builder: (context, state) => PatientRiskScreen(

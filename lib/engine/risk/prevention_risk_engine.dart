@@ -93,6 +93,38 @@ class PreventiveAction {
       );
 }
 
+/// Cadencia de una acción PROGRAMABLE (Fase 3): cada cuántas horas se repite y
+/// el título corto de la tarea. Solo las acciones con cadencia se agendan como
+/// tareas preventivas recurrentes; las demás son recomendaciones únicas.
+class ActionCadence {
+  final int everyHours;
+  final String title;
+  const ActionCadence({required this.everyHours, required this.title});
+
+  factory ActionCadence.fromJson(Map<String, dynamic> j) => ActionCadence(
+        everyHours: (j['everyHours'] as num).toInt(),
+        title: (j['title'] as String?) ?? 'Actividad preventiva',
+      );
+}
+
+/// Especificación de una tarea recurrente a materializar en la agenda de
+/// prevención (Fase 3): de qué regla/acción sale, su título y cadencia.
+class ScheduledActionSpec {
+  final String ruleId;
+  final String actionId;
+  final String actionLabel;
+  final String title;
+  final int everyHours;
+
+  const ScheduledActionSpec({
+    required this.ruleId,
+    required this.actionId,
+    required this.actionLabel,
+    required this.title,
+    required this.everyHours,
+  });
+}
+
 /// Conducta de ESCALAMIENTO: se muestra cuando el profesional responde con un
 /// signo de alarma a alguna pregunta de vigilancia. Cambia la salida
 /// (prevención -> manejo/notificar/referir).
@@ -201,8 +233,14 @@ class _Rule {
 class PreventionRulesCatalog {
   final String version;
   final List<_Rule> _rules;
+  final Map<String, ActionCadence> _cadences;
 
-  const PreventionRulesCatalog._(this.version, this._rules);
+  /// Horizonte (horas) sobre el que se materializan las tareas recurrentes al
+  /// generar la agenda de prevención.
+  final int cadenceHorizonHours;
+
+  const PreventionRulesCatalog._(
+      this.version, this._rules, this._cadences, this.cadenceHorizonHours);
 
   static PreventionRulesCatalog? _cached;
 
@@ -215,10 +253,49 @@ class PreventionRulesCatalog {
     final rules = ((json['rules'] as List?) ?? const [])
         .map((e) => _Rule.fromJson((e as Map).cast<String, dynamic>()))
         .toList();
-    final catalog =
-        PreventionRulesCatalog._((json['version'] as String?) ?? '', rules);
+    final cadences = <String, ActionCadence>{};
+    final rawCadences = (json['cadences'] as Map?)?.cast<String, dynamic>() ?? const {};
+    rawCadences.forEach((k, v) {
+      cadences[k] = ActionCadence.fromJson((v as Map).cast<String, dynamic>());
+    });
+    final catalog = PreventionRulesCatalog._(
+      (json['version'] as String?) ?? '',
+      rules,
+      cadences,
+      (json['cadenceHorizonHours'] as num?)?.toInt() ?? 24,
+    );
     _cached = catalog;
     return catalog;
+  }
+
+  /// Cadencia de una acción programable (por id), o null si la acción no se
+  /// agenda como tarea recurrente.
+  ActionCadence? cadenceFor(String actionId) => _cadences[actionId];
+
+  /// Especificaciones de tareas recurrentes para un resultado de riesgo: por
+  /// cada acción con cadencia (dedup por id de acción, conservando la de mayor
+  /// frecuencia), su regla de origen, título y cada-cuántas-horas.
+  List<ScheduledActionSpec> schedulableActionsFor(PreventionRiskResult result) {
+    final byAction = <String, ScheduledActionSpec>{};
+    for (final alert in result.alerts) {
+      for (final a in alert.actions) {
+        final cad = _cadences[a.id];
+        if (cad == null) continue;
+        final existing = byAction[a.id];
+        // Si aparece en varias alertas, conserva la de MAYOR frecuencia (menor
+        // everyHours) para no sub-agendar en un paciente de mayor riesgo.
+        if (existing == null || cad.everyHours < existing.everyHours) {
+          byAction[a.id] = ScheduledActionSpec(
+            ruleId: alert.id,
+            actionId: a.id,
+            actionLabel: a.label,
+            title: cad.title,
+            everyHours: cad.everyHours,
+          );
+        }
+      }
+    }
+    return byAction.values.toList();
   }
 
   /// Evalúa el riesgo de un paciente. `comorbilidadesPresentes` son solo las

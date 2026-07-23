@@ -5,10 +5,12 @@ import '../core/config/app_config.dart';
 import '../models/adverse_event.dart';
 import '../models/antecedentes.dart';
 import '../models/app_user.dart';
+import '../models/caregiver_patient_assignment.dart';
 import '../models/center_type.dart';
 import '../models/clinical_amendment.dart';
 import '../models/module_key.dart';
 import '../models/module_setting.dart';
+import '../models/preventive_task.dart';
 import '../models/consent.dart';
 import '../models/consultation.dart';
 import '../models/manual_appointment.dart';
@@ -1673,6 +1675,224 @@ class DataRepository {
     final saved =
         await _store.insertRow(Collections.preventiveActionLog, data);
     return PreventiveActionLog.fromJson(saved);
+  }
+
+  // ---------------- Agenda de prevención: tareas (Fase 3) ----------------
+  // (0042_preventive_tasks.sql). Tareas AGENDADAS (fecha + asignado + estado),
+  // autogeneradas desde las cadencias del asset o creadas a mano.
+
+  List<PreventiveTask> listPreventiveTasks({
+    String? organizationId,
+    String? patientId,
+    String? assigneeProfileId,
+    DateTime? from,
+    DateTime? to,
+  }) =>
+      _store
+          .getAll(Collections.preventiveTasks)
+          .map(PreventiveTask.fromJson)
+          .where((t) =>
+              (organizationId == null || t.organizationId == organizationId) &&
+              (patientId == null || t.patientId == patientId) &&
+              (assigneeProfileId == null || t.assigneeProfileId == assigneeProfileId) &&
+              (from == null || !t.scheduledAt.isBefore(from)) &&
+              (to == null || t.scheduledAt.isBefore(to)))
+          .toList()
+        ..sort((a, b) => a.scheduledAt.compareTo(b.scheduledAt));
+
+  Future<PreventiveTask> createPreventiveTask({
+    required String patientId,
+    required String? organizationId,
+    required String title,
+    required DateTime scheduledAt,
+    String? admissionId,
+    String? ruleId,
+    String? actionId,
+    String? actionLabel,
+    String? assigneeProfileId,
+    String assigneeKind = 'staff',
+    String source = 'manual',
+    String? notes,
+    String? createdBy,
+  }) async {
+    final data = {
+      'id': _uuid.v4(),
+      'organization_id': organizationId,
+      'patient_id': patientId,
+      'admission_id': admissionId,
+      'rule_id': ruleId,
+      'action_id': actionId,
+      'title': title,
+      'action_label': actionLabel,
+      'scheduled_at': scheduledAt.toIso8601String(),
+      'assignee_profile_id': assigneeProfileId,
+      'assignee_kind': assigneeKind,
+      'status': PreventiveTaskStatus.pending.dbValue,
+      'source': source,
+      'notes': notes,
+      'created_by': createdBy,
+      'created_at': DateTime.now().toIso8601String(),
+    };
+    final saved = await _store.insertRow(Collections.preventiveTasks, data);
+    return PreventiveTask.fromJson(saved);
+  }
+
+  Future<void> updatePreventiveTask(String id, Map<String, dynamic> patch) async {
+    await _store.updateRow(Collections.preventiveTasks, id, patch);
+  }
+
+  Future<void> reschedulePreventiveTask(String id, DateTime scheduledAt) =>
+      updatePreventiveTask(id, {'scheduled_at': scheduledAt.toIso8601String()});
+
+  Future<void> skipPreventiveTask(String id) =>
+      updatePreventiveTask(id, {'status': PreventiveTaskStatus.skipped.dbValue});
+
+  /// Marca una tarea como HECHA y, si viene de una regla/acción, deja también
+  /// el registro en preventive_action_log (bitácora, misma trazabilidad que las
+  /// acciones sueltas). [byProfileId] = quién la marcó (staff o cuidador);
+  /// [staffId] = su staff.id si aplica (para el log; null en cuidador).
+  Future<void> completePreventiveTask(
+    PreventiveTask task, {
+    required String? byProfileId,
+    String? staffId,
+    String? notes,
+  }) async {
+    await updatePreventiveTask(task.id, {
+      'status': PreventiveTaskStatus.done.dbValue,
+      'done_at': DateTime.now().toIso8601String(),
+      'done_by': byProfileId,
+      if (notes != null) 'notes': notes,
+    });
+    if (task.ruleId != null && task.actionId != null) {
+      await logPreventiveAction(
+        patientId: task.patientId,
+        organizationId: task.organizationId,
+        ruleId: task.ruleId!,
+        actionId: task.actionId!,
+        actionLabel: task.actionLabel ?? task.title,
+        notes: notes,
+        staffId: staffId,
+      );
+    }
+  }
+
+  /// (Re)genera la agenda de tareas preventivas de un paciente a partir de las
+  /// cadencias de las reglas que dispara su riesgo. Idempotente: borra primero
+  /// las tareas AUTO FUTURAS pendientes del paciente y crea el plan fresco sobre
+  /// el horizonte del catálogo. No toca tareas hechas/saltadas (historial) ni
+  /// las manuales. Devuelve cuántas tareas creó.
+  Future<int> generatePreventiveTasksFor(
+    String patientId,
+    PreventionRulesCatalog catalog, {
+    required String? organizationId,
+    String? assigneeProfileId,
+    String assigneeKind = 'staff',
+    String? createdBy,
+  }) async {
+    final risk = computeRisk(patientId, catalog);
+    final specs = catalog.schedulableActionsFor(risk);
+    final admissionId = activeAdmission(patientId)?.id;
+    final now = DateTime.now();
+
+    // Limpia tareas AUTO futuras pendientes (para reflejar el riesgo actual).
+    final existing = _store
+        .getAll(Collections.preventiveTasks)
+        .map(PreventiveTask.fromJson)
+        .where((t) =>
+            t.patientId == patientId &&
+            t.source == 'auto' &&
+            t.isPending &&
+            !t.scheduledAt.isBefore(now));
+    for (final t in existing) {
+      await _store.deleteRow(Collections.preventiveTasks, t.id);
+    }
+
+    var created = 0;
+    for (final s in specs) {
+      // Nº de ocurrencias en el horizonte (cap defensivo a 24 por acción).
+      final count =
+          (catalog.cadenceHorizonHours / s.everyHours).floor().clamp(1, 24);
+      for (var i = 1; i <= count; i++) {
+        await createPreventiveTask(
+          patientId: patientId,
+          organizationId: organizationId,
+          title: s.title,
+          scheduledAt: now.add(Duration(hours: s.everyHours * i)),
+          admissionId: admissionId,
+          ruleId: s.ruleId,
+          actionId: s.actionId,
+          actionLabel: s.actionLabel,
+          assigneeProfileId: assigneeProfileId,
+          assigneeKind: assigneeKind,
+          source: 'auto',
+          createdBy: createdBy,
+        );
+        created++;
+      }
+    }
+    return created;
+  }
+
+  // ---------------- Cuidador ↔ paciente (Fase 3) ----------------
+
+  List<CaregiverPatientAssignment> listCaregiverAssignments({
+    String? organizationId,
+    String? caregiverProfileId,
+    String? patientId,
+  }) =>
+      _store
+          .getAll(Collections.caregiverPatientAssignments)
+          .map(CaregiverPatientAssignment.fromJson)
+          .where((a) =>
+              (organizationId == null || a.organizationId == organizationId) &&
+              (caregiverProfileId == null || a.caregiverProfileId == caregiverProfileId) &&
+              (patientId == null || a.patientId == patientId))
+          .toList();
+
+  /// Pacientes que un cuidador puede monitorear (ids).
+  List<String> patientIdsForCaregiver(String caregiverProfileId) =>
+      listCaregiverAssignments(caregiverProfileId: caregiverProfileId)
+          .map((a) => a.patientId)
+          .toList();
+
+  Future<void> assignCaregiverToPatient({
+    required String caregiverProfileId,
+    required String patientId,
+    required String? organizationId,
+    String? assignedBy,
+  }) async {
+    // Evita duplicar (unique en BD; aquí también en demo).
+    final dup = listCaregiverAssignments(
+        caregiverProfileId: caregiverProfileId, patientId: patientId);
+    if (dup.isNotEmpty) return;
+    await _store.insertRow(Collections.caregiverPatientAssignments, {
+      'id': _uuid.v4(),
+      'organization_id': organizationId,
+      'caregiver_profile_id': caregiverProfileId,
+      'patient_id': patientId,
+      'assigned_by': assignedBy,
+      'created_at': DateTime.now().toIso8601String(),
+    });
+  }
+
+  Future<void> removeCaregiverAssignment(String id) async {
+    await _store.deleteRow(Collections.caregiverPatientAssignments, id);
+  }
+
+  /// Próxima cita (manual) futura de un paciente, o null. Para la vista del
+  /// cuidador (contacto/agenda del centro).
+  ManualAppointment? nextManualAppointmentForPatient(String patientId) {
+    final now = DateTime.now();
+    final upcoming = _store
+        .getAll(Collections.manualAppointments)
+        .map(ManualAppointment.fromJson)
+        .where((a) =>
+            a.patientId == patientId &&
+            a.status != 'canceled' &&
+            a.datetime.isAfter(now))
+        .toList()
+      ..sort((a, b) => a.datetime.compareTo(b.datetime));
+    return upcoming.isEmpty ? null : upcoming.first;
   }
 
   // ---------------- Consultas ----------------

@@ -1,6 +1,18 @@
 {
-  "version": "2026-07-22f",
+  "version": "2026-07-23a",
   "note": "Algoritmo preventivo de LPP y complicaciones de heridas quirúrgicas (entorno hospitalario), basado en el reporte clínico aportado (GNEAUPP/EPUAP/NPIAP, IMSS, OMS/WHO SSI) y en el Continuo de Infección de la Herida IWII 2022 (contaminación -> colonización -> infección local [encubierta/sutil + clásica/manifiesta] -> infección en propagación -> infección sistémica). LPP: determinístico por banda de Braden -> paquete de intervenciones ESCALONADO (prevención). Cada regla tiene 'questions' de VIGILANCIA con respuesta; si el profesional responde con la respuesta de 'alarm', se muestra la conducta de 'escalation' (prevención -> manejo/notificar/referir). La regla 'complic_infeccion_iwii' es la guía general del continuo IWII 2022 para personal no especializado (qué buscar, en qué orden de gravedad y cuándo escalar). BORRADOR pendiente de validación de María. Capa DOCUMENTAL: no altera el motor de tratamiento. 'when': bradenMin/bradenMax, comorbilidad, hasActiveWound, mobilityIn, fragile, bmiMax, woundEtiology, deterioration. severity: alto|medio|bajo. dimension: lpp|complicacion.",
+  "note_cadences": "Fase 3: 'cadences' define cada cuántas horas se repite una acción PROGRAMABLE (por id de acción) para generar la agenda de tareas preventivas, sobre un horizonte 'cadenceHorizonHours'. Las acciones sin cadencia NO se agendan como tarea recurrente (son recomendaciones únicas). BORRADOR pendiente de validación de María.",
+  "cadenceHorizonHours": 24,
+  "cadences": {
+    "cambios_2h_registro": { "everyHours": 2, "title": "Cambio postural" },
+    "cambios_2_3h": { "everyHours": 3, "title": "Cambio postural" },
+    "cambios_4h": { "everyHours": 4, "title": "Cambio postural" },
+    "agho": { "everyHours": 12, "title": "Aplicar AGHO en zonas de riesgo" },
+    "control_humedad": { "everyHours": 8, "title": "Control de humedad / cambio de barrera" },
+    "exam_piel_diario": { "everyHours": 24, "title": "Examen de piel" },
+    "valoracion_piel_completa_diaria": { "everyHours": 24, "title": "Valoración de piel completa" },
+    "aposito_preventivo": { "everyHours": 24, "title": "Revisar apósitos preventivos (sacro/talones)" }
+  },
   "rules": [
     {
       "id": "lpp_muy_alto",
