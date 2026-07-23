@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
 import '../../core/theme/kura_theme.dart';
+import '../../core/layout/responsive.dart';
 import '../../core/providers/session_provider.dart';
 import '../../engine/risk/prevention_risk_engine.dart';
 import '../../engine/risk/braden_scale.dart';
@@ -386,67 +387,65 @@ class _PatientRiskScreenState extends ConsumerState<PatientRiskScreen> {
                     onPressed: () => context.push('/prevention-agenda'),
                   ),
                 const SizedBox(height: 16),
-                _InfoTile(
-                  icon: Icons.local_hotel_outlined,
-                  title: 'Internamiento',
-                  body: admission == null
-                      ? 'No internado'
-                      : '${admission.unit ?? 'Sin unidad'}'
-                          '${admission.bed != null ? ' · Cama ${admission.bed}' : ''}'
-                          '\nIngreso: ${_dateFmt.format(admission.admittedAt)}',
-                  action: admission == null
-                      ? TextButton(
-                          onPressed: () => _admit(repo),
-                          child: const Text('Ingresar'))
-                      : TextButton(
-                          onPressed: () => _discharge(repo, admission),
-                          child: const Text('Egresar')),
-                ),
-                const SizedBox(height: 8),
-                _InfoTile(
-                  icon: Icons.monitor_heart_outlined,
-                  title: 'Valoración de Braden',
-                  body: braden?.bradenScore == null
-                      ? 'Sin valoración registrada'
-                      : 'Braden ${braden!.bradenScore}'
-                          '${scale?.riskLabelFor(braden.bradenScore!) != null ? ' · ${scale!.riskLabelFor(braden.bradenScore!)}' : ''}'
-                          ' · ${_dateFmt.format(braden.assessedAt)}',
-                  action: TextButton(
-                    onPressed:
-                        scale == null ? null : () => _assessBraden(repo, scale),
-                    child: const Text('Valorar'),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                // Indicaciones libres del profesional para el cuidador (0044).
-                _InfoTile(
-                  icon: Icons.sticky_note_2_outlined,
-                  title: 'Indicaciones para el cuidador',
-                  body: (repo.caregiverInstructionsFor(widget.patientId) ??
-                              '')
-                          .trim()
-                          .isEmpty
-                      ? 'Sin indicaciones. Deja el set de cuidados para el '
-                          'cuidador (según diagnóstico).'
-                      : repo.caregiverInstructionsFor(widget.patientId)!,
-                  action: TextButton(
-                    onPressed: () =>
-                        _editCaregiverInstructions(repo, patient.organizationId),
-                    child: const Text('Editar'),
-                  ),
+                // Tarjetas de la ficha: en desktop refluyen a 2-3 columnas para
+                // aprovechar el ancho; en móvil quedan apiladas.
+                ResponsiveColumns(
+                  blocks: [
+                    _InfoTile(
+                      icon: Icons.local_hotel_outlined,
+                      title: 'Internamiento',
+                      body: admission == null
+                          ? 'No internado'
+                          : '${admission.unit ?? 'Sin unidad'}'
+                              '${admission.bed != null ? ' · Cama ${admission.bed}' : ''}'
+                              '\nIngreso: ${_dateFmt.format(admission.admittedAt)}',
+                      action: admission == null
+                          ? TextButton(
+                              onPressed: () => _admit(repo),
+                              child: const Text('Ingresar'))
+                          : TextButton(
+                              onPressed: () => _discharge(repo, admission),
+                              child: const Text('Egresar')),
+                    ),
+                    _InfoTile(
+                      icon: Icons.monitor_heart_outlined,
+                      title: 'Valoración de Braden',
+                      body: braden?.bradenScore == null
+                          ? 'Sin valoración registrada'
+                          : 'Braden ${braden!.bradenScore}'
+                              '${scale?.riskLabelFor(braden.bradenScore!) != null ? ' · ${scale!.riskLabelFor(braden.bradenScore!)}' : ''}'
+                              ' · ${_dateFmt.format(braden.assessedAt)}',
+                      action: TextButton(
+                        onPressed: scale == null
+                            ? null
+                            : () => _assessBraden(repo, scale),
+                        child: const Text('Valorar'),
+                      ),
+                    ),
+                    // Indicaciones libres del profesional para el cuidador (0044).
+                    _InfoTile(
+                      icon: Icons.sticky_note_2_outlined,
+                      title: 'Indicaciones para el cuidador',
+                      body: (repo.caregiverInstructionsFor(widget.patientId) ?? '')
+                              .trim()
+                              .isEmpty
+                          ? 'Sin indicaciones. Deja el set de cuidados para el '
+                              'cuidador (según diagnóstico).'
+                          : repo.caregiverInstructionsFor(widget.patientId)!,
+                      action: TextButton(
+                        onPressed: () => _editCaregiverInstructions(
+                            repo, patient.organizationId),
+                        child: const Text('Editar'),
+                      ),
+                    ),
+                    _CompliancePanel(repo: repo, patient: patient),
+                    _PatientAuditLog(repo: repo, patientId: widget.patientId),
+                    // Signos a vigilar (solo lectura): qué observar, no tareas.
+                    if (result.complicacion.isNotEmpty)
+                      _WatchSignsCard(alerts: result.complicacion),
+                  ],
                 ),
                 const SizedBox(height: 16),
-                _CompliancePanel(repo: repo, patient: patient),
-                const SizedBox(height: 16),
-                _PatientAuditLog(repo: repo, patientId: widget.patientId),
-                const SizedBox(height: 20),
-                // Signos a vigilar por comorbilidades/complicación (solo lectura):
-                // NO son tareas de la agenda; son qué observar. Las actividades
-                // concretas salen del cuestionario ("Evaluación preventiva").
-                if (result.complicacion.isNotEmpty) ...[
-                  _WatchSignsCard(alerts: result.complicacion),
-                  const SizedBox(height: 16),
-                ],
                 Text(
                   'Apoyo a la decisión (borrador clínico). No sustituye el juicio '
                   'profesional ni modifica el plan de tratamiento.',

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/theme/kura_theme.dart';
+import '../../core/layout/responsive.dart';
 import '../../core/providers/session_provider.dart';
 import '../../core/router/app_shell.dart' show UserMenuButton, centerTypeColor;
 import '../../core/widgets/kura_primary_fab.dart';
@@ -119,8 +120,10 @@ class _PlatformHomeScreenState extends ConsumerState<PlatformHomeScreen>
             _selectedOrgId = organizations.first.id;
           }
 
+          // Acota el ancho en desktop para que la gestión no se estire.
+          final Widget body;
           if (_tab == 0) {
-            return _OrganizationsTab(
+            body = _OrganizationsTab(
               repo: repo,
               organizations: organizations,
               selectedOrgId: _selectedOrgId,
@@ -128,40 +131,39 @@ class _PlatformHomeScreenState extends ConsumerState<PlatformHomeScreen>
               onCreate: () => _openCreateOrganizationDialog(repo),
               onChanged: () => setState(() {}),
             );
+          } else if (organizations.isEmpty) {
+            body = const _NoOrganizationsState();
+          } else {
+            body = Column(
+              children: [
+                _OrganizationSelectorBar(
+                  organizations: organizations,
+                  selectedOrgId: _selectedOrgId,
+                  onChanged: (id) => setState(() => _selectedOrgId = id),
+                ),
+                const Divider(height: 1),
+                Expanded(
+                  child: switch (_tab) {
+                    1 => UsersTab(
+                        repo: repo,
+                        organizationId: _selectedOrgId,
+                        currentUserId: ref.watch(sessionProvider).user?.id,
+                      ),
+                    2 => StaffTab(repo: repo, organizationId: _selectedOrgId),
+                    3 => SitesTab(repo: repo, organizationId: _selectedOrgId),
+                    4 => NoteCatalogTab(repo: repo, organizationId: _selectedOrgId),
+                    5 => BrandingTab(repo: repo, organizationId: _selectedOrgId),
+                    _ => _ModulesTab(
+                        repo: repo,
+                        organizationId: _selectedOrgId,
+                        updatedBy: ref.watch(sessionProvider).user?.id,
+                      ),
+                  },
+                ),
+              ],
+            );
           }
-
-          if (organizations.isEmpty) {
-            return const _NoOrganizationsState();
-          }
-
-          return Column(
-            children: [
-              _OrganizationSelectorBar(
-                organizations: organizations,
-                selectedOrgId: _selectedOrgId,
-                onChanged: (id) => setState(() => _selectedOrgId = id),
-              ),
-              const Divider(height: 1),
-              Expanded(
-                child: switch (_tab) {
-                  1 => UsersTab(
-                      repo: repo,
-                      organizationId: _selectedOrgId,
-                      currentUserId: ref.watch(sessionProvider).user?.id,
-                    ),
-                  2 => StaffTab(repo: repo, organizationId: _selectedOrgId),
-                  3 => SitesTab(repo: repo, organizationId: _selectedOrgId),
-                  4 => NoteCatalogTab(repo: repo, organizationId: _selectedOrgId),
-                  5 => BrandingTab(repo: repo, organizationId: _selectedOrgId),
-                  _ => _ModulesTab(
-                      repo: repo,
-                      organizationId: _selectedOrgId,
-                      updatedBy: ref.watch(sessionProvider).user?.id,
-                    ),
-                },
-              ),
-            ],
-          );
+          return PageMaxWidth(maxWidth: 1100, child: body);
         },
       ),
     );

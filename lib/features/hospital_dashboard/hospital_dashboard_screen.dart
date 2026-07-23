@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/theme/kura_theme.dart';
+import '../../core/layout/responsive.dart';
 import '../../core/providers/session_provider.dart';
 import '../../core/router/app_shell.dart' show UserMenuButton;
 import '../../engine/risk/prevention_risk_engine.dart';
@@ -65,34 +66,34 @@ class _HospitalDashboardScreenState
                 const SizedBox(height: 12),
                 _KpiWrap(data: data),
                 const SizedBox(height: 16),
-                _RiskDistributionCard(data: data),
-                const SizedBox(height: 12),
-                _ComplianceByTypeCard(data: data),
-                const SizedBox(height: 12),
-                _ComplianceByGroupCard(
-                    title: 'Cumplimiento por piso', rows: data.byFloor),
-                const SizedBox(height: 12),
-                _ComplianceByGroupCard(
-                    title: 'Cumplimiento por área', rows: data.byArea),
-                if (data.byShift.isNotEmpty) ...[
-                  const SizedBox(height: 12),
-                  _ComplianceByGroupCard(
-                      title: 'Cumplimiento por turno (hoy)', rows: data.byShift),
-                ],
-                const SizedBox(height: 12),
-                _UnreviewedCard(patients: data.highRiskUnreviewed),
-                const SizedBox(height: 12),
-                _TrendCard(trend: data.trend),
-                const SizedBox(height: 12),
-                if (user?.role == AppRole.admin || user?.role == AppRole.master)
-                  _ShiftEditorCard(
-                    repo: repo,
-                    orgId: orgId,
-                    shifts: data.shifts,
-                    onSaved: () => setState(() {}),
-                  ),
-                const SizedBox(height: 12),
-                const _LppPlaceholderCard(),
+                // En desktop las tarjetas refluyen a 2-3 columnas (aprovechan el
+                // ancho); en móvil quedan apiladas.
+                ResponsiveColumns(
+                  blockSpacing: 12,
+                  blocks: [
+                    _RiskDistributionCard(data: data),
+                    _ComplianceByTypeCard(data: data),
+                    _ComplianceByGroupCard(
+                        title: 'Cumplimiento por piso', rows: data.byFloor),
+                    _ComplianceByGroupCard(
+                        title: 'Cumplimiento por área', rows: data.byArea),
+                    if (data.byShift.isNotEmpty)
+                      _ComplianceByGroupCard(
+                          title: 'Cumplimiento por turno (hoy)',
+                          rows: data.byShift),
+                    _UnreviewedCard(patients: data.highRiskUnreviewed),
+                    _TrendCard(trend: data.trend),
+                    if (user?.role == AppRole.admin ||
+                        user?.role == AppRole.master)
+                      _ShiftEditorCard(
+                        repo: repo,
+                        orgId: orgId,
+                        shifts: data.shifts,
+                        onSaved: () => setState(() {}),
+                      ),
+                    const _LppPlaceholderCard(),
+                  ],
+                ),
               ],
             ),
           );

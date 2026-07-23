@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
 import '../../core/theme/kura_theme.dart';
+import '../../core/layout/responsive.dart';
 import '../../core/providers/session_provider.dart';
 import '../../engine/kura_sheehan_checkpoint.dart';
 import '../../engine/models/kura_engine_enums.dart';
@@ -465,8 +466,10 @@ class FollowUpBody extends ConsumerWidget {
             );
           return embedded
               ? content
-              : SingleChildScrollView(
-                  padding: const EdgeInsets.all(20), child: content);
+              : PageMaxWidth(
+                  maxWidth: 900,
+                  child: SingleChildScrollView(
+                      padding: const EdgeInsets.all(20), child: content));
         },
       );
   }

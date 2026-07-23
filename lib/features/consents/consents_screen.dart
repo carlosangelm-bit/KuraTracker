@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
 import '../../core/theme/kura_theme.dart';
+import '../../core/layout/responsive.dart';
 import '../../core/providers/session_provider.dart';
 import '../../models/consent.dart';
 import '../../services/data_repository.dart';
@@ -81,7 +82,7 @@ class _ConsentsScreenState extends ConsumerState<ConsentsScreen> {
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, st) => Center(child: Text('Error: $e')),
         data: (repo) {
-          return ListView(
+          return PageMaxWidth(child: ListView(
             padding: const EdgeInsets.all(20),
             children: [
               Text(
@@ -155,7 +156,7 @@ class _ConsentsScreenState extends ConsumerState<ConsentsScreen> {
               }),
               const SizedBox(height: 40),
             ],
-          );
+          ));
         },
       ),
     );

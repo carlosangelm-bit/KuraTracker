@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/design/tokens.dart';
+import '../../core/layout/responsive.dart';
 import '../../core/providers/session_provider.dart';
 import '../../core/router/app_shell.dart' show kFloatingNavBarHeight, UserMenuButton;
 import '../../core/widgets/kura_glass_card.dart';
@@ -329,7 +330,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
       else ...[
         // Resumen de mi panel: donut de estatus + tipos de lesión (en
         // escritorio lado a lado; en móvil apilados).
-        _ResponsiveColumns(
+        ResponsiveColumns(
           blocks: [
             _sectionBlock(
               context,
@@ -646,7 +647,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
       else
         // En escritorio los bloques se reparten en varias columnas (no ocupan
         // todo el ancho); en móvil quedan en una sola.
-        _ResponsiveColumns(
+        ResponsiveColumns(
           blocks: [
             _sectionBlock(
               context,
@@ -1733,60 +1734,6 @@ class _SiteBars extends StatelessWidget {
 }
 
 // ===================== Layout multi-columna (escritorio) =====================
-
-/// Reparte una lista de "bloques" (sección + gráfico) en varias columnas
-/// según el ancho disponible: 1 en móvil, 2 en escritorio medio, 3 en pantallas
-/// anchas. Así los gráficos no se estiran a todo el ancho y se aprovecha el
-/// espacio horizontal sin perder legibilidad.
-class _ResponsiveColumns extends StatelessWidget {
-  final List<Widget> blocks;
-  const _ResponsiveColumns({required this.blocks});
-
-  @override
-  Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, c) {
-        final w = c.maxWidth;
-        final cols = w < 900 ? 1 : (w < 1400 ? 2 : 3);
-        if (cols == 1) {
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              for (var i = 0; i < blocks.length; i++) ...[
-                if (i > 0) const SizedBox(height: 24),
-                blocks[i],
-              ],
-            ],
-          );
-        }
-        // Distribución round-robin para balancear la altura de las columnas.
-        final columns = List.generate(cols, (_) => <Widget>[]);
-        for (var i = 0; i < blocks.length; i++) {
-          columns[i % cols].add(blocks[i]);
-        }
-        return Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            for (var ci = 0; ci < cols; ci++) ...[
-              if (ci > 0) const SizedBox(width: 20),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    for (var bi = 0; bi < columns[ci].length; bi++) ...[
-                      if (bi > 0) const SizedBox(height: 24),
-                      columns[ci][bi],
-                    ],
-                  ],
-                ),
-              ),
-            ],
-          ],
-        );
-      },
-    );
-  }
-}
 
 class _LegendDot extends StatelessWidget {
   final Color color;

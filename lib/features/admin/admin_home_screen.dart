@@ -9,6 +9,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../core/theme/kura_theme.dart';
+import '../../core/layout/responsive.dart';
 import '../../core/providers/session_provider.dart';
 import '../../core/utils/caregiver_login.dart';
 import '../../core/router/app_shell.dart' show UserMenuButton;
@@ -92,22 +93,20 @@ class _AdminHomeScreenState extends ConsumerState<AdminHomeScreen>
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, st) => Center(child: Text('Error: $e')),
         data: (repo) {
-          switch (_tab) {
-            case 1:
-              return StaffTab(repo: repo, organizationId: organizationId);
-            case 2:
-              return SitesTab(repo: repo, organizationId: organizationId);
-            case 3:
-              return NoteCatalogTab(repo: repo, organizationId: organizationId);
-            case 4:
-              return BrandingTab(repo: repo, organizationId: organizationId);
-            default:
-              return UsersTab(
+          // Acota el ancho en desktop para que las tablas/formularios de gestión
+          // no se estiren de borde a borde.
+          final Widget tab = switch (_tab) {
+            1 => StaffTab(repo: repo, organizationId: organizationId),
+            2 => SitesTab(repo: repo, organizationId: organizationId),
+            3 => NoteCatalogTab(repo: repo, organizationId: organizationId),
+            4 => BrandingTab(repo: repo, organizationId: organizationId),
+            _ => UsersTab(
                 repo: repo,
                 organizationId: organizationId,
                 currentUserId: currentUserId,
-              );
-          }
+              ),
+          };
+          return PageMaxWidth(maxWidth: 1100, child: tab);
         },
       ),
     );

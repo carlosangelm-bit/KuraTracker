@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/design/tokens.dart';
+import '../../core/layout/responsive.dart';
 import '../../core/providers/session_provider.dart';
 import '../../engine/models/kura_engine_enums.dart' show EtiologiaLabel;
 import '../../models/wound.dart';
@@ -65,7 +66,7 @@ class _CaregiverPatientMonitorState
         final center = repo.organizationById(user?.organizationId);
         final instructions = repo.caregiverInstructionsFor(widget.patientId);
 
-        return ListView(
+        return PageMaxWidth(child: ListView(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 88),
           children: [
             Text(patient.fullName,
@@ -149,7 +150,7 @@ class _CaregiverPatientMonitorState
               ),
             ),
           ],
-        );
+        ));
       },
     );
   }
