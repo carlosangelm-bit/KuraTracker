@@ -535,10 +535,18 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
         if (attention.isEmpty)
           const _AttentionEmpty()
         else
-          ...attention.map((e) => _HospitalAttentionTile(
-                entry: e,
-                onTap: () => context.push('/patients/${e.patient.id}/risk'),
-              )),
+          // En desktop las tarjetas de atención se reparten en 2-3 columnas
+          // (aprovechan el ancho); en móvil quedan apiladas.
+          ResponsiveColumns(
+            blockSpacing: 10,
+            blocks: [
+              for (final e in attention)
+                _HospitalAttentionTile(
+                  entry: e,
+                  onTap: () => context.push('/patients/${e.patient.id}/risk'),
+                ),
+            ],
+          ),
       ],
     ];
   }
