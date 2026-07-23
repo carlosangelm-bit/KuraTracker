@@ -245,6 +245,48 @@ class _PatientRiskScreenState extends ConsumerState<PatientRiskScreen> {
     if (mounted) setState(() {});
   }
 
+  Future<void> _editCaregiverInstructions(
+      DataRepository repo, String? organizationId) async {
+    final ctrl = TextEditingController(
+        text: repo.caregiverInstructionsFor(widget.patientId) ?? '');
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Indicaciones para el cuidador'),
+        content: SizedBox(
+          width: 420,
+          child: TextField(
+            controller: ctrl,
+            autofocus: true,
+            maxLines: 5,
+            decoration: const InputDecoration(
+              hintText:
+                  'Ej.: limpiar con solución fisiológica, no mojar el apósito, '
+                  'avisar si hay fiebre o aumento de secreción.',
+              border: OutlineInputBorder(),
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancelar')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Guardar')),
+        ],
+      ),
+    );
+    if (saved != true || !mounted) return;
+    await repo.setCaregiverInstructions(
+      patientId: widget.patientId,
+      organizationId: organizationId,
+      text: ctrl.text,
+      updatedBy: ref.read(sessionProvider).user?.id,
+    );
+    if (mounted) setState(() {});
+  }
+
   @override
   Widget build(BuildContext context) {
     final repoAsync = ref.watch(dataRepositoryProvider);
@@ -337,6 +379,24 @@ class _PatientRiskScreenState extends ConsumerState<PatientRiskScreen> {
                     onPressed:
                         scale == null ? null : () => _assessBraden(repo, scale),
                     child: const Text('Valorar'),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                // Indicaciones libres del profesional para el cuidador (0044).
+                _InfoTile(
+                  icon: Icons.sticky_note_2_outlined,
+                  title: 'Indicaciones para el cuidador',
+                  body: (repo.caregiverInstructionsFor(widget.patientId) ??
+                              '')
+                          .trim()
+                          .isEmpty
+                      ? 'Sin indicaciones. Deja el set de cuidados para el '
+                          'cuidador (según diagnóstico).'
+                      : repo.caregiverInstructionsFor(widget.patientId)!,
+                  action: TextButton(
+                    onPressed: () =>
+                        _editCaregiverInstructions(repo, patient.organizationId),
+                    child: const Text('Editar'),
                   ),
                 ),
                 const SizedBox(height: 20),

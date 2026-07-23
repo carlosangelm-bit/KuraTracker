@@ -7,15 +7,20 @@ import '../../engine/risk/preventive_assessment.dart';
 import '../../engine/risk/prevention_risk_engine.dart';
 import '../../services/data_repository.dart';
 
-/// Abre el cuestionario preventivo unificado (adaptativo) para un paciente. Al
-/// confirmar, agenda el plan concreto. Compartido por la ficha de riesgo
-/// (personal) y la vista del cuidador. `asCaregiver` asigna las tareas al
-/// propio cuidador.
+/// Abre el cuestionario preventivo unificado (adaptativo) para un paciente.
+/// Compartido por la ficha de riesgo (personal) y la vista del cuidador.
+///
+/// - `asCaregiver`: lo corre un cuidador. Si además `reportOnly` es true (paciente
+///   CON lesión), el flujo es de REPORTE: el cuidador reporta signos y ve las
+///   recomendaciones + qué vigilar, pero NO agenda (el profesional define el plan).
+/// - Personal (asCaregiver=false): al agendar, las tareas se AUTO-ASIGNAN al
+///   cuidador del paciente si lo hay (si no, quedan para el personal).
 Future<bool?> showPreventiveAssessment(
   BuildContext context, {
   required String patientId,
   required String? organizationId,
   required bool asCaregiver,
+  bool reportOnly = false,
 }) {
   return showModalBottomSheet<bool>(
     context: context,
@@ -25,6 +30,7 @@ Future<bool?> showPreventiveAssessment(
       patientId: patientId,
       organizationId: organizationId,
       asCaregiver: asCaregiver,
+      reportOnly: reportOnly,
     ),
   );
 }
@@ -33,10 +39,12 @@ class _AssessmentSheet extends ConsumerStatefulWidget {
   final String patientId;
   final String? organizationId;
   final bool asCaregiver;
+  final bool reportOnly;
   const _AssessmentSheet({
     required this.patientId,
     required this.organizationId,
     required this.asCaregiver,
+    this.reportOnly = false,
   });
 
   @override
@@ -73,7 +81,7 @@ class _AssessmentSheetState extends ConsumerState<_AssessmentSheet> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Evaluación preventiva',
+            Text(widget.reportOnly ? 'Reporte del cuidador' : 'Evaluación preventiva',
                 style: TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.w800,
@@ -81,7 +89,9 @@ class _AssessmentSheetState extends ConsumerState<_AssessmentSheet> {
             const SizedBox(height: 2),
             Text(
               _step >= _questionSteps
-                  ? 'Plan de acción sugerido'
+                  ? (widget.reportOnly
+                      ? 'Qué vigilar y cuándo avisar'
+                      : 'Plan de acción sugerido')
                   : 'Paso ${_step + 1} de $_questionSteps',
               style: TextStyle(color: t.textSecondary, fontSize: 13),
             ),
@@ -259,7 +269,23 @@ class _AssessmentSheetState extends ConsumerState<_AssessmentSheet> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (plan.activities.isEmpty)
+        // En modo REPORTE (cuidador + lesión) NO se agenda: el profesional
+        // define la agenda. Se muestran las recomendaciones/qué vigilar.
+        if (widget.reportOnly)
+          Container(
+            padding: const EdgeInsets.all(12),
+            margin: const EdgeInsets.only(bottom: 12),
+            decoration: BoxDecoration(
+              color: t.brandPrimary.withOpacity(0.06),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Text(
+              'Tu agenda de cuidados la define el profesional. Este reporte le '
+              'ayuda a dar seguimiento: si observas signos de alarma, avísale.',
+              style: TextStyle(fontSize: 13, color: t.textPrimary),
+            ),
+          )
+        else if (plan.activities.isEmpty)
           Text(
             'Sin actividades preventivas programadas para hoy. Revalorar si '
             'cambia la movilidad, aparece humedad o enrojecimiento.',
@@ -296,19 +322,29 @@ class _AssessmentSheetState extends ConsumerState<_AssessmentSheet> {
                   ],
                 ),
               )),
+        ]
+        else if (widget.reportOnly) ...[
+          const SizedBox(height: 8),
+          Text('No se reportaron signos de alarma.',
+              style: TextStyle(color: t.textSecondary, fontSize: 13)),
         ],
         const SizedBox(height: 16),
         Row(
           children: [
             TextButton(onPressed: _back, child: const Text('Atrás')),
             const Spacer(),
-            FilledButton.icon(
-              icon: const Icon(Icons.event_available_outlined),
-              label: Text(plan.activities.isEmpty ? 'Cerrar' : 'Agendar plan'),
-              onPressed: _saving
-                  ? null
-                  : () => _confirm(repo, catalog, plan),
-            ),
+            if (widget.reportOnly)
+              FilledButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: const Text('Entendido'),
+              )
+            else
+              FilledButton.icon(
+                icon: const Icon(Icons.event_available_outlined),
+                label: Text(plan.activities.isEmpty ? 'Cerrar' : 'Agendar plan'),
+                onPressed:
+                    _saving ? null : () => _confirm(repo, catalog, plan),
+              ),
           ],
         ),
       ],
@@ -327,14 +363,31 @@ class _AssessmentSheetState extends ConsumerState<_AssessmentSheet> {
     }
     setState(() => _saving = true);
     final me = ref.read(sessionProvider).user;
+    // A quién se asignan las tareas:
+    // - cuidador que se autoevalúa (paciente preventivo): a sí mismo.
+    // - profesional: al cuidador asignado del paciente si lo hay (aparece en la
+    //   agenda del cuidador); si no hay cuidador, sin asignar (lo ve el personal).
+    String? assignee;
+    var kind = 'staff';
+    if (widget.asCaregiver) {
+      assignee = me?.id;
+      kind = 'cuidador';
+    } else {
+      final caregivers =
+          repo.listCaregiverAssignments(patientId: widget.patientId);
+      if (caregivers.isNotEmpty) {
+        assignee = caregivers.first.caregiverProfileId;
+        kind = 'cuidador';
+      }
+    }
     try {
       final n = await repo.generatePreventiveTasksFromSpecs(
         widget.patientId,
         plan.activities,
         horizonHours: catalog.cadenceHorizonHours,
         organizationId: widget.organizationId,
-        assigneeProfileId: widget.asCaregiver ? me?.id : null,
-        assigneeKind: widget.asCaregiver ? 'cuidador' : 'staff',
+        assigneeProfileId: assignee,
+        assigneeKind: kind,
         createdBy: me?.id,
       );
       if (!mounted) return;
