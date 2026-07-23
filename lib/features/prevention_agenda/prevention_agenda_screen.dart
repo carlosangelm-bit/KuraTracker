@@ -161,9 +161,20 @@ class _PreventiveTasksViewState extends State<PreventiveTasksView> {
     final done = due.where((x) => x.status == PreventiveTaskStatus.done).length;
     final adherence = due.isEmpty ? null : (done * 100 / due.length).round();
 
-    // Agrupar por día.
+    // Separar PENDIENTES (el foco del profesional) de las ya resueltas
+    // (hechas/saltadas), que se mueven a una sección "Completadas" al final
+    // para no estorbar ni obligar a hacer scroll.
+    final pending =
+        inRange.where((x) => x.status == PreventiveTaskStatus.pending).toList();
+    final completed = inRange
+        .where((x) =>
+            x.status == PreventiveTaskStatus.done ||
+            x.status == PreventiveTaskStatus.skipped)
+        .toList();
+
+    // Agrupar las PENDIENTES por día.
     final byDay = <String, List<PreventiveTask>>{};
-    for (final task in inRange) {
+    for (final task in pending) {
       byDay.putIfAbsent(task.scheduledAt.toIso8601String().substring(0, 10), () => [])
           .add(task);
     }
@@ -258,21 +269,69 @@ class _PreventiveTasksViewState extends State<PreventiveTasksView> {
               : ListView(
                   padding: const EdgeInsets.fromLTRB(16, 8, 16, 88),
                   children: [
-                    for (final day in days) ...[
+                    if (pending.isEmpty)
                       Padding(
-                        padding: const EdgeInsets.fromLTRB(4, 12, 4, 6),
-                        child: Text(_dayLabel(day, now),
-                            style: TextStyle(
-                                fontWeight: FontWeight.w800, color: t.textSecondary)),
+                        padding: const EdgeInsets.fromLTRB(4, 16, 4, 8),
+                        child: Row(
+                          children: [
+                            Icon(Icons.check_circle_outline,
+                                color: t.statusSuccess, size: 20),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'Sin tareas pendientes en ${_view == _View.dia ? "este día" : "esta semana"}.',
+                                style: TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                    color: t.textSecondary),
+                              ),
+                            ),
+                          ],
+                        ),
+                      )
+                    else
+                      for (final day in days) ...[
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(4, 12, 4, 6),
+                          child: Text(_dayLabel(day, now),
+                              style: TextStyle(
+                                  fontWeight: FontWeight.w800,
+                                  color: t.textSecondary)),
+                        ),
+                        ...byDay[day]!.map((task) => _TaskTile(
+                              repo: widget.repo,
+                              task: task,
+                              byProfileId: widget.byProfileId,
+                              staffId: widget.staffId,
+                              onChanged: widget.onChanged,
+                              showPatient: widget.showPatient,
+                            )),
+                      ],
+                    // Completadas (hechas/saltadas): colapsadas al final.
+                    if (completed.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Theme(
+                        data: Theme.of(context)
+                            .copyWith(dividerColor: Colors.transparent),
+                        child: ExpansionTile(
+                          tilePadding: const EdgeInsets.symmetric(horizontal: 4),
+                          childrenPadding: EdgeInsets.zero,
+                          leading: Icon(Icons.check_circle,
+                              color: t.statusSuccess, size: 20),
+                          title: Text('Completadas · ${completed.length}',
+                              style:
+                                  const TextStyle(fontWeight: FontWeight.w800)),
+                          children: completed
+                              .map((task) => _TaskTile(
+                                    repo: widget.repo,
+                                    task: task,
+                                    byProfileId: widget.byProfileId,
+                                    staffId: widget.staffId,
+                                    onChanged: widget.onChanged,
+                                    showPatient: widget.showPatient,
+                                  ))
+                              .toList(),
+                        ),
                       ),
-                      ...byDay[day]!.map((task) => _TaskTile(
-                            repo: widget.repo,
-                            task: task,
-                            byProfileId: widget.byProfileId,
-                            staffId: widget.staffId,
-                            onChanged: widget.onChanged,
-                            showPatient: widget.showPatient,
-                          )),
                     ],
                   ],
                 ),
