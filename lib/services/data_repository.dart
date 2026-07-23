@@ -1543,6 +1543,8 @@ class DataRepository {
     required String patientId,
     required String? organizationId,
     String? unit,
+    String? floor,
+    String? area,
     String? bed,
     String? notes,
   }) async {
@@ -1553,6 +1555,8 @@ class DataRepository {
       'organization_id': organizationId,
       'patient_id': patientId,
       'unit': unit,
+      'floor': floor,
+      'area': area,
       'bed': bed,
       'admitted_at': DateTime.now().toIso8601String(),
       'discharged_at': null,
@@ -1867,6 +1871,94 @@ class DataRepository {
       }
     }
     return created;
+  }
+
+  // ------------- Prevención hospitalaria: auto-plan + cumplimiento -------------
+
+  /// En centros HOSPITAL, al valorar el riesgo (Braden) se materializa
+  /// AUTOMÁTICAMENTE el plan esperado por nivel (tareas sin dueño, siguen al
+  /// paciente). En otros tipos no hace nada (el plan lo define el profesional/
+  /// cuidador). El profesional puede ajustar después con el selector.
+  Future<void> autoGeneratePlanIfHospital(
+    String patientId,
+    PreventionRulesCatalog catalog, {
+    required String? organizationId,
+    String? createdBy,
+  }) async {
+    if (centerTypeFor(organizationId) != CenterType.hospital) return;
+    await generatePreventiveTasksFor(
+      patientId,
+      catalog,
+      organizationId: organizationId,
+      createdBy: createdBy,
+    );
+  }
+
+  /// Inicio de la ventana de cumplimiento para un centro: el turno actual si el
+  /// centro tiene turnos configurados (organizations.shift_config), o las
+  /// últimas 24 h por defecto.
+  DateTime complianceWindowStart(String? organizationId, DateTime now) {
+    final orgs = _store
+        .getAll(Collections.organizations)
+        .where((o) => o['id'] == organizationId);
+    final cfg = orgs.isEmpty ? null : orgs.first['shift_config'];
+    if (cfg is List && cfg.isNotEmpty) {
+      for (final s in cfg) {
+        if (s is! Map) continue;
+        final start = (s['startHour'] as num?)?.toInt();
+        final end = (s['endHour'] as num?)?.toInt();
+        if (start == null || end == null) continue;
+        final h = now.hour;
+        final inShift =
+            start <= end ? (h >= start && h < end) : (h >= start || h < end);
+        if (inShift) {
+          var d = DateTime(now.year, now.month, now.day, start);
+          // Turno que cruza medianoche y ya pasó la medianoche: empezó ayer.
+          if (start > end && now.hour < end) {
+            d = d.subtract(const Duration(days: 1));
+          }
+          return d;
+        }
+      }
+    }
+    return now.subtract(const Duration(hours: 24));
+  }
+
+  /// Cumplimiento preventivo del paciente en la ventana (turno actual o 24 h):
+  /// por tipo de actividad y global. Fuente ÚNICA para tarjeta/perfil/dashboard.
+  PreventiveComplianceResult preventiveCompliance(
+    String patientId, {
+    required String? organizationId,
+    DateTime? now,
+  }) {
+    final ref = now ?? DateTime.now();
+    final start = complianceWindowStart(organizationId, ref);
+    final tasks = listPreventiveTasks(patientId: patientId).where((t) =>
+        !t.scheduledAt.isBefore(start) &&
+        !t.scheduledAt.isAfter(ref) && // ya vencidas dentro de la ventana
+        t.status != PreventiveTaskStatus.canceled);
+    final byType = <String, PreventiveComplianceType>{};
+    var doneTotal = 0;
+    var expectedTotal = 0;
+    for (final t in tasks) {
+      final key = t.actionId ?? t.title;
+      final cur = byType[key] ??
+          PreventiveComplianceType(actionId: key, title: t.title, done: 0, expected: 0);
+      final isDone = t.status == PreventiveTaskStatus.done;
+      byType[key] = PreventiveComplianceType(
+        actionId: key,
+        title: t.title,
+        done: cur.done + (isDone ? 1 : 0),
+        expected: cur.expected + 1,
+      );
+      expectedTotal += 1;
+      if (isDone) doneTotal += 1;
+    }
+    return PreventiveComplianceResult(
+      byType: byType.values.toList(),
+      doneTotal: doneTotal,
+      expectedTotal: expectedTotal,
+    );
   }
 
   // ---------------- Cuidador ↔ paciente (Fase 3) ----------------

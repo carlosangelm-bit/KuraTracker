@@ -12,12 +12,33 @@ import '../../models/patient_admission.dart';
 import '../../services/data_repository.dart';
 import 'risk_theme.dart';
 
-/// Una entrada del tablero: paciente + su riesgo computado + internamiento.
+/// Una entrada del tablero: paciente + su riesgo computado + internamiento +
+/// (prevención hospitalaria) banda Braden, % de cumplimiento y si tiene tareas
+/// vencidas.
 class _RiskEntry {
   final Patient patient;
   final PreventionRiskResult risk;
   final PatientAdmission? admission;
-  const _RiskEntry(this.patient, this.risk, this.admission);
+  final int? bradenScore; // null = sin valoración
+  final int compliancePct; // -1 = sin plan/actividades esperadas
+  final bool overdue;
+  const _RiskEntry(
+    this.patient,
+    this.risk,
+    this.admission, {
+    this.bradenScore,
+    this.compliancePct = -1,
+    this.overdue = false,
+  });
+}
+
+/// Nivel (color) derivado de la banda de Braden: ≤12 alto (rojo), 13–17 medio
+/// (ámbar), 18–23 bajo (verde). null = sin valoración (gris).
+RiskLevel? bradenBandLevel(int? braden) {
+  if (braden == null) return null;
+  if (braden <= 12) return RiskLevel.alto;
+  if (braden <= 17) return RiskLevel.medio;
+  return RiskLevel.bajo;
 }
 
 /// Tablero de riesgo (módulo de Prevención): lista de pacientes con alertas
@@ -31,7 +52,8 @@ class RiskBoardScreen extends ConsumerStatefulWidget {
 }
 
 class _RiskBoardScreenState extends ConsumerState<RiskBoardScreen> {
-  String? _unitFilter; // null = todas
+  String? _floorFilter; // piso, null = todos
+  String? _areaFilter; // área, null = todas
 
   @override
   Widget build(BuildContext context) {
@@ -72,39 +94,61 @@ class _RiskBoardScreenState extends ConsumerState<RiskBoardScreen> {
             : repo.listAllPatients();
 
     // Solo mostramos pacientes con internamiento activo o con alguna alerta.
+    final now = DateTime.now();
     final entries = <_RiskEntry>[];
     for (final p in basePatients) {
       final risk = repo.computeRisk(p.id, catalog);
       final adm = repo.activeAdmission(p.id);
       if (risk.hasAlerts || adm != null) {
-        entries.add(_RiskEntry(p, risk, adm));
+        final braden = repo.latestRiskAssessment(p.id)?.bradenScore;
+        final comp = repo.preventiveCompliance(p.id,
+            organizationId: user?.organizationId, now: now);
+        final overdue = repo
+            .listPreventiveTasks(patientId: p.id)
+            .any((t) => t.isPending && t.scheduledAt.isBefore(now));
+        entries.add(_RiskEntry(p, risk, adm,
+            bradenScore: braden,
+            compliancePct: comp.hasExpected ? comp.globalPct : -1,
+            overdue: overdue));
       }
     }
-    // Orden: mayor nivel de riesgo primero, luego por nº de alertas y nombre.
-    int levelRank(RiskLevel l) => switch (l) {
-          RiskLevel.alto => 0,
-          RiskLevel.medio => 1,
-          RiskLevel.bajo => 2,
-          RiskLevel.sinRiesgo => 3,
-        };
+    // Orden: mayor nivel primero. Usa la banda de Braden si existe (color del
+    // panel), si no el nivel de las reglas. "Sin valoración" (gris) va al final.
+    int rank(_RiskEntry e) {
+      final l = bradenBandLevel(e.bradenScore) ??
+          (e.risk.hasAlerts ? e.risk.level : null);
+      return switch (l) {
+        RiskLevel.alto => 0,
+        RiskLevel.medio => 1,
+        RiskLevel.bajo => 2,
+        _ => 3, // sin valoración / sin riesgo
+      };
+    }
     entries.sort((a, b) {
-      final r = levelRank(a.risk.level).compareTo(levelRank(b.risk.level));
+      final r = rank(a).compareTo(rank(b));
       if (r != 0) return r;
-      final c = b.risk.alerts.length.compareTo(a.risk.alerts.length);
-      return c != 0 ? c : a.patient.fullName.compareTo(b.patient.fullName);
+      return a.patient.fullName.compareTo(b.patient.fullName);
     });
 
-    // Unidades disponibles (de internamientos activos) para el filtro.
-    final units = entries
-        .map((e) => e.admission?.unit)
+    // Pisos y áreas disponibles (de internamientos activos) para filtrar.
+    final floors = entries
+        .map((e) => e.admission?.floor)
+        .whereType<String>()
+        .toSet()
+        .toList()
+      ..sort();
+    final areas = entries
+        .map((e) => e.admission?.area)
         .whereType<String>()
         .toSet()
         .toList()
       ..sort();
 
-    final filtered = _unitFilter == null
-        ? entries
-        : entries.where((e) => e.admission?.unit == _unitFilter).toList();
+    final filtered = entries
+        .where((e) =>
+            (_floorFilter == null || e.admission?.floor == _floorFilter) &&
+            (_areaFilter == null || e.admission?.area == _areaFilter))
+        .toList();
 
     if (entries.isEmpty) {
       return const Center(
@@ -124,32 +168,19 @@ class _RiskBoardScreenState extends ConsumerState<RiskBoardScreen> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         _CountsHeader(entries: entries),
-        if (units.isNotEmpty)
-          SizedBox(
-            height: 44,
-            child: ListView(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              children: [
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 4),
-                  child: ChoiceChip(
-                    label: const Text('Todas'),
-                    selected: _unitFilter == null,
-                    onSelected: (_) => setState(() => _unitFilter = null),
-                  ),
-                ),
-                for (final u in units)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 4),
-                    child: ChoiceChip(
-                      label: Text(u),
-                      selected: _unitFilter == u,
-                      onSelected: (_) => setState(() => _unitFilter = u),
-                    ),
-                  ),
-              ],
-            ),
+        if (floors.isNotEmpty)
+          _FilterChipRow(
+            prefix: 'Piso',
+            options: floors,
+            selected: _floorFilter,
+            onSelected: (v) => setState(() => _floorFilter = v),
+          ),
+        if (areas.isNotEmpty)
+          _FilterChipRow(
+            prefix: 'Área',
+            options: areas,
+            selected: _areaFilter,
+            onSelected: (v) => setState(() => _areaFilter = v),
           ),
         const Divider(height: 1),
         Expanded(
@@ -191,9 +222,13 @@ class _RiskCardWide extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = riskLevelColor(entry.risk.level);
+    // Color por banda de Braden (prevención hospitalaria); si no hay Braden,
+    // por nivel de reglas; si no hay nada, gris "Sin valoración".
+    final band = bradenBandLevel(entry.bradenScore);
+    final effLevel = band ?? (entry.risk.hasAlerts ? entry.risk.level : null);
+    final color = effLevel != null ? riskLevelColor(effLevel) : Colors.grey;
+    final levelLabel = effLevel?.label ?? 'Sin valoración';
     final adm = entry.admission;
-    final n = entry.risk.alerts.length;
     // Alerta de mayor severidad = preocupación principal.
     final sorted = [...entry.risk.alerts]
       ..sort((a, b) => b.severity.weight.compareTo(a.severity.weight));
@@ -237,21 +272,36 @@ class _RiskCardWide extends StatelessWidget {
                       color: color.withOpacity(0.14),
                       borderRadius: BorderRadius.circular(20),
                     ),
-                    child: Text(entry.risk.level.label,
+                    child: Text(levelLabel,
                         style: TextStyle(
                             fontSize: 11,
                             fontWeight: FontWeight.w700,
                             color: color)),
                   ),
+                  const SizedBox(width: 6),
+                  if (entry.overdue)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: KuraColors.danger.withOpacity(0.14),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: const Text('Vencidas',
+                          style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: KuraColors.danger)),
+                    ),
                   const Spacer(),
-                  if (n > 0)
-                    Text('$n alerta${n == 1 ? '' : 's'}',
+                  if (entry.compliancePct >= 0)
+                    Text('${entry.compliancePct}%',
                         style: TextStyle(
-                            fontSize: 12,
-                            color: KuraColors.darkText.withOpacity(0.6))),
+                            fontSize: 13,
+                            fontWeight: FontWeight.w800,
+                            color: _complianceColor(entry.compliancePct))),
                 ],
               ),
-              if (adm?.unit != null || adm?.bed != null) ...[
+              if ((adm?.locationLabel ?? '').isNotEmpty) ...[
                 const SizedBox(height: 6),
                 Row(
                   children: [
@@ -260,10 +310,7 @@ class _RiskCardWide extends StatelessWidget {
                     const SizedBox(width: 4),
                     Expanded(
                       child: Text(
-                        [
-                          if (adm?.unit != null) adm!.unit!,
-                          if (adm?.bed != null) 'Cama ${adm!.bed}',
-                        ].join(' · '),
+                        adm!.locationLabel,
                         style: TextStyle(
                             fontSize: 12,
                             color: KuraColors.darkText.withOpacity(0.6)),
@@ -323,7 +370,11 @@ class _CountsHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    int count(RiskLevel l) => entries.where((e) => e.risk.level == l).length;
+    RiskLevel? eff(_RiskEntry e) =>
+        bradenBandLevel(e.bradenScore) ??
+        (e.risk.hasAlerts ? e.risk.level : null);
+    int count(RiskLevel l) => entries.where((e) => eff(e) == l).length;
+    final sinVal = entries.where((e) => eff(e) == null).length;
     Widget chip(String label, int n, Color color) => Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
           decoration: BoxDecoration(
@@ -343,6 +394,7 @@ class _CountsHeader extends StatelessWidget {
           chip('Alto', count(RiskLevel.alto), KuraColors.danger),
           chip('Medio', count(RiskLevel.medio), KuraColors.warning),
           chip('Bajo', count(RiskLevel.bajo), KuraColors.success),
+          if (sinVal > 0) chip('Sin valoración', sinVal, Colors.grey),
         ],
       ),
     );
@@ -355,9 +407,11 @@ class _RiskBoardTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = riskLevelColor(entry.risk.level);
+    final band = bradenBandLevel(entry.bradenScore);
+    final effLevel = band ?? (entry.risk.hasAlerts ? entry.risk.level : null);
+    final color = effLevel != null ? riskLevelColor(effLevel) : Colors.grey;
+    final levelLabel = effLevel?.label ?? 'Sin valoración';
     final adm = entry.admission;
-    final n = entry.risk.alerts.length;
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
       child: ListTile(
@@ -370,15 +424,70 @@ class _RiskBoardTile extends StatelessWidget {
             style: const TextStyle(fontWeight: FontWeight.w700)),
         subtitle: Text(
           [
-            entry.risk.level.label,
-            if (n > 0) '$n alerta${n == 1 ? '' : 's'}',
-            if (adm?.unit != null) adm!.unit!,
-            if (adm?.bed != null) 'Cama ${adm!.bed}',
+            levelLabel,
+            if (entry.overdue) 'Vencidas',
+            if ((adm?.locationLabel ?? '').isNotEmpty) adm!.locationLabel,
           ].join(' · '),
           maxLines: 2,
           overflow: TextOverflow.ellipsis,
         ),
-        trailing: const Icon(Icons.chevron_right, size: 18),
+        trailing: entry.compliancePct >= 0
+            ? Text('${entry.compliancePct}%',
+                style: TextStyle(
+                    fontWeight: FontWeight.w800,
+                    color: _complianceColor(entry.compliancePct)))
+            : const Icon(Icons.chevron_right, size: 18),
+      ),
+    );
+  }
+}
+
+/// Color del % de cumplimiento: <60 rojo, 60–84 ámbar, ≥85 verde.
+Color _complianceColor(int pct) {
+  if (pct >= 85) return KuraColors.success;
+  if (pct >= 60) return KuraColors.warning;
+  return KuraColors.danger;
+}
+
+/// Fila de chips de filtro (piso / área) para el panel.
+class _FilterChipRow extends StatelessWidget {
+  final String prefix;
+  final List<String> options;
+  final String? selected;
+  final ValueChanged<String?> onSelected;
+  const _FilterChipRow({
+    required this.prefix,
+    required this.options,
+    required this.selected,
+    required this.onSelected,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 44,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            child: ChoiceChip(
+              label: Text('$prefix: todos'),
+              selected: selected == null,
+              onSelected: (_) => onSelected(null),
+            ),
+          ),
+          for (final o in options)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              child: ChoiceChip(
+                label: Text('$prefix $o'),
+                selected: selected == o,
+                onSelected: (_) => onSelected(o),
+              ),
+            ),
+        ],
       ),
     );
   }

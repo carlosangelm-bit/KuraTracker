@@ -13,7 +13,7 @@ class DemoSeed {
   // sola vez en instalaciones demo previas (que tenían 'seeded' v1), evitando
   // duplicados y datos viejos. Solo aplica al modo demo local (SharedPreferences);
   // producción usa Supabase y nunca llama a este seed.
-  static const String _seedFlag = 'seeded_v10';
+  static const String _seedFlag = 'seeded_v11';
 
   static Future<void> ensureSeeded(LocalStore store) async {
     if (store.getBool(_seedFlag)) return;
@@ -684,6 +684,20 @@ class DemoSeed {
     // Internamientos (unidad/cama) para poblar el tablero de riesgo.
     await store.saveAll(Collections.patientAdmissions, [
       {
+        // Hospital demo (patient-centric): ubicación piso/área/cama.
+        'id': _uuid.v4(),
+        'organization_id': organizationIdHospital,
+        'patient_id': pHospId,
+        'floor': '3',
+        'area': 'Medicina Interna',
+        'bed': '08',
+        'admitted_at': iso(now.subtract(const Duration(days: 3))),
+        'discharged_at': null,
+        'status': 'activo',
+        'notes': null,
+        'created_at': iso(now.subtract(const Duration(days: 3))),
+      },
+      {
         'id': _uuid.v4(),
         'organization_id': organizationId,
         'patient_id': p2Id, // LPP sacra, encamada
@@ -710,6 +724,17 @@ class DemoSeed {
     ]);
     // Valoraciones de Braden (la más reciente alimenta el motor de prevención).
     await store.saveAll(Collections.riskAssessments, [
+      {
+        'id': _uuid.v4(),
+        'organization_id': organizationIdHospital,
+        'patient_id': pHospId,
+        'braden_score': 10, // riesgo alto (rojo) en el Hospital demo
+        'braden_subscores': null,
+        'assessed_at': iso(now.subtract(const Duration(days: 2))),
+        'assessed_by': null,
+        'notes': 'Adulto mayor encamado.',
+        'created_at': iso(now.subtract(const Duration(days: 2))),
+      },
       {
         'id': _uuid.v4(),
         'organization_id': organizationId,

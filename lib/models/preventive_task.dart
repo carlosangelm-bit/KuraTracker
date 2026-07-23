@@ -1,3 +1,33 @@
+/// Cumplimiento de UN tipo de actividad en la ventana (realizadas/esperadas).
+class PreventiveComplianceType {
+  final String actionId;
+  final String title;
+  final int done;
+  final int expected;
+  const PreventiveComplianceType({
+    required this.actionId,
+    required this.title,
+    required this.done,
+    required this.expected,
+  });
+  int get pct => expected == 0 ? 0 : (done * 100 / expected).round();
+}
+
+/// Cumplimiento preventivo del paciente en la ventana: por tipo + global.
+class PreventiveComplianceResult {
+  final List<PreventiveComplianceType> byType;
+  final int doneTotal;
+  final int expectedTotal;
+  const PreventiveComplianceResult({
+    required this.byType,
+    required this.doneTotal,
+    required this.expectedTotal,
+  });
+  int get globalPct =>
+      expectedTotal == 0 ? 0 : (doneTotal * 100 / expectedTotal).round();
+  bool get hasExpected => expectedTotal > 0;
+}
+
 /// Estado de una tarea preventiva agendada. Ver 0042_preventive_tasks.sql.
 enum PreventiveTaskStatus { pending, done, skipped, canceled }
 

@@ -159,12 +159,30 @@ class _PatientRiskScreenState extends ConsumerState<PatientRiskScreen> {
       notes: notesCtrl.text.trim().isEmpty ? null : notesCtrl.text.trim(),
       staffId: await _staffId(repo),
     );
+    // Hospital: la valoración detona el plan preventivo esperado por nivel
+    // (tareas sin dueño; el profesional puede ajustar). En otros centros no aplica.
+    final catalog = ref.read(preventionRulesProvider).valueOrNull;
+    if (catalog != null) {
+      await repo.autoGeneratePlanIfHospital(
+        widget.patientId,
+        catalog,
+        organizationId: session.user?.organizationId,
+        createdBy: session.user?.id,
+      );
+    }
     if (mounted) setState(() {});
   }
 
   Future<void> _admit(DataRepository repo) async {
-    final unitCtrl = TextEditingController();
+    final floorCtrl = TextEditingController();
+    final areaCtrl = TextEditingController();
     final bedCtrl = TextEditingController();
+    InputDecoration dec(String label, [String? hint]) => InputDecoration(
+          labelText: label,
+          hintText: hint,
+          border: const OutlineInputBorder(),
+          isDense: true,
+        );
     final ok = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
@@ -183,24 +201,13 @@ class _PatientRiskScreenState extends ConsumerState<PatientRiskScreen> {
             const Text('Registrar internamiento',
                 style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
             const SizedBox(height: 12),
-            TextField(
-              controller: unitCtrl,
-              decoration: const InputDecoration(
-                labelText: 'Unidad / servicio',
-                hintText: 'Ej. Medicina Interna',
-                border: OutlineInputBorder(),
-                isDense: true,
-              ),
-            ),
+            TextField(controller: floorCtrl, decoration: dec('Piso', 'Ej. 3')),
             const SizedBox(height: 8),
             TextField(
-              controller: bedCtrl,
-              decoration: const InputDecoration(
-                labelText: 'Cama (opcional)',
-                border: OutlineInputBorder(),
-                isDense: true,
-              ),
-            ),
+                controller: areaCtrl,
+                decoration: dec('Área / servicio', 'Ej. Medicina Interna')),
+            const SizedBox(height: 8),
+            TextField(controller: bedCtrl, decoration: dec('Cama (opcional)')),
             const SizedBox(height: 16),
             SizedBox(
               width: double.infinity,
@@ -215,11 +222,14 @@ class _PatientRiskScreenState extends ConsumerState<PatientRiskScreen> {
     );
     if (ok != true || !mounted) return;
     final session = ref.read(sessionProvider);
+    String? t(TextEditingController c) =>
+        c.text.trim().isEmpty ? null : c.text.trim();
     await repo.admitPatient(
       patientId: widget.patientId,
       organizationId: session.user?.organizationId,
-      unit: unitCtrl.text.trim().isEmpty ? null : unitCtrl.text.trim(),
-      bed: bedCtrl.text.trim().isEmpty ? null : bedCtrl.text.trim(),
+      floor: t(floorCtrl),
+      area: t(areaCtrl),
+      bed: t(bedCtrl),
     );
     if (mounted) setState(() {});
   }
