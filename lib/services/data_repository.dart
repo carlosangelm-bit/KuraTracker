@@ -1795,6 +1795,9 @@ class DataRepository {
     final now = DateTime.now();
 
     // Limpia tareas AUTO futuras pendientes (para reflejar el riesgo actual).
+    // IMPORTANTE: materializar con .toList() ANTES de borrar — deleteRow muta
+    // la lista subyacente del store; iterar el where perezoso mientras se borra
+    // lanzaría ConcurrentModificationError.
     final existing = _store
         .getAll(Collections.preventiveTasks)
         .map(PreventiveTask.fromJson)
@@ -1802,7 +1805,8 @@ class DataRepository {
             t.patientId == patientId &&
             t.source == 'auto' &&
             t.isPending &&
-            !t.scheduledAt.isBefore(now));
+            !t.scheduledAt.isBefore(now))
+        .toList();
     for (final t in existing) {
       await _store.deleteRow(Collections.preventiveTasks, t.id);
     }
