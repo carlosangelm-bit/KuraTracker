@@ -62,6 +62,10 @@ jobs:
   build_deploy:
     needs: migrations
     runs-on: ubuntu-latest
+    # Mismo environment que el job de migraciones: así este job también puede
+    # leer los secrets scoped al environment "production" (SUPABASE_URL/ANON_KEY,
+    # CLOUDFLARE_*), no solo los de repositorio.
+    environment: production
     steps:
       - uses: actions/checkout@v4
 
