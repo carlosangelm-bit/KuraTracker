@@ -42,7 +42,14 @@ class _RiskBoardScreenState extends ConsumerState<RiskBoardScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Prevención'),
-        actions: const [UserMenuButton()],
+        actions: [
+          IconButton(
+            tooltip: 'Agenda de tareas preventivas',
+            icon: const Icon(Icons.checklist_outlined),
+            onPressed: () => context.go('/prevention-agenda'),
+          ),
+          const UserMenuButton(),
+        ],
       ),
       body: repoAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),

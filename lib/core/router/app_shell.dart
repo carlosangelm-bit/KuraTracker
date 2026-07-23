@@ -40,6 +40,14 @@ class AppShell extends ConsumerWidget {
       ];
     }
 
+    // El cuidador (Fase 3) tiene una sola área: su monitoreo (pacientes
+    // asignados, solo lectura, + sus tareas preventivas).
+    if (user?.role == AppRole.cuidador) {
+      return const [
+        _NavItem('/caregiver', Icons.monitor_heart_outlined, Icons.monitor_heart, 'Monitoreo'),
+      ];
+    }
+
     // Inicio siempre visible. Los demás items clínicos se muestran solo si su
     // módulo está habilitado para el centro/sitio/usuario (Fase 2). Apagar un
     // módulo solo lo oculta; sus datos permanecen.

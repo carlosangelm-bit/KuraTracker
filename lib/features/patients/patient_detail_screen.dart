@@ -7,6 +7,7 @@ import '../../core/theme/kura_theme.dart';
 import '../../core/providers/session_provider.dart';
 import '../../engine/models/kura_engine_enums.dart';
 import '../../engine/risk/prevention_risk_engine.dart';
+import '../../models/app_user.dart';
 import '../../models/antecedentes.dart';
 import '../../models/patient_diagnosis.dart';
 import '../risk/risk_theme.dart';
@@ -143,6 +144,10 @@ class _PatientDetailScreenState extends ConsumerState<PatientDetailScreen> {
                     _DiagnosesCard(patientId: patient.id, diagnoses: diagnoses),
                     const SizedBox(height: 16),
                     _RiskCard(patientId: patient.id),
+                    const SizedBox(height: 16),
+                    _CaregiversCard(
+                        patientId: patient.id,
+                        organizationId: patient.organizationId),
                     const SizedBox(height: 16),
                     _ConsentsSummaryCard(patientId: patient.id, repo: repo),
                     const SizedBox(height: 16),
@@ -477,6 +482,137 @@ class _ComorbidityCard extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// Tarjeta (solo admin) para gestionar qué usuarios CUIDADOR pueden monitorear
+/// a este paciente (caregiver_patient_assignments, Fase 3). El cuidador solo ve
+/// —en modo lectura— a los pacientes que aquí se le asignen.
+class _CaregiversCard extends ConsumerStatefulWidget {
+  final String patientId;
+  final String? organizationId;
+  const _CaregiversCard(
+      {required this.patientId, required this.organizationId});
+
+  @override
+  ConsumerState<_CaregiversCard> createState() => _CaregiversCardState();
+}
+
+class _CaregiversCardState extends ConsumerState<_CaregiversCard> {
+  @override
+  Widget build(BuildContext context) {
+    final session = ref.watch(sessionProvider);
+    // Solo el admin del centro gestiona cuidadores.
+    if (session.user?.role != AppRole.admin) return const SizedBox.shrink();
+    final repo = ref.watch(dataRepositoryProvider).valueOrNull;
+    if (repo == null) return const SizedBox.shrink();
+
+    final usersById = {for (final u in repo.listUsers()) u.id: u};
+    final assignments =
+        repo.listCaregiverAssignments(patientId: widget.patientId);
+
+    return Card(
+      margin: EdgeInsets.zero,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.monitor_heart_outlined, size: 20),
+                const SizedBox(width: 10),
+                const Expanded(
+                  child: Text('Cuidadores que monitorean',
+                      style: TextStyle(fontWeight: FontWeight.w700)),
+                ),
+                TextButton.icon(
+                  icon: const Icon(Icons.person_add_alt, size: 18),
+                  label: const Text('Asignar'),
+                  onPressed: () => _openAssign(repo, usersById),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            if (assignments.isEmpty)
+              Text('Ningún cuidador asignado.',
+                  style: Theme.of(context).textTheme.bodySmall)
+            else
+              ...assignments.map((a) {
+                final name =
+                    usersById[a.caregiverProfileId]?.fullName ?? 'Cuidador';
+                return ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  dense: true,
+                  leading: const Icon(Icons.person_outline),
+                  title: Text(name),
+                  trailing: IconButton(
+                    tooltip: 'Quitar',
+                    icon: const Icon(Icons.close),
+                    onPressed: () async {
+                      await repo.removeCaregiverAssignment(a.id);
+                      setState(() {});
+                    },
+                  ),
+                );
+              }),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openAssign(
+      DataRepository repo, Map<String, AppUser> usersById) async {
+    final assigned = repo
+        .listCaregiverAssignments(patientId: widget.patientId)
+        .map((a) => a.caregiverProfileId)
+        .toSet();
+    // Usuarios con rol cuidador aún no asignados a este paciente.
+    final candidates = usersById.values
+        .where((u) => u.role == AppRole.cuidador && !assigned.contains(u.id))
+        .toList();
+    await showDialog<void>(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        title: const Text('Asignar cuidador'),
+        content: SizedBox(
+          width: 380,
+          child: candidates.isEmpty
+              ? const Text(
+                  'No hay usuarios cuidador disponibles en el centro. '
+                  'Créalos primero (rol Cuidador) desde Administración/Plataforma.')
+              : Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: candidates
+                      .map((u) => ListTile(
+                            leading: const Icon(Icons.person_outline),
+                            title: Text(u.fullName),
+                            subtitle: Text(u.email,
+                                overflow: TextOverflow.ellipsis),
+                            onTap: () async {
+                              await repo.assignCaregiverToPatient(
+                                caregiverProfileId: u.id,
+                                patientId: widget.patientId,
+                                organizationId: widget.organizationId,
+                                assignedBy:
+                                    ref.read(sessionProvider).user?.id,
+                              );
+                              if (dialogCtx.mounted) Navigator.pop(dialogCtx);
+                              setState(() {});
+                            },
+                          ))
+                      .toList(),
+                ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogCtx),
+            child: const Text('Cerrar'),
+          ),
+        ],
       ),
     );
   }

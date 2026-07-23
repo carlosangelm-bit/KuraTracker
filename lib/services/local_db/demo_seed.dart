@@ -13,7 +13,7 @@ class DemoSeed {
   // sola vez en instalaciones demo previas (que tenían 'seeded' v1), evitando
   // duplicados y datos viejos. Solo aplica al modo demo local (SharedPreferences);
   // producción usa Supabase y nunca llama a este seed.
-  static const String _seedFlag = 'seeded_v7';
+  static const String _seedFlag = 'seeded_v8';
 
   static Future<void> ensureSeeded(LocalStore store) async {
     if (store.getBool(_seedFlag)) return;
@@ -449,6 +449,86 @@ class DemoSeed {
       {'id': _uuid.v4(), 'staff_id': staff2Id, 'patient_id': p4Id},
       {'id': _uuid.v4(), 'staff_id': staff2Id, 'patient_id': p5Id},
       {'id': _uuid.v4(), 'staff_id': staff1Id, 'patient_id': p4Id}, // ana tambien ve p4
+    ]);
+
+    // ---------------- Cuidador: asignación + tareas (Fase 3) ----------------
+    // El centro (clínica de heridas Kura+) autoriza al cuidador demo a
+    // MONITOREAR al paciente p2 (LPP) — modelo "clínica da acceso a cuidadores".
+    await store.saveAll(Collections.caregiverPatientAssignments, [
+      {
+        'id': _uuid.v4(),
+        'organization_id': organizationId,
+        'caregiver_profile_id': cuidadorProfileId,
+        'patient_id': p2Id,
+        'assigned_by': adminProfileId,
+        'created_at': iso(now),
+      },
+    ]);
+    // Tareas preventivas de p2 asignadas al cuidador: una hecha (adherencia),
+    // una vencida pendiente y dos futuras.
+    await store.saveAll(Collections.preventiveTasks, [
+      {
+        'id': _uuid.v4(),
+        'organization_id': organizationId,
+        'patient_id': p2Id,
+        'rule_id': 'lpp_alto',
+        'action_id': 'cambios_2h_registro',
+        'title': 'Cambio postural',
+        'action_label': 'Cambios posturales cada 2 h con registro horario',
+        'scheduled_at': iso(now.subtract(const Duration(hours: 4))),
+        'assignee_profile_id': cuidadorProfileId,
+        'assignee_kind': 'cuidador',
+        'status': 'done',
+        'done_at': iso(now.subtract(const Duration(hours: 4))),
+        'done_by': cuidadorProfileId,
+        'source': 'auto',
+        'created_at': iso(now.subtract(const Duration(hours: 6))),
+      },
+      {
+        'id': _uuid.v4(),
+        'organization_id': organizationId,
+        'patient_id': p2Id,
+        'rule_id': 'lpp_alto',
+        'action_id': 'cambios_2h_registro',
+        'title': 'Cambio postural',
+        'action_label': 'Cambios posturales cada 2 h con registro horario',
+        'scheduled_at': iso(now.subtract(const Duration(hours: 1))),
+        'assignee_profile_id': cuidadorProfileId,
+        'assignee_kind': 'cuidador',
+        'status': 'pending',
+        'source': 'auto',
+        'created_at': iso(now.subtract(const Duration(hours: 6))),
+      },
+      {
+        'id': _uuid.v4(),
+        'organization_id': organizationId,
+        'patient_id': p2Id,
+        'rule_id': 'lpp_alto',
+        'action_id': 'agho',
+        'title': 'Aplicar AGHO en zonas de riesgo',
+        'action_label': 'Ácidos grasos hiperoxigenados (AGHO) en zonas de riesgo',
+        'scheduled_at': iso(now.add(const Duration(hours: 2))),
+        'assignee_profile_id': cuidadorProfileId,
+        'assignee_kind': 'cuidador',
+        'status': 'pending',
+        'source': 'auto',
+        'created_at': iso(now.subtract(const Duration(hours: 6))),
+      },
+      {
+        'id': _uuid.v4(),
+        'organization_id': organizationId,
+        'patient_id': p2Id,
+        'rule_id': 'lpp_alto',
+        'action_id': 'exam_piel_diario',
+        'title': 'Examen de piel',
+        'action_label': 'Examen diario de la piel en prominencias y bajo dispositivos',
+        'scheduled_at': iso(now.add(const Duration(hours: 4))),
+        'assignee_profile_id': cuidadorProfileId,
+        'assignee_kind': 'cuidador',
+        'status': 'pending',
+        'source': 'auto',
+        'created_at': iso(now.subtract(const Duration(hours: 6))),
+      },
     ]);
 
     // ---------------- Comorbilidades ----------------

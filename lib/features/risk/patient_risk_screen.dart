@@ -607,6 +607,36 @@ class _PatientRiskScreenState extends ConsumerState<PatientRiskScreen> {
                   ),
                 ],
                 const SizedBox(height: 16),
+                // Genera/actualiza la agenda de tareas preventivas del paciente
+                // a partir de las cadencias de las reglas que dispara su riesgo.
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.event_repeat_outlined),
+                  label: const Text('Generar plan preventivo (agenda de tareas)'),
+                  onPressed: () async {
+                    final n = await repo.generatePreventiveTasksFor(
+                      widget.patientId,
+                      catalog,
+                      organizationId: patient.organizationId,
+                      createdBy: ref.read(sessionProvider).user?.id,
+                    );
+                    if (!context.mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(n == 0
+                            ? 'No hay actividades programables para el riesgo actual.'
+                            : 'Se generaron $n tareas preventivas.'),
+                        action: n == 0
+                            ? null
+                            : SnackBarAction(
+                                label: 'Ver agenda',
+                                onPressed: () => context.go('/prevention-agenda'),
+                              ),
+                      ),
+                    );
+                    setState(() {});
+                  },
+                ),
+                const SizedBox(height: 16),
                 _InfoTile(
                   icon: Icons.local_hotel_outlined,
                   title: 'Internamiento',
