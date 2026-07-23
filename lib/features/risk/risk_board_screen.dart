@@ -7,6 +7,7 @@ import '../../core/providers/session_provider.dart';
 import '../../core/router/app_shell.dart' show UserMenuButton;
 import '../../engine/risk/prevention_risk_engine.dart';
 import '../../models/app_user.dart';
+import '../../models/center_type.dart';
 import '../../models/patient.dart';
 import '../../models/patient_admission.dart';
 import '../../services/data_repository.dart';
@@ -60,11 +61,19 @@ class _RiskBoardScreenState extends ConsumerState<RiskBoardScreen> {
     final repoAsync = ref.watch(dataRepositoryProvider);
     final rulesAsync = ref.watch(preventionRulesProvider);
     final user = ref.watch(sessionProvider).user;
+    final isHospital = repoAsync.valueOrNull?.centerTypeFor(user?.organizationId) ==
+        CenterType.hospital;
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Prevención'),
         actions: [
+          if (isHospital)
+            IconButton(
+              tooltip: 'Dashboard del centro',
+              icon: const Icon(Icons.insights_outlined),
+              onPressed: () => context.go('/hospital'),
+            ),
           IconButton(
             tooltip: 'Agenda de tareas preventivas',
             icon: const Icon(Icons.checklist_outlined),

@@ -31,6 +31,7 @@ import '../../features/admin/admin_home_screen.dart';
 import '../../features/import_export/import_export_screen.dart';
 import '../../features/platform/platform_home_screen.dart';
 import '../../features/prevention_agenda/prevention_agenda_screen.dart';
+import '../../features/hospital_dashboard/hospital_dashboard_screen.dart';
 import '../../features/caregiver/caregiver_home_screen.dart';
 import '../../features/caregiver/caregiver_patient_screen.dart';
 import 'app_shell.dart';
@@ -132,7 +133,8 @@ final routerProvider = Provider<GoRouter>((ref) {
       if (loggedIn && !isMaster && !isCaregiver) {
         final module = ModuleKeyX.forRoute(location);
         // La agenda de prevención es submódulo de Prevención.
-        final needsPrevention = location.startsWith('/prevention-agenda');
+        final needsPrevention = location.startsWith('/prevention-agenda') ||
+            location.startsWith('/hospital');
         final modules = ref.read(enabledModulesProvider);
         if ((module != null && !modules.contains(module)) ||
             (needsPrevention && !modules.contains(ModuleKey.prevention))) {
@@ -264,6 +266,9 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
               path: '/prevention-agenda',
               builder: (context, state) => const PreventionAgendaScreen()),
+          GoRoute(
+              path: '/hospital',
+              builder: (context, state) => const HospitalDashboardScreen()),
           GoRoute(
               path: '/caregiver',
               builder: (context, state) => const CaregiverHomeScreen()),
