@@ -1817,9 +1817,13 @@ class DataRepository {
     String? assigneeProfileId,
     String assigneeKind = 'staff',
     String? createdBy,
+    bool skipNight = false,
   }) async {
     final admissionId = activeAdmission(patientId)?.id;
     final now = DateTime.now();
+    // Ventana nocturna que se omite si skipNight (cuidados que no se realizan
+    // de noche para no interrumpir el descanso): 22:00–06:00 hora local.
+    bool isNight(DateTime d) => d.hour >= 22 || d.hour < 6;
 
     // Limpia tareas AUTO futuras pendientes (para reflejar la evaluación actual).
     // IMPORTANTE: materializar con .toList() ANTES de borrar — deleteRow muta
@@ -1843,11 +1847,13 @@ class DataRepository {
       // Nº de ocurrencias en el horizonte (cap defensivo a 24 por acción).
       final count = (horizonHours / s.everyHours).floor().clamp(1, 24);
       for (var i = 1; i <= count; i++) {
+        final at = now.add(Duration(hours: s.everyHours * i));
+        if (skipNight && isNight(at)) continue; // se omite el cuidado nocturno
         await createPreventiveTask(
           patientId: patientId,
           organizationId: organizationId,
           title: s.title,
-          scheduledAt: now.add(Duration(hours: s.everyHours * i)),
+          scheduledAt: at,
           admissionId: admissionId,
           ruleId: s.ruleId,
           actionId: s.actionId,

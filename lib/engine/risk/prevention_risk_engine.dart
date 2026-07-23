@@ -272,6 +272,11 @@ class PreventionRulesCatalog {
   /// agenda como tarea recurrente.
   ActionCadence? cadenceFor(String actionId) => _cadences[actionId];
 
+  /// Catálogo completo de actividades programables (id → cadencia). Lo usa el
+  /// selector de cuidados del profesional para listar todas las indicaciones
+  /// posibles con su frecuencia.
+  Map<String, ActionCadence> get cadences => Map.unmodifiable(_cadences);
+
   /// Especificaciones de tareas recurrentes para un resultado de riesgo: por
   /// cada acción con cadencia (dedup por id de acción, conservando la de mayor
   /// frecuencia), su regla de origen, título y cada-cuántas-horas.

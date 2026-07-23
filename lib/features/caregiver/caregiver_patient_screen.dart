@@ -8,170 +8,149 @@ import '../../engine/models/kura_engine_enums.dart' show EtiologiaLabel;
 import '../../models/wound.dart';
 import '../../services/data_repository.dart';
 import '../prevention/preventive_assessment_sheet.dart';
-import '../prevention_agenda/prevention_agenda_screen.dart' show PreventiveTasksView;
 
-/// Vista del CUIDADOR sobre UN paciente asignado (Fase 3). Todo lo clínico es de
-/// SOLO LECTURA (la RLS 0042 solo le da SELECT): recomendaciones/plan del
-/// centro, evolución de la herida, próxima cita/contacto, y sus tareas.
-class CaregiverPatientScreen extends ConsumerStatefulWidget {
+/// Pantalla del monitor de un paciente (cuidador con varios pacientes): AppBar
+/// con volver + el monitor. Cuando el cuidador tiene UN solo paciente, el
+/// monitor se muestra directo en el home (sin esta pantalla).
+class CaregiverPatientScreen extends StatelessWidget {
   final String patientId;
   const CaregiverPatientScreen({super.key, required this.patientId});
 
   @override
-  ConsumerState<CaregiverPatientScreen> createState() =>
-      _CaregiverPatientScreenState();
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        leading: BackButton(onPressed: () => context.go('/caregiver')),
+        title: const Text('Paciente'),
+      ),
+      body: CaregiverPatientMonitor(patientId: patientId),
+    );
+  }
 }
 
-class _CaregiverPatientScreenState
-    extends ConsumerState<CaregiverPatientScreen> {
+/// Monitor del paciente para el cuidador (SOLO LECTURA de lo clínico):
+/// indicaciones del profesional, recomendaciones del centro, evolución de la
+/// herida y contacto/cita. Las TAREAS no van aquí: viven en la vista de agenda
+/// (día/semana). Reutilizable como pantalla o embebido en el home.
+class CaregiverPatientMonitor extends ConsumerStatefulWidget {
+  final String patientId;
+  const CaregiverPatientMonitor({super.key, required this.patientId});
+
+  @override
+  ConsumerState<CaregiverPatientMonitor> createState() =>
+      _CaregiverPatientMonitorState();
+}
+
+class _CaregiverPatientMonitorState
+    extends ConsumerState<CaregiverPatientMonitor> {
   @override
   Widget build(BuildContext context) {
     final repoAsync = ref.watch(dataRepositoryProvider);
     final user = ref.watch(sessionProvider).user;
     final t = BrandTokens.of(context);
 
-    return Scaffold(
-      appBar: AppBar(
-        leading: BackButton(onPressed: () => context.go('/caregiver')),
-        title: const Text('Paciente'),
-      ),
-      body: repoAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, st) => Center(child: Text('Error: $e')),
-        data: (repo) {
-          final patient = repo.getPatient(widget.patientId);
-          if (patient == null) {
-            return const Center(child: Text('Paciente no disponible.'));
-          }
-          final wounds =
-              repo.listWoundsForPatient(widget.patientId).where((w) => w.isActive).toList();
-          final nextAppt = repo.nextManualAppointmentForPatient(widget.patientId);
-          final center = repo.organizationById(user?.organizationId);
-          final myTasks = repo
-              .listPreventiveTasks(patientId: widget.patientId)
-              .where((task) => task.assigneeProfileId == user?.id)
-              .toList();
+    return repoAsync.when(
+      loading: () => const Center(child: CircularProgressIndicator()),
+      error: (e, st) => Center(child: Text('Error: $e')),
+      data: (repo) {
+        final patient = repo.getPatient(widget.patientId);
+        if (patient == null) {
+          return const Center(child: Text('Paciente no disponible.'));
+        }
+        final wounds = repo
+            .listWoundsForPatient(widget.patientId)
+            .where((w) => w.isActive)
+            .toList();
+        final nextAppt = repo.nextManualAppointmentForPatient(widget.patientId);
+        final center = repo.organizationById(user?.organizationId);
+        final instructions = repo.caregiverInstructionsFor(widget.patientId);
 
-          return ListView(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 88),
-            children: [
-              Text(patient.fullName,
-                  style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
-              const SizedBox(height: 12),
+        return ListView(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 88),
+          children: [
+            Text(patient.fullName,
+                style:
+                    const TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
+            const SizedBox(height: 12),
 
-              // Paciente CON lesión → REPORTE (el profesional define la agenda).
-              // Paciente sin lesión (preventivo) → el cuidador puede evaluar y
-              // agendar su propio plan de cuidados.
-              FilledButton.icon(
-                icon: Icon(wounds.isNotEmpty
-                    ? Icons.fact_check_outlined
-                    : Icons.assignment_turned_in_outlined),
-                label: Text(wounds.isNotEmpty
-                    ? 'Reportar signos / recomendaciones'
-                    : 'Evaluación preventiva'),
-                onPressed: () async {
-                  final agendada = await showPreventiveAssessment(
-                    context,
-                    patientId: widget.patientId,
-                    organizationId: patient.organizationId,
-                    asCaregiver: true,
-                    reportOnly: wounds.isNotEmpty,
-                  );
-                  if (agendada == true && mounted) setState(() {});
-                },
-              ),
-              const SizedBox(height: 16),
+            // Paciente CON lesión → REPORTE (el profesional define la agenda).
+            // Paciente sin lesión (preventivo) → el cuidador puede evaluar.
+            FilledButton.icon(
+              icon: Icon(wounds.isNotEmpty
+                  ? Icons.fact_check_outlined
+                  : Icons.assignment_turned_in_outlined),
+              label: Text(wounds.isNotEmpty
+                  ? 'Reportar signos / recomendaciones'
+                  : 'Evaluación preventiva'),
+              onPressed: () async {
+                final r = await showPreventiveAssessment(
+                  context,
+                  patientId: widget.patientId,
+                  organizationId: patient.organizationId,
+                  asCaregiver: true,
+                  reportOnly: wounds.isNotEmpty,
+                );
+                if (r == true && mounted) setState(() {});
+              },
+            ),
+            const SizedBox(height: 16),
 
-              // Indicaciones del profesional (solo lectura), si las hay.
-              if ((repo.caregiverInstructionsFor(widget.patientId) ?? '')
-                  .trim()
-                  .isNotEmpty) ...[
-                _SectionCard(
-                  icon: Icons.sticky_note_2_outlined,
-                  title: 'Indicaciones del profesional',
-                  child: Text(repo.caregiverInstructionsFor(widget.patientId)!),
-                ),
-              ],
-
-              // 1) Recomendaciones / plan del centro (solo lectura)
+            if ((instructions ?? '').trim().isNotEmpty)
               _SectionCard(
-                icon: Icons.assignment_outlined,
-                title: 'Recomendaciones del centro',
-                child: wounds.isEmpty
-                    ? const Text('Sin heridas activas registradas.')
-                    : Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: wounds
-                            .map((w) => _WoundRecommendation(repo: repo, wound: w))
-                            .toList(),
-                      ),
+                icon: Icons.sticky_note_2_outlined,
+                title: 'Indicaciones del profesional',
+                child: Text(instructions!),
               ),
 
-              // 2) Evolución de la herida (solo lectura)
-              _SectionCard(
-                icon: Icons.trending_up,
-                title: 'Evolución de la herida',
-                child: wounds.isEmpty
-                    ? const Text('Sin mediciones registradas.')
-                    : Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: wounds
-                            .map((w) => _WoundEvolution(repo: repo, wound: w))
-                            .toList(),
-                      ),
-              ),
+            _SectionCard(
+              icon: Icons.assignment_outlined,
+              title: 'Recomendaciones del centro',
+              child: wounds.isEmpty
+                  ? const Text('Sin heridas activas registradas.')
+                  : Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: wounds
+                          .map((w) => _WoundRecommendation(repo: repo, wound: w))
+                          .toList(),
+                    ),
+            ),
 
-              // 3) Próxima cita y contacto del centro
-              _SectionCard(
-                icon: Icons.event_available_outlined,
-                title: 'Cita y contacto',
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(nextAppt == null
-                        ? 'Sin próxima cita agendada.'
-                        : 'Próxima cita: ${nextAppt.datetime.toIso8601String().substring(0, 16).replaceFirst("T", " ")}'
-                            '${nextAppt.title != null ? " · ${nextAppt.title}" : ""}'),
-                    const SizedBox(height: 4),
-                    Text('Centro: ${center?.name ?? "—"}',
+            _SectionCard(
+              icon: Icons.trending_up,
+              title: 'Evolución de la herida',
+              child: wounds.isEmpty
+                  ? const Text('Sin mediciones registradas.')
+                  : Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: wounds
+                          .map((w) => _WoundEvolution(repo: repo, wound: w))
+                          .toList(),
+                    ),
+            ),
+
+            _SectionCard(
+              icon: Icons.event_available_outlined,
+              title: 'Cita y contacto',
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(nextAppt == null
+                      ? 'Sin próxima cita agendada.'
+                      : 'Próxima cita: ${nextAppt.datetime.toIso8601String().substring(0, 16).replaceFirst("T", " ")}'
+                          '${nextAppt.title != null ? " · ${nextAppt.title}" : ""}'),
+                  const SizedBox(height: 4),
+                  Text('Centro: ${center?.name ?? "—"}',
+                      style: TextStyle(color: t.textSecondary)),
+                  if (patient.caregiverPhone != null &&
+                      patient.caregiverPhone!.isNotEmpty)
+                    Text('Contacto: ${patient.caregiverPhone}',
                         style: TextStyle(color: t.textSecondary)),
-                    if (patient.caregiverPhone != null &&
-                        patient.caregiverPhone!.isNotEmpty)
-                      Text('Contacto: ${patient.caregiverPhone}',
-                          style: TextStyle(color: t.textSecondary)),
-                  ],
-                ),
+                ],
               ),
-
-              // 4) Mis tareas para este paciente
-              Padding(
-                padding: const EdgeInsets.fromLTRB(4, 12, 4, 4),
-                child: Text('Mis tareas de este paciente',
-                    style: TextStyle(
-                        fontWeight: FontWeight.w800, color: t.textSecondary)),
-              ),
-              if (myTasks.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.all(8),
-                  child: Text('Sin tareas asignadas para este paciente.'),
-                )
-              else
-                // Reutiliza la vista de tareas, sin repetir el nombre del paciente.
-                SizedBox(
-                  height: 360,
-                  child: PreventiveTasksView(
-                    repo: repo,
-                    tasks: myTasks,
-                    byProfileId: user?.id,
-                    staffId: null,
-                    onChanged: () => setState(() {}),
-                    showPatient: false,
-                  ),
-                ),
-            ],
-          );
-        },
-      ),
+            ),
+          ],
+        );
+      },
     );
   }
 }
