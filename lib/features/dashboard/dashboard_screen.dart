@@ -199,7 +199,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
         patient: t.patient,
         summary: t.summary,
         progressStatus: t.progress,
-        onTap: () => context.go('/patients/${t.patient.id}'),
+        onTap: () => context.push('/patients/${t.patient.id}'),
         onValoracion: () => _goToValoracion(t.patient.id),
         onSeguimiento: () => _goToSeguimiento(repo, t.patient.id),
         surfaceBuilder: (child) => KuraGlassCard(
@@ -377,7 +377,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
         ...recent.take(_recentLimit).map((x) => _RecentPatientTile(
               triage: x,
               series: _areaSeries(repo, x),
-              onTap: () => context.go('/patients/${x.patient.id}'),
+              onTap: () => context.push('/patients/${x.patient.id}'),
             )),
         if (recent.length > _recentLimit)
           Align(
@@ -536,7 +536,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
         else
           ...attention.map((e) => _HospitalAttentionTile(
                 entry: e,
-                onTap: () => context.go('/patients/${e.patient.id}/risk'),
+                onTap: () => context.push('/patients/${e.patient.id}/risk'),
               )),
       ],
     ];

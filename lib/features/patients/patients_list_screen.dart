@@ -225,7 +225,7 @@ class PatientsListScreenState extends ConsumerState<PatientsListScreen> {
                                   patients: patients,
                                   summaries: summaries,
                                   progressStatuses: progressStatuses,
-                                  onOpenPatient: (id) => context.go('/patients/$id'),
+                                  onOpenPatient: (id) => context.push('/patients/$id'),
                                   onValoracion: _goToValoracion,
                                   onSeguimiento: (id) => _goToSeguimiento(repo, id),
                                 )
@@ -233,7 +233,7 @@ class PatientsListScreenState extends ConsumerState<PatientsListScreen> {
                                   patients: patients,
                                   summaries: summaries,
                                   progressStatuses: progressStatuses,
-                                  onOpenPatient: (id) => context.go('/patients/$id'),
+                                  onOpenPatient: (id) => context.push('/patients/$id'),
                                   onValoracion: _goToValoracion,
                                   onSeguimiento: (id) => _goToSeguimiento(repo, id),
                                 ),

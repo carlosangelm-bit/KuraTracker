@@ -570,7 +570,7 @@ class _UnreviewedCard extends StatelessWidget {
                         color: KuraColors.danger),
                     title: Text(p.fullName, style: const TextStyle(fontSize: 14)),
                     trailing: const Icon(Icons.chevron_right),
-                    onTap: () => context.go('/patients/${p.id}/risk'),
+                    onTap: () => context.push('/patients/${p.id}/risk'),
                   ),
               ],
             ),
