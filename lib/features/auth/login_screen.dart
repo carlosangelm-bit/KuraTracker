@@ -118,7 +118,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                             ButtonSegment(
                                 value: _LoginMode.personal,
                                 icon: Icon(Icons.badge_outlined),
-                                label: Text('Personal')),
+                                label: Text('Profesional')),
                             ButtonSegment(
                                 value: _LoginMode.cuidador,
                                 icon: Icon(Icons.volunteer_activism_outlined),
