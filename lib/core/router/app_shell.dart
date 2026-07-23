@@ -26,7 +26,8 @@ class AppShell extends ConsumerWidget {
 
   const AppShell({super.key, required this.child, required this.currentPath});
 
-  List<_NavItem> _itemsFor(AppUser? user, Set<ModuleKey> modules) {
+  List<_NavItem> _itemsFor(
+      AppUser? user, Set<ModuleKey> modules, CenterType centerType) {
     // El master (administrador de plataforma) es exclusivamente
     // estructural (organizations/sites/staff/note_option_catalog, ver
     // 0012_master_role.sql): no tiene pacientes/reportes propios, asi
@@ -57,7 +58,16 @@ class AppShell extends ConsumerWidget {
     if (modules.contains(ModuleKey.patients)) {
       items.add(const _NavItem('/patients', Icons.people_outline, Icons.people, 'Pacientes'));
     }
-    if (modules.contains(ModuleKey.agenda)) {
+    // Agenda: en HOSPITAL el eje es la RONDA de prevención (tareas que siguen al
+    // paciente, no citas externas). La agenda de citas (modelo Acuity) es propia
+    // de la clínica de heridas, así que en hospital la pestaña de agenda enruta a
+    // las rondas de prevención en vez de a /agenda (que saldría "no configurada").
+    if (centerType == CenterType.hospital) {
+      if (modules.contains(ModuleKey.prevention)) {
+        items.add(const _NavItem(
+            '/prevention-agenda', Icons.checklist_outlined, Icons.checklist, 'Rondas'));
+      }
+    } else if (modules.contains(ModuleKey.agenda)) {
       items.add(const _NavItem('/agenda', Icons.event_outlined, Icons.event, 'Agenda'));
     }
     if (modules.contains(ModuleKey.prevention)) {
@@ -89,7 +99,7 @@ class AppShell extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final session = ref.watch(sessionProvider);
     final modules = ref.watch(enabledModulesProvider);
-    final items = _itemsFor(session.user, modules);
+    final items = _itemsFor(session.user, modules, session.activeCenterType);
     final selectedIndex = _indexFor(currentPath, items);
     final isWide = MediaQuery.of(context).size.width >= 900;
     // La barra flotante solo se muestra en pantallas de NIVEL SUPERIOR (las
