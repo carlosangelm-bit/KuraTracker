@@ -83,6 +83,7 @@ class _HospitalDashboardScreenState
                           rows: data.byShift),
                     _UnreviewedCard(patients: data.highRiskUnreviewed),
                     _TrendCard(trend: data.trend),
+                    _NurseActivityCard(stats: data.nurseActivity),
                     if (user?.role == AppRole.admin ||
                         user?.role == AppRole.master)
                       _ShiftEditorCard(
@@ -237,6 +238,36 @@ class _HospitalDashboardScreenState
         .toList()
       ..sort((a, b) => a.pct.compareTo(b.pct)); // peor cumplimiento arriba
 
+    // Actividad de enfermería (últimos 7 días): tareas resueltas (hechas /
+    // saltadas) por profesional que las marcó (done_by).
+    final weekStart =
+        DateTime(now.year, now.month, now.day).subtract(const Duration(days: 6));
+    final nameById = <String, String>{
+      for (final s in repo.listStaff(organizationId: orgId))
+        if (s.profileId != null) s.profileId!: s.fullName,
+      for (final u in repo.listUsers()) u.id: u.fullName,
+    };
+    final byNurse = <String, List<int>>{}; // profileId -> [hechas, saltadas]
+    for (final t in allTasks) {
+      final by = t.doneBy;
+      final at = t.doneAt;
+      if (by == null || at == null || at.isBefore(weekStart)) continue;
+      final e = byNurse.putIfAbsent(by, () => [0, 0]);
+      if (t.status == PreventiveTaskStatus.done) {
+        e[0]++;
+      } else if (t.status == PreventiveTaskStatus.skipped) {
+        e[1]++;
+      }
+    }
+    final nurseActivity = byNurse.entries
+        .map((e) => _NurseStat(
+            name: nameById[e.key] ?? 'Personal',
+            done: e.value[0],
+            skipped: e.value[1]))
+        .where((n) => n.done + n.skipped > 0)
+        .toList()
+      ..sort((a, b) => b.done.compareTo(a.done));
+
     return _DashData(
       totalAdmitted: patients.length,
       alto: alto,
@@ -252,6 +283,7 @@ class _HospitalDashboardScreenState
       byShift: byShift,
       highRiskUnreviewed: highRiskUnreviewed,
       trend: trend,
+      nurseActivity: nurseActivity,
       shifts: shifts,
       windowLabel: windowLabel,
     );
@@ -278,6 +310,15 @@ class _TrendDay {
   int get pct => expected == 0 ? 0 : (done * 100 / expected).round();
 }
 
+/// Actividad de un miembro del personal (enfermería) en la ventana: tareas
+/// preventivas hechas y saltadas por esa persona.
+class _NurseStat {
+  final String name;
+  final int done;
+  final int skipped;
+  const _NurseStat({required this.name, required this.done, required this.skipped});
+}
+
 class _DashData {
   final int totalAdmitted;
   final int alto, medio, bajo, sinValoracion;
@@ -289,6 +330,7 @@ class _DashData {
   final List<_GroupRow> byShift;
   final List<Patient> highRiskUnreviewed;
   final List<_TrendDay> trend;
+  final List<_NurseStat> nurseActivity;
   final List<Map<String, dynamic>> shifts;
   final String windowLabel;
   const _DashData({
@@ -306,6 +348,7 @@ class _DashData {
     required this.byShift,
     required this.highRiskUnreviewed,
     required this.trend,
+    required this.nurseActivity,
     required this.shifts,
     required this.windowLabel,
   });
@@ -628,6 +671,82 @@ class _TrendCard extends StatelessWidget {
                     ),
                 ],
               ),
+            ),
+    );
+  }
+}
+
+/// Actividad de enfermería (últimos 7 días): tareas de ronda hechas/saltadas
+/// por profesional, para que el admin vea la ejecución del personal.
+class _NurseActivityCard extends StatelessWidget {
+  final List<_NurseStat> stats;
+  const _NurseActivityCard({required this.stats});
+
+  @override
+  Widget build(BuildContext context) {
+    final maxDone = stats.fold<int>(1, (m, s) => s.done > m ? s.done : m);
+    return _SectionCard(
+      title: 'Actividad de enfermería (7 días)',
+      child: stats.isEmpty
+          ? const Text('Sin actividad de rondas registrada en el periodo.',
+              style: TextStyle(fontSize: 13))
+          : Column(
+              children: [
+                for (final s in stats)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: Row(
+                      children: [
+                        CircleAvatar(
+                          radius: 16,
+                          backgroundColor: KuraColors.primary.withValues(alpha: 0.12),
+                          child: Text(
+                            s.name.isNotEmpty ? s.name[0] : '?',
+                            style: const TextStyle(
+                                color: KuraColors.primary,
+                                fontWeight: FontWeight.w800),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(s.name,
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.w600),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis),
+                              const SizedBox(height: 4),
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(4),
+                                child: LinearProgressIndicator(
+                                  value: (s.done / maxDone).clamp(0.0, 1.0),
+                                  minHeight: 6,
+                                  backgroundColor: KuraColors.chipBg,
+                                  color: KuraColors.success,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            Text('${s.done} hechas',
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.w700, fontSize: 13)),
+                            if (s.skipped > 0)
+                              Text('${s.skipped} saltadas',
+                                  style: const TextStyle(
+                                      fontSize: 11, color: KuraColors.warning)),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
             ),
     );
   }
