@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/theme/kura_theme.dart';
 import '../../engine/models/kura_engine_enums.dart';
 import '../../models/patient.dart';
+import 'patient_list_tile.dart' show PatientHospitalInfo, HospitalSignalsRow, BradenBadge;
 import 'patient_progress_status.dart';
 import 'patient_wound_summary.dart';
 import 'progress_status_indicator.dart';
@@ -19,6 +20,7 @@ class PatientGridCard extends StatelessWidget {
   final VoidCallback onTap;
   final VoidCallback onValoracion;
   final VoidCallback onSeguimiento;
+  final PatientHospitalInfo? hospitalInfo;
 
   const PatientGridCard({
     super.key,
@@ -28,11 +30,13 @@ class PatientGridCard extends StatelessWidget {
     required this.onTap,
     required this.onValoracion,
     required this.onSeguimiento,
+    this.hospitalInfo,
   });
 
   @override
   Widget build(BuildContext context) {
     final activeWounds = summary.activeCount;
+    final showHospital = hospitalInfo != null && !summary.hasActiveWounds;
     return Card(
       clipBehavior: Clip.antiAlias,
       child: InkWell(
@@ -80,41 +84,52 @@ class PatientGridCard extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 8),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: ProgressStatusIndicator(status: progressStatus),
-              ),
-              const SizedBox(height: 10),
-              Chip(
-                label: Text('$activeWounds herida${activeWounds == 1 ? '' : 's'} activa${activeWounds == 1 ? '' : 's'}'),
-                backgroundColor:
-                    activeWounds > 0 ? KuraColors.primary.withOpacity(0.1) : KuraColors.chipBg,
-                visualDensity: VisualDensity.compact,
-                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              ),
-              const SizedBox(height: 8),
-              Expanded(
-                child: summary.etiologies.isEmpty
-                    ? Text(
-                        'Sin heridas activas',
-                        style:
-                            TextStyle(fontSize: 12, color: KuraColors.darkText.withOpacity(0.45)),
-                      )
-                    : Wrap(
-                        spacing: 6,
-                        runSpacing: 4,
-                        children: summary.etiologies
-                            .map((e) => Chip(
-                                  label: Text(e.label, style: const TextStyle(fontSize: 11)),
-                                  backgroundColor: KuraColors.infoBlue.withOpacity(0.1),
-                                  visualDensity: VisualDensity.compact,
-                                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                  padding: EdgeInsets.zero,
-                                  labelPadding: const EdgeInsets.symmetric(horizontal: 8),
-                                ))
-                            .toList(),
-                      ),
-              ),
+              // En hospital sin heridas: la trayectoria de herida no aplica; se
+              // muestran las señales de prevención (riesgo/internamiento/dx).
+              if (showHospital) ...[
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: BradenBadge(info: hospitalInfo!),
+                ),
+                const SizedBox(height: 10),
+                Expanded(child: HospitalSignalsRow(info: hospitalInfo!)),
+              ] else ...[
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: ProgressStatusIndicator(status: progressStatus),
+                ),
+                const SizedBox(height: 10),
+                Chip(
+                  label: Text('$activeWounds herida${activeWounds == 1 ? '' : 's'} activa${activeWounds == 1 ? '' : 's'}'),
+                  backgroundColor:
+                      activeWounds > 0 ? KuraColors.primary.withOpacity(0.1) : KuraColors.chipBg,
+                  visualDensity: VisualDensity.compact,
+                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                const SizedBox(height: 8),
+                Expanded(
+                  child: summary.etiologies.isEmpty
+                      ? Text(
+                          'Sin heridas activas',
+                          style:
+                              TextStyle(fontSize: 12, color: KuraColors.darkText.withOpacity(0.45)),
+                        )
+                      : Wrap(
+                          spacing: 6,
+                          runSpacing: 4,
+                          children: summary.etiologies
+                              .map((e) => Chip(
+                                    label: Text(e.label, style: const TextStyle(fontSize: 11)),
+                                    backgroundColor: KuraColors.infoBlue.withOpacity(0.1),
+                                    visualDensity: VisualDensity.compact,
+                                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                    padding: EdgeInsets.zero,
+                                    labelPadding: const EdgeInsets.symmetric(horizontal: 8),
+                                  ))
+                              .toList(),
+                        ),
+                ),
+              ],
               const Divider(height: 16),
               Row(
                 children: [

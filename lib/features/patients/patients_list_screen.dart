@@ -13,6 +13,7 @@ import '../../engine/sheehan_decision_style.dart';
 import '../../models/app_user.dart';
 import '../../models/patient.dart';
 import '../../services/data_repository.dart';
+import '../risk/risk_board_screen.dart' show bradenBandLevel;
 import 'patient_grid_card.dart';
 import 'patient_list_tile.dart';
 import 'patient_progress_status.dart';
@@ -193,6 +194,36 @@ class PatientsListScreenState extends ConsumerState<PatientsListScreen> {
                         repo, summaries[p.id]!.activeWounds),
                 };
 
+                // Señales de prevención por paciente (solo hospital): riesgo
+                // (banda de Braden), internamiento, comorbilidades y dx. El tile
+                // las usa cuando el paciente no tiene heridas activas.
+                final isHospital =
+                    session.activeCenterType == CenterType.hospital;
+                final hospitalInfos = <String, PatientHospitalInfo>{};
+                if (isHospital) {
+                  for (final p in allPatients) {
+                    final braden = repo.latestRiskAssessment(p.id)?.bradenScore;
+                    final comorbid = repo
+                        .listComorbidities(p.id)
+                        .where((c) => c.status == ComorbilidadEstado.presente)
+                        .map((c) => c.code.label)
+                        .toList();
+                    final dxs = repo.listDiagnoses(p.id);
+                    final primaryDx = dxs.isEmpty
+                        ? null
+                        : dxs
+                            .firstWhere((d) => d.isPrimary, orElse: () => dxs.first)
+                            .name;
+                    hospitalInfos[p.id] = PatientHospitalInfo(
+                      riskLevel: bradenBandLevel(braden),
+                      bradenScore: braden,
+                      admission: repo.activeAdmission(p.id),
+                      comorbidities: comorbid,
+                      primaryDiagnosis: primaryDx,
+                    );
+                  }
+                }
+
                 final patients =
                     _applyFilters(allPatients, repo, summaries, progressStatuses);
                 final sites = repo.listSites();
@@ -225,6 +256,7 @@ class PatientsListScreenState extends ConsumerState<PatientsListScreen> {
                                   patients: patients,
                                   summaries: summaries,
                                   progressStatuses: progressStatuses,
+                                  hospitalInfos: hospitalInfos,
                                   onOpenPatient: (id) => context.push('/patients/$id'),
                                   onValoracion: _goToValoracion,
                                   onSeguimiento: (id) => _goToSeguimiento(repo, id),
@@ -233,6 +265,7 @@ class PatientsListScreenState extends ConsumerState<PatientsListScreen> {
                                   patients: patients,
                                   summaries: summaries,
                                   progressStatuses: progressStatuses,
+                                  hospitalInfos: hospitalInfos,
                                   onOpenPatient: (id) => context.push('/patients/$id'),
                                   onValoracion: _goToValoracion,
                                   onSeguimiento: (id) => _goToSeguimiento(repo, id),
@@ -278,6 +311,7 @@ class _PatientsListView extends StatelessWidget {
   final List<Patient> patients;
   final Map<String, PatientWoundSummary> summaries;
   final Map<String, PatientProgressStatus> progressStatuses;
+  final Map<String, PatientHospitalInfo> hospitalInfos;
   final ValueChanged<String> onOpenPatient;
   final ValueChanged<String> onValoracion;
   final ValueChanged<String> onSeguimiento;
@@ -286,6 +320,7 @@ class _PatientsListView extends StatelessWidget {
     required this.patients,
     required this.summaries,
     required this.progressStatuses,
+    required this.hospitalInfos,
     required this.onOpenPatient,
     required this.onValoracion,
     required this.onSeguimiento,
@@ -310,6 +345,7 @@ class _PatientsListView extends StatelessWidget {
           patient: p,
           summary: summary,
           progressStatus: progressStatuses[p.id]!,
+          hospitalInfo: hospitalInfos[p.id],
           onTap: () => onOpenPatient(p.id),
           onValoracion: () => onValoracion(p.id),
           onSeguimiento: () => onSeguimiento(p.id),
@@ -323,6 +359,7 @@ class _PatientsGridView extends StatelessWidget {
   final List<Patient> patients;
   final Map<String, PatientWoundSummary> summaries;
   final Map<String, PatientProgressStatus> progressStatuses;
+  final Map<String, PatientHospitalInfo> hospitalInfos;
   final ValueChanged<String> onOpenPatient;
   final ValueChanged<String> onValoracion;
   final ValueChanged<String> onSeguimiento;
@@ -331,6 +368,7 @@ class _PatientsGridView extends StatelessWidget {
     required this.patients,
     required this.summaries,
     required this.progressStatuses,
+    required this.hospitalInfos,
     required this.onOpenPatient,
     required this.onValoracion,
     required this.onSeguimiento,
@@ -371,6 +409,7 @@ class _PatientsGridView extends StatelessWidget {
               patient: p,
               summary: summary,
               progressStatus: progressStatuses[p.id]!,
+              hospitalInfo: hospitalInfos[p.id],
               onTap: () => onOpenPatient(p.id),
               onValoracion: () => onValoracion(p.id),
               onSeguimiento: () => onSeguimiento(p.id),
