@@ -10,7 +10,7 @@ import '../../engine/risk/braden_scale.dart';
 import '../../models/app_user.dart';
 import '../../models/patient_admission.dart';
 import '../../services/data_repository.dart';
-import '../prevention/preventive_assessment_sheet.dart';
+import '../prevention/caregiver_plan_builder_sheet.dart';
 import 'risk_theme.dart';
 
 /// Ficha de riesgo de un paciente (módulo de Prevención). Muestra el nivel de
@@ -322,17 +322,17 @@ class _PatientRiskScreenState extends ConsumerState<PatientRiskScreen> {
               children: [
                 _RiskLevelBanner(level: result.level),
                 const SizedBox(height: 16),
-                // Cuestionario preventivo unificado: un solo flujo simple que
-                // produce el plan concreto y lo agenda.
+                // Selector DIRECTO de cuidados (el profesional marca las
+                // indicaciones con su cadencia; puede omitir cuidados nocturnos).
+                // Esto define/actualiza la agenda del cuidador.
                 FilledButton.icon(
-                  icon: const Icon(Icons.assignment_turned_in_outlined),
-                  label: const Text('Evaluación preventiva'),
+                  icon: const Icon(Icons.checklist_rtl),
+                  label: const Text('Definir plan de cuidados'),
                   onPressed: () async {
-                    final agendada = await showPreventiveAssessment(
+                    final agendada = await showCaregiverPlanBuilder(
                       context,
                       patientId: widget.patientId,
                       organizationId: patient.organizationId,
-                      asCaregiver: false,
                     );
                     if (!context.mounted) return;
                     if (agendada == true) {
