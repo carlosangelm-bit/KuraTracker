@@ -81,6 +81,17 @@ class _PreventiveTasksViewState extends State<PreventiveTasksView> {
   _View _view = _View.dia;
   late DateTime _anchor; // día ancla (solo fecha)
   String? _patientFilter; // null = todos
+  String? _floorFilter; // piso
+  String? _areaFilter; // área
+  String? _riskFilter; // 'Alto' | 'Medio' | 'Bajo'
+
+  /// Banda de riesgo por Braden (para el filtro por riesgo de la ronda).
+  String? _bandLabel(int? braden) {
+    if (braden == null) return null;
+    if (braden <= 12) return 'Alto';
+    if (braden <= 17) return 'Medio';
+    return 'Bajo';
+  }
 
   @override
   void initState() {
@@ -116,11 +127,31 @@ class _PreventiveTasksViewState extends State<PreventiveTasksView> {
       _patientFilter = null;
     }
 
+    // Metadatos por paciente (ubicación + banda de riesgo) para los filtros de
+    // ronda: piso / área / riesgo. Se resuelven una vez por paciente.
+    final floorOf = <String, String?>{};
+    final areaOf = <String, String?>{};
+    final bandOf = <String, String?>{};
+    for (final pid in widget.tasks.map((t) => t.patientId).toSet()) {
+      final adm = widget.repo.activeAdmission(pid);
+      floorOf[pid] = adm?.floor;
+      areaOf[pid] = adm?.area;
+      bandOf[pid] = _bandLabel(widget.repo.latestRiskAssessment(pid)?.bradenScore);
+    }
+    final floors = floorOf.values.whereType<String>().toSet().toList()..sort();
+    final areas = areaOf.values.whereType<String>().toSet().toList()..sort();
+    final hasRisk = bandOf.values.any((b) => b != null);
+    if (_floorFilter != null && !floors.contains(_floorFilter)) _floorFilter = null;
+    if (_areaFilter != null && !areas.contains(_areaFilter)) _areaFilter = null;
+
     final inRange = widget.tasks
         .where((x) =>
             !x.scheduledAt.isBefore(start) &&
             x.scheduledAt.isBefore(end) &&
-            (_patientFilter == null || x.patientId == _patientFilter))
+            (_patientFilter == null || x.patientId == _patientFilter) &&
+            (_floorFilter == null || floorOf[x.patientId] == _floorFilter) &&
+            (_areaFilter == null || areaOf[x.patientId] == _areaFilter) &&
+            (_riskFilter == null || bandOf[x.patientId] == _riskFilter))
         .toList()
       ..sort((a, b) => a.scheduledAt.compareTo(b.scheduledAt));
 
@@ -165,6 +196,37 @@ class _PreventiveTasksViewState extends State<PreventiveTasksView> {
                     onChanged: (v) => setState(() => _patientFilter = v),
                   ),
                 ),
+              ],
+            ),
+          ),
+        if (floors.isNotEmpty || areas.isNotEmpty || hasRisk)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 4,
+              children: [
+                if (floors.isNotEmpty)
+                  _RoundFilter(
+                    label: 'Piso',
+                    value: _floorFilter,
+                    options: floors,
+                    onChanged: (v) => setState(() => _floorFilter = v),
+                  ),
+                if (areas.isNotEmpty)
+                  _RoundFilter(
+                    label: 'Área',
+                    value: _areaFilter,
+                    options: areas,
+                    onChanged: (v) => setState(() => _areaFilter = v),
+                  ),
+                if (hasRisk)
+                  _RoundFilter(
+                    label: 'Riesgo',
+                    value: _riskFilter,
+                    options: const ['Alto', 'Medio', 'Bajo'],
+                    onChanged: (v) => setState(() => _riskFilter = v),
+                  ),
               ],
             ),
           ),
@@ -442,5 +504,46 @@ Color _activityColor(String? actionId) {
       return const Color(0xFF1B8A5A); // verde
     default:
       return const Color(0xFF6B6577); // gris neutro
+  }
+}
+
+/// Dropdown compacto de filtro de ronda (piso / área / riesgo).
+class _RoundFilter extends StatelessWidget {
+  final String label;
+  final String? value;
+  final List<String> options;
+  final ValueChanged<String?> onChanged;
+  const _RoundFilter({
+    required this.label,
+    required this.value,
+    required this.options,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final t = BrandTokens.of(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+      decoration: BoxDecoration(
+        border: Border.all(color: t.border),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: DropdownButton<String?>(
+        value: value,
+        isDense: true,
+        underline: const SizedBox.shrink(),
+        hint: Text('$label: todos', style: const TextStyle(fontSize: 12)),
+        items: [
+          DropdownMenuItem<String?>(
+              value: null, child: Text('$label: todos', style: const TextStyle(fontSize: 12))),
+          ...options.map((o) => DropdownMenuItem<String?>(
+                value: o,
+                child: Text('$label $o', style: const TextStyle(fontSize: 12)),
+              )),
+        ],
+        onChanged: onChanged,
+      ),
+    );
   }
 }
