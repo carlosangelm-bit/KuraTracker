@@ -508,6 +508,45 @@ class DataRepository {
     }
   }
 
+  /// Turnos configurados del centro (para la ventana de cumplimiento del módulo
+  /// de prevención hospitalaria). Lista de {name, startHour, endHour}; vacía =
+  /// sin turnos (ventana de 24 h por defecto).
+  List<Map<String, dynamic>> shiftConfigFor(String? organizationId) {
+    final org = _store
+        .getAll(Collections.organizations)
+        .where((o) => o['id'] == organizationId);
+    final cfg = org.isEmpty ? null : org.first['shift_config'];
+    if (cfg is! List) return const [];
+    return cfg
+        .whereType<Map>()
+        .map((s) => {
+              'name': s['name'],
+              'startHour': (s['startHour'] as num?)?.toInt(),
+              'endHour': (s['endHour'] as num?)?.toInt(),
+            })
+        .where((s) => s['startHour'] != null && s['endHour'] != null)
+        .toList();
+  }
+
+  /// Fija los turnos del centro. En Supabase usa el RPC set_shift_config (0046,
+  /// admin del centro o master); en demo actualiza la fila directo. Lista vacía
+  /// = null (vuelve a la ventana de 24 h).
+  Future<void> setShiftConfig(
+      String organizationId, List<Map<String, dynamic>> shifts) async {
+    final value = shifts.isEmpty ? null : shifts;
+    final store = _store;
+    if (store is SupabaseDataStore) {
+      await store.callRpc('set_shift_config', {
+        'p_org': organizationId,
+        'p_shifts': value,
+      });
+      await store.refreshCollection(Collections.organizations);
+    } else {
+      await _store.updateRow(
+          Collections.organizations, organizationId, {'shift_config': value});
+    }
+  }
+
   /// Citas manuales del centro (admin) o de un Kurador (clínico). El aislamiento
   /// real lo aplica la RLS; el filtro aquí acota la vista.
   List<ManualAppointment> listManualAppointments({String? organizationId, String? staffId}) =>
