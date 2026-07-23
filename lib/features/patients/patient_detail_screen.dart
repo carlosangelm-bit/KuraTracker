@@ -112,6 +112,11 @@ class _PatientDetailScreenState extends ConsumerState<PatientDetailScreen> {
           final activeWounds = wounds.where((w) => w.isActive).toList();
           final singleActiveWound = activeWounds.length == 1 ? activeWounds.first : null;
 
+          // Centra el contenido en desktop (la SliverAppBar sigue a todo el
+          // ancho); evita que el expediente se estire de borde a borde.
+          final screenW = MediaQuery.of(context).size.width;
+          final contentSidePad = screenW > 1040 ? (screenW - 1000) / 2 : 20.0;
+
           return CustomScrollView(
             slivers: [
               SliverAppBar(
@@ -144,7 +149,8 @@ class _PatientDetailScreenState extends ConsumerState<PatientDetailScreen> {
                 ],
               ),
               SliverPadding(
-                padding: const EdgeInsets.all(20),
+                padding:
+                    EdgeInsets.fromLTRB(contentSidePad, 20, contentSidePad, 20),
                 sliver: SliverList(
                   delegate: SliverChildListDelegate([
                     _PatientHeaderCard(patient: patient, dateFmt: _dateFmt),
