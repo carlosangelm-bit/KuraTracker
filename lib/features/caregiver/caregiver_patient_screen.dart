@@ -7,6 +7,7 @@ import '../../core/providers/session_provider.dart';
 import '../../engine/models/kura_engine_enums.dart' show EtiologiaLabel;
 import '../../models/wound.dart';
 import '../../services/data_repository.dart';
+import '../prevention/preventive_assessment_sheet.dart';
 import '../prevention_agenda/prevention_agenda_screen.dart' show PreventiveTasksView;
 
 /// Vista del CUIDADOR sobre UN paciente asignado (Fase 3). Todo lo clínico es de
@@ -57,6 +58,22 @@ class _CaregiverPatientScreenState
               Text(patient.fullName,
                   style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
               const SizedBox(height: 12),
+
+              // Evaluación preventiva (cuestionario unificado) → agenda mis tareas
+              FilledButton.icon(
+                icon: const Icon(Icons.assignment_turned_in_outlined),
+                label: const Text('Evaluación preventiva'),
+                onPressed: () async {
+                  final agendada = await showPreventiveAssessment(
+                    context,
+                    patientId: widget.patientId,
+                    organizationId: patient.organizationId,
+                    asCaregiver: true,
+                  );
+                  if (agendada == true && mounted) setState(() {});
+                },
+              ),
+              const SizedBox(height: 16),
 
               // 1) Recomendaciones / plan del centro (solo lectura)
               _SectionCard(
