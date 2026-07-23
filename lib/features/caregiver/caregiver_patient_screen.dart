@@ -59,21 +59,39 @@ class _CaregiverPatientScreenState
                   style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
               const SizedBox(height: 12),
 
-              // Evaluación preventiva (cuestionario unificado) → agenda mis tareas
+              // Paciente CON lesión → REPORTE (el profesional define la agenda).
+              // Paciente sin lesión (preventivo) → el cuidador puede evaluar y
+              // agendar su propio plan de cuidados.
               FilledButton.icon(
-                icon: const Icon(Icons.assignment_turned_in_outlined),
-                label: const Text('Evaluación preventiva'),
+                icon: Icon(wounds.isNotEmpty
+                    ? Icons.fact_check_outlined
+                    : Icons.assignment_turned_in_outlined),
+                label: Text(wounds.isNotEmpty
+                    ? 'Reportar signos / recomendaciones'
+                    : 'Evaluación preventiva'),
                 onPressed: () async {
                   final agendada = await showPreventiveAssessment(
                     context,
                     patientId: widget.patientId,
                     organizationId: patient.organizationId,
                     asCaregiver: true,
+                    reportOnly: wounds.isNotEmpty,
                   );
                   if (agendada == true && mounted) setState(() {});
                 },
               ),
               const SizedBox(height: 16),
+
+              // Indicaciones del profesional (solo lectura), si las hay.
+              if ((repo.caregiverInstructionsFor(widget.patientId) ?? '')
+                  .trim()
+                  .isNotEmpty) ...[
+                _SectionCard(
+                  icon: Icons.sticky_note_2_outlined,
+                  title: 'Indicaciones del profesional',
+                  child: Text(repo.caregiverInstructionsFor(widget.patientId)!),
+                ),
+              ],
 
               // 1) Recomendaciones / plan del centro (solo lectura)
               _SectionCard(

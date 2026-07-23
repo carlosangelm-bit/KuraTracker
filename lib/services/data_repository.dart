@@ -1907,6 +1907,53 @@ class DataRepository {
     await _store.deleteRow(Collections.caregiverPatientAssignments, id);
   }
 
+  // -- Indicaciones del profesional para el cuidador (0044) --
+
+  /// Texto de indicaciones para el cuidador de un paciente, o null.
+  String? caregiverInstructionsFor(String patientId) {
+    final match = _store
+        .getAll(Collections.caregiverInstructions)
+        .where((r) => r['patient_id'] == patientId);
+    return match.isEmpty ? null : match.first['instructions'] as String?;
+  }
+
+  /// Crea o actualiza las indicaciones para el cuidador (upsert por paciente).
+  /// Solo personal del centro (RLS 0044). [text] vacío borra la fila.
+  Future<void> setCaregiverInstructions({
+    required String patientId,
+    required String? organizationId,
+    required String text,
+    String? updatedBy,
+  }) async {
+    final existing = _store
+        .getAll(Collections.caregiverInstructions)
+        .where((r) => r['patient_id'] == patientId)
+        .toList();
+    final trimmed = text.trim();
+    if (existing.isNotEmpty) {
+      final id = existing.first['id'] as String;
+      if (trimmed.isEmpty) {
+        await _store.deleteRow(Collections.caregiverInstructions, id);
+      } else {
+        await _store.updateRow(Collections.caregiverInstructions, id, {
+          'instructions': trimmed,
+          'updated_by': updatedBy,
+          'updated_at': DateTime.now().toIso8601String(),
+        });
+      }
+      return;
+    }
+    if (trimmed.isEmpty) return;
+    await _store.insertRow(Collections.caregiverInstructions, {
+      'id': _uuid.v4(),
+      'organization_id': organizationId,
+      'patient_id': patientId,
+      'instructions': trimmed,
+      'updated_by': updatedBy,
+      'updated_at': DateTime.now().toIso8601String(),
+    });
+  }
+
   /// Próxima cita (manual) futura de un paciente, o null. Para la vista del
   /// cuidador (contacto/agenda del centro).
   ManualAppointment? nextManualAppointmentForPatient(String patientId) {

@@ -187,6 +187,7 @@ class Collections {
   static const moduleSettings = 'module_settings';
   static const preventiveTasks = 'preventive_tasks';
   static const caregiverPatientAssignments = 'caregiver_patient_assignments';
+  static const caregiverInstructions = 'caregiver_instructions';
 
   /// Todas las colecciones/tablas, en un orden razonable para hidratar la
   /// cache de [SupabaseDataStore] tras el login (catalogos primero, luego
@@ -226,5 +227,6 @@ class Collections {
     moduleSettings,
     preventiveTasks,
     caregiverPatientAssignments,
+    caregiverInstructions,
   ];
 }
