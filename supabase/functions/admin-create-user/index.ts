@@ -65,8 +65,10 @@ serve(async (req) => {
   const roleTitle = String(body.roleTitle ?? "Kurador").trim() || "Kurador";
 
   if (!email || !fullName) return json({ error: "email y fullName son obligatorios." }, 400);
-  if (role !== "admin" && role !== "clinico") {
-    return json({ error: "role debe ser 'admin' o 'clinico'." }, 400);
+  // 'cuidador' (Fase 3): rol restringido con cuenta propia; NO se le crea fila de
+  // staff (su acceso es solo lectura vía caregiver_patient_assignments, ver 0042).
+  if (role !== "admin" && role !== "clinico" && role !== "cuidador") {
+    return json({ error: "role debe ser 'admin', 'clinico' o 'cuidador'." }, 400);
   }
 
   // 3) Acotar la organización según el rol del llamador.

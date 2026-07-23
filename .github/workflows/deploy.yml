@@ -60,6 +60,12 @@ jobs:
         run: supabase migration list --linked || true
       - name: Aplicar migraciones
         run: supabase db push
+      # Despliegue DIRIGIDO de Edge Functions (solo las que la app escribe con
+      # verify_jwt por defecto). NO se usa "functions deploy" sin nombre para no
+      # re-habilitar verify_jwt en funciones que van con --no-verify-jwt (p.ej.
+      # el webhook de Acuity). Añadir aquí el nombre de cada función al cambiarla.
+      - name: Deploy Edge Functions (dirigido)
+        run: supabase functions deploy admin-create-user --project-ref "$SUPABASE_PROJECT_REF"
 
   build_deploy:
     needs: migrations
