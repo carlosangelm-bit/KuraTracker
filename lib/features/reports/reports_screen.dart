@@ -11,12 +11,14 @@ import '../../core/theme/kura_theme.dart';
 import '../../core/providers/session_provider.dart';
 import '../../core/router/app_shell.dart' show kFloatingNavBarHeight, UserMenuButton;
 import '../../models/app_user.dart';
+import '../../models/center_type.dart';
 import '../../models/consultation.dart';
 import '../../engine/models/kura_engine_enums.dart';
 import '../../models/patient.dart';
 import '../../models/treatment_plan.dart' show WoundPhoto, TreatmentPlan;
 import '../../services/data_repository.dart';
 import '../../services/photo_upload_service.dart';
+import '../../services/prevention_report_pdf.dart';
 
 /// Modulo de reportes (seccion 7): busca/selecciona pacientes, filtra por
 /// tipo de informacion, y genera un PDF de historia clinica.
@@ -56,11 +58,22 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, st) => Center(child: Text('Error: $e')),
         data: (repo) {
-          final patients = session.user?.role == AppRole.admin
-              ? repo.listAllPatients()
-              : (session.user?.staffId != null
-                  ? repo.listPatientsForStaff(session.user!.staffId!)
-                  : <Patient>[]);
+          // Hospital: el reporte es de PREVENCIÓN (no de herida) y la población
+          // son los pacientes internados del centro (como el dashboard), no los
+          // asignados a un staff.
+          final isHospital = session.activeCenterType == CenterType.hospital;
+          final patients = isHospital
+              ? (repo
+                  .listAllPatients()
+                  .where((p) =>
+                      p.organizationId == session.user?.organizationId &&
+                      repo.activeAdmission(p.id) != null)
+                  .toList())
+              : session.user?.role == AppRole.admin
+                  ? repo.listAllPatients()
+                  : (session.user?.staffId != null
+                      ? repo.listPatientsForStaff(session.user!.staffId!)
+                      : <Patient>[]);
 
           // Cuadro de pacientes con altura acotada (no Expanded): ~40% del
           // alto de pantalla, siempre entre 220 y 380 px, para que sea
@@ -94,12 +107,14 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                       ),
                       child: Card(
                         child: patients.isEmpty
-                            ? const Center(
+                            ? Center(
                                 child: Padding(
-                                  padding: EdgeInsets.all(24),
+                                  padding: const EdgeInsets.all(24),
                                   child: Text(
-                                    'No hay pacientes disponibles',
-                                    style: TextStyle(color: Colors.black54),
+                                    isHospital
+                                        ? 'No hay pacientes internados en el centro'
+                                        : 'No hay pacientes disponibles',
+                                    style: const TextStyle(color: Colors.black54),
                                     textAlign: TextAlign.center,
                                   ),
                                 ),
@@ -125,6 +140,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                       ),
                     ),
                     const SizedBox(height: 16),
+                    if (!isHospital) ...[
                     Text('Incluir en el reporte',
                         style: Theme.of(context)
                             .textTheme
@@ -193,6 +209,36 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                           ? null
                           : () => _generatePdf(repo),
                     ),
+                    ] else ...[
+                      Text(
+                        'El reporte de prevención incluye internamiento, riesgo '
+                        '(Braden), comorbilidades, diagnósticos, cumplimiento de '
+                        'rondas, bitácora de prevención e indicaciones al cuidador.',
+                        style: TextStyle(
+                            color: KuraColors.darkText.withOpacity(0.7)),
+                      ),
+                      const SizedBox(height: 16),
+                      FilledButton.icon(
+                        icon: _generating
+                            ? const SizedBox(
+                                height: 16,
+                                width: 16,
+                                child: CircularProgressIndicator(
+                                    strokeWidth: 2, color: Colors.white),
+                              )
+                            : const Icon(Icons.picture_as_pdf_outlined),
+                        label: Text(_generating
+                            ? 'Generando...'
+                            : 'Generar reporte de prevención (PDF)'),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: KuraColors.primary,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                        ),
+                        onPressed: _selectedPatientIds.isEmpty || _generating
+                            ? null
+                            : () => _generatePreventionPdf(repo, patients),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -257,6 +303,24 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
       return await networkImage(url);
     } catch (_) {
       return null;
+    }
+  }
+
+  /// Genera el reporte HOSPITALARIO de prevención para los pacientes
+  /// seleccionados (builder en services/prevention_report_pdf.dart).
+  Future<void> _generatePreventionPdf(
+      DataRepository repo, List<Patient> patients) async {
+    setState(() => _generating = true);
+    try {
+      final selected =
+          patients.where((p) => _selectedPatientIds.contains(p.id)).toList();
+      await generatePreventionReportPdf(
+        repo: repo,
+        patients: selected,
+        organizationId: ref.read(sessionProvider).user?.organizationId,
+      );
+    } finally {
+      if (mounted) setState(() => _generating = false);
     }
   }
 
