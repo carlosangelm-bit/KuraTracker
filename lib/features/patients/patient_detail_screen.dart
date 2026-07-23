@@ -97,6 +97,11 @@ class _PatientDetailScreenState extends ConsumerState<PatientDetailScreen> {
           if (patient == null) {
             return const Center(child: Text('Paciente no encontrado.'));
           }
+          // Enfermería (0045) NO diagnostica ni cambia protocolo: se ocultan los
+          // botones de escritura clínica (editar expediente, nueva consulta,
+          // registrar herida/seguimiento, comorbilidades/diagnósticos). Puede
+          // leer todo + reportar (riesgo/eventos adversos) + prevención.
+          final canWrite = ref.watch(sessionProvider).user?.canDiagnose ?? true;
           final wounds = repo.listWoundsForPatient(patient.id);
           final consultations = repo.listConsultationsForPatient(patient.id);
           final comorbidities = repo.listComorbidities(patient.id);
@@ -118,18 +123,20 @@ class _PatientDetailScreenState extends ConsumerState<PatientDetailScreen> {
                 title: Text(patient.fullName),
                 pinned: true,
                 actions: [
-                  IconButton(
-                    icon: const Icon(Icons.edit_outlined),
-                    tooltip: 'Editar / completar expediente',
-                    onPressed: () =>
-                        context.go('/patients/${patient.id}/edit'),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.add_circle_outline),
-                    tooltip: 'Nueva consulta',
-                    onPressed: () =>
-                        context.go('/patients/${patient.id}/consultation/new'),
-                  ),
+                  if (canWrite) ...[
+                    IconButton(
+                      icon: const Icon(Icons.edit_outlined),
+                      tooltip: 'Editar / completar expediente',
+                      onPressed: () =>
+                          context.go('/patients/${patient.id}/edit'),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.add_circle_outline),
+                      tooltip: 'Nueva consulta',
+                      onPressed: () =>
+                          context.go('/patients/${patient.id}/consultation/new'),
+                    ),
+                  ],
                 ],
               ),
               SliverPadding(
@@ -139,9 +146,14 @@ class _PatientDetailScreenState extends ConsumerState<PatientDetailScreen> {
                     _PatientHeaderCard(patient: patient, dateFmt: _dateFmt),
                     const SizedBox(height: 16),
                     _ComorbidityCard(
-                        patientId: patient.id, comorbidities: comorbidities),
+                        patientId: patient.id,
+                        comorbidities: comorbidities,
+                        canWrite: canWrite),
                     const SizedBox(height: 16),
-                    _DiagnosesCard(patientId: patient.id, diagnoses: diagnoses),
+                    _DiagnosesCard(
+                        patientId: patient.id,
+                        diagnoses: diagnoses,
+                        canWrite: canWrite),
                     const SizedBox(height: 16),
                     _RiskCard(patientId: patient.id),
                     const SizedBox(height: 16),
@@ -161,12 +173,13 @@ class _PatientDetailScreenState extends ConsumerState<PatientDetailScreen> {
                                   .titleLarge
                                   ?.copyWith(fontWeight: FontWeight.w700)),
                         ),
-                        FilledButton.tonalIcon(
-                          icon: const Icon(Icons.add, size: 18),
-                          label: const Text('Registrar herida'),
-                          onPressed: () =>
-                              context.go('/patients/${patient.id}/consultation/new'),
-                        ),
+                        if (canWrite)
+                          FilledButton.tonalIcon(
+                            icon: const Icon(Icons.add, size: 18),
+                            label: const Text('Registrar herida'),
+                            onPressed: () =>
+                                context.go('/patients/${patient.id}/consultation/new'),
+                          ),
                       ],
                     ),
                     const SizedBox(height: 12),
@@ -180,6 +193,7 @@ class _PatientDetailScreenState extends ConsumerState<PatientDetailScreen> {
                             patientId: patient.id,
                             wound: w,
                             repo: repo,
+                            canWrite: canWrite,
                             // Oculta el botón "Seguimiento" de la herida única
                             // activa: su seguimiento se muestra embebido abajo.
                             showFollowUpButton:
@@ -198,12 +212,13 @@ class _PatientDetailScreenState extends ConsumerState<PatientDetailScreen> {
                                     .titleLarge
                                     ?.copyWith(fontWeight: FontWeight.w700)),
                           ),
-                          FilledButton.tonalIcon(
-                            icon: const Icon(Icons.add_circle_outline, size: 18),
-                            label: const Text('Registrar seguimiento'),
-                            onPressed: () => context.go(
-                                '/patients/${patient.id}/wound/${singleActiveWound.id}/follow-up/new'),
-                          ),
+                          if (canWrite)
+                            FilledButton.tonalIcon(
+                              icon: const Icon(Icons.add_circle_outline, size: 18),
+                              label: const Text('Registrar seguimiento'),
+                              onPressed: () => context.go(
+                                  '/patients/${patient.id}/wound/${singleActiveWound.id}/follow-up/new'),
+                            ),
                         ],
                       ),
                       const SizedBox(height: 12),
@@ -431,7 +446,11 @@ class _InfoItem extends StatelessWidget {
 class _ComorbidityCard extends StatelessWidget {
   final String patientId;
   final List<PatientComorbidity> comorbidities;
-  const _ComorbidityCard({required this.patientId, required this.comorbidities});
+  final bool canWrite;
+  const _ComorbidityCard(
+      {required this.patientId,
+      required this.comorbidities,
+      this.canWrite = true});
 
   @override
   Widget build(BuildContext context) {
@@ -444,7 +463,10 @@ class _ComorbidityCard extends StatelessWidget {
       margin: EdgeInsets.zero,
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
-        onTap: () => context.go('/patients/$patientId/comorbidities'),
+        // Enfermería: solo lectura (no navega a la pantalla editable).
+        onTap: canWrite
+            ? () => context.go('/patients/$patientId/comorbidities')
+            : null,
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Column(
@@ -456,7 +478,7 @@ class _ComorbidityCard extends StatelessWidget {
                     child: Text('Comorbilidades (APP)',
                         style: TextStyle(fontWeight: FontWeight.w700)),
                   ),
-                  const Icon(Icons.chevron_right, size: 18),
+                  if (canWrite) const Icon(Icons.chevron_right, size: 18),
                 ],
               ),
               const SizedBox(height: 8),
@@ -680,7 +702,9 @@ class _RiskCard extends ConsumerWidget {
 class _DiagnosesCard extends StatelessWidget {
   final String patientId;
   final List<PatientDiagnosis> diagnoses;
-  const _DiagnosesCard({required this.patientId, required this.diagnoses});
+  final bool canWrite;
+  const _DiagnosesCard(
+      {required this.patientId, required this.diagnoses, this.canWrite = true});
 
   @override
   Widget build(BuildContext context) {
@@ -697,7 +721,9 @@ class _DiagnosesCard extends StatelessWidget {
       margin: EdgeInsets.zero,
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
-        onTap: () => context.go('/patients/$patientId/diagnoses'),
+        // Enfermería: solo lectura (no navega a la pantalla editable).
+        onTap:
+            canWrite ? () => context.go('/patients/$patientId/diagnoses') : null,
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Column(
@@ -712,7 +738,7 @@ class _DiagnosesCard extends StatelessWidget {
                       style: const TextStyle(fontWeight: FontWeight.w700),
                     ),
                   ),
-                  const Icon(Icons.chevron_right, size: 18),
+                  if (canWrite) const Icon(Icons.chevron_right, size: 18),
                 ],
               ),
               const SizedBox(height: 8),
@@ -773,12 +799,15 @@ class _WoundCard extends StatelessWidget {
   // Abre el "Plan de alta" (egreso de la herida). Lo provee el padre para poder
   // refrescar tras cerrar la herida.
   final VoidCallback? onDischarge;
+  // Enfermería: solo lectura de la herida (oculta valoración/plan de alta).
+  final bool canWrite;
   const _WoundCard({
     required this.patientId,
     required this.wound,
     required this.repo,
     this.showFollowUpButton = true,
     this.onDischarge,
+    this.canWrite = true,
   });
 
   @override
@@ -852,13 +881,14 @@ class _WoundCard extends StatelessWidget {
                     onPressed: () =>
                         context.go('/patients/$patientId/wound/${wound.id}/follow-up'),
                   ),
-                TextButton.icon(
-                  icon: const Icon(Icons.edit_note, size: 18),
-                  label: const Text('Nueva valoración'),
-                  onPressed: () =>
-                      context.go('/patients/$patientId/wound/${wound.id}/capture'),
-                ),
-                if (wound.isActive && onDischarge != null)
+                if (canWrite)
+                  TextButton.icon(
+                    icon: const Icon(Icons.edit_note, size: 18),
+                    label: const Text('Nueva valoración'),
+                    onPressed: () =>
+                        context.go('/patients/$patientId/wound/${wound.id}/capture'),
+                  ),
+                if (canWrite && wound.isActive && onDischarge != null)
                   TextButton.icon(
                     icon: const Icon(Icons.assignment_turned_in_outlined, size: 18),
                     label: const Text('Plan de alta'),

@@ -4,7 +4,7 @@
 // note_option_catalog) de TODOS los centros. NO tiene acceso a datos
 // clinicos de pacientes ajenos -- esas policies (0003/0011) no le dan
 // ninguna excepcion.
-enum AppRole { admin, clinico, master, cuidador }
+enum AppRole { admin, clinico, master, cuidador, enfermeria }
 
 extension AppRoleLabel on AppRole {
   String get label {
@@ -17,6 +17,8 @@ extension AppRoleLabel on AppRole {
         return 'Administrador de plataforma';
       case AppRole.cuidador:
         return 'Cuidador';
+      case AppRole.enfermeria:
+        return 'Enfermería';
     }
   }
 
@@ -59,6 +61,14 @@ class AppUser {
   /// un selector de centro en vez de auto-filtrar por su
   /// organizationId (que ademas puede ser null para un master).
   bool get isMaster => role == AppRole.master;
+
+  /// Enfermería: rol restringido (observa, reporta, ejecuta). NO diagnostica ni
+  /// cambia protocolo.
+  bool get isNurse => role == AppRole.enfermeria;
+
+  /// Puede crear/editar diagnóstico y protocolo (valoración, plan, consulta,
+  /// diagnósticos). Solo clínico y admin; enfermería NO.
+  bool get canDiagnose => role == AppRole.clinico || role == AppRole.admin;
 
   factory AppUser.fromJson(Map<String, dynamic> json) => AppUser(
         id: json['id'] as String,

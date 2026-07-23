@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/providers/session_provider.dart';
+import '../../models/center_type.dart';
 import '../../core/router/app_shell.dart' show kFloatingNavBarHeight, UserMenuButton;
 import '../../core/widgets/kura_primary_fab.dart';
 import '../../engine/models/kura_engine_enums.dart';
@@ -159,11 +160,28 @@ class PatientsListScreenState extends ConsumerState<PatientsListScreen> {
               loading: () => const Center(child: CircularProgressIndicator()),
               error: (e, st) => Center(child: Text('Error: $e')),
               data: (repo) {
-                final allPatients = user?.role == AppRole.admin
-                    ? repo.listAllPatients()
-                    : (user?.staffId != null
-                        ? repo.listPatientsForStaff(user!.staffId!)
-                        : <Patient>[]);
+                // Hospital = centrado en el paciente: cualquier personal activo
+                // del centro (clínico/enfermería) ve a todos los pacientes del
+                // centro, sin asignación. En clínica de heridas/cuidadores se
+                // mantiene admin=todos / clínico=asignados.
+                final hospitalCenterWide =
+                    session.activeCenterType == CenterType.hospital &&
+                        user?.staffId != null;
+                final List<Patient> allPatients;
+                if (hospitalCenterWide) {
+                  // Acotado al centro del usuario (en prod la RLS ya lo hace;
+                  // esto es defensa + correctitud en demo sin RLS).
+                  allPatients = repo
+                      .listAllPatients()
+                      .where((p) => p.organizationId == user!.organizationId)
+                      .toList();
+                } else if (user?.role == AppRole.admin) {
+                  allPatients = repo.listAllPatients();
+                } else {
+                  allPatients = user?.staffId != null
+                      ? repo.listPatientsForStaff(user!.staffId!)
+                      : <Patient>[];
+                }
 
                 final summaries = <String, PatientWoundSummary>{
                   for (final p in allPatients) p.id: PatientWoundSummary.compute(repo, p.id),

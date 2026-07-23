@@ -68,6 +68,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       // '/caregiver' (monitoreo de los pacientes que el centro le asignó, solo
       // lectura + sus tareas). No ve el dashboard clínico ni el resto de la nav.
       final isCaregiver = session.user?.role == AppRole.cuidador;
+      // Enfermería (0045): personal clínico restringido — observa, reporta y
+      // ejecuta, pero NO diagnostica ni cambia protocolo. Se le bloquean las
+      // rutas de escritura de diagnóstico/protocolo (abajo).
+      final isNurse = session.user?.role == AppRole.enfermeria;
       if (loggedIn && goingToLogin) {
         if (isMaster) return '/platform';
         if (isCaregiver) return '/caregiver';
@@ -96,6 +100,29 @@ final routerProvider = Provider<GoRouter>((ref) {
         // que teclee '/platform' a mano no debe quedarse ahi -- se le manda
         // a su dashboard normal.
         return '/';
+      }
+
+      // Enfermería: bloquear rutas de ESCRITURA de diagnóstico/protocolo (la
+      // RLS 0045 ya se lo niega; esto pule la UX y evita pantallas de captura).
+      // Puede: leer expediente, ficha de riesgo (reporte Braden), eventos
+      // adversos (reporte) y agenda de prevención (ejecución).
+      if (loggedIn && isNurse) {
+        final blocked = location == '/patients/new' ||
+            location.endsWith('/edit') ||
+            location.contains('/consultation/new') ||
+            (location.contains('/wound/') && location.endsWith('/capture')) ||
+            location.endsWith('/follow-up/new') ||
+            location.endsWith('/comorbidities') ||
+            location.endsWith('/diagnoses') ||
+            location.endsWith('/referrals/new');
+        if (blocked) {
+          // Regresar al detalle del paciente si se puede inferir, si no al inicio.
+          final segs = location.split('/').where((s) => s.isNotEmpty).toList();
+          if (segs.length >= 2 && segs[0] == 'patients') {
+            return '/patients/${segs[1]}';
+          }
+          return '/';
+        }
       }
 
       // Gating por módulo (Fase 2): si la ruta pertenece a un módulo apagado

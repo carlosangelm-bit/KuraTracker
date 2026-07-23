@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/design/tokens.dart';
 import '../../core/providers/session_provider.dart';
 import '../../engine/risk/prevention_risk_engine.dart';
+import '../../models/center_type.dart';
 import '../../services/data_repository.dart';
 
 /// Selector DIRECTO de cuidados para el PROFESIONAL (no un cuestionario para
@@ -136,11 +137,20 @@ class _PlanBuilderSheetState extends ConsumerState<_PlanBuilderSheet> {
 
   Future<void> _confirm(DataRepository repo, PreventionRulesCatalog catalog) async {
     setState(() => _saving = true);
-    final me = ref.read(sessionProvider).user;
-    // Asignar al cuidador del paciente si lo hay (aparece en su agenda).
-    final caregivers = repo.listCaregiverAssignments(patientId: widget.patientId);
-    final assignee = caregivers.isEmpty ? null : caregivers.first.caregiverProfileId;
-    final kind = caregivers.isEmpty ? 'staff' : 'cuidador';
+    final session = ref.read(sessionProvider);
+    final me = session.user;
+    // Hospital = centrado en el paciente: las tareas NO tienen dueño (las marca
+    // quien esté de turno; done_by registra quién). En cuidadores/clínica se
+    // asignan al cuidador del paciente si lo hay (aparecen en su agenda).
+    String? assignee;
+    var kind = 'staff';
+    if (session.activeCenterType != CenterType.hospital) {
+      final caregivers = repo.listCaregiverAssignments(patientId: widget.patientId);
+      if (caregivers.isNotEmpty) {
+        assignee = caregivers.first.caregiverProfileId;
+        kind = 'cuidador';
+      }
+    }
 
     final specs = <ScheduledActionSpec>[];
     for (final id in _selected) {

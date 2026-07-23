@@ -13,7 +13,7 @@ class DemoSeed {
   // sola vez en instalaciones demo previas (que tenían 'seeded' v1), evitando
   // duplicados y datos viejos. Solo aplica al modo demo local (SharedPreferences);
   // producción usa Supabase y nunca llama a este seed.
-  static const String _seedFlag = 'seeded_v9';
+  static const String _seedFlag = 'seeded_v10';
 
   static Future<void> ensureSeeded(LocalStore store) async {
     if (store.getBool(_seedFlag)) return;
@@ -157,6 +157,8 @@ class DemoSeed {
     // cuidadores. En Fase 1 aún no tiene pantallas propias (llegan en Fase 3);
     // existe para poblar la gestión de miembros y el switcher.
     final cuidadorProfileId = _uuid.v4();
+    // Enfermería demo (0045): personal del Hospital demo (acceso center-wide).
+    final enfermeriaProfileId = _uuid.v4();
 
     await store.saveAll(Collections.profiles, [
       {
@@ -214,6 +216,15 @@ class DemoSeed {
         // (CaregiverLogin.syntheticEmail), igual que en producción.
         'email': '5512345678@cuidador.kuramas.com',
         'phone': '5512345678',
+        'is_active': true,
+        'premium_enabled': false,
+      },
+      {
+        'id': enfermeriaProfileId,
+        'organization_id': organizationIdHospital,
+        'role': 'enfermeria',
+        'full_name': 'Enfermería Demo',
+        'email': 'enfermeria@hospital.mx',
         'is_active': true,
         'premium_enabled': false,
       },
@@ -282,6 +293,14 @@ class DemoSeed {
         'is_active': true,
         'created_at': iso(now),
       },
+      {
+        'id': _uuid.v4(),
+        'profile_id': enfermeriaProfileId,
+        'organization_id': organizationIdHospital,
+        'role': 'enfermeria',
+        'is_active': true,
+        'created_at': iso(now),
+      },
     ]);
 
     // ---------------- Personal sanitario ----------------
@@ -296,8 +315,19 @@ class DemoSeed {
     final staff1Id = _uuid.v4();
     final staff2Id = _uuid.v4();
     final adminVitalisStaffId = _uuid.v4();
+    final enfermeriaStaffId = _uuid.v4();
 
     await store.saveAll(Collections.staff, [
+      {
+        'id': enfermeriaStaffId,
+        'organization_id': organizationIdHospital,
+        'profile_id': enfermeriaProfileId,
+        'folio': 'ENF-0001',
+        'full_name': 'Enfermería Demo',
+        'role_title': 'Enfermería',
+        'is_active': true,
+        'created_at': iso(now.subtract(const Duration(days: 5))),
+      },
       {
         'id': adminStaffId,
         'organization_id': organizationId,
@@ -352,8 +382,24 @@ class DemoSeed {
     final p3Id = _uuid.v4(); // vascular con isquemia critica (caso de seguridad)
     final p4Id = _uuid.v4(); // quirurgica
     final p5Id = _uuid.v4(); // traumatica, cierre rapido
+    final pHospId = _uuid.v4(); // paciente del Hospital demo (patient-centric)
 
     await store.saveAll(Collections.patients, [
+      {
+        'id': pHospId,
+        'organization_id': organizationIdHospital,
+        'folio': 'HOSP-0001',
+        'full_name': 'Paciente Hospital Demo',
+        'birth_date': isoDate(DateTime(1948, 6, 1)),
+        'sex': 'F',
+        'mobility': 'encamado',
+        'has_identified_caregiver': false,
+        'fragile_patient': true,
+        'background_notes': 'Adulto mayor encamado, riesgo de LPP. Centro '
+            'hospital: acceso centrado en el paciente (turnos).',
+        'is_active': true,
+        'created_at': iso(now.subtract(const Duration(days: 3))),
+      },
       {
         'id': p1Id,
         'organization_id': organizationId,
@@ -471,6 +517,38 @@ class DemoSeed {
     // Tareas preventivas de p2 asignadas al cuidador: una hecha (adherencia),
     // una vencida pendiente y dos futuras.
     await store.saveAll(Collections.preventiveTasks, [
+      // Hospital (patient-centric): tareas SIN dueño; las marca quien esté de
+      // turno (enfermería). done_by registra quién.
+      {
+        'id': _uuid.v4(),
+        'organization_id': organizationIdHospital,
+        'patient_id': pHospId,
+        'rule_id': 'profesional',
+        'action_id': 'cambios_2h_registro',
+        'title': 'Cambio postural',
+        'action_label': 'Cambios posturales cada 2 h',
+        'scheduled_at': iso(now.add(const Duration(hours: 1))),
+        'assignee_profile_id': null,
+        'assignee_kind': 'staff',
+        'status': 'pending',
+        'source': 'auto',
+        'created_at': iso(now),
+      },
+      {
+        'id': _uuid.v4(),
+        'organization_id': organizationIdHospital,
+        'patient_id': pHospId,
+        'rule_id': 'profesional',
+        'action_id': 'exam_piel_diario',
+        'title': 'Examen de piel',
+        'action_label': 'Examen diario de la piel',
+        'scheduled_at': iso(now.add(const Duration(hours: 3))),
+        'assignee_profile_id': null,
+        'assignee_kind': 'staff',
+        'status': 'pending',
+        'source': 'auto',
+        'created_at': iso(now),
+      },
       {
         'id': _uuid.v4(),
         'organization_id': organizationId,
