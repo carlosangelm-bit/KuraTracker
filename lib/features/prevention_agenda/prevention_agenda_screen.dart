@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../core/design/tokens.dart';
 import '../../core/providers/session_provider.dart';
@@ -426,14 +427,50 @@ class _TaskTile extends StatelessWidget {
                         : null,
                   )),
             ),
+            // "i" de ayuda: cómo ejecutar la actividad (orientativo).
+            IconButton(
+              tooltip: 'Cómo se realiza',
+              visualDensity: VisualDensity.compact,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+              icon: Icon(Icons.info_outline, size: 18, color: actColor),
+              onPressed: () => _showActivityInfo(context, task),
+            ),
           ],
         ),
-        subtitle: Text([
-          if (patientName.isNotEmpty) patientName,
-          if (task.actionLabel != null && task.actionLabel != task.title)
-            task.actionLabel!,
-          if (overdue) 'Vencida',
-        ].join(' · ')),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Nombre del paciente enlazado a su perfil (vistazo rápido; el botón
+            // atrás regresa a la ronda gracias a push).
+            if (patientName.isNotEmpty)
+              InkWell(
+                onTap: () => context.push('/patients/${task.patientId}'),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Flexible(
+                      child: Text(patientName,
+                          style: TextStyle(
+                              color: t.brandPrimary,
+                              fontWeight: FontWeight.w600,
+                              decoration: TextDecoration.underline),
+                          overflow: TextOverflow.ellipsis),
+                    ),
+                    const SizedBox(width: 3),
+                    Icon(Icons.open_in_new, size: 12, color: t.brandPrimary),
+                  ],
+                ),
+              ),
+            if ((task.actionLabel != null && task.actionLabel != task.title) ||
+                overdue)
+              Text([
+                if (task.actionLabel != null && task.actionLabel != task.title)
+                  task.actionLabel!,
+                if (overdue) 'Vencida',
+              ].join(' · ')),
+          ],
+        ),
         trailing: task.isPending
             ? Row(
                 mainAxisSize: MainAxisSize.min,
@@ -451,7 +488,8 @@ class _TaskTile extends StatelessWidget {
                     tooltip: 'Saltar',
                     icon: Icon(Icons.close, color: t.textSecondary),
                     onPressed: () async {
-                      await repo.skipPreventiveTask(task.id);
+                      await repo.skipPreventiveTask(task.id,
+                          byProfileId: byProfileId);
                       onChanged();
                     },
                   ),
@@ -505,6 +543,94 @@ Color _activityColor(String? actionId) {
     default:
       return const Color(0xFF6B6577); // gris neutro
   }
+}
+
+/// Instrucciones ORIENTATIVAS de cómo ejecutar cada actividad preventiva
+/// (apoyo al personal en la ronda). Indexadas por actionId; texto sujeto a
+/// validación clínica. Fallback genérico para acciones sin instrucción propia.
+String _actionInstructions(String? actionId) {
+  switch (actionId) {
+    case 'cambios_2h_registro':
+    case 'cambios_2_3h':
+    case 'cambios_4h':
+      return 'Reposiciona al paciente siguiendo un esquema rotatorio (supino → '
+          'lateral derecho → lateral izquierdo). Usa almohadas para descargar '
+          'las prominencias óseas (sacro, trocánteres, talones) y mantén un '
+          'ángulo lateral ~30°. Evita arrastrar la piel (usa entremetida). '
+          'Registra hora y posición en cada cambio.';
+    case 'agho':
+      return 'Aplica ácidos grasos hiperoxigenados (AGHO) en las zonas de riesgo '
+          '(sacro, talones, trocánteres) con una capa fina, SIN friccionar ni '
+          'masajear sobre prominencias óseas ni sobre piel enrojecida.';
+    case 'exam_piel_diario':
+    case 'valoracion_piel_completa_diaria':
+      return 'Inspecciona toda la piel, en especial prominencias óseas y zonas '
+          'bajo dispositivos (sondas, mascarilla, férulas). Busca eritema que no '
+          'blanquea a la presión, cambios de temperatura, induración, ampollas o '
+          'dolor. Documenta cualquier hallazgo y avisa si hay signos de LPP.';
+    case 'control_humedad':
+      return 'Mantén la piel limpia y seca. Cambia con prontitud pañales o '
+          'apósitos húmedos, aplica producto barrera y controla el exceso de '
+          'humedad por sudor, orina o exudado.';
+    case 'aposito_preventivo':
+      return 'Coloca un apósito de espuma preventivo en las prominencias óseas de '
+          'mayor riesgo (sacro, talones). Revísalo en cada turno y cámbialo si se '
+          'despega, desplaza o satura.';
+    case 'taloneras':
+      return 'Coloca taloneras o cojines que eleven el talón y descarguen por '
+          'completo su peso (talón "flotando"), distribuyendo la pierna en la '
+          'pantorrilla. Verifica que no haya presión sobre el tendón de Aquiles.';
+    case 'superficie':
+      return 'Coloca o verifica la superficie de redistribución de presión '
+          '(colchón/cojín) acorde al nivel de riesgo. Comprueba que esté '
+          'funcional/bien inflada y que la ropa de cama no anule su efecto.';
+    case 'movilizacion':
+      return 'Fomenta y asiste la movilización según tolerancia: cambios de '
+          'posición, sedestación y deambulación asistida cuando sea posible.';
+    case 'compresion':
+      return 'Verifica que el vendaje o media de compresión esté bien colocado, '
+          'sin arrugas ni compresión excesiva. Vigila color, temperatura, '
+          'sensibilidad y dolor de los dedos.';
+    case 'elevacion':
+      return 'Eleva la extremidad por encima del nivel del corazón durante los '
+          'periodos indicados para favorecer el retorno venoso.';
+    default:
+      return 'Ejecuta la actividad según el protocolo de prevención del centro. '
+          'Ante cualquier duda, consulta al personal clínico responsable.';
+  }
+}
+
+/// Muestra un diálogo con la explicación de cómo realizar la actividad.
+Future<void> _showActivityInfo(BuildContext context, PreventiveTask task) {
+  final actColor = _activityColor(task.actionId);
+  return showDialog<void>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      icon: Icon(_activityIcon(task.actionId), color: actColor),
+      title: Text(task.title),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (task.actionLabel != null && task.actionLabel != task.title) ...[
+            Text(task.actionLabel!,
+                style: const TextStyle(fontWeight: FontWeight.w600)),
+            const SizedBox(height: 8),
+          ],
+          Text(_actionInstructions(task.actionId)),
+          const SizedBox(height: 12),
+          Text('Guía orientativa; sigue el protocolo del centro.',
+              style: Theme.of(ctx).textTheme.bodySmall),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(ctx).pop(),
+          child: const Text('Entendido'),
+        ),
+      ],
+    ),
+  );
 }
 
 /// Dropdown compacto de filtro de ronda (piso / área / riesgo).
