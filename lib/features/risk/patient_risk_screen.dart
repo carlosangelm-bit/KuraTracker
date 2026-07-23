@@ -10,6 +10,7 @@ import '../../engine/risk/braden_scale.dart';
 import '../../models/app_user.dart';
 import '../../models/patient_admission.dart';
 import '../../services/data_repository.dart';
+import '../prevention/preventive_assessment_sheet.dart';
 import 'risk_theme.dart';
 
 /// Ficha de riesgo de un paciente (módulo de Prevención). Muestra el nivel de
@@ -26,9 +27,6 @@ class PatientRiskScreen extends ConsumerStatefulWidget {
 
 class _PatientRiskScreenState extends ConsumerState<PatientRiskScreen> {
   final _dateFmt = DateFormat('dd/MM/yyyy HH:mm');
-  // Respuestas elegidas por el profesional a las preguntas guía (en sesión, no
-  // se persisten): clave = "<ruleId>::<índice>" -> opción elegida.
-  final Map<String, String> _answers = {};
 
   Future<String?> _staffId(DataRepository repo) async {
     final session = ref.read(sessionProvider);
@@ -247,301 +245,6 @@ class _PatientRiskScreenState extends ConsumerState<PatientRiskScreen> {
     if (mounted) setState(() {});
   }
 
-  Future<void> _logAction(
-      DataRepository repo, PreventionAlert alert, PreventiveAction action) async {
-    final session = ref.read(sessionProvider);
-    await repo.logPreventiveAction(
-      patientId: widget.patientId,
-      organizationId: session.user?.organizationId,
-      ruleId: alert.id,
-      actionId: action.id,
-      actionLabel: action.label,
-      staffId: await _staffId(repo),
-    );
-    if (mounted) {
-      setState(() {});
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Acción registrada.')),
-      );
-    }
-  }
-
-  /// Sección de alertas de una dimensión (LPP / complicación).
-  Widget _alertSection(
-      DataRepository repo, String title, List<PreventionAlert> alerts) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.only(top: 8, bottom: 6),
-          child: Text(title,
-              style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14)),
-        ),
-        ...alerts.map((a) => _alertCard(repo, a)),
-      ],
-    );
-  }
-
-  Widget _alertCard(DataRepository repo, PreventionAlert a) {
-    final color = riskSeverityColor(a.severity);
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      decoration: BoxDecoration(
-        color: KuraColors.surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: color.withOpacity(0.25)),
-        boxShadow: [
-          BoxShadow(
-            color: KuraColors.darkText.withOpacity(0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Cabecera con barra de color por severidad.
-          Container(
-            padding: const EdgeInsets.fromLTRB(14, 12, 12, 12),
-            decoration: BoxDecoration(
-              color: color.withOpacity(0.08),
-              borderRadius:
-                  const BorderRadius.vertical(top: Radius.circular(16)),
-              border: Border(left: BorderSide(color: color, width: 4)),
-            ),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Icon(Icons.warning_amber_rounded, size: 18, color: color),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(a.message,
-                      style: const TextStyle(
-                          fontWeight: FontWeight.w700, fontSize: 14)),
-                ),
-                const SizedBox(width: 8),
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: color,
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Text(a.severity.label,
-                      style: const TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                          color: Colors.white)),
-                ),
-              ],
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (a.questions.isNotEmpty) ...[
-                  _sectionLabel(Icons.help_outline, 'Qué preguntarte'),
-                  const SizedBox(height: 8),
-                  for (var i = 0; i < a.questions.length; i++)
-                    _questionRow(a, i, a.questions[i]),
-                ],
-                if (a.actions.isNotEmpty) ...[
-                  const SizedBox(height: 12),
-                  _sectionLabel(Icons.checklist_rtl,
-                      a.escalation == null ? 'Acciones' : 'Prevención'),
-                  const SizedBox(height: 6),
-                  ...a.actions.map((act) => _actionRow(repo, a, act)),
-                ],
-                if (a.escalation != null && _hasAlarm(a)) ...[
-                  const SizedBox(height: 12),
-                  _escalationBlock(repo, a),
-                ],
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// true si el profesional respondió con la respuesta de alarma a alguna
-  /// pregunta de la alerta.
-  bool _hasAlarm(PreventionAlert a) {
-    for (var i = 0; i < a.questions.length; i++) {
-      final q = a.questions[i];
-      if (q.alarm != null && _answers['${a.id}::$i'] == q.alarm) return true;
-    }
-    return false;
-  }
-
-  /// Conducta de escalamiento (se muestra cuando hay un hallazgo de alarma).
-  Widget _escalationBlock(DataRepository repo, PreventionAlert a) {
-    final esc = a.escalation!;
-    return Container(
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 6),
-      decoration: BoxDecoration(
-        color: KuraColors.danger.withOpacity(0.08),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: KuraColors.danger.withOpacity(0.4)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Icon(Icons.priority_high_rounded,
-                  size: 16, color: KuraColors.danger),
-              const SizedBox(width: 6),
-              Text('CONDUCTA ANTE HALLAZGOS DE ALARMA',
-                  style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 0.4,
-                      color: KuraColors.danger)),
-            ],
-          ),
-          const SizedBox(height: 4),
-          Text(esc.message, style: const TextStyle(fontSize: 13)),
-          const SizedBox(height: 6),
-          ...esc.actions.map((act) => _actionRow(repo, a, act)),
-        ],
-      ),
-    );
-  }
-
-  Widget _sectionLabel(IconData icon, String text) {
-    return Row(
-      children: [
-        Icon(icon, size: 14, color: KuraColors.darkText.withOpacity(0.55)),
-        const SizedBox(width: 6),
-        Text(text.toUpperCase(),
-            style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w800,
-                letterSpacing: 0.4,
-                color: KuraColors.darkText.withOpacity(0.55))),
-      ],
-    );
-  }
-
-  Widget _questionRow(PreventionAlert a, int index, PreventionQuestion q) {
-    final key = '${a.id}::$index';
-    final selected = _answers[key];
-    final isAlarm = q.alarm != null && selected == q.alarm;
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-      decoration: BoxDecoration(
-        color: isAlarm
-            ? KuraColors.danger.withOpacity(0.07)
-            : KuraColors.chipBg.withOpacity(0.5),
-        borderRadius: BorderRadius.circular(10),
-        border: isAlarm
-            ? Border.all(color: KuraColors.danger.withOpacity(0.4))
-            : null,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Text(q.text, style: const TextStyle(fontSize: 13)),
-              ),
-              if (isAlarm)
-                const Padding(
-                  padding: EdgeInsets.only(left: 6, top: 1),
-                  child: Icon(Icons.priority_high_rounded,
-                      size: 16, color: KuraColors.danger),
-                ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          Wrap(
-            spacing: 6,
-            children: [
-              for (final opt in q.options)
-                ChoiceChip(
-                  label: Text(opt, style: const TextStyle(fontSize: 12)),
-                  selected: selected == opt,
-                  visualDensity: VisualDensity.compact,
-                  selectedColor: (opt == q.alarm
-                          ? KuraColors.danger
-                          : KuraColors.primary)
-                      .withOpacity(0.18),
-                  labelStyle: TextStyle(
-                    color: selected == opt
-                        ? (opt == q.alarm
-                            ? KuraColors.danger
-                            : KuraColors.primary)
-                        : null,
-                    fontWeight:
-                        selected == opt ? FontWeight.w700 : FontWeight.normal,
-                  ),
-                  onSelected: (_) => setState(() => _answers[key] = opt),
-                ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _actionRow(
-      DataRepository repo, PreventionAlert a, PreventiveAction act) {
-    final last = repo.lastAppliedAt(widget.patientId, a.id, act.id);
-    final done = last != null;
-    return Container(
-      margin: const EdgeInsets.only(bottom: 6),
-      padding: const EdgeInsets.fromLTRB(4, 4, 4, 4),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Icon(done ? Icons.check_circle : Icons.radio_button_unchecked,
-              size: 18,
-              color: done
-                  ? KuraColors.success
-                  : KuraColors.darkText.withOpacity(0.35)),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(act.label, style: const TextStyle(fontSize: 13)),
-                if (done)
-                  Text('Última: ${_dateFmt.format(last)}',
-                      style: TextStyle(
-                          fontSize: 11,
-                          color: KuraColors.darkText.withOpacity(0.55))),
-              ],
-            ),
-          ),
-          const SizedBox(width: 6),
-          done
-              ? OutlinedButton(
-                  style: OutlinedButton.styleFrom(
-                      visualDensity: VisualDensity.compact,
-                      foregroundColor: KuraColors.primary,
-                      side: BorderSide(
-                          color: KuraColors.primary.withOpacity(0.5))),
-                  onPressed: () => _logAction(repo, a, act),
-                  child: const Text('De nuevo'),
-                )
-              : FilledButton.tonal(
-                  style: FilledButton.styleFrom(
-                      visualDensity: VisualDensity.compact),
-                  onPressed: () => _logAction(repo, a, act),
-                  child: const Text('Registrar'),
-                ),
-        ],
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final repoAsync = ref.watch(dataRepositoryProvider);
@@ -571,68 +274,36 @@ class _PatientRiskScreenState extends ConsumerState<PatientRiskScreen> {
             final result = repo.computeRisk(widget.patientId, catalog);
             final admission = repo.activeAdmission(widget.patientId);
             final braden = repo.latestRiskAssessment(widget.patientId);
-            final anyEscalation = result.alerts
-                .any((a) => a.escalation != null && _hasAlarm(a));
 
             return ListView(
               padding: const EdgeInsets.all(20),
               children: [
                 _RiskLevelBanner(level: result.level),
-                if (anyEscalation) ...[
-                  const SizedBox(height: 10),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 14, vertical: 12),
-                    decoration: BoxDecoration(
-                      color: KuraColors.danger.withOpacity(0.12),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: KuraColors.danger),
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.priority_high_rounded,
-                            color: KuraColors.danger),
-                        const SizedBox(width: 10),
-                        const Expanded(
-                          child: Text(
-                            'Se detectaron signos de alarma. Revisa la conducta '
-                            'de escalamiento en las alertas marcadas.',
-                            style: TextStyle(
-                                fontWeight: FontWeight.w700,
-                                color: KuraColors.danger),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
                 const SizedBox(height: 16),
-                // Genera/actualiza la agenda de tareas preventivas del paciente
-                // a partir de las cadencias de las reglas que dispara su riesgo.
-                OutlinedButton.icon(
-                  icon: const Icon(Icons.event_repeat_outlined),
-                  label: const Text('Generar plan preventivo (agenda de tareas)'),
+                // Cuestionario preventivo unificado: un solo flujo simple que
+                // produce el plan concreto y lo agenda.
+                FilledButton.icon(
+                  icon: const Icon(Icons.assignment_turned_in_outlined),
+                  label: const Text('Evaluación preventiva'),
                   onPressed: () async {
-                    final n = await repo.generatePreventiveTasksFor(
-                      widget.patientId,
-                      catalog,
+                    final agendada = await showPreventiveAssessment(
+                      context,
+                      patientId: widget.patientId,
                       organizationId: patient.organizationId,
-                      createdBy: ref.read(sessionProvider).user?.id,
+                      asCaregiver: false,
                     );
                     if (!context.mounted) return;
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(n == 0
-                            ? 'No hay actividades programables para el riesgo actual.'
-                            : 'Se generaron $n tareas preventivas.'),
-                        action: n == 0
-                            ? null
-                            : SnackBarAction(
-                                label: 'Ver agenda',
-                                onPressed: () => context.go('/prevention-agenda'),
-                              ),
-                      ),
-                    );
+                    if (agendada == true) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: const Text('Plan agendado.'),
+                          action: SnackBarAction(
+                            label: 'Ver agenda',
+                            onPressed: () => context.go('/prevention-agenda'),
+                          ),
+                        ),
+                      );
+                    }
                     setState(() {});
                   },
                 ),
@@ -669,31 +340,16 @@ class _PatientRiskScreenState extends ConsumerState<PatientRiskScreen> {
                   ),
                 ),
                 const SizedBox(height: 20),
-                if (!result.hasAlerts)
-                  Container(
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      color: KuraColors.chipBg,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: const Text(
-                        'Sin alertas preventivas con la información actual. '
-                        'Captura la valoración de Braden y las comorbilidades '
-                        'para una evaluación más completa.'),
-                  )
-                else ...[
-                  if (result.lpp.isNotEmpty)
-                    _alertSection(
-                        repo, 'Riesgo de lesión por presión', result.lpp),
-                  if (result.complicacion.isNotEmpty)
-                    _alertSection(
-                        repo, 'Riesgo de complicación', result.complicacion),
+                // Signos a vigilar por comorbilidades/complicación (solo lectura):
+                // NO son tareas de la agenda; son qué observar. Las actividades
+                // concretas salen del cuestionario ("Evaluación preventiva").
+                if (result.complicacion.isNotEmpty) ...[
+                  _WatchSignsCard(alerts: result.complicacion),
+                  const SizedBox(height: 16),
                 ],
-                const SizedBox(height: 16),
                 Text(
-                  'Alertas de apoyo a la decisión (borrador clínico). No '
-                  'sustituyen el juicio profesional ni modifican el plan de '
-                  'tratamiento.',
+                  'Apoyo a la decisión (borrador clínico). No sustituye el juicio '
+                  'profesional ni modifica el plan de tratamiento.',
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: KuraColors.darkText.withOpacity(0.6)),
                 ),
@@ -775,3 +431,50 @@ class _InfoTile extends StatelessWidget {
   }
 }
 
+
+/// Tarjeta compacta de "Signos a vigilar" (solo lectura): mensajes de las
+/// alertas de complicación (comorbilidades / infección IWII). NO son tareas de
+/// la agenda; son qué observar. Las actividades concretas salen del
+/// cuestionario "Evaluación preventiva".
+class _WatchSignsCard extends StatelessWidget {
+  final List<PreventionAlert> alerts;
+  const _WatchSignsCard({required this.alerts});
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      margin: EdgeInsets.zero,
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: const [
+                Icon(Icons.visibility_outlined, size: 18),
+                SizedBox(width: 8),
+                Text('Signos a vigilar',
+                    style: TextStyle(fontWeight: FontWeight.w700)),
+              ],
+            ),
+            const SizedBox(height: 8),
+            ...alerts.map((a) => Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(Icons.circle,
+                          size: 7, color: riskSeverityColor(a.severity)),
+                      const SizedBox(width: 8),
+                      Expanded(
+                          child: Text(a.message,
+                              style: const TextStyle(fontSize: 13))),
+                    ],
+                  ),
+                )),
+          ],
+        ),
+      ),
+    );
+  }
+}

@@ -1791,10 +1791,35 @@ class DataRepository {
   }) async {
     final risk = computeRisk(patientId, catalog);
     final specs = catalog.schedulableActionsFor(risk);
+    return generatePreventiveTasksFromSpecs(
+      patientId,
+      specs,
+      horizonHours: catalog.cadenceHorizonHours,
+      organizationId: organizationId,
+      assigneeProfileId: assigneeProfileId,
+      assigneeKind: assigneeKind,
+      createdBy: createdBy,
+    );
+  }
+
+  /// Materializa un plan preventivo concreto (specs con cadencia) en la agenda.
+  /// Idempotente: borra las tareas AUTO FUTURAS pendientes del paciente y crea
+  /// el plan fresco sobre el horizonte. No toca hechas/saltadas ni manuales.
+  /// Lo usan tanto la generación por reglas como el cuestionario unificado.
+  /// Devuelve cuántas tareas creó.
+  Future<int> generatePreventiveTasksFromSpecs(
+    String patientId,
+    List<ScheduledActionSpec> specs, {
+    int horizonHours = 24,
+    required String? organizationId,
+    String? assigneeProfileId,
+    String assigneeKind = 'staff',
+    String? createdBy,
+  }) async {
     final admissionId = activeAdmission(patientId)?.id;
     final now = DateTime.now();
 
-    // Limpia tareas AUTO futuras pendientes (para reflejar el riesgo actual).
+    // Limpia tareas AUTO futuras pendientes (para reflejar la evaluación actual).
     // IMPORTANTE: materializar con .toList() ANTES de borrar — deleteRow muta
     // la lista subyacente del store; iterar el where perezoso mientras se borra
     // lanzaría ConcurrentModificationError.
@@ -1814,8 +1839,7 @@ class DataRepository {
     var created = 0;
     for (final s in specs) {
       // Nº de ocurrencias en el horizonte (cap defensivo a 24 por acción).
-      final count =
-          (catalog.cadenceHorizonHours / s.everyHours).floor().clamp(1, 24);
+      final count = (horizonHours / s.everyHours).floor().clamp(1, 24);
       for (var i = 1; i <= count; i++) {
         await createPreventiveTask(
           patientId: patientId,
