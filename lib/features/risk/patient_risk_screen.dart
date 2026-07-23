@@ -10,6 +10,7 @@ import '../../engine/risk/braden_scale.dart';
 import '../../models/app_user.dart';
 import '../../models/patient.dart';
 import '../../models/patient_admission.dart';
+import '../../models/preventive_task.dart';
 import '../../services/data_repository.dart';
 import '../prevention/caregiver_plan_builder_sheet.dart';
 import 'risk_theme.dart';
@@ -303,6 +304,9 @@ class _PatientRiskScreenState extends ConsumerState<PatientRiskScreen> {
     final repoAsync = ref.watch(dataRepositoryProvider);
     final rulesAsync = ref.watch(preventionRulesProvider);
     final scale = ref.watch(bradenScaleProvider).valueOrNull;
+    // Solo clínico/admin pueden DEFINIR el plan de cuidados. Enfermería (y
+    // cuidador) solo lo consultan y ejecutan las tareas en las rondas.
+    final canDefinePlan = ref.watch(sessionProvider).user?.canDiagnose == true;
 
     return Scaffold(
       appBar: AppBar(
@@ -348,31 +352,39 @@ class _PatientRiskScreenState extends ConsumerState<PatientRiskScreen> {
                 const SizedBox(height: 16),
                 // Selector DIRECTO de cuidados (el profesional marca las
                 // indicaciones con su cadencia; puede omitir cuidados nocturnos).
-                // Esto define/actualiza la agenda del cuidador.
-                FilledButton.icon(
-                  icon: const Icon(Icons.checklist_rtl),
-                  label: const Text('Definir plan de cuidados'),
-                  onPressed: () async {
-                    final agendada = await showCaregiverPlanBuilder(
-                      context,
-                      patientId: widget.patientId,
-                      organizationId: patient.organizationId,
-                    );
-                    if (!context.mounted) return;
-                    if (agendada == true) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: const Text('Plan agendado.'),
-                          action: SnackBarAction(
-                            label: 'Ver agenda',
-                            onPressed: () => context.go('/prevention-agenda'),
-                          ),
-                        ),
+                // Esto define/actualiza la agenda del cuidador. Solo clínico/
+                // admin; enfermería consulta y ejecuta en las rondas.
+                if (canDefinePlan)
+                  FilledButton.icon(
+                    icon: const Icon(Icons.checklist_rtl),
+                    label: const Text('Definir plan de cuidados'),
+                    onPressed: () async {
+                      final agendada = await showCaregiverPlanBuilder(
+                        context,
+                        patientId: widget.patientId,
+                        organizationId: patient.organizationId,
                       );
-                    }
-                    setState(() {});
-                  },
-                ),
+                      if (!context.mounted) return;
+                      if (agendada == true) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: const Text('Plan agendado.'),
+                            action: SnackBarAction(
+                              label: 'Ver agenda',
+                              onPressed: () => context.go('/prevention-agenda'),
+                            ),
+                          ),
+                        );
+                      }
+                      setState(() {});
+                    },
+                  )
+                else
+                  OutlinedButton.icon(
+                    icon: const Icon(Icons.checklist_rtl),
+                    label: const Text('Ver plan de cuidados (rondas)'),
+                    onPressed: () => context.push('/prevention-agenda'),
+                  ),
                 const SizedBox(height: 16),
                 _InfoTile(
                   icon: Icons.local_hotel_outlined,
@@ -660,21 +672,55 @@ class _PatientAuditLog extends StatelessWidget {
     String who(String? id) =>
         id == null ? '' : (staffById[id] ?? userById[id] ?? '');
 
-    final entries = <(DateTime, IconData, String, String)>[];
+    final entries = <(DateTime, IconData, String, String, Color)>[];
     for (final r in repo.listRiskAssessments(patientId)) {
       entries.add((
         r.assessedAt,
         Icons.monitor_heart_outlined,
         'Valoración Braden${r.bradenScore != null ? ' ${r.bradenScore}' : ''}',
         who(r.assessedBy),
+        KuraColors.primary,
       ));
     }
-    for (final a in repo.listPreventiveActions(patientId)) {
-      entries.add((a.appliedAt, Icons.check_circle_outline, a.actionLabel, who(a.appliedBy)));
+    // Tareas preventivas resueltas (hechas o saltadas): incluye manuales (sin
+    // regla) y con regla, con quién y cuándo. Cubre lo que el log de acciones
+    // por sí solo no captura (saltadas / tareas sin regla).
+    for (final task in repo.listPreventiveTasks(patientId: patientId)) {
+      if (task.status == PreventiveTaskStatus.done) {
+        entries.add((
+          task.doneAt ?? task.scheduledAt,
+          Icons.check_circle_outline,
+          task.actionLabel ?? task.title,
+          who(task.doneBy),
+          KuraColors.success,
+        ));
+      } else if (task.status == PreventiveTaskStatus.skipped) {
+        entries.add((
+          task.doneAt ?? task.scheduledAt,
+          Icons.do_not_disturb_on_outlined,
+          'Saltada: ${task.title}',
+          who(task.doneBy),
+          KuraColors.warning,
+        ));
+      }
     }
     for (final e in repo.listAdverseEventsForPatient(patientId)) {
       entries.add((e.occurredAt, Icons.warning_amber_rounded,
-          'Evento adverso: ${e.type}', who(e.staffId)));
+          'Evento adverso: ${e.type}', who(e.staffId), KuraColors.danger));
+    }
+    // Ingresos y egresos del paciente.
+    for (final adm in repo.listAdmissions(patientId)) {
+      entries.add((
+        adm.admittedAt,
+        Icons.login,
+        'Ingreso${adm.locationLabel.isNotEmpty ? ' · ${adm.locationLabel}' : ''}',
+        '',
+        KuraColors.primary,
+      ));
+      if (adm.dischargedAt != null) {
+        entries.add((adm.dischargedAt!, Icons.logout, 'Egreso', '',
+            KuraColors.darkText));
+      }
     }
     entries.sort((a, b) => b.$1.compareTo(a.$1));
 
@@ -696,7 +742,7 @@ class _PatientAuditLog extends StatelessWidget {
                   .map((e) => ListTile(
                         contentPadding: EdgeInsets.zero,
                         dense: true,
-                        leading: Icon(e.$2, size: 18, color: KuraColors.primary),
+                        leading: Icon(e.$2, size: 18, color: e.$5),
                         title: Text(e.$3, style: const TextStyle(fontSize: 13)),
                         subtitle: Text(
                           '${fmt.format(e.$1)}${e.$4.isNotEmpty ? ' · ${e.$4}' : ''}',

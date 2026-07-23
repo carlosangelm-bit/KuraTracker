@@ -1789,8 +1789,14 @@ class DataRepository {
   Future<void> reschedulePreventiveTask(String id, DateTime scheduledAt) =>
       updatePreventiveTask(id, {'scheduled_at': scheduledAt.toIso8601String()});
 
-  Future<void> skipPreventiveTask(String id) =>
-      updatePreventiveTask(id, {'status': PreventiveTaskStatus.skipped.dbValue});
+  /// Marca una tarea como SALTADA dejando traza de quién y cuándo (reusa
+  /// done_at/done_by como "resuelta por/en") para que aparezca en la bitácora.
+  Future<void> skipPreventiveTask(String id, {String? byProfileId}) =>
+      updatePreventiveTask(id, {
+        'status': PreventiveTaskStatus.skipped.dbValue,
+        'done_at': DateTime.now().toIso8601String(),
+        'done_by': byProfileId,
+      });
 
   /// Marca una tarea como HECHA y, si viene de una regla/acción, deja también
   /// el registro en preventive_action_log (bitácora, misma trazabilidad que las
