@@ -1,0 +1,117 @@
+name: Deploy (migraciones + build + Cloudflare Pages)
+
+# Reemplaza el deploy manual (Genspark): en cada push a main aplica las
+# migraciones pendientes a Supabase, compila la app con la versión de Flutter
+# correcta (3.27.1) y publica prod y demo en Cloudflare Pages. También se puede
+# disparar a mano (workflow_dispatch).
+#
+# ORDEN garantizado: primero migraciones, luego build+deploy (build_deploy
+# depende de migrations). Si las migraciones fallan, NO se despliega la app
+# (evita publicar una versión que espera columnas que aún no existen).
+#
+# REQUISITOS — Settings → Secrets and variables → Actions → New repository secret:
+#   Supabase (migraciones):
+#     SUPABASE_ACCESS_TOKEN   Personal Access Token (supabase.com/dashboard/account/tokens)
+#     SUPABASE_PROJECT_REF    Ref del proyecto (Project Settings → General)
+#     SUPABASE_DB_PASSWORD    Contraseña de la BD (Project Settings → Database)
+#   Supabase (build de PROD — clave pública anon, embebida en el cliente por diseño):
+#     SUPABASE_URL            URL del proyecto (https://<ref>.supabase.co)
+#     SUPABASE_ANON_KEY       anon/publishable key (Project Settings → API)
+#   Cloudflare (publicar Pages):
+#     CLOUDFLARE_API_TOKEN    Token con permiso "Cloudflare Pages: Edit"
+#     CLOUDFLARE_ACCOUNT_ID   Account ID (dashboard Cloudflare, barra lateral)
+#
+# SEGURIDAD: el job de migraciones usa el environment "production"; si defines
+# "Required reviewers" en Settings → Environments → production, cada corrida
+# pedirá aprobación manual antes de tocar la BD.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+concurrency:
+  group: deploy-main
+  cancel-in-progress: false
+
+jobs:
+  migrations:
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+      SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      - name: Verificar secrets
+        run: |
+          test -n "$SUPABASE_ACCESS_TOKEN" || { echo "Falta SUPABASE_ACCESS_TOKEN"; exit 1; }
+          test -n "$SUPABASE_PROJECT_REF"  || { echo "Falta SUPABASE_PROJECT_REF"; exit 1; }
+          test -n "$SUPABASE_DB_PASSWORD"  || { echo "Falta SUPABASE_DB_PASSWORD"; exit 1; }
+      - name: Link al proyecto
+        run: supabase link --project-ref "$SUPABASE_PROJECT_REF"
+      - name: Migraciones pendientes (informativo)
+        run: supabase migration list --linked || true
+      - name: Aplicar migraciones
+        run: supabase db push
+
+  build_deploy:
+    needs: migrations
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.27.1'
+          channel: stable
+      - run: flutter --version
+
+      - name: Verificar secrets de build/deploy
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          test -n "$SUPABASE_URL"          || { echo "Falta SUPABASE_URL"; exit 1; }
+          test -n "$SUPABASE_ANON_KEY"     || { echo "Falta SUPABASE_ANON_KEY"; exit 1; }
+          test -n "$CLOUDFLARE_API_TOKEN"  || { echo "Falta CLOUDFLARE_API_TOKEN"; exit 1; }
+          test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo "Falta CLOUDFLARE_ACCOUNT_ID"; exit 1; }
+
+      - run: flutter pub get
+
+      # ---------- PROD (con credenciales reales de Supabase) ----------
+      - name: Build web (prod)
+        run: |
+          flutter build web --release \
+            --dart-define=SUPABASE_URL="${{ secrets.SUPABASE_URL }}" \
+            --dart-define=SUPABASE_ANON_KEY="${{ secrets.SUPABASE_ANON_KEY }}"
+
+      - name: Deploy prod → kuratracker-prod
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy build/web --project-name=kuratracker-prod --branch=main --commit-dirty=true
+
+      # ---------- DEMO (sin credenciales → modo local/sintético) ----------
+      # flutter clean garantiza que los const String.fromEnvironment se
+      # recompilen SIN los dart-define (si no, el caché podría reusar el bundle
+      # de prod y la demo quedaría apuntando a Supabase real).
+      - name: Build web (demo)
+        run: |
+          flutter clean
+          flutter pub get
+          flutter build web --release
+
+      - name: Deploy demo → kuratracker-demo
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy build/web --project-name=kuratracker-demo --branch=main --commit-dirty=true

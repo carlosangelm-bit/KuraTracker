@@ -15,11 +15,10 @@ name: Supabase migrations
 # protección (required reviewers) en Settings → Environments → production, cada
 # aplicación de migraciones exigirá aprobación manual antes de correr.
 
+# NOTA: el disparo automático en push a main se movió a deploy.yml (que aplica
+# migraciones y LUEGO compila+despliega, en ese orden). Este workflow queda solo
+# como disparo MANUAL para aplicar migraciones sueltas sin desplegar la app.
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'supabase/migrations/**'
   workflow_dispatch: {}
 
 concurrency:
