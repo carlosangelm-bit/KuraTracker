@@ -72,29 +72,32 @@ class _AdminHomeScreenState extends ConsumerState<AdminHomeScreen>
     // Id del usuario en sesion: la pestana de Usuarios lo usa para impedir que
     // el admin se cambie el rol o se desactive a si mismo (auto-bloqueo).
     final currentUserId = ref.watch(sessionProvider).user?.id;
+    // Desktop: secciones como rail lateral (maestro) + contenido (detalle);
+    // móvil conserva el TabBar horizontal.
+    final wide = MediaQuery.of(context).size.width >= Breakpoints.twoPane;
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Administración'),
         actions: const [UserMenuButton()],
-        bottom: TabBar(
-          controller: _tabController,
-          tabs: const [
-            Tab(text: 'Usuarios'),
-            Tab(text: 'Personal sanitario'),
-            Tab(text: 'Sitios'),
-            Tab(text: 'Configuración'),
-            Tab(text: 'Marca'),
-          ],
-          onTap: (i) => setState(() => _tab = i),
-        ),
+        bottom: wide
+            ? null
+            : TabBar(
+                controller: _tabController,
+                tabs: const [
+                  Tab(text: 'Usuarios'),
+                  Tab(text: 'Personal sanitario'),
+                  Tab(text: 'Sitios'),
+                  Tab(text: 'Configuración'),
+                  Tab(text: 'Marca'),
+                ],
+                onTap: (i) => setState(() => _tab = i),
+              ),
       ),
       body: repoAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, st) => Center(child: Text('Error: $e')),
         data: (repo) {
-          // Acota el ancho en desktop para que las tablas/formularios de gestión
-          // no se estiren de borde a borde.
           final Widget tab = switch (_tab) {
             1 => StaffTab(repo: repo, organizationId: organizationId),
             2 => SitesTab(repo: repo, organizationId: organizationId),
@@ -106,7 +109,28 @@ class _AdminHomeScreenState extends ConsumerState<AdminHomeScreen>
                 currentUserId: currentUserId,
               ),
           };
-          return PageMaxWidth(maxWidth: 1100, child: tab);
+          // Móvil: contenido acotado; desktop: rail de secciones + contenido.
+          if (!wide) return PageMaxWidth(maxWidth: 1100, child: tab);
+          return Row(
+            children: [
+              SectionRail(
+                selectedIndex: _tab,
+                onSelected: (i) => setState(() {
+                  _tab = i;
+                  _tabController.index = i;
+                }),
+                destinations: const [
+                  (Icons.people_outline, 'Usuarios'),
+                  (Icons.medical_services_outlined, 'Personal'),
+                  (Icons.location_on_outlined, 'Sitios'),
+                  (Icons.settings_outlined, 'Config.'),
+                  (Icons.palette_outlined, 'Marca'),
+                ],
+              ),
+              const VerticalDivider(width: 1),
+              Expanded(child: tab),
+            ],
+          );
         },
       ),
     );

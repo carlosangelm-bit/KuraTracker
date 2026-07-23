@@ -84,23 +84,28 @@ class _PlatformHomeScreenState extends ConsumerState<PlatformHomeScreen>
   Widget build(BuildContext context) {
     final repoAsync = ref.watch(dataRepositoryProvider);
 
+    // Desktop: secciones como rail lateral (maestro) + contenido (detalle);
+    // móvil conserva el TabBar horizontal.
+    final wide = MediaQuery.of(context).size.width >= Breakpoints.twoPane;
     return Scaffold(
       appBar: AppBar(
         title: const Text('Plataforma'),
         actions: const [UserMenuButton()],
-        bottom: TabBar(
-          controller: _tabController,
-          tabs: const [
-            Tab(text: 'Organizaciones'),
-            Tab(text: 'Usuarios'),
-            Tab(text: 'Personal sanitario'),
-            Tab(text: 'Sitios'),
-            Tab(text: 'Catálogo'),
-            Tab(text: 'Marca'),
-            Tab(text: 'Módulos'),
-          ],
-          onTap: (i) => setState(() => _tab = i),
-        ),
+        bottom: wide
+            ? null
+            : TabBar(
+                controller: _tabController,
+                tabs: const [
+                  Tab(text: 'Organizaciones'),
+                  Tab(text: 'Usuarios'),
+                  Tab(text: 'Personal sanitario'),
+                  Tab(text: 'Sitios'),
+                  Tab(text: 'Catálogo'),
+                  Tab(text: 'Marca'),
+                  Tab(text: 'Módulos'),
+                ],
+                onTap: (i) => setState(() => _tab = i),
+              ),
       ),
       body: repoAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
@@ -163,7 +168,29 @@ class _PlatformHomeScreenState extends ConsumerState<PlatformHomeScreen>
               ],
             );
           }
-          return PageMaxWidth(maxWidth: 1100, child: body);
+          if (!wide) return PageMaxWidth(maxWidth: 1100, child: body);
+          return Row(
+            children: [
+              SectionRail(
+                selectedIndex: _tab,
+                onSelected: (i) => setState(() {
+                  _tab = i;
+                  _tabController.index = i;
+                }),
+                destinations: const [
+                  (Icons.business_outlined, 'Centros'),
+                  (Icons.people_outline, 'Usuarios'),
+                  (Icons.medical_services_outlined, 'Personal'),
+                  (Icons.location_on_outlined, 'Sitios'),
+                  (Icons.list_alt_outlined, 'Catálogo'),
+                  (Icons.palette_outlined, 'Marca'),
+                  (Icons.tune_outlined, 'Módulos'),
+                ],
+              ),
+              const VerticalDivider(width: 1),
+              Expanded(child: body),
+            ],
+          );
         },
       ),
     );
