@@ -60,12 +60,26 @@ jobs:
         run: supabase migration list --linked || true
       - name: Aplicar migraciones
         run: supabase db push
-      # NOTA: el despliegue de Edge Functions NO se hace aquí. Redeployarlas en
-      # cada push resultó frágil (setup-cli 'latest' cambia el comportamiento de
-      # 'functions deploy' y bloqueaba el deploy) y es innecesario (cambian rara
-      # vez). Cuando una función cambie, se despliega a mano:
-      #   supabase functions deploy <nombre> --project-ref <ref>
-      # (admin-create-user ya quedó desplegada con soporte de rol 'cuidador').
+
+  # Deploy de Edge Functions en job SEPARADO que NO bloquea build_deploy: si
+  # falla, la app igual se despliega y se itera aparte. Se usa --use-api (deploy
+  # por Management API, sin bundling con Docker) porque el bundling local con
+  # setup-cli 'latest' resultó frágil. Deploy DIRIGIDO (no todas) para no
+  # re-habilitar verify_jwt en funciones con --no-verify-jwt (webhook Acuity).
+  deploy_functions:
+    needs: migrations
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      - name: Deploy admin-create-user (--use-api)
+        run: supabase functions deploy admin-create-user --use-api --project-ref "$SUPABASE_PROJECT_REF"
 
   build_deploy:
     needs: migrations
