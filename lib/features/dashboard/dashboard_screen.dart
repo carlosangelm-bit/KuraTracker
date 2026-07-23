@@ -10,10 +10,15 @@ import '../../core/router/app_shell.dart' show kFloatingNavBarHeight, UserMenuBu
 import '../../core/widgets/kura_glass_card.dart';
 import '../../core/widgets/kura_primary_fab.dart';
 import '../../engine/models/kura_engine_enums.dart';
+import '../../engine/risk/prevention_risk_engine.dart';
 import '../../engine/sheehan_decision_style.dart';
 import '../../models/app_user.dart';
+import '../../models/center_type.dart';
 import '../../models/patient.dart';
+import '../../models/patient_admission.dart';
 import '../../services/data_repository.dart';
+import '../risk/risk_board_screen.dart' show bradenBandLevel;
+import '../risk/risk_theme.dart';
 import '../patients/patient_list_tile.dart';
 import '../patients/patient_progress_status.dart';
 import '../patients/patient_wound_summary.dart';
@@ -120,6 +125,23 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
               loading: () => const Center(child: CircularProgressIndicator()),
               error: (e, st) => Center(child: Text('Error: $e')),
               data: (repo) {
+                // Centro tipo HOSPITAL: el Inicio es una home de PREVENCIÓN
+                // (centrada en el paciente), no el tablero de tratamiento. Todo
+                // el personal activo ve a los pacientes del centro.
+                if (repo.centerTypeFor(user?.organizationId) ==
+                    CenterType.hospital) {
+                  return ListView(
+                    padding: EdgeInsets.fromLTRB(
+                      16,
+                      20 + MediaQuery.of(context).viewPadding.top,
+                      16,
+                      MediaQuery.of(context).viewPadding.bottom +
+                          kFloatingNavBarHeight +
+                          32,
+                    ),
+                    children: _hospitalChildren(context, repo, user),
+                  );
+                }
                 // Aislamiento por rol: clínico ve SUS pacientes; admin los del
                 // centro. El master no llega aquí (va a /platform).
                 final isAdmin = user?.role == AppRole.admin;
@@ -366,6 +388,156 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
               label: Text('Ver todos los pacientes (${recent.length})'),
             ),
           ),
+      ],
+    ];
+  }
+
+  // ---- Layout HOSPITAL (Inicio de prevención, centrado en el paciente) ----
+  // Métricas del flujo hospitalario: encamados, distribución por banda de
+  // Braden, cumplimiento de rondas y lo que requiere atención. El análisis
+  // completo (por turno/piso/área, tendencia, turnos) vive en /hospital.
+  List<Widget> _hospitalChildren(
+      BuildContext context, DataRepository repo, AppUser? user) {
+    final t = BrandTokens.of(context);
+    final orgId = user?.organizationId;
+    final now = DateTime.now();
+    final windowStart = repo.complianceWindowStart(orgId, now);
+
+    // Población: pacientes del centro con internamiento activo (encamados).
+    final patients = repo
+        .listAllPatients()
+        .where((p) =>
+            p.organizationId == orgId && repo.activeAdmission(p.id) != null)
+        .toList();
+
+    var alto = 0, medio = 0, bajo = 0, sinVal = 0;
+    var overdueTotal = 0, doneTotal = 0, expectedTotal = 0;
+    final attention = <_HospEntry>[];
+    for (final p in patients) {
+      final last = repo.latestRiskAssessment(p.id);
+      final band = bradenBandLevel(last?.bradenScore);
+      switch (band) {
+        case RiskLevel.alto:
+          alto++;
+        case RiskLevel.medio:
+          medio++;
+        case RiskLevel.bajo:
+          bajo++;
+        default:
+          sinVal++;
+      }
+      final comp =
+          repo.preventiveCompliance(p.id, organizationId: orgId, now: now);
+      doneTotal += comp.doneTotal;
+      expectedTotal += comp.expectedTotal;
+      final pOverdue = repo
+          .listPreventiveTasks(patientId: p.id)
+          .where((x) => x.isPending && x.scheduledAt.isBefore(now))
+          .length;
+      overdueTotal += pOverdue;
+      // Alto riesgo sin valoración dentro de la ventana de cumplimiento.
+      final unreviewed = band == RiskLevel.alto &&
+          (last == null || last.assessedAt.isBefore(windowStart));
+      if (band == RiskLevel.alto || pOverdue > 0 || unreviewed) {
+        attention.add(_HospEntry(
+          patient: p,
+          band: band,
+          admission: repo.activeAdmission(p.id),
+          overdue: pOverdue,
+          unreviewed: unreviewed,
+        ));
+      }
+    }
+    final globalPct =
+        expectedTotal == 0 ? 0 : (doneTotal * 100 / expectedTotal).round();
+    final compColor = expectedTotal == 0
+        ? t.textSecondary
+        : globalPct >= 85
+            ? t.statusSuccess
+            : globalPct >= 60
+                ? t.statusWarning
+                : t.statusDanger;
+
+    int bandRank(RiskLevel? l) => switch (l) {
+          RiskLevel.alto => 0,
+          RiskLevel.medio => 1,
+          RiskLevel.bajo => 2,
+          _ => 3,
+        };
+    // Prioridad: sin revisar → más vencidas → peor banda → nombre.
+    attention.sort((a, b) {
+      if (a.unreviewed != b.unreviewed) return a.unreviewed ? -1 : 1;
+      if (a.overdue != b.overdue) return b.overdue.compareTo(a.overdue);
+      final r = bandRank(a.band).compareTo(bandRank(b.band));
+      if (r != 0) return r;
+      return a.patient.fullName.compareTo(b.patient.fullName);
+    });
+
+    return [
+      ..._greeting(context, user,
+          'Prevención hospitalaria · lo que requiere atención va primero'),
+      const SizedBox(height: 20),
+      _KpiRow(kpis: [
+        _Kpi(
+            icon: Icons.local_hotel_outlined,
+            label: 'Encamados',
+            value: '${patients.length}',
+            color: t.info),
+        _Kpi(
+            icon: Icons.priority_high_rounded,
+            label: 'Alto riesgo',
+            value: '$alto',
+            color: t.statusDanger),
+        _Kpi(
+            icon: Icons.schedule_outlined,
+            label: 'Rondas vencidas',
+            value: '$overdueTotal',
+            color: t.statusWarning),
+        _Kpi(
+            icon: Icons.verified_outlined,
+            label: 'Cumplimiento',
+            value: expectedTotal == 0 ? '—' : '$globalPct%',
+            color: compColor),
+      ]),
+      const SizedBox(height: 16),
+      _HospitalQuickAccess(
+        onRondas: () => context.go('/prevention-agenda'),
+        onTablero: () => context.go('/risk'),
+        onDashboard: () => context.go('/hospital'),
+      ),
+      const SizedBox(height: 28),
+      if (patients.isEmpty)
+        const _HospitalEmpty()
+      else ...[
+        _sectionBlock(
+          context,
+          icon: Icons.donut_small_outlined,
+          title: 'Distribución de riesgo (Braden)',
+          count: patients.length,
+          child: _RiskBandsBar(
+            alto: alto,
+            medio: medio,
+            bajo: bajo,
+            sinValoracion: sinVal,
+          ),
+        ),
+        const SizedBox(height: 28),
+        _SectionHeader(
+          icon: Icons.priority_high_rounded,
+          title: 'Requieren atención',
+          count: attention.length,
+          color: attention.any((e) => e.unreviewed || e.band == RiskLevel.alto)
+              ? t.statusDanger
+              : t.statusWarning,
+        ),
+        const SizedBox(height: 12),
+        if (attention.isEmpty)
+          const _AttentionEmpty()
+        else
+          ...attention.map((e) => _HospitalAttentionTile(
+                entry: e,
+                onTap: () => context.go('/patients/${e.patient.id}/risk'),
+              )),
       ],
     ];
   }
@@ -1724,6 +1896,297 @@ class _StaffLoadRow extends StatelessWidget {
           ],
         ),
       ],
+    );
+  }
+}
+
+// ===================== Hospital: Inicio de prevención =====================
+
+/// Entrada de "requieren atención" del Inicio hospitalario: paciente + su banda
+/// de Braden + internamiento + tareas vencidas + si es alto riesgo sin revisar.
+class _HospEntry {
+  final Patient patient;
+  final RiskLevel? band;
+  final PatientAdmission? admission;
+  final int overdue;
+  final bool unreviewed;
+  const _HospEntry({
+    required this.patient,
+    required this.band,
+    required this.admission,
+    required this.overdue,
+    required this.unreviewed,
+  });
+}
+
+/// Accesos rápidos del Inicio hospitalario a los flujos de prevención.
+class _HospitalQuickAccess extends StatelessWidget {
+  final VoidCallback onRondas;
+  final VoidCallback onTablero;
+  final VoidCallback onDashboard;
+  const _HospitalQuickAccess({
+    required this.onRondas,
+    required this.onTablero,
+    required this.onDashboard,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          child: _HospitalQuickAction(
+              icon: Icons.checklist_outlined, label: 'Rondas', onTap: onRondas),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: _HospitalQuickAction(
+              icon: Icons.shield_outlined, label: 'Tablero', onTap: onTablero),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: _HospitalQuickAction(
+              icon: Icons.insights_outlined,
+              label: 'Dashboard',
+              onTap: onDashboard),
+        ),
+      ],
+    );
+  }
+}
+
+class _HospitalQuickAction extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+  const _HospitalQuickAction(
+      {required this.icon, required this.label, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final t = BrandTokens.of(context);
+    return Material(
+      color: t.brandPrimary.withOpacity(0.10),
+      borderRadius: AppRadii.mdR,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: AppRadii.mdR,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
+          child: Column(
+            children: [
+              Icon(icon, color: t.brandPrimary),
+              const SizedBox(height: 6),
+              Text(label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                      color: t.brandPrimary,
+                      fontWeight: FontWeight.w700,
+                      fontSize: AppType.label)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Barra segmentada de distribución por banda de Braden + leyenda.
+class _RiskBandsBar extends StatelessWidget {
+  final int alto;
+  final int medio;
+  final int bajo;
+  final int sinValoracion;
+  const _RiskBandsBar({
+    required this.alto,
+    required this.medio,
+    required this.bajo,
+    required this.sinValoracion,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final t = BrandTokens.of(context);
+    final segs = <(String, int, Color)>[
+      ('Alto', alto, riskLevelColor(RiskLevel.alto)),
+      ('Medio', medio, riskLevelColor(RiskLevel.medio)),
+      ('Bajo', bajo, riskLevelColor(RiskLevel.bajo)),
+      ('Sin valoración', sinValoracion, t.statusNeutral),
+    ];
+    final total = alto + medio + bajo + sinValoracion;
+    if (total == 0) {
+      return Text('Sin pacientes internados con valoración.',
+          style: TextStyle(color: t.textSecondary));
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        ClipRRect(
+          borderRadius: BorderRadius.circular(6),
+          child: Row(
+            children: [
+              for (final s in segs)
+                if (s.$2 > 0)
+                  Expanded(flex: s.$2, child: Container(height: 12, color: s.$3)),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        Wrap(
+          spacing: 14,
+          runSpacing: 8,
+          children: [
+            for (final s in segs)
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                      width: 10,
+                      height: 10,
+                      decoration:
+                          BoxDecoration(color: s.$3, shape: BoxShape.circle)),
+                  const SizedBox(width: 6),
+                  Text('${s.$1}: ${s.$2}',
+                      style: TextStyle(fontSize: 13, color: t.textSecondary)),
+                ],
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+/// Tile de paciente que requiere atención en el Inicio hospitalario. Abre la
+/// ficha de riesgo (Braden / rondas) del paciente.
+class _HospitalAttentionTile extends StatelessWidget {
+  final _HospEntry entry;
+  final VoidCallback onTap;
+  const _HospitalAttentionTile({required this.entry, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final t = BrandTokens.of(context);
+    final color =
+        entry.band != null ? riskLevelColor(entry.band!) : t.statusNeutral;
+    final levelLabel = entry.band?.label ?? 'Sin valoración';
+    final loc = entry.admission?.locationLabel ?? '';
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: KuraGlassCard(
+        blur: false,
+        borderRadius: 18,
+        padding: EdgeInsets.zero,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(18),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            child: Row(
+              children: [
+                CircleAvatar(
+                  backgroundColor: color.withOpacity(0.16),
+                  child: Icon(Icons.shield_outlined, color: color, size: 20),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(entry.patient.fullName,
+                          style: const TextStyle(fontWeight: FontWeight.w700),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis),
+                      if (loc.isNotEmpty)
+                        Text(loc,
+                            style: TextStyle(
+                                fontSize: 12, color: t.textSecondary),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis),
+                      const SizedBox(height: 6),
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 6,
+                        children: [
+                          _MiniChip(label: levelLabel, color: color),
+                          if (entry.unreviewed)
+                            _MiniChip(
+                                label: 'Sin revisar', color: t.statusDanger),
+                          if (entry.overdue > 0)
+                            _MiniChip(
+                                label:
+                                    '${entry.overdue} vencida${entry.overdue == 1 ? '' : 's'}',
+                                color: t.statusWarning),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Icon(Icons.chevron_right, color: t.textDisabled),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _MiniChip extends StatelessWidget {
+  final String label;
+  final Color color;
+  const _MiniChip({required this.label, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.14),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(label,
+          style: TextStyle(
+              fontSize: 11, fontWeight: FontWeight.w700, color: color)),
+    );
+  }
+}
+
+/// Estado vacío del Inicio hospitalario (sin pacientes internados).
+class _HospitalEmpty extends StatelessWidget {
+  const _HospitalEmpty();
+
+  @override
+  Widget build(BuildContext context) {
+    final t = BrandTokens.of(context);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(AppSpacing.xl),
+      decoration: BoxDecoration(
+        color: t.surface.withOpacity(0.5),
+        borderRadius: AppRadii.mdR,
+        border: Border.all(color: t.border),
+      ),
+      child: Column(
+        children: [
+          Icon(Icons.local_hotel_outlined, size: 44, color: t.textDisabled),
+          const SizedBox(height: AppSpacing.md),
+          Text(
+            'Aún no hay pacientes internados en el centro.',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: t.textSecondary),
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          Text(
+            'Registra un internamiento y una valoración de Braden para poblar el '
+            'tablero de prevención.',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: AppType.label, color: t.textDisabled),
+          ),
+        ],
+      ),
     );
   }
 }
