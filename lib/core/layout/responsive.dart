@@ -113,6 +113,47 @@ class PageMaxWidth extends StatelessWidget {
   }
 }
 
+/// Rail de secciones (maestro) para pantallas con pestañas: en desktop
+/// reemplaza el TabBar horizontal por una lista vertical a la izquierda, con el
+/// contenido de la sección (detalle) a la derecha. Aprovecha el ancho. Se
+/// desplaza si hay muchas secciones y la pantalla es corta.
+class SectionRail extends StatelessWidget {
+  final int selectedIndex;
+  final ValueChanged<int> onSelected;
+  final List<(IconData, String)> destinations;
+
+  const SectionRail({
+    super.key,
+    required this.selectedIndex,
+    required this.onSelected,
+    required this.destinations,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, c) => SingleChildScrollView(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(minHeight: c.maxHeight),
+          child: IntrinsicHeight(
+            child: NavigationRail(
+              selectedIndex: selectedIndex,
+              onDestinationSelected: onSelected,
+              labelType: NavigationRailLabelType.all,
+              groupAlignment: -1,
+              destinations: [
+                for (final d in destinations)
+                  NavigationRailDestination(
+                      icon: Icon(d.$1), label: Text(d.$2)),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// Layout maestro-detalle: en ancho ≥ [breakpoint] muestra la lista [master] a
 /// la izquierda (ancho fijo [masterWidth]) y el [detail] a la derecha; en móvil
 /// muestra solo [master] (la navegación al detalle la maneja la pantalla, p. ej.
