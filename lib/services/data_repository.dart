@@ -219,10 +219,10 @@ class DataRepository {
       'premium_enabled': false,
       'organization_id': organizationId,
     });
-    if (role == AppRole.clinico) {
+    if (role == AppRole.clinico || role == AppRole.enfermeria) {
       await createStaff(
         fullName: fullName,
-        roleTitle: roleTitle,
+        roleTitle: role == AppRole.enfermeria ? 'Enfermería' : roleTitle,
         organizationId: organizationId,
         primarySiteId: primarySiteId,
         profileId: uid,

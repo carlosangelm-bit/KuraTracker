@@ -82,8 +82,10 @@ serve(async (req) => {
   if (!email || !fullName) return json({ error: "email y fullName son obligatorios." }, 400);
   // 'cuidador' (Fase 3): rol restringido con cuenta propia; NO se le crea fila de
   // staff (su acceso es solo lectura vía caregiver_patient_assignments, ver 0042).
-  if (role !== "admin" && role !== "clinico" && role !== "cuidador") {
-    return json({ error: "role debe ser 'admin', 'clinico' o 'cuidador'." }, 400);
+  // 'enfermeria' (0045): personal del centro; SÍ tiene fila de staff (como
+  // clínico), acceso centrado-en-centro en hospitales; observa/reporta/ejecuta.
+  if (role !== "admin" && role !== "clinico" && role !== "cuidador" && role !== "enfermeria") {
+    return json({ error: "role debe ser 'admin', 'clinico', 'cuidador' o 'enfermeria'." }, 400);
   }
 
   // 3) Acotar la organización según el rol del llamador.
@@ -136,15 +138,20 @@ serve(async (req) => {
     return json({ error: `Cuenta creada pero falló el perfil: ${profileErr.message}`, uid }, 500);
   }
 
-  // 6) Registro de personal sanitario (staff). Siempre para 'clinico'; para
-  //    'admin' solo si se pide explícitamente (createStaff=true).
+  // 6) Registro de personal sanitario (staff). Para 'clinico' y 'enfermeria'
+  //    (personal del centro); para 'admin' solo si se pide (createStaff=true).
+  //    'cuidador' NO tiene staff.
   let staffId: string | null = null;
-  if (role === "clinico" || body.createStaff === true) {
+  if (role === "clinico" || role === "enfermeria" || body.createStaff === true) {
     staffId = await createStaffRow(admin, {
       organizationId,
       profileId: uid,
       fullName,
-      roleTitle: role === "clinico" ? roleTitle : "Administrador",
+      roleTitle: role === "clinico"
+          ? roleTitle
+          : role === "enfermeria"
+              ? "Enfermería"
+              : "Administrador",
       cedulaProfesional,
       primarySiteId,
     });

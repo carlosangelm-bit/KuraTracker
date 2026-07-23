@@ -335,6 +335,11 @@ class _UsersTabState extends State<UsersTab> {
                                   value: AppRole.clinico,
                                   child: Text('Hacer personal sanitario'),
                                 ),
+                              if (u.role != AppRole.enfermeria)
+                                const PopupMenuItem(
+                                  value: AppRole.enfermeria,
+                                  child: Text('Hacer enfermería'),
+                                ),
                               if (u.role != AppRole.cuidador)
                                 const PopupMenuItem(
                                   value: AppRole.cuidador,
@@ -463,6 +468,10 @@ class _UserFormDialogState extends State<_UserFormDialog> {
                     DropdownMenuItem(
                       value: AppRole.admin,
                       child: Text('Administrador'),
+                    ),
+                    DropdownMenuItem(
+                      value: AppRole.enfermeria,
+                      child: Text('Enfermería'),
                     ),
                     DropdownMenuItem(
                       value: AppRole.cuidador,
