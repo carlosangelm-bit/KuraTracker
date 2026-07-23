@@ -1,7 +1,8 @@
 node_modules/
 build/
 .dart_tool/
-.flutter-plugin-dependencies
+.flutter-plugins-dependencies
+.flutter-plugins
 .packages
 *.iml
 .idea/
