@@ -96,11 +96,18 @@ class _RiskBoardScreenState extends ConsumerState<RiskBoardScreen> {
 
   Widget _buildBoard(BuildContext context, DataRepository repo,
       PreventionRulesCatalog catalog, AppUser? user) {
-    // Base de pacientes: admin/master ven los del centro; clínico, los suyos.
+    // Base de pacientes: clínico ve los suyos; los demás (admin/enfermería) ven
+    // los del CENTRO ACTIVO. El filtro por organización es coherente con la
+    // agenda de prevención (que ya se acota por org) y refleja el aislamiento
+    // que en producción impone la RLS: un paciente de otro centro no debe
+    // aparecer aquí (en demo, sin RLS, listAllPatients mostraba todos).
     final basePatients =
         (user?.role == AppRole.clinico && user?.staffId != null)
             ? repo.listPatientsForStaff(user!.staffId!)
-            : repo.listAllPatients();
+            : repo
+                .listAllPatients()
+                .where((p) => p.organizationId == user?.organizationId)
+                .toList();
 
     // Solo mostramos pacientes con internamiento activo o con alguna alerta.
     final now = DateTime.now();
