@@ -10,6 +10,7 @@ import 'package:image_picker/image_picker.dart';
 
 import '../../core/theme/kura_theme.dart';
 import '../../core/providers/session_provider.dart';
+import '../../core/utils/caregiver_login.dart';
 import '../../core/router/app_shell.dart' show UserMenuButton;
 import '../../core/widgets/kura_primary_fab.dart';
 import '../../models/app_user.dart';
@@ -374,10 +375,13 @@ class _UserFormDialogState extends State<_UserFormDialog> {
   final _emailCtrl = TextEditingController();
   final _phoneCtrl = TextEditingController();
   final _cedulaCtrl = TextEditingController();
+  final _claveCtrl = TextEditingController();
   AppRole _role = AppRole.clinico;
   String? _siteId;
   bool _saving = false;
   String? _error;
+
+  bool get _isCaregiver => _role == AppRole.cuidador;
 
   @override
   void dispose() {
@@ -385,6 +389,7 @@ class _UserFormDialogState extends State<_UserFormDialog> {
     _emailCtrl.dispose();
     _phoneCtrl.dispose();
     _cedulaCtrl.dispose();
+    _claveCtrl.dispose();
     super.dispose();
   }
 
@@ -397,14 +402,27 @@ class _UserFormDialogState extends State<_UserFormDialog> {
     try {
       final cedula = _cedulaCtrl.text.trim();
       final phone = _phoneCtrl.text.trim();
+      // Cuidador: login por teléfono + clave. El identificador real es un correo
+      // SINTÉTICO derivado del teléfono (mismo cálculo que en el login).
+      final email = _isCaregiver
+          ? CaregiverLogin.syntheticEmail(phone)
+          : _emailCtrl.text.trim();
+      if (_isCaregiver && email == null) {
+        setState(() {
+          _error = 'Teléfono inválido (mínimo 8 dígitos).';
+          _saving = false;
+        });
+        return;
+      }
       final created = await widget.repo.createUserWithLogin(
-        email: _emailCtrl.text.trim(),
+        email: email!,
         fullName: _nameCtrl.text.trim(),
         role: _role,
         organizationId: widget.organizationId,
         phone: phone.isEmpty ? null : phone,
         cedulaProfesional: cedula.isEmpty ? null : cedula,
         primarySiteId: _role == AppRole.clinico ? _siteId : null,
+        password: _isCaregiver ? _claveCtrl.text : null,
       );
       if (mounted) Navigator.pop(context, created);
     } catch (e) {
@@ -434,20 +452,6 @@ class _UserFormDialogState extends State<_UserFormDialog> {
                   validator: (v) => (v == null || v.trim().isEmpty) ? 'Requerido' : null,
                 ),
                 const SizedBox(height: 12),
-                TextFormField(
-                  controller: _emailCtrl,
-                  keyboardType: TextInputType.emailAddress,
-                  decoration: const InputDecoration(
-                    labelText: 'Correo (para iniciar sesión)',
-                  ),
-                  validator: (v) {
-                    final t = (v ?? '').trim();
-                    if (t.isEmpty) return 'Requerido';
-                    if (!t.contains('@') || !t.contains('.')) return 'Correo inválido';
-                    return null;
-                  },
-                ),
-                const SizedBox(height: 12),
                 DropdownButtonFormField<AppRole>(
                   value: _role,
                   decoration: const InputDecoration(labelText: 'Rol'),
@@ -468,11 +472,64 @@ class _UserFormDialogState extends State<_UserFormDialog> {
                   onChanged: (r) => setState(() => _role = r ?? AppRole.clinico),
                 ),
                 const SizedBox(height: 12),
-                TextFormField(
-                  controller: _phoneCtrl,
-                  keyboardType: TextInputType.phone,
-                  decoration: const InputDecoration(labelText: 'Teléfono (opcional)'),
-                ),
+                // Cuidador: entra con TELÉFONO + CLAVE (sin correo). El resto,
+                // con correo.
+                if (_isCaregiver) ...[
+                  TextFormField(
+                    controller: _phoneCtrl,
+                    keyboardType: TextInputType.phone,
+                    decoration: const InputDecoration(
+                      labelText: 'Teléfono (para iniciar sesión)',
+                      hintText: 'El cuidador entra con este teléfono',
+                    ),
+                    validator: (v) {
+                      if (!_isCaregiver) return null;
+                      if (CaregiverLogin.syntheticEmail((v ?? '').trim()) == null) {
+                        return 'Teléfono inválido (mínimo 8 dígitos)';
+                      }
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: _claveCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Clave para el cuidador',
+                      hintText: 'Compártela con el cuidador (mín. 6 caracteres)',
+                    ),
+                    validator: (v) {
+                      if (!_isCaregiver) return null;
+                      if ((v ?? '').length < CaregiverLogin.minClaveLength) {
+                        return 'Mínimo ${CaregiverLogin.minClaveLength} caracteres';
+                      }
+                      return null;
+                    },
+                  ),
+                ] else ...[
+                  TextFormField(
+                    controller: _emailCtrl,
+                    keyboardType: TextInputType.emailAddress,
+                    decoration: const InputDecoration(
+                      labelText: 'Correo (para iniciar sesión)',
+                    ),
+                    validator: (v) {
+                      if (_isCaregiver) return null;
+                      final t = (v ?? '').trim();
+                      if (t.isEmpty) return 'Requerido';
+                      if (!t.contains('@') || !t.contains('.')) {
+                        return 'Correo inválido';
+                      }
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: _phoneCtrl,
+                    keyboardType: TextInputType.phone,
+                    decoration:
+                        const InputDecoration(labelText: 'Teléfono (opcional)'),
+                  ),
+                ],
                 if (_role == AppRole.clinico) ...[
                   const SizedBox(height: 12),
                   TextFormField(
