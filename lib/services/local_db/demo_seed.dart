@@ -4,20 +4,39 @@ import 'local_store.dart';
 
 const _uuid = Uuid();
 
-/// Siembra datos de demostracion realistas: sitios, personal, pacientes,
-/// heridas, mediciones seriadas y una recomendacion Kura+ de ejemplo.
-/// Se ejecuta una sola vez (marca 'seeded' en LocalStore) para permitir
-/// una demo navegable inmediata.
+/// Siembra datos de demostración realistas y CURADOS por escenario:
+///
+///  1. Clínica de heridas (Kura+, paleta morada) — recorrido de TRATAMIENTO
+///     foto-primero: alta → consentimientos → comorbilidades/diagnósticos →
+///     consulta → captura y mediciones seriadas → seguimientos → plan →
+///     referencia/evento adverso → reportes/eKare. 7 pacientes que cubren las
+///     etiologías y las 4 trayectorias (mejora / estanca / empeora / cerrada),
+///     uno de ellos con evidencia fotográfica real.
+///
+///  2. Hospital (paleta azul) — recorrido de PREVENCIÓN centrado en el paciente:
+///     internamiento (piso/área/cama) → valoración de Braden → tablero de riesgo
+///     → rondas (tareas SIN dueño, las marca quien está de turno) → dashboard del
+///     centro (distribución por banda, cumplimiento por turno). 5 pacientes que
+///     cubren las 4 bandas de Braden (muy alto / alto / medio / bajo).
+///
+///  3. Cuidadores (paleta rosa) — recorrido del CUIDADOR: monitoreo de sus
+///     pacientes asignados, tareas con estados variados (hecha / vencida /
+///     futura) e indicaciones del centro. 3 pacientes a domicilio.
+///
+/// Se ejecuta una sola vez (marca el flag versionado en LocalStore) para
+/// permitir una demo navegable inmediata. Solo aplica al modo demo local
+/// (SharedPreferences); producción usa Supabase y nunca llama a este seed.
 class DemoSeed {
-  // Flag VERSIONADO: al enriquecer el set de demo, se re-siembra limpio una
-  // sola vez en instalaciones demo previas (que tenían 'seeded' v1), evitando
-  // duplicados y datos viejos. Solo aplica al modo demo local (SharedPreferences);
-  // producción usa Supabase y nunca llama a este seed.
-  static const String _seedFlag = 'seeded_v11';
+  // Flag VERSIONADO: al enriquecer/limpiar el set de demo, se re-siembra limpio
+  // una sola vez en instalaciones demo previas (wipeAll + _seed), evitando
+  // duplicados y datos viejos. Cada rediseño del roster sube este número.
+  // v12: roster curado por escenario (clínica 7 / hospital 5 / cuidadores 3).
+  static const String _seedFlag = 'seeded_v12';
 
   static Future<void> ensureSeeded(LocalStore store) async {
     if (store.getBool(_seedFlag)) return;
-    // Limpia una posible siembra anterior (v1) para no duplicar filas.
+    // Limpia cualquier siembra anterior para no duplicar filas ni arrastrar
+    // pacientes de versiones previas.
     await store.wipeAll();
     await _seed(store);
     await store.setBool(_seedFlag, true);
@@ -34,21 +53,18 @@ class DemoSeed {
     String iso(DateTime d) => d.toIso8601String();
     String isoDate(DateTime d) => d.toIso8601String().substring(0, 10);
 
-    // ---------------- Organizacion (centro) ----------------
-    // 0011_organizations.sql: el centro es el tenant raiz; sitios, personal,
-    // pacientes y catalogo de notas quedan aislados por organizationId.
-    final organizationId = _uuid.v4();
-    // Segundo centro (0012_master_role.sql): existe UNICAMENTE para poder
-    // demostrar/probar en el modo demo local que el rol master ve y
-    // administra estructura de TODOS los centros, no solo de Kura+. No
-    // tiene pacientes propios (fuera del alcance de master, ver regla de
-    // oro), solo un sitio y un miembro de personal minimos para que el
-    // selector de centro en PlatformHomeScreen tenga algo real que
-    // mostrar al cambiar de organizacion.
-    final organizationId2 = _uuid.v4();
-    // Centros de demo para los tipos hospital y cuidadores (0040). Permiten
-    // probar el switcher del ícono de apósitos (paleta morado/azul/rosa) y, en
-    // fases siguientes, la agenda de prevención por tipo de centro.
+    // saveAll SOBRESCRIBE la colección completa; los constructores por escenario
+    // agregan filas de forma incremental, así que se re-lee antes de guardar.
+    Future<void> appendRows(String c, List<Map<String, dynamic>> rows) async {
+      await store.saveAll(c, [...store.getAll(c), ...rows]);
+    }
+
+    // ---------------- Organizaciones (centros) ----------------
+    // El centro es el tenant raíz; sitios, personal, pacientes y catálogo de
+    // notas quedan aislados por organizationId. Cuatro centros: dos clínicas de
+    // heridas (moradas), un hospital (azul) y un centro de cuidadores (rosa).
+    final organizationId = _uuid.v4(); // Kura+ (clínica principal)
+    final organizationId2 = _uuid.v4(); // Clínica Vitalis (2º tenant, para master)
     final organizationIdHospital = _uuid.v4();
     final organizationIdCuidadores = _uuid.v4();
 
@@ -72,6 +88,13 @@ class DemoSeed {
         'name': 'Hospital General Demo',
         'is_active': true,
         'center_type': 'hospital',
+        // Turnos del centro (módulo de prevención hospitalaria): alimentan la
+        // ventana de cumplimiento por turno del dashboard (/hospital).
+        'shift_config': [
+          {'name': 'Matutino', 'startHour': 7, 'endHour': 15},
+          {'name': 'Vespertino', 'startHour': 15, 'endHour': 23},
+          {'name': 'Nocturno', 'startHour': 23, 'endHour': 7},
+        ],
         'created_at': iso(now.subtract(const Duration(days: 20))),
       },
       {
@@ -84,9 +107,6 @@ class DemoSeed {
     ]);
 
     // ---------------- Sitios ----------------
-    // El centro Kura+ tiene 1->N sitios; el personal puede operar en TODOS
-    // los sitios de su organizacion (no se restringe por primary_site_id,
-    // ver Part A del modelo Centro -> Sitios -> Personal).
     final siteClinicaCdmx = _uuid.v4();
     final siteClinicaGdl = _uuid.v4();
     final siteDomicilioCdmx = _uuid.v4();
@@ -97,7 +117,7 @@ class DemoSeed {
       {
         'id': siteClinicaCdmx,
         'organization_id': organizationId,
-        'name': 'Kura+ Clinica CDMX',
+        'name': 'Kura+ Clínica CDMX',
         'kind': 'clinica',
         'address': 'Av. Reforma 123, CDMX',
         'is_active': true,
@@ -105,7 +125,7 @@ class DemoSeed {
       {
         'id': siteClinicaGdl,
         'organization_id': organizationId,
-        'name': 'Kura+ Clinica GDL',
+        'name': 'Kura+ Clínica GDL',
         'kind': 'clinica',
         'address': 'Av. Vallarta 456, Guadalajara',
         'is_active': true,
@@ -113,7 +133,7 @@ class DemoSeed {
       {
         'id': siteDomicilioCdmx,
         'organization_id': organizationId,
-        'name': 'Atencion a domicilio CDMX',
+        'name': 'Atención a domicilio CDMX',
         'kind': 'domicilio',
         'address': null,
         'is_active': true,
@@ -121,19 +141,17 @@ class DemoSeed {
       {
         'id': siteDomicilioGdl,
         'organization_id': organizationId,
-        'name': 'Atencion a domicilio GDL',
+        'name': 'Atención a domicilio GDL',
         'kind': 'domicilio',
         'address': null,
         'is_active': true,
       },
-      // Sitio del segundo centro (Clinica Vitalis), ver comentario en
-      // organizationId2 mas arriba.
       {
         'id': siteVitalisMty,
         'organization_id': organizationId2,
-        'name': 'Vitalis Clinica Monterrey',
+        'name': 'Vitalis Clínica Monterrey',
         'kind': 'clinica',
-        'address': 'Av. Constitucion 789, Monterrey',
+        'address': 'Av. Constitución 789, Monterrey',
         'is_active': true,
       },
     ]);
@@ -142,22 +160,15 @@ class DemoSeed {
     final adminProfileId = _uuid.v4();
     final clinico1ProfileId = _uuid.v4();
     final clinico2ProfileId = _uuid.v4();
-    // Usuario master (administrador de plataforma, ver
-    // 0012_master_role.sql): NO pertenece a ninguna organizacion en
-    // particular (organization_id null) -- administra estructura de
-    // TODOS los centros via el area "Plataforma", nunca a traves del
-    // panel de Administracion (que sigue acotado por organizacion para
-    // el rol admin normal).
+    // Master (administrador de plataforma): no pertenece a ninguna organización;
+    // administra estructura de TODOS los centros vía el área "Plataforma".
     final masterProfileId = _uuid.v4();
-    // Admin propio del segundo centro (Clinica Vitalis), para poder
-    // verificar en la demo que un admin normal de OTRO centro sigue sin
-    // ver nada de Kura+ (y viceversa), mientras que el master ve ambos.
     final adminVitalisProfileId = _uuid.v4();
-    // Cuidador demo (0040): cuenta con rol 'cuidador' en el centro de tipo
-    // cuidadores. En Fase 1 aún no tiene pantallas propias (llegan en Fase 3);
-    // existe para poblar la gestión de miembros y el switcher.
+    // Cuidador demo: login por teléfono (5512345678 + clave). El correo es
+    // sintético derivado del teléfono, igual que en producción.
     final cuidadorProfileId = _uuid.v4();
-    // Enfermería demo (0045): personal del Hospital demo (acceso center-wide).
+    // Enfermería demo: personal del Hospital demo (acceso center-wide, ejecuta
+    // rondas pero no diagnostica/prescribe).
     final enfermeriaProfileId = _uuid.v4();
 
     await store.saveAll(Collections.profiles, [
@@ -174,7 +185,7 @@ class DemoSeed {
         'id': clinico1ProfileId,
         'organization_id': organizationId,
         'role': 'clinico',
-        'full_name': 'Dra. Ana Martinez',
+        'full_name': 'Dra. Ana Martínez',
         'email': 'ana.martinez@curamas.mx',
         'is_active': true,
         'premium_enabled': true,
@@ -183,7 +194,7 @@ class DemoSeed {
         'id': clinico2ProfileId,
         'organization_id': organizationId,
         'role': 'clinico',
-        'full_name': 'Lic. Carlos Ramirez',
+        'full_name': 'Lic. Carlos Ramírez',
         'email': 'carlos.ramirez@curamas.mx',
         'is_active': true,
         'premium_enabled': false,
@@ -211,9 +222,6 @@ class DemoSeed {
         'organization_id': organizationIdCuidadores,
         'role': 'cuidador',
         'full_name': 'Cuidador Demo',
-        // Login por teléfono (pestaña "Cuidador"): tel 5512345678 + cualquier
-        // clave en demo. El correo es SINTÉTICO derivado del teléfono
-        // (CaregiverLogin.syntheticEmail), igual que en producción.
         'email': '5512345678@cuidador.kuramas.com',
         'phone': '5512345678',
         'is_active': true,
@@ -230,37 +238,24 @@ class DemoSeed {
       },
     ]);
 
-    // ---------------- Membresías de centro (0040) ----------------
-    // Refleja lo que en producción hace el backfill de la migración: cada
-    // usuario tiene membresía a su centro y rol actuales. Además, el admin
-    // Procomsa recibe membresía (como admin) al Hospital y a Cuidadores para
-    // poder DEMOSTRAR el switcher del ícono de apósitos (paleta morado→azul→
-    // rosa) al alternar entre los tres tipos de centro.
+    // ---------------- Membresías de centro ----------------
+    // El admin Procomsa tiene membresía a los 3 tipos de centro (Kura+, Hospital,
+    // Cuidadores) para DEMOSTRAR el switcher del ícono de apósitos (paleta
+    // morado → azul → rosa). El resto tiene una sola membresía a su centro.
     await store.saveAll(Collections.userCenterMemberships, [
-      {
-        'id': _uuid.v4(),
-        'profile_id': adminProfileId,
-        'organization_id': organizationId,
-        'role': 'admin',
-        'is_active': true,
-        'created_at': iso(now),
-      },
-      {
-        'id': _uuid.v4(),
-        'profile_id': adminProfileId,
-        'organization_id': organizationIdHospital,
-        'role': 'admin',
-        'is_active': true,
-        'created_at': iso(now),
-      },
-      {
-        'id': _uuid.v4(),
-        'profile_id': adminProfileId,
-        'organization_id': organizationIdCuidadores,
-        'role': 'admin',
-        'is_active': true,
-        'created_at': iso(now),
-      },
+      for (final orgId in [
+        organizationId,
+        organizationIdHospital,
+        organizationIdCuidadores
+      ])
+        {
+          'id': _uuid.v4(),
+          'profile_id': adminProfileId,
+          'organization_id': orgId,
+          'role': 'admin',
+          'is_active': true,
+          'created_at': iso(now),
+        },
       {
         'id': _uuid.v4(),
         'profile_id': clinico1ProfileId,
@@ -304,13 +299,6 @@ class DemoSeed {
     ]);
 
     // ---------------- Personal sanitario ----------------
-    // adminStaffId: fila de staff para el administrador (Adjuste #3 -
-    // admin-clinico con licencia individual). En produccion la crea
-    // create_organization_with_admin()/ensureAdminStaffId() de forma
-    // perezosa; aqui se siembra directamente para que el modo demo ya
-    // refleje el mismo esquema (el admin puede registrar consultas y
-    // se le auto-asignan los pacientes que da de alta, igual que
-    // cualquier otro miembro del personal).
     final adminStaffId = _uuid.v4();
     final staff1Id = _uuid.v4();
     final staff2Id = _uuid.v4();
@@ -344,8 +332,8 @@ class DemoSeed {
         'organization_id': organizationId,
         'profile_id': clinico1ProfileId,
         'folio': 'K2024-0001',
-        'full_name': 'Dra. Ana Martinez',
-        'role_title': 'Kuradora / Medico',
+        'full_name': 'Dra. Ana Martínez',
+        'role_title': 'Kuradora / Médico',
         'primary_site_id': siteClinicaCdmx,
         'is_active': true,
         'created_at': iso(now.subtract(const Duration(days: 400))),
@@ -355,14 +343,12 @@ class DemoSeed {
         'organization_id': organizationId,
         'profile_id': clinico2ProfileId,
         'folio': 'K2024-0002',
-        'full_name': 'Lic. Carlos Ramirez',
+        'full_name': 'Lic. Carlos Ramírez',
         'role_title': 'Kurador',
         'primary_site_id': siteClinicaGdl,
         'is_active': true,
         'created_at': iso(now.subtract(const Duration(days: 250))),
       },
-      // Staff del admin de Clinica Vitalis (segundo centro, ver
-      // organizationId2 mas arriba) -- mismo patron que adminStaffId.
       {
         'id': adminVitalisStaffId,
         'organization_id': organizationId2,
@@ -376,893 +362,9 @@ class DemoSeed {
       },
     ]);
 
-    // ---------------- Pacientes ----------------
-    final p1Id = _uuid.v4(); // pie diabetico, escenario B probable
-    final p2Id = _uuid.v4(); // LPP, escenario dependiente
-    final p3Id = _uuid.v4(); // vascular con isquemia critica (caso de seguridad)
-    final p4Id = _uuid.v4(); // quirurgica
-    final p5Id = _uuid.v4(); // traumatica, cierre rapido
-    final pHospId = _uuid.v4(); // paciente del Hospital demo (patient-centric)
-
-    await store.saveAll(Collections.patients, [
-      {
-        'id': pHospId,
-        'organization_id': organizationIdHospital,
-        'folio': 'HOSP-0001',
-        'full_name': 'Paciente Hospital Demo',
-        'birth_date': isoDate(DateTime(1948, 6, 1)),
-        'sex': 'F',
-        'mobility': 'encamado',
-        'has_identified_caregiver': false,
-        'fragile_patient': true,
-        'background_notes': 'Adulto mayor encamado, riesgo de LPP. Centro '
-            'hospital: acceso centrado en el paciente (turnos).',
-        'is_active': true,
-        'created_at': iso(now.subtract(const Duration(days: 3))),
-      },
-      {
-        'id': p1Id,
-        'organization_id': organizationId,
-        'folio': 'EXP2025-0001',
-        'full_name': 'Roberto Sanchez Lopez',
-        'birth_date': isoDate(DateTime(1958, 3, 12)),
-        'sex': 'M',
-        'primary_site_id': siteClinicaCdmx,
-        'mobility': 'ambulatorio',
-        'has_identified_caregiver': true,
-        'caregiver_name': 'Maria Sanchez (hija)',
-        'caregiver_phone': '555-0101',
-        'fragile_patient': false,
-        'background_notes': 'Diabetes mellitus tipo 2 de 15 anos de evolucion. '
-            'Neuropatia periferica. Control glucemico irregular.',
-        'ekare_external_id': 'EKARE-PT-88213',
-        'is_active': true,
-        'created_at': iso(now.subtract(const Duration(days: 120))),
-      },
-      {
-        'id': p2Id,
-        'organization_id': organizationId,
-        'folio': 'EXP2025-0002',
-        'full_name': 'Guadalupe Torres Ibarra',
-        'birth_date': isoDate(DateTime(1940, 7, 5)),
-        'sex': 'F',
-        'primary_site_id': siteDomicilioCdmx,
-        'mobility': 'encamado',
-        'has_identified_caregiver': true,
-        'caregiver_name': 'Jose Torres (esposo)',
-        'caregiver_phone': '555-0202',
-        'fragile_patient': true,
-        'background_notes': 'Paciente encamada por fractura de cadera. '
-            'Movilidad muy reducida, riesgo alto de nuevas LPP.',
-        'ekare_external_id': 'EKARE-PT-77410',
-        'is_active': true,
-        'created_at': iso(now.subtract(const Duration(days: 90))),
-      },
-      {
-        'id': p3Id,
-        'organization_id': organizationId,
-        'folio': 'EXP2025-0003',
-        'full_name': 'Fernando Castillo Vega',
-        'birth_date': isoDate(DateTime(1952, 11, 20)),
-        'sex': 'M',
-        'primary_site_id': siteClinicaCdmx,
-        'mobility': 'ambulatorio',
-        'has_identified_caregiver': false,
-        'fragile_patient': false,
-        'background_notes': 'Enfermedad arterial periferica avanzada, '
-            'tabaquismo activo intenso (40 cigarrillos/dia).',
-        'ekare_external_id': 'EKARE-PT-65120',
-        'is_active': true,
-        'created_at': iso(now.subtract(const Duration(days: 60))),
-      },
-      {
-        'id': p4Id,
-        'organization_id': organizationId,
-        'folio': 'EXP2025-0004',
-        'full_name': 'Patricia Nunez Reyes',
-        'birth_date': isoDate(DateTime(1975, 2, 18)),
-        'sex': 'F',
-        'primary_site_id': siteClinicaGdl,
-        'mobility': 'ambulatorio',
-        'has_identified_caregiver': false,
-        'fragile_patient': false,
-        'background_notes': 'Postquirurgica de colecistectomia abierta, '
-            'dehiscencia de herida quirurgica en el 10o dia postoperatorio.',
-        'ekare_external_id': 'EKARE-PT-90044',
-        'is_active': true,
-        'created_at': iso(now.subtract(const Duration(days: 20))),
-      },
-      {
-        'id': p5Id,
-        'organization_id': organizationId,
-        'folio': 'PA2026-0005',
-        'full_name': 'Miguel Angel Duran',
-        'birth_date': isoDate(DateTime(1990, 9, 30)),
-        'sex': 'M',
-        'primary_site_id': siteClinicaGdl,
-        'mobility': 'ambulatorio',
-        'has_identified_caregiver': false,
-        'fragile_patient': false,
-        'background_notes': 'Herida traumatica por accidente laboral '
-            '(objeto punzocortante). Sin comorbilidades relevantes.',
-        'ekare_external_id': null,
-        'is_active': true,
-        'created_at': iso(now.subtract(const Duration(days: 10))),
-      },
-    ]);
-
-    // ---------------- Asignaciones staff-paciente ----------------
-    await store.saveAll(Collections.staffPatientAssignments, [
-      {'id': _uuid.v4(), 'staff_id': staff1Id, 'patient_id': p1Id},
-      {'id': _uuid.v4(), 'staff_id': staff1Id, 'patient_id': p2Id},
-      {'id': _uuid.v4(), 'staff_id': staff1Id, 'patient_id': p3Id},
-      {'id': _uuid.v4(), 'staff_id': staff2Id, 'patient_id': p4Id},
-      {'id': _uuid.v4(), 'staff_id': staff2Id, 'patient_id': p5Id},
-      {'id': _uuid.v4(), 'staff_id': staff1Id, 'patient_id': p4Id}, // ana tambien ve p4
-    ]);
-
-    // ---------------- Cuidador: asignación + tareas (Fase 3) ----------------
-    // El centro (clínica de heridas Kura+) autoriza al cuidador demo a
-    // MONITOREAR al paciente p2 (LPP) — modelo "clínica da acceso a cuidadores".
-    await store.saveAll(Collections.caregiverPatientAssignments, [
-      {
-        'id': _uuid.v4(),
-        'organization_id': organizationId,
-        'caregiver_profile_id': cuidadorProfileId,
-        'patient_id': p2Id,
-        'assigned_by': adminProfileId,
-        'created_at': iso(now),
-      },
-    ]);
-    // Tareas preventivas de p2 asignadas al cuidador: una hecha (adherencia),
-    // una vencida pendiente y dos futuras.
-    await store.saveAll(Collections.preventiveTasks, [
-      // Hospital (patient-centric): tareas SIN dueño; las marca quien esté de
-      // turno (enfermería). done_by registra quién.
-      {
-        'id': _uuid.v4(),
-        'organization_id': organizationIdHospital,
-        'patient_id': pHospId,
-        'rule_id': 'profesional',
-        'action_id': 'cambios_2h_registro',
-        'title': 'Cambio postural',
-        'action_label': 'Cambios posturales cada 2 h',
-        'scheduled_at': iso(now.add(const Duration(hours: 1))),
-        'assignee_profile_id': null,
-        'assignee_kind': 'staff',
-        'status': 'pending',
-        'source': 'auto',
-        'created_at': iso(now),
-      },
-      {
-        'id': _uuid.v4(),
-        'organization_id': organizationIdHospital,
-        'patient_id': pHospId,
-        'rule_id': 'profesional',
-        'action_id': 'exam_piel_diario',
-        'title': 'Examen de piel',
-        'action_label': 'Examen diario de la piel',
-        'scheduled_at': iso(now.add(const Duration(hours: 3))),
-        'assignee_profile_id': null,
-        'assignee_kind': 'staff',
-        'status': 'pending',
-        'source': 'auto',
-        'created_at': iso(now),
-      },
-      {
-        'id': _uuid.v4(),
-        'organization_id': organizationId,
-        'patient_id': p2Id,
-        'rule_id': 'lpp_alto',
-        'action_id': 'cambios_2h_registro',
-        'title': 'Cambio postural',
-        'action_label': 'Cambios posturales cada 2 h con registro horario',
-        'scheduled_at': iso(now.subtract(const Duration(hours: 4))),
-        'assignee_profile_id': cuidadorProfileId,
-        'assignee_kind': 'cuidador',
-        'status': 'done',
-        'done_at': iso(now.subtract(const Duration(hours: 4))),
-        'done_by': cuidadorProfileId,
-        'source': 'auto',
-        'created_at': iso(now.subtract(const Duration(hours: 6))),
-      },
-      {
-        'id': _uuid.v4(),
-        'organization_id': organizationId,
-        'patient_id': p2Id,
-        'rule_id': 'lpp_alto',
-        'action_id': 'cambios_2h_registro',
-        'title': 'Cambio postural',
-        'action_label': 'Cambios posturales cada 2 h con registro horario',
-        'scheduled_at': iso(now.subtract(const Duration(hours: 1))),
-        'assignee_profile_id': cuidadorProfileId,
-        'assignee_kind': 'cuidador',
-        'status': 'pending',
-        'source': 'auto',
-        'created_at': iso(now.subtract(const Duration(hours: 6))),
-      },
-      {
-        'id': _uuid.v4(),
-        'organization_id': organizationId,
-        'patient_id': p2Id,
-        'rule_id': 'lpp_alto',
-        'action_id': 'agho',
-        'title': 'Aplicar AGHO en zonas de riesgo',
-        'action_label': 'Ácidos grasos hiperoxigenados (AGHO) en zonas de riesgo',
-        'scheduled_at': iso(now.add(const Duration(hours: 2))),
-        'assignee_profile_id': cuidadorProfileId,
-        'assignee_kind': 'cuidador',
-        'status': 'pending',
-        'source': 'auto',
-        'created_at': iso(now.subtract(const Duration(hours: 6))),
-      },
-      {
-        'id': _uuid.v4(),
-        'organization_id': organizationId,
-        'patient_id': p2Id,
-        'rule_id': 'lpp_alto',
-        'action_id': 'exam_piel_diario',
-        'title': 'Examen de piel',
-        'action_label': 'Examen diario de la piel en prominencias y bajo dispositivos',
-        'scheduled_at': iso(now.add(const Duration(hours: 4))),
-        'assignee_profile_id': cuidadorProfileId,
-        'assignee_kind': 'cuidador',
-        'status': 'pending',
-        'source': 'auto',
-        'created_at': iso(now.subtract(const Duration(hours: 6))),
-      },
-    ]);
-
-    // ---------------- Comorbilidades ----------------
-    await store.saveAll(Collections.patientComorbidities, [
-      // Paciente 1: pie diabetico
-      {'id': _uuid.v4(), 'patient_id': p1Id, 'code': 'diabetes_mellitus', 'status': 'presente'},
-      {'id': _uuid.v4(), 'patient_id': p1Id, 'code': 'movilidad_reducida', 'status': 'no_evaluado'},
-      {'id': _uuid.v4(), 'patient_id': p1Id, 'code': 'obesidad', 'status': 'negado'},
-      // Paciente 2: LPP
-      {'id': _uuid.v4(), 'patient_id': p2Id, 'code': 'movilidad_reducida', 'status': 'presente'},
-      {'id': _uuid.v4(), 'patient_id': p2Id, 'code': 'malnutricion', 'status': 'presente'},
-      // Paciente 3: vascular con isquemia critica
-      {'id': _uuid.v4(), 'patient_id': p3Id, 'code': 'enfermedad_arterial_periferica', 'status': 'presente'},
-      {'id': _uuid.v4(), 'patient_id': p3Id, 'code': 'tabaquismo_activo', 'status': 'presente'},
-      // Paciente 4: quirurgica
-      {'id': _uuid.v4(), 'patient_id': p4Id, 'code': 'obesidad', 'status': 'presente'},
-      // Paciente 5: traumatica, sin comorbilidades
-      {'id': _uuid.v4(), 'patient_id': p5Id, 'code': 'diabetes_mellitus', 'status': 'negado'},
-    ]);
-
-    // ---------------- Diagnósticos CIE-10 (expediente, NOM-004) --------------
-    // Códigos del subconjunto placeholder de assets/data/cie10_heridas.json.
-    // Registro documental: no alimentan el motor (eso son las comorbilidades).
-    final dxIso = DateTime.now().toIso8601String();
-    Map<String, dynamic> dxRow(String pid, String code, String name,
-            String relation, bool primary) =>
-        {
-          'id': _uuid.v4(),
-          'organization_id': organizationId,
-          'patient_id': pid,
-          'wound_id': null,
-          'staff_id': null,
-          'code': code,
-          'name': name,
-          'relation': relation,
-          'is_primary': primary,
-          'status': 'activo',
-          'notes': null,
-          'noted_at': dxIso,
-          'noted_by': null,
-          'created_at': dxIso,
-        };
-    await store.saveAll(Collections.patientDiagnoses, [
-      // Paciente 1: pie diabetico
-      dxRow(p1Id, 'L97X',
-          'ÚLCERA DE MIEMBRO INFERIOR, NO CLASIFICADA EN OTRA PARTE', 'herida', true),
-      dxRow(p1Id, 'E115',
-          'DIABETES MELLITUS TIPO 2, CON COMPLICACIONES CIRCULATORIAS PERIFÉRICAS',
-          'causa', false),
-      dxRow(p1Id, 'E669', 'OBESIDAD, NO ESPECIFICADA', 'comorbilidad', false),
-      // Paciente 2: LPP sacra
-      dxRow(p2Id, 'L893', 'ÚLCERA DE DECÚBITO, ETAPA IV', 'herida', true),
-      dxRow(p2Id, 'N189',
-          'ENFERMEDAD RENAL CRÓNICA, NO ESPECIFICADA', 'comorbilidad', false),
-      // Paciente 3: vascular con isquemia critica
-      dxRow(p3Id, 'L97X',
-          'ÚLCERA DE MIEMBRO INFERIOR, NO CLASIFICADA EN OTRA PARTE', 'herida', true),
-      dxRow(p3Id, 'I702',
-          'ATEROSCLEROSIS DE LAS ARTERIAS DE LOS MIEMBROS', 'causa', false),
-      dxRow(p3Id, 'F172',
-          'TRASTORNOS MENTALES Y DEL COMPORTAMIENTO DEBIDOS AL USO DE TABACO, SÍNDROME DE DEPENDENCIA',
-          'comorbilidad', false),
-      // Paciente 4: quirurgica
-      dxRow(p4Id, 'T814',
-          'INFECCIÓN CONSECUTIVA A PROCEDIMIENTO, NO CLASIFICADA EN OTRA PARTE',
-          'consecuencia', false),
-      // Paciente 5: traumatica -> sin diagnósticos codificados aún.
-    ]);
-
-    // ---------------- Prevención / Riesgo (módulo v1) ----------------
-    // Internamientos (unidad/cama) para poblar el tablero de riesgo.
-    await store.saveAll(Collections.patientAdmissions, [
-      {
-        // Hospital demo (patient-centric): ubicación piso/área/cama.
-        'id': _uuid.v4(),
-        'organization_id': organizationIdHospital,
-        'patient_id': pHospId,
-        'floor': '3',
-        'area': 'Medicina Interna',
-        'bed': '08',
-        'admitted_at': iso(now.subtract(const Duration(days: 3))),
-        'discharged_at': null,
-        'status': 'activo',
-        'notes': null,
-        'created_at': iso(now.subtract(const Duration(days: 3))),
-      },
-      {
-        'id': _uuid.v4(),
-        'organization_id': organizationId,
-        'patient_id': p2Id, // LPP sacra, encamada
-        'unit': 'Medicina Interna',
-        'bed': '12',
-        'admitted_at': iso(now.subtract(const Duration(days: 6))),
-        'discharged_at': null,
-        'status': 'activo',
-        'notes': null,
-        'created_at': iso(now.subtract(const Duration(days: 6))),
-      },
-      {
-        'id': _uuid.v4(),
-        'organization_id': organizationId,
-        'patient_id': p1Id, // pie diabetico
-        'unit': 'Cirugía',
-        'bed': '4',
-        'admitted_at': iso(now.subtract(const Duration(days: 2))),
-        'discharged_at': null,
-        'status': 'activo',
-        'notes': null,
-        'created_at': iso(now.subtract(const Duration(days: 2))),
-      },
-    ]);
-    // Valoraciones de Braden (la más reciente alimenta el motor de prevención).
-    await store.saveAll(Collections.riskAssessments, [
-      {
-        'id': _uuid.v4(),
-        'organization_id': organizationIdHospital,
-        'patient_id': pHospId,
-        'braden_score': 10, // riesgo alto (rojo) en el Hospital demo
-        'braden_subscores': null,
-        'assessed_at': iso(now.subtract(const Duration(days: 2))),
-        'assessed_by': null,
-        'notes': 'Adulto mayor encamado.',
-        'created_at': iso(now.subtract(const Duration(days: 2))),
-      },
-      {
-        'id': _uuid.v4(),
-        'organization_id': organizationId,
-        'patient_id': p2Id,
-        'braden_score': 11, // riesgo alto de LPP
-        'braden_subscores': null,
-        'assessed_at': iso(now.subtract(const Duration(days: 1))),
-        'assessed_by': null,
-        'notes': 'Paciente encamada, incontinencia.',
-        'created_at': iso(now.subtract(const Duration(days: 1))),
-      },
-      {
-        'id': _uuid.v4(),
-        'organization_id': organizationId,
-        'patient_id': p1Id,
-        'braden_score': 16, // riesgo bajo
-        'braden_subscores': null,
-        'assessed_at': iso(now.subtract(const Duration(days: 1))),
-        'assessed_by': null,
-        'notes': null,
-        'created_at': iso(now.subtract(const Duration(days: 1))),
-      },
-    ]);
-
-    // ---------------- Consentimientos ----------------
-    // Todos los pacientes demo tienen los 3 consentimientos otorgados para que
-    // el flujo de valoración/fotografía/desbridamiento funcione en la demo. Los
-    // pacientes creados en sesión (sin consentimientos) muestran el gate.
-    final nowIso = DateTime.now().toIso8601String();
-    await store.saveAll(Collections.consents, [
-      for (final pid in [p1Id, p2Id, p3Id, p4Id, p5Id])
-        for (final type in ['privacidad', 'fotografia', 'desbridamiento'])
-          {
-            'id': _uuid.v4(),
-            'patient_id': pid,
-            'type': type,
-            'granted': true,
-            'granted_at': nowIso,
-            'signed_by': 'Paciente (demo)',
-            'doc_ref': null,
-            'created_at': nowIso,
-          },
-    ]);
-
-    // ---------------- Heridas ----------------
-    final w1Id = _uuid.v4(); // pie diabetico
-    final w2Id = _uuid.v4(); // LPP sacra
-    final w3Id = _uuid.v4(); // vascular, isquemia critica
-    final w4Id = _uuid.v4(); // quirurgica
-    final w5Id = _uuid.v4(); // traumatica
-
-    await store.saveAll(Collections.wounds, [
-      {
-        'id': w1Id,
-        'patient_id': p1Id,
-        'etiology': 'pie_diabetico',
-        'subtype': 'Ulcera neuropatica plantar',
-        'body_location_primary': 'pie_derecho_planta',
-        'body_location_secondary': null,
-        'onset_date': isoDate(now.subtract(const Duration(days: 45))),
-        'wagner_grade': 'g2',
-        'ceap_class': null,
-        'wuwhs_grade': null,
-        'agente_causal': null,
-        'is_active': true,
-        'closed_at': null,
-        'created_at': iso(now.subtract(const Duration(days: 45))),
-      },
-      {
-        'id': w2Id,
-        'patient_id': p2Id,
-        'etiology': 'lpp',
-        'subtype': 'LPP categoria III',
-        'body_location_primary': 'sacro',
-        'body_location_secondary': 'trocanter_izquierdo',
-        'onset_date': isoDate(now.subtract(const Duration(days: 60))),
-        'wagner_grade': null,
-        'ceap_class': null,
-        'wuwhs_grade': null,
-        'agente_causal': null,
-        'is_active': true,
-        'closed_at': null,
-        'created_at': iso(now.subtract(const Duration(days: 60))),
-      },
-      {
-        'id': w3Id,
-        'patient_id': p3Id,
-        'etiology': 'vascular',
-        'subtype': 'Ulcera isquemica',
-        'body_location_primary': 'pierna_izquierda_maleolo',
-        'body_location_secondary': null,
-        'onset_date': isoDate(now.subtract(const Duration(days: 30))),
-        'wagner_grade': null,
-        'ceap_class': 'c5',
-        'wuwhs_grade': null,
-        'agente_causal': null,
-        'is_active': true,
-        'closed_at': null,
-        'created_at': iso(now.subtract(const Duration(days: 30))),
-      },
-      {
-        'id': w4Id,
-        'patient_id': p4Id,
-        'etiology': 'quirurgica',
-        'subtype': 'Dehiscencia de herida quirurgica',
-        'body_location_primary': 'abdomen_superior',
-        'body_location_secondary': null,
-        'onset_date': isoDate(now.subtract(const Duration(days: 12))),
-        'wagner_grade': null,
-        'ceap_class': null,
-        'wuwhs_grade': 'g2',
-        'agente_causal': null,
-        'is_active': true,
-        'closed_at': null,
-        'created_at': iso(now.subtract(const Duration(days: 12))),
-      },
-      {
-        'id': w5Id,
-        'patient_id': p5Id,
-        'etiology': 'traumatica',
-        'subtype': 'Herida punzocortante',
-        'body_location_primary': 'antebrazo_izquierdo',
-        'body_location_secondary': null,
-        'onset_date': isoDate(now.subtract(const Duration(days: 8))),
-        'wagner_grade': null,
-        'ceap_class': null,
-        'wuwhs_grade': null,
-        'agente_causal': 'punzocortante',
-        'is_active': true,
-        'closed_at': null,
-        'created_at': iso(now.subtract(const Duration(days: 8))),
-      },
-    ]);
-
-    // ---------------- Consultas (encabezados) ----------------
-    final c1Id = _uuid.v4();
-    final c2Id = _uuid.v4();
-    final c3Id = _uuid.v4();
-    final c4Id = _uuid.v4();
-    final c5Id = _uuid.v4();
-    // Consultas de seguimiento adicionales para p1 (para graficas de tendencia)
-    final c1bId = _uuid.v4();
-    final c1cId = _uuid.v4();
-
-    await store.saveAll(Collections.consultations, [
-      {
-        'id': c1Id,
-        'patient_id': p1Id,
-        'staff_id': staff1Id,
-        'site_id': siteClinicaCdmx,
-        'visit_type': 'valoracion',
-        'visit_date': isoDate(now.subtract(const Duration(days: 45))),
-        'vital_signs': {'ta': '130/85', 'fc': 76, 'temp': 36.6},
-        'is_draft': false,
-        'created_at': iso(now.subtract(const Duration(days: 45))),
-      },
-      {
-        'id': c1bId,
-        'patient_id': p1Id,
-        'staff_id': staff1Id,
-        'site_id': siteClinicaCdmx,
-        'visit_type': 'seguimiento',
-        'visit_date': isoDate(now.subtract(const Duration(days: 31))),
-        'vital_signs': {'ta': '128/82', 'fc': 74, 'temp': 36.5},
-        'is_draft': false,
-        'created_at': iso(now.subtract(const Duration(days: 31))),
-      },
-      {
-        'id': c1cId,
-        'patient_id': p1Id,
-        'staff_id': staff1Id,
-        'site_id': siteClinicaCdmx,
-        'visit_type': 'seguimiento',
-        'visit_date': isoDate(now.subtract(const Duration(days: 17))),
-        'vital_signs': {'ta': '125/80', 'fc': 72, 'temp': 36.4},
-        'is_draft': false,
-        'created_at': iso(now.subtract(const Duration(days: 17))),
-      },
-      {
-        'id': c2Id,
-        'patient_id': p2Id,
-        'staff_id': staff1Id,
-        'site_id': siteDomicilioCdmx,
-        'visit_type': 'valoracion',
-        'visit_date': isoDate(now.subtract(const Duration(days: 60))),
-        'vital_signs': {'ta': '110/70', 'fc': 82, 'temp': 36.8},
-        'is_draft': false,
-        'created_at': iso(now.subtract(const Duration(days: 60))),
-      },
-      {
-        'id': c3Id,
-        'patient_id': p3Id,
-        'staff_id': staff1Id,
-        'site_id': siteClinicaCdmx,
-        'visit_type': 'valoracion',
-        'visit_date': isoDate(now.subtract(const Duration(days: 30))),
-        'vital_signs': {'ta': '145/90', 'fc': 88, 'temp': 36.7},
-        'is_draft': false,
-        'created_at': iso(now.subtract(const Duration(days: 30))),
-      },
-      {
-        'id': c4Id,
-        'patient_id': p4Id,
-        'staff_id': staff2Id,
-        'site_id': siteClinicaGdl,
-        'visit_type': 'valoracion',
-        'visit_date': isoDate(now.subtract(const Duration(days: 12))),
-        'vital_signs': {'ta': '118/76', 'fc': 80, 'temp': 37.1},
-        'is_draft': false,
-        'created_at': iso(now.subtract(const Duration(days: 12))),
-      },
-      {
-        'id': c5Id,
-        'patient_id': p5Id,
-        'staff_id': staff2Id,
-        'site_id': siteClinicaGdl,
-        'visit_type': 'valoracion',
-        'visit_date': isoDate(now.subtract(const Duration(days: 8))),
-        'vital_signs': {'ta': '120/78', 'fc': 70, 'temp': 36.5},
-        'is_draft': false,
-        'created_at': iso(now.subtract(const Duration(days: 8))),
-      },
-    ]);
-
-    // ---------------- Evaluaciones clinicas ----------------
-    await store.saveAll(Collections.woundAssessments, [
-      {
-        'id': _uuid.v4(),
-        'consultation_id': c1Id,
-        'wound_id': w1Id,
-        'glucose_mg_dl': 180,
-        'first_assessment_date': isoDate(now.subtract(const Duration(days: 45))),
-        'edema': 'leve',
-        'pain': true,
-        'pain_type': 'neuropatico',
-        'pain_duration': 'cronico',
-        'pain_vas': 4,
-        'exudate_amount': 'moderado',
-        'infection_criteria': <String>[],
-        'odor': 'leve',
-        'wound_edge': 'irregular',
-        'perilesional_skin': ['hiperqueratosica', 'callosidad'],
-      },
-      {
-        'id': _uuid.v4(),
-        'consultation_id': c2Id,
-        'wound_id': w2Id,
-        'glucose_mg_dl': null,
-        'first_assessment_date': isoDate(now.subtract(const Duration(days: 60))),
-        'edema': 'ninguno',
-        'pain': true,
-        'pain_type': 'nociceptivo',
-        'pain_duration': 'cronico',
-        'pain_vas': 6,
-        'exudate_amount': 'abundante',
-        'infection_criteria': ['olorAumentado', 'exudadoAumentado'],
-        'odor': 'moderado',
-        'wound_edge': 'definido',
-        'perilesional_skin': ['macerada', 'fragil'],
-      },
-      {
-        'id': _uuid.v4(),
-        'consultation_id': c3Id,
-        'wound_id': w3Id,
-        'glucose_mg_dl': 95,
-        'first_assessment_date': isoDate(now.subtract(const Duration(days: 30))),
-        'edema': 'ninguno',
-        'pain': true,
-        'pain_type': 'isquemico',
-        'pain_duration': 'agudo',
-        'pain_vas': 8,
-        'exudate_amount': 'escaso',
-        'infection_criteria': <String>[],
-        'odor': 'ninguno',
-        'wound_edge': 'definido',
-        'perilesional_skin': ['seca'],
-      },
-      {
-        'id': _uuid.v4(),
-        'consultation_id': c4Id,
-        'wound_id': w4Id,
-        'glucose_mg_dl': 110,
-        'first_assessment_date': isoDate(now.subtract(const Duration(days: 12))),
-        'edema': 'moderado',
-        'pain': true,
-        'pain_type': 'nociceptivo',
-        'pain_duration': 'agudo',
-        'pain_vas': 5,
-        'exudate_amount': 'moderado',
-        'infection_criteria': ['eritemaPerilesional', 'calorLocal'],
-        'odor': 'ninguno',
-        'wound_edge': 'dehiscente',
-        'perilesional_skin': ['eritematosa'],
-      },
-      {
-        'id': _uuid.v4(),
-        'consultation_id': c5Id,
-        'wound_id': w5Id,
-        'glucose_mg_dl': 92,
-        'first_assessment_date': isoDate(now.subtract(const Duration(days: 8))),
-        'edema': 'ninguno',
-        'pain': true,
-        'pain_type': 'nociceptivo',
-        'pain_duration': 'agudo',
-        'pain_vas': 3,
-        'exudate_amount': 'escaso',
-        'infection_criteria': <String>[],
-        'odor': 'ninguno',
-        'wound_edge': 'definido',
-        'perilesional_skin': ['normal'],
-      },
-    ]);
-
-    // ---------------- Mediciones seriadas ----------------
-    await store.saveAll(Collections.woundMeasurements, [
-      // Paciente 1 (pie diabetico) - 3 mediciones mostrando evolucion
-      {
-        'id': _uuid.v4(),
-        'wound_id': w1Id,
-        'consultation_id': c1Id,
-        'measured_at': isoDate(now.subtract(const Duration(days: 45))),
-        'length_cm': 3.2,
-        'width_cm': 2.5,
-        'area_cm2': 8.0,
-        'depth_cm': 0.6,
-        'tunneling': false,
-        'undermining': false,
-        'granulation_pct': 40,
-        'slough_pct': 35,
-        'necrosis_pct': 10,
-        'epithelialization_pct': 15,
-        'captured_before_debridement': true,
-      },
-      {
-        'id': _uuid.v4(),
-        'wound_id': w1Id,
-        'consultation_id': c1bId,
-        'measured_at': isoDate(now.subtract(const Duration(days: 31))),
-        'length_cm': 2.8,
-        'width_cm': 2.1,
-        'area_cm2': 5.88,
-        'depth_cm': 0.4,
-        'tunneling': false,
-        'undermining': false,
-        'granulation_pct': 55,
-        'slough_pct': 20,
-        'necrosis_pct': 5,
-        'epithelialization_pct': 20,
-        'captured_before_debridement': true,
-      },
-      {
-        'id': _uuid.v4(),
-        'wound_id': w1Id,
-        'consultation_id': c1cId,
-        'measured_at': isoDate(now.subtract(const Duration(days: 17))),
-        'length_cm': 2.1,
-        'width_cm': 1.6,
-        'area_cm2': 3.36,
-        'depth_cm': 0.3,
-        'tunneling': false,
-        'undermining': false,
-        'granulation_pct': 65,
-        'slough_pct': 10,
-        'necrosis_pct': 0,
-        'epithelialization_pct': 25,
-        'captured_before_debridement': true,
-      },
-      // Paciente 2 (LPP)
-      {
-        'id': _uuid.v4(),
-        'wound_id': w2Id,
-        'consultation_id': c2Id,
-        'measured_at': isoDate(now.subtract(const Duration(days: 60))),
-        'length_cm': 5.5,
-        'width_cm': 4.0,
-        'area_cm2': 22.0,
-        'depth_cm': 1.8,
-        'tunneling': true,
-        'undermining': true,
-        'granulation_pct': 25,
-        'slough_pct': 40,
-        'necrosis_pct': 25,
-        'epithelialization_pct': 10,
-        'captured_before_debridement': true,
-      },
-      // Paciente 3 (vascular, isquemia critica)
-      {
-        'id': _uuid.v4(),
-        'wound_id': w3Id,
-        'consultation_id': c3Id,
-        'measured_at': isoDate(now.subtract(const Duration(days: 30))),
-        'length_cm': 2.0,
-        'width_cm': 1.5,
-        'area_cm2': 3.0,
-        'depth_cm': 0.5,
-        'tunneling': false,
-        'undermining': false,
-        'granulation_pct': 10,
-        'slough_pct': 30,
-        'necrosis_pct': 45,
-        'epithelialization_pct': 15,
-        'captured_before_debridement': true,
-      },
-      // Paciente 4 (quirurgica)
-      {
-        'id': _uuid.v4(),
-        'wound_id': w4Id,
-        'consultation_id': c4Id,
-        'measured_at': isoDate(now.subtract(const Duration(days: 12))),
-        'length_cm': 6.0,
-        'width_cm': 2.0,
-        'area_cm2': 12.0,
-        'depth_cm': 1.2,
-        'tunneling': false,
-        'undermining': false,
-        'granulation_pct': 30,
-        'slough_pct': 30,
-        'necrosis_pct': 10,
-        'epithelialization_pct': 30,
-        'captured_before_debridement': true,
-      },
-      // Paciente 5 (traumatica) — herida pequena, cierre rapido esperado
-      {
-        'id': _uuid.v4(),
-        'wound_id': w5Id,
-        'consultation_id': c5Id,
-        'measured_at': isoDate(now.subtract(const Duration(days: 8))),
-        'length_cm': 1.5,
-        'width_cm': 0.8,
-        'area_cm2': 1.2,
-        'depth_cm': 0.2,
-        'tunneling': false,
-        'undermining': false,
-        'granulation_pct': 70,
-        'slough_pct': 10,
-        'necrosis_pct': 0,
-        'epithelialization_pct': 20,
-        'captured_before_debridement': true,
-      },
-    ]);
-
-    // ---------------- Perfusion / nutricion ----------------
-    await store.saveAll(Collections.perfusionNutrition, [
-      {
-        'id': _uuid.v4(),
-        'consultation_id': c1Id,
-        'wound_id': w1Id,
-        'abi_right': 0.95,
-        'abi_left': 0.92,
-        'is_lower_extremity': true,
-        'albumin_g_dl': 3.6,
-      },
-      {
-        'id': _uuid.v4(),
-        'consultation_id': c2Id,
-        'wound_id': w2Id,
-        'abi_right': null,
-        'abi_left': null,
-        'is_lower_extremity': false,
-        'albumin_g_dl': 2.8,
-      },
-      {
-        'id': _uuid.v4(),
-        'consultation_id': c3Id,
-        'wound_id': w3Id,
-        'abi_right': 0.55,
-        'abi_left': 0.38, // isquemia critica en pierna izquierda (herida)
-        'is_lower_extremity': true,
-        'albumin_g_dl': 3.1,
-      },
-      {
-        'id': _uuid.v4(),
-        'consultation_id': c4Id,
-        'wound_id': w4Id,
-        'abi_right': null,
-        'abi_left': null,
-        'is_lower_extremity': false,
-        'albumin_g_dl': 3.9,
-      },
-      {
-        'id': _uuid.v4(),
-        'consultation_id': c5Id,
-        'wound_id': w5Id,
-        'abi_right': null,
-        'abi_left': null,
-        'is_lower_extremity': false,
-        'albumin_g_dl': null,
-      },
-    ]);
-
-    // Planes de tratamiento y componentes de ejemplo (manuales, no premium)
-    final tp5Id = _uuid.v4();
-    await store.saveAll(Collections.treatmentPlans, [
-      {
-        'id': tp5Id,
-        'consultation_id': c5Id,
-        'wound_id': w5Id,
-        'used_kura_protocol': false,
-        'final_description':
-            'Limpieza con solucion salina, cierre por segunda intencion, '
-            'aposito de espuma. Revision en 7 dias.',
-      },
-    ]);
-    await store.saveAll(Collections.treatmentComponents, [
-      {
-        'id': _uuid.v4(),
-        'treatment_plan_id': tp5Id,
-        'method': 'Limpieza de la herida',
-        'product': 'Solucion salina',
-        'origin': 'manual',
-        'sort_order': 0,
-      },
-      {
-        'id': _uuid.v4(),
-        'treatment_plan_id': tp5Id,
-        'method': 'Aposito',
-        'product': 'Espuma con borde adhesivo',
-        'origin': 'manual',
-        'sort_order': 1,
-      },
-    ]);
-
-    // ---------------- Catalogo de conceptos de nota de seguimiento ----------------
-    // Espejo de la precarga de la migracion 0010_note_option_catalog.sql
-    // (+ kura_tag de 0013_note_option_catalog_kura_tag.sql / defaultNoteOptionCatalog
-    // en DataRepository), para que el modo demo local tenga los mismos
-    // chips base -- con las mismas etiquetas de mapeo al motor -- que
-    // produccion (el admin los administra igual desde Configuracion).
+    // ---------------- Catálogo de conceptos de nota ----------------
+    // Espejo de la precarga de producción (0010 + kura_tag de 0013): mismos chips
+    // y etiquetas de mapeo al motor que en el flujo real.
     final noteOptionRows = <Map<String, dynamic>>[];
     void noteOption(String field, String label, [String? kuraTag]) {
       noteOptionRows.add({
@@ -1282,7 +384,8 @@ class DemoSeed {
     noteOption('care_type', 'Curación en hospitalización');
     noteOption('care_type', 'Interconsulta');
     noteOption('care_type', 'Desbridamiento programado', 'desbridamiento');
-    noteOption('procedure_desc', 'Limpieza con solución salina y cambio de apósito', 'limpieza');
+    noteOption('procedure_desc',
+        'Limpieza con solución salina y cambio de apósito', 'limpieza');
     noteOption('procedure_desc', 'Desbridamiento cortante parcial', 'desbridamiento');
     noteOption('procedure_desc', 'Desbridamiento autolítico/enzimático', 'desbridamiento');
     noteOption('procedure_desc', 'Toma de medidas y fotografía de control');
@@ -1303,19 +406,11 @@ class DemoSeed {
     await store.saveAll(Collections.noteOptionCatalog, noteOptionRows);
 
     // ================================================================
-    // Datos de demo ADICIONALES: trayectorias variadas (verde/ámbar/rojo/
-    // sin datos) en varios cuadros diagnósticos, para que el tablero y las
-    // gráficas de evolución luzcan en la demo. Se AGREGA con getAll+saveAll
-    // (saveAll sobrescribe la colección; por eso se re-lee antes de guardar).
-    // Las series de área están calibradas al checkpoint de Sheehan (sem. 4:
-    // ≥50% cierre / ≥30% observación / <30% no avanza).
+    // Helpers compartidos por los constructores de escenario.
     // ================================================================
-    Future<void> appendRows(String c, List<Map<String, dynamic>> rows) async {
-      await store.saveAll(c, [...store.getAll(c), ...rows]);
-    }
-
-    Map<String, dynamic> meas(String woundId, String consultId, DateTime d,
-        double area, int gran, int slough, int necr, int epi, double depth) {
+    Map<String, dynamic> meas(
+        String woundId, String? consultId, DateTime d, double area, int gran,
+        int slough, int necr, int epi, double depth) {
       return {
         'id': _uuid.v4(),
         'wound_id': woundId,
@@ -1350,74 +445,63 @@ class DemoSeed {
       };
     }
 
-    // ---- Seguimientos que dan trayectoria a pacientes ya existentes ----
-    // p4 (quirúrgica): mejora franca -> verde.
-    final c4bId = _uuid.v4();
-    final c4cId = _uuid.v4();
-    await appendRows(Collections.consultations, [
-      consulta(c4bId, p4Id, staff2Id, siteClinicaGdl, 'seguimiento',
-          now.subtract(const Duration(days: 6))),
-      consulta(c4cId, p4Id, staff2Id, siteClinicaGdl, 'seguimiento', now),
-    ]);
-    await appendRows(Collections.woundMeasurements, [
-      meas(w4Id, c4bId, now.subtract(const Duration(days: 6)), 8.0, 45, 25, 5, 25, 0.9),
-      meas(w4Id, c4cId, now, 5.0, 60, 15, 0, 25, 0.6),
-    ]);
+    // ================================================================
+    // ESCENARIO 1 — CLÍNICA DE HERIDAS (Kura+, morado): 7 pacientes.
+    // Recorrido de tratamiento foto-primero con mediciones seriadas. Cada
+    // paciente demuestra un estado distinto (etiología × trayectoria).
+    // ================================================================
+    var expSeq = 1;
 
-    // p2 (LPP): estancada -> rojo (no avanza).
-    final c2bId = _uuid.v4();
-    final c2cId = _uuid.v4();
-    await appendRows(Collections.consultations, [
-      consulta(c2bId, p2Id, staff1Id, siteDomicilioCdmx, 'seguimiento',
-          now.subtract(const Duration(days: 30))),
-      consulta(c2cId, p2Id, staff1Id, siteDomicilioCdmx, 'seguimiento', now),
-    ]);
-    await appendRows(Collections.woundMeasurements, [
-      meas(w2Id, c2bId, now.subtract(const Duration(days: 30)), 20.0, 28, 38, 24, 10, 1.7),
-      meas(w2Id, c2cId, now, 19.0, 30, 36, 22, 12, 1.6),
-    ]);
-
-    // p3 (vascular isquémica): empeora -> rojo.
-    final c3bId = _uuid.v4();
-    final c3cId = _uuid.v4();
-    await appendRows(Collections.consultations, [
-      consulta(c3bId, p3Id, staff1Id, siteClinicaCdmx, 'seguimiento',
-          now.subtract(const Duration(days: 15))),
-      consulta(c3cId, p3Id, staff1Id, siteClinicaCdmx, 'seguimiento', now),
-    ]);
-    await appendRows(Collections.woundMeasurements, [
-      meas(w3Id, c3bId, now.subtract(const Duration(days: 15)), 3.4, 8, 32, 48, 12, 0.6),
-      meas(w3Id, c3cId, now, 3.8, 6, 34, 50, 10, 0.7),
-    ]);
-
-    // ---- Pacientes NUEVOS (cuadros y evoluciones variados) ----
-    var folioSeq = 6;
-    Future<void> addCase({
+    /// Crea un caso clínico completo en Kura+ y devuelve los ids clave (paciente,
+    /// herida, consultas) para adjuntar extras (referencia, evento adverso, etc.).
+    Future<Map<String, dynamic>> addClinicalCase({
       required String name,
       required DateTime birth,
       required String sex,
       required String siteId,
       required String staffId,
+      required String mobility,
+      required String background,
       required String etiology,
       required String subtype,
       required String location,
-      required String background,
-      required List<List<String>> comorbid,
-      required List<double> areas, // [basal, media, actual]
+      required List<List<String>> comorbid, // [code, status]
+      required List<double> areas, // serie de área basal → actual
+      required List<List<int>> comps, // [gran, slough, necr, epi] por visita
+      List<Map<String, String>> diagnoses = const [], // {code,name,relation,primary}
+      List<double>? depths,
       int baselineDaysAgo = 28,
       bool fragile = false,
+      String? caregiverName,
+      String? caregiverPhone,
+      String? ekareId,
       Map<String, dynamic> woundExtra = const {},
+      double? glucose,
+      List<String> infectionCriteria = const [],
+      double? abiRight,
+      double? abiLeft,
+      bool isLowerExtremity = false,
+      double? albumin,
+      bool closed = false,
+      String? dischargeNote,
+      String? treatmentDescription,
+      List<List<String>> treatmentComponents = const [], // [method, product]
     }) async {
       final pid = _uuid.v4();
       final wid = _uuid.v4();
-      final cBase = _uuid.v4();
-      final cMid = _uuid.v4();
-      final cCur = _uuid.v4();
-      final base = now.subtract(Duration(days: baselineDaysAgo));
-      final mid = now.subtract(Duration(days: baselineDaysAgo ~/ 2));
-      final folio = 'EXP2025-00${folioSeq.toString().padLeft(2, '0')}';
-      folioSeq++;
-      final improving = areas.last < areas.first;
+      final folio = 'EXP2026-${expSeq.toString().padLeft(4, '0')}';
+      expSeq++;
+      final n = areas.length;
+      final dates = List<DateTime>.generate(
+          n,
+          (i) => now.subtract(
+              Duration(days: (baselineDaysAgo * (n - 1 - i) / (n - 1)).round())));
+      final dpt = depths ??
+          List<double>.generate(
+              n,
+              (i) => double.parse(
+                  (0.6 - 0.35 * i / (n - 1)).toStringAsFixed(2)));
+      final consultIds = List.generate(n, (_) => _uuid.v4());
 
       await appendRows(Collections.patients, [
         {
@@ -1428,13 +512,15 @@ class DemoSeed {
           'birth_date': isoDate(birth),
           'sex': sex,
           'primary_site_id': siteId,
-          'mobility': fragile ? 'encamado' : 'ambulatorio',
-          'has_identified_caregiver': fragile,
+          'mobility': mobility,
+          'has_identified_caregiver': caregiverName != null,
+          if (caregiverName != null) 'caregiver_name': caregiverName,
+          if (caregiverPhone != null) 'caregiver_phone': caregiverPhone,
           'fragile_patient': fragile,
           'background_notes': background,
-          'ekare_external_id': null,
+          'ekare_external_id': ekareId,
           'is_active': true,
-          'created_at': iso(base),
+          'created_at': iso(dates.first),
         }
       ]);
       await appendRows(
@@ -1447,6 +533,42 @@ class DemoSeed {
                     'status': c[1],
                   })
               .toList());
+      if (diagnoses.isNotEmpty) {
+        await appendRows(
+            Collections.patientDiagnoses,
+            diagnoses
+                .map((d) => {
+                      'id': _uuid.v4(),
+                      'organization_id': organizationId,
+                      'patient_id': pid,
+                      'wound_id': null,
+                      'staff_id': staffId,
+                      'code': d['code'],
+                      'name': d['name'],
+                      'relation': d['relation'],
+                      'is_primary': d['primary'] == 'true',
+                      'status': 'activo',
+                      'notes': null,
+                      'noted_at': iso(dates.first),
+                      'noted_by': null,
+                      'created_at': iso(dates.first),
+                    })
+                .toList());
+      }
+      // Consentimientos otorgados (el flujo foto-primero los requiere).
+      await appendRows(Collections.consents, [
+        for (final type in ['privacidad', 'fotografia', 'desbridamiento'])
+          {
+            'id': _uuid.v4(),
+            'patient_id': pid,
+            'type': type,
+            'granted': true,
+            'granted_at': iso(dates.first),
+            'signed_by': 'Paciente (demo)',
+            'doc_ref': null,
+            'created_at': iso(dates.first),
+          }
+      ]);
       await appendRows(Collections.wounds, [
         {
           'id': wid,
@@ -1455,173 +577,382 @@ class DemoSeed {
           'subtype': subtype,
           'body_location_primary': location,
           'body_location_secondary': null,
-          'onset_date': isoDate(base.subtract(const Duration(days: 10))),
+          'onset_date': isoDate(dates.first.subtract(const Duration(days: 12))),
           'wagner_grade': woundExtra['wagner_grade'],
           'ceap_class': woundExtra['ceap_class'],
           'wuwhs_grade': woundExtra['wuwhs_grade'],
           'agente_causal': woundExtra['agente_causal'],
-          'is_active': true,
-          'closed_at': null,
-          'created_at': iso(base),
+          'discharge_reason': closed ? 'cierre' : null,
+          'discharge_note': dischargeNote,
+          'is_active': !closed,
+          'closed_at': closed ? iso(dates.last) : null,
+          'created_at': iso(dates.first),
         }
       ]);
-      await appendRows(Collections.consultations, [
-        consulta(cBase, pid, staffId, siteId, 'valoracion', base),
-        consulta(cMid, pid, staffId, siteId, 'seguimiento', mid),
-        consulta(cCur, pid, staffId, siteId, 'seguimiento', now),
-      ]);
+      final consults = <Map<String, dynamic>>[];
+      for (var i = 0; i < n; i++) {
+        consults.add(consulta(consultIds[i], pid, staffId, siteId,
+            i == 0 ? 'valoracion' : 'seguimiento', dates[i]));
+      }
+      await appendRows(Collections.consultations, consults);
       await appendRows(Collections.woundAssessments, [
         {
           'id': _uuid.v4(),
-          'consultation_id': cBase,
+          'consultation_id': consultIds.first,
           'wound_id': wid,
-          'glucose_mg_dl': null,
-          'first_assessment_date': isoDate(base),
+          'glucose_mg_dl': glucose,
+          'first_assessment_date': isoDate(dates.first),
           'edema': 'leve',
           'pain': true,
           'pain_type': 'nociceptivo',
           'pain_duration': 'cronico',
           'pain_vas': 4,
           'exudate_amount': 'moderado',
-          'infection_criteria': <String>[],
-          'odor': 'leve',
+          'infection_criteria': infectionCriteria,
+          'odor': infectionCriteria.isEmpty ? 'ninguno' : 'moderado',
           'wound_edge': 'definido',
           'perilesional_skin': ['normal'],
         }
       ]);
-      final cB = improving ? [40, 35, 10, 15] : [30, 35, 25, 10];
-      final cM = improving ? [55, 22, 5, 18] : [28, 36, 26, 10];
-      final cC = improving ? [70, 12, 0, 18] : [25, 38, 27, 10];
-      await appendRows(Collections.woundMeasurements, [
-        meas(wid, cBase, base, areas[0], cB[0], cB[1], cB[2], cB[3], 0.6),
-        meas(wid, cMid, mid, areas[1], cM[0], cM[1], cM[2], cM[3], 0.5),
-        meas(wid, cCur, now, areas[2], cC[0], cC[1], cC[2], cC[3], 0.4),
-      ]);
+      final measures = <Map<String, dynamic>>[];
+      for (var i = 0; i < n; i++) {
+        final c = comps[i];
+        measures.add(meas(wid, consultIds[i], dates[i], areas[i], c[0], c[1],
+            c[2], c[3], dpt[i]));
+      }
+      await appendRows(Collections.woundMeasurements, measures);
+      if (abiRight != null || abiLeft != null || albumin != null) {
+        await appendRows(Collections.perfusionNutrition, [
+          {
+            'id': _uuid.v4(),
+            'consultation_id': consultIds.first,
+            'wound_id': wid,
+            'abi_right': abiRight,
+            'abi_left': abiLeft,
+            'is_lower_extremity': isLowerExtremity,
+            'albumin_g_dl': albumin,
+          }
+        ]);
+      }
+      if (treatmentDescription != null) {
+        final tpId = _uuid.v4();
+        await appendRows(Collections.treatmentPlans, [
+          {
+            'id': tpId,
+            'consultation_id': consultIds.last,
+            'wound_id': wid,
+            'used_kura_protocol': false,
+            'final_description': treatmentDescription,
+          }
+        ]);
+        await appendRows(Collections.treatmentComponents, [
+          for (var i = 0; i < treatmentComponents.length; i++)
+            {
+              'id': _uuid.v4(),
+              'treatment_plan_id': tpId,
+              'method': treatmentComponents[i][0],
+              'product': treatmentComponents[i][1],
+              'origin': 'manual',
+              'sort_order': i,
+            }
+        ]);
+      }
       await appendRows(Collections.staffPatientAssignments, [
         {'id': _uuid.v4(), 'staff_id': staffId, 'patient_id': pid},
       ]);
+      return {'pid': pid, 'wid': wid, 'consultIds': consultIds};
     }
 
-    // Verde (avanza): venosa mejorando.
-    await addCase(
+    // 1. Pie diabético — MEJORANDO. Curva de cierre franca, plan establecido.
+    await addClinicalCase(
+      name: 'Roberto Sánchez López',
+      birth: DateTime(1958, 3, 12),
+      sex: 'M',
+      siteId: siteClinicaCdmx,
+      staffId: staff1Id,
+      mobility: 'ambulatorio',
+      caregiverName: 'María Sánchez (hija)',
+      caregiverPhone: '555-0101',
+      ekareId: 'EKARE-PT-88213',
+      background: 'Diabetes mellitus tipo 2 de 15 años de evolución. Neuropatía '
+          'periférica. Control glucémico en mejora tras educación.',
+      etiology: 'pie_diabetico',
+      subtype: 'Úlcera neuropática plantar',
+      location: 'pie_derecho_planta',
+      woundExtra: {'wagner_grade': 'g2'},
+      comorbid: [
+        ['diabetes_mellitus', 'presente'],
+        ['movilidad_reducida', 'no_evaluado'],
+      ],
+      diagnoses: [
+        {
+          'code': 'L97X',
+          'name': 'ÚLCERA DE MIEMBRO INFERIOR, NO CLASIFICADA EN OTRA PARTE',
+          'relation': 'herida',
+          'primary': 'true'
+        },
+        {
+          'code': 'E115',
+          'name':
+              'DIABETES MELLITUS TIPO 2, CON COMPLICACIONES CIRCULATORIAS PERIFÉRICAS',
+          'relation': 'causa',
+          'primary': 'false'
+        },
+      ],
+      areas: [8.0, 5.9, 3.4],
+      comps: [
+        [40, 35, 10, 15],
+        [55, 20, 5, 20],
+        [65, 10, 0, 25],
+      ],
+      glucose: 172,
+      abiRight: 0.95,
+      abiLeft: 0.92,
+      isLowerExtremity: true,
+      albumin: 3.6,
+      treatmentDescription:
+          'Descarga plantar con calzado terapéutico, curación en ambiente '
+          'húmedo y control glucémico. Revisión cada 7 días.',
+      treatmentComponents: [
+        ['Limpieza de la herida', 'Solución salina 0.9%'],
+        ['Apósito primario', 'Espuma con borde adhesivo'],
+        ['Descarga', 'Calzado/plantilla de descarga'],
+      ],
+    );
+
+    // 2. Venosa CEAP c6 — MEJORANDO con terapia compresiva.
+    await addClinicalCase(
       name: 'Laura Jiménez Ruiz',
       birth: DateTime(1963, 4, 22),
       sex: 'F',
       siteId: siteClinicaGdl,
-      staffId: staff1Id,
+      staffId: staff2Id,
+      mobility: 'ambulatorio',
+      background: 'Insuficiencia venosa crónica; buena adherencia a compresión.',
       etiology: 'vascular',
       subtype: 'Úlcera venosa',
       location: 'pierna_derecha_tercio_distal',
-      background: 'Insuficiencia venosa crónica; buena adherencia a compresión.',
+      woundExtra: {'ceap_class': 'c6'},
       comorbid: [
         ['obesidad', 'presente'],
         ['diabetes_mellitus', 'negado'],
       ],
       areas: [12.0, 8.0, 4.5],
-      woundExtra: {'ceap_class': 'c6'},
+      comps: [
+        [45, 30, 5, 20],
+        [58, 20, 2, 20],
+        [70, 8, 0, 22],
+      ],
+      abiRight: 1.0,
+      abiLeft: 0.98,
+      isLowerExtremity: true,
+      albumin: 3.8,
+      treatmentDescription:
+          'Terapia compresiva multicapa, curación en ambiente húmedo y '
+          'elevación de la extremidad. Revisión semanal.',
+      treatmentComponents: [
+        ['Compresión', 'Vendaje multicapa'],
+        ['Apósito primario', 'Espuma'],
+      ],
     );
-    // Ámbar (con reservas): pie diabético estancándose.
-    await addCase(
+
+    // 3. Arterial / isquemia crítica — EMPEORANDO → referencia + evento adverso.
+    final fernando = await addClinicalCase(
+      name: 'Fernando Castillo Vega',
+      birth: DateTime(1952, 11, 20),
+      sex: 'M',
+      siteId: siteClinicaCdmx,
+      staffId: staff1Id,
+      mobility: 'ambulatorio',
+      background: 'Enfermedad arterial periférica avanzada, tabaquismo activo '
+          'intenso. Dolor isquémico en reposo.',
+      etiology: 'vascular',
+      subtype: 'Úlcera arterial',
+      location: 'pie_izquierdo_dorso',
+      comorbid: [
+        ['enfermedad_arterial_periferica', 'presente'],
+        ['tabaquismo_activo', 'presente'],
+      ],
+      diagnoses: [
+        {
+          'code': 'I702',
+          'name': 'ATEROSCLEROSIS DE LAS ARTERIAS DE LOS MIEMBROS',
+          'relation': 'causa',
+          'primary': 'true'
+        },
+      ],
+      areas: [3.0, 3.5, 4.2],
+      comps: [
+        [15, 30, 45, 10],
+        [10, 32, 48, 10],
+        [6, 34, 50, 10],
+      ],
+      depths: [0.5, 0.6, 0.7],
+      infectionCriteria: ['eritemaPerilesional', 'calorLocal'],
+      abiRight: 0.62,
+      abiLeft: 0.34, // isquemia crítica en la pierna con la herida
+      isLowerExtremity: true,
+      albumin: 3.0,
+    );
+    // Referencia urgente a cirugía vascular.
+    await appendRows(Collections.referrals, [
+      {
+        'id': _uuid.v4(),
+        'organization_id': organizationId,
+        'patient_id': fernando['pid'],
+        'wound_id': fernando['wid'],
+        'consultation_id': (fernando['consultIds'] as List).last,
+        'staff_id': staff1Id,
+        'especialidad': 'Angiología / Cirugía vascular',
+        'motivo':
+            'Isquemia crítica (ITB 0.34) con úlcera arterial en progresión; se '
+            'solicita valoración para revascularización.',
+        'adjuntos': {
+          'reporte_ekare': true,
+          'resumen_clinico': true,
+          'itb': true,
+        },
+        'status': 'enviada',
+        'referral_signed_by': 'Dra. Ana Martínez',
+        'referral_signed_license': 'K2024-0001',
+        'return_doc_ref': null,
+        'return_notes': null,
+        'returned_at': null,
+        'created_at': iso(now.subtract(const Duration(days: 2))),
+      }
+    ]);
+    // Evento adverso (deterioro isquémico).
+    await appendRows(Collections.adverseEvents, [
+      {
+        'id': _uuid.v4(),
+        'organization_id': organizationId,
+        'patient_id': fernando['pid'],
+        'wound_id': fernando['wid'],
+        'consultation_id': (fernando['consultIds'] as List).last,
+        'staff_id': staff1Id,
+        'occurred_at': iso(now.subtract(const Duration(days: 2))),
+        'type': 'Deterioro clínico de la herida',
+        'severity': 'grave',
+        'alarm_signs': {'aumento_necrosis': true, 'dolor_reposo': true},
+        'description':
+            'Aumento de necrosis y dolor isquémico en reposo pese al manejo.',
+        'actions_taken':
+            'Referencia urgente a cirugía vascular; ajuste de analgesia.',
+        'evolution': 'Pendiente de valoración por especialidad.',
+        'reported_at': iso(now.subtract(const Duration(days: 2))),
+        'created_at': iso(now.subtract(const Duration(days: 2))),
+      }
+    ]);
+
+    // 4. Quirúrgica (dehiscencia) — ESTANCADA, con datos de infección local.
+    await addClinicalCase(
+      name: 'Patricia Núñez Reyes',
+      birth: DateTime(1975, 2, 18),
+      sex: 'F',
+      siteId: siteClinicaGdl,
+      staffId: staff2Id,
+      mobility: 'ambulatorio',
+      background: 'Postquirúrgica de colecistectomía abierta, dehiscencia de '
+          'herida en el 10º día postoperatorio.',
+      etiology: 'quirurgica',
+      subtype: 'Dehiscencia de herida quirúrgica',
+      location: 'abdomen_superior',
+      woundExtra: {'wuwhs_grade': 'g2'},
+      comorbid: [
+        ['obesidad', 'presente'],
+      ],
+      diagnoses: [
+        {
+          'code': 'T814',
+          'name':
+              'INFECCIÓN CONSECUTIVA A PROCEDIMIENTO, NO CLASIFICADA EN OTRA PARTE',
+          'relation': 'consecuencia',
+          'primary': 'true'
+        },
+      ],
+      areas: [12.0, 11.5, 11.0],
+      comps: [
+        [30, 35, 10, 25],
+        [30, 36, 10, 24],
+        [32, 36, 8, 24],
+      ],
+      infectionCriteria: ['eritemaPerilesional', 'calorLocal'],
+      glucose: 108,
+      albumin: 3.4,
+    );
+
+    // 5. Pie diabético — ESTANCADO (ámbar). Adherencia irregular al descargo.
+    await addClinicalCase(
       name: 'José Herrera Campos',
       birth: DateTime(1955, 8, 3),
       sex: 'M',
       siteId: siteClinicaCdmx,
       staffId: staff2Id,
+      mobility: 'ambulatorio',
+      background: 'DM2 con neuropatía; adherencia irregular al descargo plantar.',
       etiology: 'pie_diabetico',
       subtype: 'Úlcera neuropática plantar',
       location: 'pie_izquierdo_planta',
-      background: 'DM2 con neuropatía; adherencia irregular al descargo.',
+      woundExtra: {'wagner_grade': 'g2'},
       comorbid: [
         ['diabetes_mellitus', 'presente'],
         ['movilidad_reducida', 'no_evaluado'],
       ],
-      areas: [9.0, 7.2, 5.9],
-      woundExtra: {'wagner_grade': 'g2'},
-    );
-    // Rojo (no avanza): arterial empeorando.
-    await addCase(
-      name: 'Rosa Delgado Mora',
-      birth: DateTime(1948, 12, 15),
-      sex: 'F',
-      siteId: siteClinicaCdmx,
-      staffId: staff1Id,
-      etiology: 'vascular',
-      subtype: 'Úlcera arterial',
-      location: 'pie_derecho_dorso',
-      background: 'Enfermedad arterial periférica; dolor isquémico en reposo.',
-      comorbid: [
-        ['enfermedad_arterial_periferica', 'presente'],
-        ['tabaquismo_activo', 'presente'],
+      areas: [9.0, 7.4, 6.8],
+      comps: [
+        [35, 35, 15, 15],
+        [38, 34, 13, 15],
+        [40, 34, 12, 14],
       ],
-      areas: [6.0, 6.6, 7.2],
+      glucose: 198,
+      abiRight: 0.9,
+      abiLeft: 0.88,
+      isLowerExtremity: true,
+      albumin: 3.2,
     );
-    // Ámbar (con reservas): LPP con avance lento.
-    await addCase(
-      name: 'Antonio Ríos Peña',
-      birth: DateTime(1938, 1, 9),
-      sex: 'M',
-      siteId: siteDomicilioGdl,
-      staffId: staff2Id,
-      etiology: 'lpp',
-      subtype: 'LPP categoría II',
-      location: 'talon_derecho',
-      background: 'Movilidad reducida, atención domiciliaria.',
-      comorbid: [
-        ['movilidad_reducida', 'presente'],
-        ['malnutricion', 'presente'],
-      ],
-      areas: [8.0, 6.6, 5.3],
-      fragile: true,
-    );
-    // Verde (avanza): quirúrgica cerrando bien.
-    await addCase(
+
+    // 6. Quirúrgica (cesárea) — CERRADA. Historia de éxito (herida egresada).
+    await addClinicalCase(
       name: 'Carmen Solís Vega',
-      birth: DateTime(1980, 6, 27),
+      birth: DateTime(1990, 6, 27),
       sex: 'F',
       siteId: siteClinicaCdmx,
       staffId: adminStaffId,
+      mobility: 'ambulatorio',
+      background: 'Postoperatorio de cesárea, cierre por segunda intención sin '
+          'datos de infección.',
       etiology: 'quirurgica',
-      subtype: 'Herida quirúrgica (cierre por 2a intención)',
+      subtype: 'Herida quirúrgica (cierre por 2ª intención)',
       location: 'abdomen_bajo',
-      background: 'Postoperatorio de cesárea, sin datos de infección.',
       comorbid: [
         ['obesidad', 'presente'],
       ],
-      areas: [7.0, 4.0, 2.4],
-      baselineDaysAgo: 21,
-    );
-    // Rojo (no avanza): herida de etiología mixta estancada.
-    await addCase(
-      name: 'Héctor Navarro Luna',
-      birth: DateTime(1969, 10, 2),
-      sex: 'M',
-      siteId: siteClinicaGdl,
-      staffId: staff1Id,
-      etiology: 'otra',
-      subtype: 'Úlcera de etiología mixta',
-      location: 'pierna_izquierda',
-      background: 'Úlcera crónica de etiología mixta en estudio.',
-      comorbid: [
-        ['diabetes_mellitus', 'presente'],
-        ['enfermedad_arterial_periferica', 'presente'],
+      areas: [7.0, 3.0, 0.2],
+      comps: [
+        [50, 25, 5, 20],
+        [70, 10, 0, 20],
+        [15, 0, 0, 85],
       ],
-      areas: [10.0, 9.4, 8.8],
+      depths: [0.5, 0.3, 0.0],
+      baselineDaysAgo: 21,
+      closed: true,
+      dischargeNote:
+          'Cicatrización completa a las 3 semanas. Alta de la herida; se indican '
+          'cuidados de la cicatriz y protección solar.',
     );
 
-    // ---- Caso con EVIDENCIA FOTOGRÁFICA real (LPP sacra, 5 visitas) ----
-    // Fotos de una evolución compartida para demostración (ver
-    // demo_wound_photos.dart). 5 puntos (basal -> 4 seguimientos) con área
-    // decreciente y composición del lecho mejorando, para lucir el antes/
-    // después, el % de reducción y la galería en el reporte y el detalle.
+    // 7. LPP sacra domiciliaria — MEJORANDO, con EVIDENCIA FOTOGRÁFICA real.
+    // 5 visitas (basal → 4 seguimientos) con área decreciente y composición del
+    // lecho mejorando, para lucir el antes/después, el % de reducción y la
+    // galería en el reporte y el detalle.
     {
       final pid = _uuid.v4();
       final wid = _uuid.v4();
-      final folio = 'EXP2025-00${folioSeq.toString().padLeft(2, '0')}';
-      folioSeq++;
+      final folio = 'EXP2026-${expSeq.toString().padLeft(4, '0')}';
+      expSeq++;
       final dates =
           [28, 21, 14, 7, 0].map((d) => now.subtract(Duration(days: d))).toList();
       final areas = [24.0, 18.0, 12.0, 7.0, 3.5];
-      // [granulación, esfacelo, necrosis, epitelización] por visita.
       final comps = [
         [10, 35, 45, 10],
         [25, 40, 25, 10],
@@ -1658,6 +989,19 @@ class DemoSeed {
         {'id': _uuid.v4(), 'patient_id': pid, 'code': 'diabetes_mellitus', 'status': 'presente'},
         {'id': _uuid.v4(), 'patient_id': pid, 'code': 'malnutricion', 'status': 'presente'},
       ]);
+      await appendRows(Collections.consents, [
+        for (final type in ['privacidad', 'fotografia', 'desbridamiento'])
+          {
+            'id': _uuid.v4(),
+            'patient_id': pid,
+            'type': type,
+            'granted': true,
+            'granted_at': iso(dates.first),
+            'signed_by': 'Marta Salinas (hija)',
+            'doc_ref': null,
+            'created_at': iso(dates.first),
+          }
+      ]);
       await appendRows(Collections.wounds, [
         {
           'id': wid,
@@ -1676,9 +1020,6 @@ class DemoSeed {
           'created_at': iso(dates.first),
         }
       ]);
-      // Notas de seguimiento (una por visita de seguimiento; el índice 0 es
-      // la valoración y no las usa). Cuentan una evolución real y llenan todos
-      // los campos de la nota que muestra el reporte PDF.
       const followUpProc = [
         '',
         'Limpieza con solución salina 0.9%, desbridamiento cortante de esfacelo y colocación de apósito de espuma.',
@@ -1753,8 +1094,6 @@ class DemoSeed {
           'perilesional_skin': ['macerada'],
         }
       ]);
-      // Plan de tratamiento establecido (ligado a la última consulta; es el que
-      // toma el reporte vía _latestPlan). Con descripción y componentes.
       final ricTpId = _uuid.v4();
       await appendRows(Collections.treatmentPlans, [
         {
@@ -1806,5 +1145,441 @@ class DemoSeed {
         {'id': _uuid.v4(), 'staff_id': staff1Id, 'patient_id': pid},
       ]);
     }
+
+    // ================================================================
+    // ESCENARIO 2 — HOSPITAL (azul): 5 pacientes.
+    // Prevención centrada en el paciente: internamiento + Braden (4 bandas) +
+    // rondas (tareas SIN dueño, assignee_kind 'staff'; las marca quien está de
+    // turno vía done_by). Alimenta el tablero de riesgo y el dashboard del centro.
+    // ================================================================
+    var hospSeq = 1;
+
+    /// Crea un paciente hospitalizado con internamiento, Braden y tareas de ronda.
+    /// [tasks] = lista de {title, actionLabel, ruleId, actionId, hours, status},
+    /// donde `hours` es el desfase (en horas) del horario respecto a ahora
+    /// (negativo = pasado) y `status` ∈ {pending, done, skipped}.
+    Future<void> addHospitalPatient({
+      required String name,
+      required DateTime birth,
+      required String sex,
+      required int braden,
+      required String bradenNotes,
+      required String floor,
+      required String area,
+      required String bed,
+      required List<Map<String, dynamic>> tasks,
+      int admittedDaysAgo = 3,
+      bool fragile = true,
+    }) async {
+      final pid = _uuid.v4();
+      final folio = 'HOSP-${hospSeq.toString().padLeft(4, '0')}';
+      hospSeq++;
+      await appendRows(Collections.patients, [
+        {
+          'id': pid,
+          'organization_id': organizationIdHospital,
+          'folio': folio,
+          'full_name': name,
+          'birth_date': isoDate(birth),
+          'sex': sex,
+          'mobility': fragile ? 'encamado' : 'ambulatorio',
+          'has_identified_caregiver': false,
+          'fragile_patient': fragile,
+          'background_notes':
+              'Paciente hospitalizado. Prevención de LPP centrada en el paciente '
+              '(turnos).',
+          'is_active': true,
+          'created_at': iso(now.subtract(Duration(days: admittedDaysAgo))),
+        }
+      ]);
+      await appendRows(Collections.patientAdmissions, [
+        {
+          'id': _uuid.v4(),
+          'organization_id': organizationIdHospital,
+          'patient_id': pid,
+          'floor': floor,
+          'area': area,
+          'bed': bed,
+          'admitted_at': iso(now.subtract(Duration(days: admittedDaysAgo))),
+          'discharged_at': null,
+          'status': 'activo',
+          'notes': null,
+          'created_at': iso(now.subtract(Duration(days: admittedDaysAgo))),
+        }
+      ]);
+      await appendRows(Collections.riskAssessments, [
+        {
+          'id': _uuid.v4(),
+          'organization_id': organizationIdHospital,
+          'patient_id': pid,
+          'braden_score': braden,
+          'braden_subscores': null,
+          'assessed_at': iso(now.subtract(const Duration(days: 1))),
+          'assessed_by': enfermeriaProfileId,
+          'notes': bradenNotes,
+          'created_at': iso(now.subtract(const Duration(days: 1))),
+        }
+      ]);
+      await appendRows(Collections.preventiveTasks, [
+        for (final t in tasks)
+          {
+            'id': _uuid.v4(),
+            'organization_id': organizationIdHospital,
+            'patient_id': pid,
+            'rule_id': t['ruleId'],
+            'action_id': t['actionId'],
+            'title': t['title'],
+            'action_label': t['actionLabel'],
+            'scheduled_at': iso(now.add(Duration(hours: t['hours'] as int))),
+            'assignee_profile_id': null,
+            'assignee_kind': 'staff',
+            'status': t['status'],
+            if (t['status'] == 'done') 'done_at': iso(now.add(Duration(hours: t['hours'] as int))),
+            if (t['status'] == 'done') 'done_by': enfermeriaProfileId,
+            'source': 'auto',
+            'created_at': iso(now.subtract(const Duration(hours: 12))),
+          }
+      ]);
+    }
+
+    // Tareas típicas de ronda (LPP): plantillas reutilizables.
+    Map<String, dynamic> rondaTask(
+            String title, String label, int hours, String status,
+            {String rule = 'lpp_alto', String action = 'cambios_2h_registro'}) =>
+        {
+          'title': title,
+          'actionLabel': label,
+          'ruleId': rule,
+          'actionId': action,
+          'hours': hours,
+          'status': status,
+        };
+
+    // Banda MUY ALTO (rojo): encamada, cambios cada 2 h. Una vencida sin marcar.
+    await addHospitalPatient(
+      name: 'Guadalupe Torres Ibarra',
+      birth: DateTime(1943, 7, 5),
+      sex: 'F',
+      braden: 9,
+      bradenNotes: 'Adulto mayor encamado, incontinencia; riesgo muy alto.',
+      floor: '3',
+      area: 'Medicina Interna',
+      bed: '08',
+      tasks: [
+        rondaTask('Cambio postural', 'Cambios posturales cada 2 h', -3, 'done'),
+        rondaTask('Cambio postural', 'Cambios posturales cada 2 h', -1, 'pending'),
+        rondaTask('Examen de piel', 'Examen diario de la piel', 2, 'pending',
+            action: 'exam_piel_diario'),
+        rondaTask('Aplicar AGHO', 'AGHO en zonas de riesgo', 5, 'pending',
+            action: 'agho'),
+      ],
+    );
+
+    // Banda ALTO (ámbar): frágil, cumplimiento parcial.
+    await addHospitalPatient(
+      name: 'Antonio Ríos Peña',
+      birth: DateTime(1940, 1, 9),
+      sex: 'M',
+      braden: 11,
+      bradenNotes: 'Movilidad muy reducida; LPP incipiente en talón derecho.',
+      floor: '2',
+      area: 'Cirugía',
+      bed: '04',
+      tasks: [
+        rondaTask('Cambio postural', 'Cambios posturales cada 2 h', -2, 'done'),
+        rondaTask('Cambio postural', 'Cambios posturales cada 2 h', 1, 'pending'),
+        rondaTask('Protección de talones', 'Taloneras de descarga', 4, 'pending',
+            action: 'taloneras'),
+      ],
+    );
+
+    // Banda MEDIO: vigilancia, buen cumplimiento.
+    await addHospitalPatient(
+      name: 'Héctor Navarro Luna',
+      birth: DateTime(1955, 10, 2),
+      sex: 'M',
+      braden: 15,
+      bradenNotes: 'Riesgo medio; deambula con apoyo.',
+      floor: '3',
+      area: 'Medicina Interna',
+      bed: '12',
+      fragile: false,
+      tasks: [
+        rondaTask('Examen de piel', 'Examen diario de la piel', -4, 'done',
+            action: 'exam_piel_diario'),
+        rondaTask('Movilización', 'Fomentar movilización asistida', 3, 'pending',
+            rule: 'lpp_medio', action: 'movilizacion'),
+      ],
+    );
+
+    // Banda BAJO (verde): control.
+    await addHospitalPatient(
+      name: 'José Luis Ramírez Ochoa',
+      birth: DateTime(1958, 5, 14),
+      sex: 'M',
+      braden: 19,
+      bradenNotes: 'Riesgo bajo; autónomo, sin datos de LPP.',
+      floor: '4',
+      area: 'Geriatría',
+      bed: '02',
+      fragile: false,
+      tasks: [
+        rondaTask('Examen de piel', 'Examen diario de la piel', -2, 'done',
+            rule: 'lpp_bajo', action: 'exam_piel_diario'),
+      ],
+    );
+
+    // Banda MUY ALTO (rojo) #2: postquirúrgica encamada, tarea vencida.
+    await addHospitalPatient(
+      name: 'María Elena Vega Ortiz',
+      birth: DateTime(1946, 12, 1),
+      sex: 'F',
+      braden: 8,
+      bradenNotes: 'Postoperatorio, encamada; riesgo muy alto de LPP.',
+      floor: '2',
+      area: 'Cirugía',
+      bed: '09',
+      admittedDaysAgo: 2,
+      tasks: [
+        rondaTask('Cambio postural', 'Cambios posturales cada 2 h', -5, 'done'),
+        rondaTask('Cambio postural', 'Cambios posturales cada 2 h', -1, 'pending'),
+        rondaTask('Superficie de redistribución', 'Colchón de redistribución de presión',
+            3, 'pending', action: 'superficie'),
+      ],
+    );
+
+    // ================================================================
+    // ESCENARIO 3 — CUIDADORES (rosa): 3 pacientes a domicilio.
+    // El cuidador demo (login por teléfono) monitorea a sus pacientes asignados:
+    // tareas con estados variados (hecha / vencida / futura) e indicaciones del
+    // centro. Cada paciente muestra el estado de su herida en la vista del cuidador.
+    // ================================================================
+    var cuiSeq = 1;
+
+    /// Crea un paciente a domicilio del centro de cuidadores, lo asigna al
+    /// cuidador demo, y le agrega herida + medición (estado visible en la app del
+    /// cuidador), tareas y las indicaciones del centro.
+    Future<void> addCaregiverPatient({
+      required String name,
+      required DateTime birth,
+      required String sex,
+      required String background,
+      required String etiology,
+      required String subtype,
+      required String location,
+      required double area,
+      required List<int> comp, // [gran, slough, necr, epi]
+      required String instructions,
+      required List<Map<String, dynamic>> tasks,
+      Map<String, dynamic> woundExtra = const {},
+    }) async {
+      final pid = _uuid.v4();
+      final wid = _uuid.v4();
+      final folio = 'CUI-${cuiSeq.toString().padLeft(4, '0')}';
+      cuiSeq++;
+      await appendRows(Collections.patients, [
+        {
+          'id': pid,
+          'organization_id': organizationIdCuidadores,
+          'folio': folio,
+          'full_name': name,
+          'birth_date': isoDate(birth),
+          'sex': sex,
+          'mobility': 'encamado',
+          'has_identified_caregiver': true,
+          'caregiver_name': 'Cuidador Demo',
+          'caregiver_phone': '5512345678',
+          'fragile_patient': true,
+          'background_notes': background,
+          'is_active': true,
+          'created_at': iso(now.subtract(const Duration(days: 20))),
+        }
+      ]);
+      await appendRows(Collections.caregiverPatientAssignments, [
+        {
+          'id': _uuid.v4(),
+          'organization_id': organizationIdCuidadores,
+          'caregiver_profile_id': cuidadorProfileId,
+          'patient_id': pid,
+          'assigned_by': adminProfileId,
+          'created_at': iso(now.subtract(const Duration(days: 20))),
+        }
+      ]);
+      await appendRows(Collections.wounds, [
+        {
+          'id': wid,
+          'patient_id': pid,
+          'etiology': etiology,
+          'subtype': subtype,
+          'body_location_primary': location,
+          'body_location_secondary': null,
+          'onset_date': isoDate(now.subtract(const Duration(days: 30))),
+          'wagner_grade': woundExtra['wagner_grade'],
+          'ceap_class': woundExtra['ceap_class'],
+          'wuwhs_grade': woundExtra['wuwhs_grade'],
+          'agente_causal': woundExtra['agente_causal'],
+          'is_active': true,
+          'closed_at': null,
+          'created_at': iso(now.subtract(const Duration(days: 20))),
+        }
+      ]);
+      // Medición sin consulta (consultation_id nullable): alimenta la vista de
+      // evolución de la herida en la app del cuidador.
+      await appendRows(Collections.woundMeasurements, [
+        meas(wid, null, now.subtract(const Duration(days: 3)), area, comp[0],
+            comp[1], comp[2], comp[3], 0.5),
+      ]);
+      await appendRows(Collections.caregiverInstructions, [
+        {
+          'id': _uuid.v4(),
+          'organization_id': organizationIdCuidadores,
+          'patient_id': pid,
+          'instructions': instructions,
+          'updated_by': adminProfileId,
+          'updated_at': iso(now.subtract(const Duration(days: 5))),
+        }
+      ]);
+      await appendRows(Collections.preventiveTasks, [
+        for (final t in tasks)
+          {
+            'id': _uuid.v4(),
+            'organization_id': organizationIdCuidadores,
+            'patient_id': pid,
+            'rule_id': t['ruleId'] ?? 'lpp_alto',
+            'action_id': t['actionId'] ?? 'cambios_2h_registro',
+            'title': t['title'],
+            'action_label': t['actionLabel'],
+            'scheduled_at': iso(now.add(Duration(hours: t['hours'] as int))),
+            'assignee_profile_id': cuidadorProfileId,
+            'assignee_kind': 'cuidador',
+            'status': t['status'],
+            if (t['status'] == 'done')
+              'done_at': iso(now.add(Duration(hours: t['hours'] as int))),
+            if (t['status'] == 'done') 'done_by': cuidadorProfileId,
+            'source': 'auto',
+            'created_at': iso(now.subtract(const Duration(hours: 12))),
+          }
+      ]);
+    }
+
+    await addCaregiverPatient(
+      name: 'Esperanza Ruiz Molina',
+      birth: DateTime(1942, 2, 11),
+      sex: 'F',
+      background: 'Encamada por secuelas de EVC. LPP sacra en manejo domiciliario.',
+      etiology: 'lpp',
+      subtype: 'Lesión por presión sacra',
+      location: 'sacro',
+      woundExtra: {'wuwhs_grade': 'g2'},
+      area: 6.0,
+      comp: [55, 25, 5, 15],
+      instructions:
+          'Cambios de posición cada 2 h (registrar hora). Mantener la piel seca y '
+          'limpia; aplicar crema barrera tras cada cambio de pañal. Avisar a la '
+          'clínica si aparece enrojecimiento que no cede, mal olor o fiebre.',
+      tasks: [
+        {
+          'title': 'Cambio postural',
+          'actionLabel': 'Cambios posturales cada 2 h con registro horario',
+          'hours': -4,
+          'status': 'done',
+        },
+        {
+          'title': 'Cambio postural',
+          'actionLabel': 'Cambios posturales cada 2 h con registro horario',
+          'hours': -1,
+          'status': 'pending',
+        },
+        {
+          'title': 'Aplicar AGHO',
+          'actionLabel': 'Ácidos grasos hiperoxigenados en zonas de riesgo',
+          'actionId': 'agho',
+          'hours': 2,
+          'status': 'pending',
+        },
+        {
+          'title': 'Examen de piel',
+          'actionLabel': 'Examen diario de la piel en prominencias',
+          'actionId': 'exam_piel_diario',
+          'hours': 4,
+          'status': 'pending',
+        },
+      ],
+    );
+
+    await addCaregiverPatient(
+      name: 'Alberto Mendoza Cruz',
+      birth: DateTime(1949, 9, 18),
+      sex: 'M',
+      background: 'Movilidad reducida por artrosis avanzada. LPP en talón.',
+      etiology: 'lpp',
+      subtype: 'Lesión por presión en talón',
+      location: 'talon_derecho',
+      woundExtra: {'wuwhs_grade': 'g2'},
+      area: 4.0,
+      comp: [60, 20, 0, 20],
+      instructions:
+          'Usar taloneras de descarga en todo momento. Movilizar las piernas y '
+          'revisar los talones 2 veces al día. Hidratar la piel; no masajear sobre '
+          'prominencias óseas.',
+      tasks: [
+        {
+          'title': 'Protección de talones',
+          'actionLabel': 'Colocar taloneras de descarga',
+          'actionId': 'taloneras',
+          'hours': -3,
+          'status': 'done',
+        },
+        {
+          'title': 'Examen de piel',
+          'actionLabel': 'Revisión de talones 2 veces al día',
+          'actionId': 'exam_piel_diario',
+          'hours': 3,
+          'status': 'pending',
+        },
+      ],
+    );
+
+    await addCaregiverPatient(
+      name: 'Refugio Santos Díaz',
+      birth: DateTime(1946, 4, 30),
+      sex: 'F',
+      background: 'Insuficiencia venosa crónica; úlcera venosa en manejo a domicilio.',
+      etiology: 'vascular',
+      subtype: 'Úlcera venosa',
+      location: 'pierna_izquierda_tercio_distal',
+      woundExtra: {'ceap_class': 'c6'},
+      area: 5.0,
+      comp: [65, 15, 0, 20],
+      instructions:
+          'Mantener el vendaje de compresión limpio y seco; no retirarlo salvo '
+          'indicación. Elevar la pierna varias veces al día. Avisar si el vendaje '
+          'aprieta demasiado, cambian el color de los dedos o hay dolor intenso.',
+      tasks: [
+        {
+          'title': 'Terapia compresiva',
+          'actionLabel': 'Verificar el vendaje de compresión',
+          'actionId': 'compresion',
+          'ruleId': 'venosa',
+          'hours': -2,
+          'status': 'done',
+        },
+        {
+          'title': 'Elevación de la extremidad',
+          'actionLabel': 'Elevar la pierna 20-30 min, varias veces al día',
+          'actionId': 'elevacion',
+          'ruleId': 'venosa',
+          'hours': 1,
+          'status': 'pending',
+        },
+        {
+          'title': 'Examen de piel',
+          'actionLabel': 'Vigilar la piel perilesional y los dedos',
+          'actionId': 'exam_piel_diario',
+          'hours': 6,
+          'status': 'pending',
+        },
+      ],
+    );
   }
 }
