@@ -26,7 +26,9 @@ class PatientAdmission {
   final String id;
   final String? organizationId;
   final String patientId;
-  final String? unit; // unidad / servicio
+  final String? unit; // unidad / servicio (legacy/opcional)
+  final String? floor; // piso
+  final String? area; // área/servicio dentro del piso
   final String? bed; // cama
   final DateTime admittedAt;
   final DateTime? dischargedAt;
@@ -39,6 +41,8 @@ class PatientAdmission {
     this.organizationId,
     required this.patientId,
     this.unit,
+    this.floor,
+    this.area,
     this.bed,
     required this.admittedAt,
     this.dischargedAt,
@@ -46,6 +50,17 @@ class PatientAdmission {
     this.notes,
     this.createdAt,
   });
+
+  /// Ubicación legible "Piso X · Área Y · Cama Z" (omite los vacíos).
+  String get locationLabel {
+    final parts = <String>[
+      if ((floor ?? '').isNotEmpty) 'Piso $floor',
+      if ((area ?? '').isNotEmpty) area!,
+      if ((bed ?? '').isNotEmpty) 'Cama $bed',
+    ];
+    if (parts.isEmpty && (unit ?? '').isNotEmpty) return unit!;
+    return parts.join(' · ');
+  }
 
   bool get isActive => status == AdmissionStatus.activo;
 
@@ -55,6 +70,8 @@ class PatientAdmission {
         organizationId: json['organization_id'] as String?,
         patientId: json['patient_id'] as String,
         unit: json['unit'] as String?,
+        floor: json['floor'] as String?,
+        area: json['area'] as String?,
         bed: json['bed'] as String?,
         admittedAt: DateTime.parse(json['admitted_at'] as String),
         dischargedAt: json['discharged_at'] == null
@@ -72,6 +89,8 @@ class PatientAdmission {
         'organization_id': organizationId,
         'patient_id': patientId,
         'unit': unit,
+        'floor': floor,
+        'area': area,
         'bed': bed,
         'admitted_at': admittedAt.toIso8601String(),
         'discharged_at': dischargedAt?.toIso8601String(),
