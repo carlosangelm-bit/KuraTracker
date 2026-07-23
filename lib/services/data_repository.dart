@@ -174,6 +174,7 @@ class DataRepository {
     String? cedulaProfesional,
     String? primarySiteId,
     String roleTitle = 'Kurador',
+    String? password,
   }) async {
     final store = _store;
     if (store is SupabaseDataStore) {
@@ -189,6 +190,7 @@ class DataRepository {
             'cedulaProfesional': cedulaProfesional,
           if (primarySiteId != null) 'primarySiteId': primarySiteId,
           'roleTitle': roleTitle,
+          if (password != null && password.isNotEmpty) 'password': password,
         });
       } on FunctionException catch (e) {
         throw Exception(_edgeErrorMessage(e));

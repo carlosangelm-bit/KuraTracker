@@ -13,7 +13,7 @@ class DemoSeed {
   // sola vez en instalaciones demo previas (que tenían 'seeded' v1), evitando
   // duplicados y datos viejos. Solo aplica al modo demo local (SharedPreferences);
   // producción usa Supabase y nunca llama a este seed.
-  static const String _seedFlag = 'seeded_v8';
+  static const String _seedFlag = 'seeded_v9';
 
   static Future<void> ensureSeeded(LocalStore store) async {
     if (store.getBool(_seedFlag)) return;
@@ -209,7 +209,11 @@ class DemoSeed {
         'organization_id': organizationIdCuidadores,
         'role': 'cuidador',
         'full_name': 'Cuidador Demo',
-        'email': 'cuidador@curamas.mx',
+        // Login por teléfono (pestaña "Cuidador"): tel 5512345678 + cualquier
+        // clave en demo. El correo es SINTÉTICO derivado del teléfono
+        // (CaregiverLogin.syntheticEmail), igual que en producción.
+        'email': '5512345678@cuidador.kuramas.com',
+        'phone': '5512345678',
         'is_active': true,
         'premium_enabled': false,
       },

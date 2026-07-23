@@ -98,7 +98,13 @@ serve(async (req) => {
 
   // 4) Crear la cuenta en Auth. El trigger handle_new_auth_user() creará el
   //    profile leyendo role/full_name/organization_id de user_metadata.
-  const tempPassword = genPassword();
+  //    Para el cuidador (login por teléfono + clave), el admin FIJA la clave y
+  //    se envía en el body; para el resto se genera una contraseña temporal.
+  const providedPassword =
+    typeof body.password === "string" && body.password.length >= 6
+      ? body.password
+      : null;
+  const tempPassword = providedPassword ?? genPassword();
   const { data: createdUser, error: createErr } = await admin.auth.admin.createUser({
     email,
     password: tempPassword,

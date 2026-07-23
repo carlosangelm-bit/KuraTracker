@@ -5,8 +5,10 @@ import 'package:go_router/go_router.dart';
 import '../../core/theme/kura_theme.dart';
 import '../../core/providers/session_provider.dart';
 import '../../core/config/app_config.dart';
-import '../../services/data_repository.dart';
+import '../../core/utils/caregiver_login.dart';
 import '../../models/app_user.dart';
+
+enum _LoginMode { personal, cuidador }
 
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
@@ -25,6 +27,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   final _passCtrl = TextEditingController(
     text: AppConfig.isSupabaseConfigured ? '' : 'demo',
   );
+  // Modo cuidador: teléfono + clave (sin correo).
+  final _phoneCtrl = TextEditingController();
+  final _claveCtrl = TextEditingController();
+  _LoginMode _mode = _LoginMode.personal;
   String? _error;
 
   Future<void> _doLogin(String email, {String? password}) async {
@@ -39,6 +45,16 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       return;
     }
     if (mounted) context.go('/');
+  }
+
+  /// Login del cuidador: teléfono → correo sintético + clave.
+  Future<void> _doCaregiverLogin() async {
+    final email = CaregiverLogin.syntheticEmail(_phoneCtrl.text.trim());
+    if (email == null) {
+      setState(() => _error = 'Teléfono inválido (mínimo 8 dígitos).');
+      return;
+    }
+    await _doLogin(email, password: _claveCtrl.text);
   }
 
   @override
@@ -96,29 +112,69 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                                   fontWeight: FontWeight.w700,
                                 )),
                         const SizedBox(height: 16),
-                        TextField(
-                          controller: _emailCtrl,
-                          decoration: const InputDecoration(
-                            labelText: 'Correo electrónico',
-                            prefixIcon: Icon(Icons.email_outlined),
-                          ),
+                        // Modo de acceso: personal (correo) o cuidador (teléfono).
+                        SegmentedButton<_LoginMode>(
+                          segments: const [
+                            ButtonSegment(
+                                value: _LoginMode.personal,
+                                icon: Icon(Icons.badge_outlined),
+                                label: Text('Personal')),
+                            ButtonSegment(
+                                value: _LoginMode.cuidador,
+                                icon: Icon(Icons.volunteer_activism_outlined),
+                                label: Text('Cuidador')),
+                          ],
+                          selected: {_mode},
+                          onSelectionChanged: (s) =>
+                              setState(() { _mode = s.first; _error = null; }),
                         ),
-                        const SizedBox(height: 12),
-                        TextField(
-                          controller: _passCtrl,
-                          obscureText: true,
-                          onSubmitted: (_) {
-                            if (!session.isLoading) {
-                              _doLogin(_emailCtrl.text.trim());
-                            }
-                          },
-                          decoration: InputDecoration(
-                            labelText: AppConfig.isSupabaseConfigured
-                                ? 'Contraseña'
-                                : 'Contraseña (demo, cualquier valor)',
-                            prefixIcon: const Icon(Icons.lock_outline),
+                        const SizedBox(height: 16),
+                        if (_mode == _LoginMode.personal) ...[
+                          TextField(
+                            controller: _emailCtrl,
+                            decoration: const InputDecoration(
+                              labelText: 'Correo electrónico',
+                              prefixIcon: Icon(Icons.email_outlined),
+                            ),
                           ),
-                        ),
+                          const SizedBox(height: 12),
+                          TextField(
+                            controller: _passCtrl,
+                            obscureText: true,
+                            onSubmitted: (_) {
+                              if (!session.isLoading) {
+                                _doLogin(_emailCtrl.text.trim());
+                              }
+                            },
+                            decoration: InputDecoration(
+                              labelText: AppConfig.isSupabaseConfigured
+                                  ? 'Contraseña'
+                                  : 'Contraseña (demo, cualquier valor)',
+                              prefixIcon: const Icon(Icons.lock_outline),
+                            ),
+                          ),
+                        ] else ...[
+                          TextField(
+                            controller: _phoneCtrl,
+                            keyboardType: TextInputType.phone,
+                            decoration: const InputDecoration(
+                              labelText: 'Teléfono',
+                              prefixIcon: Icon(Icons.phone_outlined),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          TextField(
+                            controller: _claveCtrl,
+                            obscureText: true,
+                            onSubmitted: (_) {
+                              if (!session.isLoading) _doCaregiverLogin();
+                            },
+                            decoration: const InputDecoration(
+                              labelText: 'Clave',
+                              prefixIcon: Icon(Icons.lock_outline),
+                            ),
+                          ),
+                        ],
                         if (_error != null) ...[
                           const SizedBox(height: 8),
                           Text(_error!, style: const TextStyle(color: KuraColors.danger)),
@@ -127,7 +183,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         FilledButton(
                           onPressed: session.isLoading
                               ? null
-                              : () => _doLogin(_emailCtrl.text.trim()),
+                              : () => _mode == _LoginMode.personal
+                                  ? _doLogin(_emailCtrl.text.trim())
+                                  : _doCaregiverLogin(),
                           style: FilledButton.styleFrom(
                             backgroundColor: KuraColors.primary,
                             padding: const EdgeInsets.symmetric(vertical: 14),
