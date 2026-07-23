@@ -2,10 +2,32 @@ import 'package:flutter/material.dart';
 
 import '../../core/design/tokens.dart';
 import '../../engine/models/kura_engine_enums.dart';
+import '../../engine/risk/prevention_risk_engine.dart';
 import '../../models/patient.dart';
+import '../../models/patient_admission.dart';
+import '../risk/risk_theme.dart';
 import 'patient_progress_status.dart';
 import 'patient_wound_summary.dart';
 import 'progress_status_indicator.dart';
+
+/// Señales de PREVENCIÓN de un paciente para el tile hospitalario: cuando el
+/// paciente no tiene heridas activas, las etiquetas relevantes no son las de la
+/// herida sino su nivel de riesgo (Braden), internamiento, comorbilidades y
+/// diagnóstico principal.
+class PatientHospitalInfo {
+  final RiskLevel? riskLevel; // banda de Braden (null = sin valoración)
+  final int? bradenScore;
+  final PatientAdmission? admission;
+  final List<String> comorbidities; // etiquetas de comorbilidades presentes
+  final String? primaryDiagnosis; // nombre del diagnóstico principal, si hay
+  const PatientHospitalInfo({
+    this.riskLevel,
+    this.bradenScore,
+    this.admission,
+    this.comorbidities = const [],
+    this.primaryDiagnosis,
+  });
+}
 
 /// Tile de paciente para la vista Lista de [PatientsListScreen] --
 /// reutilizado tambien por [DashboardScreen] ("Pacientes recientes") para
@@ -35,6 +57,11 @@ class PatientListTile extends StatelessWidget {
   /// superficie que lo envuelve.
   final Widget Function(Widget child)? surfaceBuilder;
 
+  /// Señales de prevención (hospital). Cuando se proporcionan y el paciente NO
+  /// tiene heridas activas, el tile muestra riesgo/internamiento/comorbilidades/
+  /// diagnóstico en lugar de las etiquetas de herida (irrelevantes ahí).
+  final PatientHospitalInfo? hospitalInfo;
+
   const PatientListTile({
     super.key,
     required this.patient,
@@ -44,12 +71,16 @@ class PatientListTile extends StatelessWidget {
     this.onValoracion,
     this.onSeguimiento,
     this.surfaceBuilder,
+    this.hospitalInfo,
   });
 
   @override
   Widget build(BuildContext context) {
     final activeWounds = summary.activeCount;
     final t = BrandTokens.of(context);
+    // En hospital, si el paciente no tiene heridas activas, las etiquetas
+    // relevantes son las de prevención, no las de herida.
+    final showHospital = hospitalInfo != null && !summary.hasActiveWounds;
     final inner = InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(16),
@@ -77,9 +108,13 @@ class PatientListTile extends StatelessWidget {
                       style: TextStyle(fontSize: 12, color: t.textSecondary),
                     ),
                     const SizedBox(height: 6),
-                    _EtiologyChipsRow(summary: summary),
-                    const SizedBox(height: 6),
-                    ProgressStatusIndicator(status: progressStatus),
+                    if (showHospital)
+                      HospitalSignalsRow(info: hospitalInfo!)
+                    else ...[
+                      _EtiologyChipsRow(summary: summary),
+                      const SizedBox(height: 6),
+                      ProgressStatusIndicator(status: progressStatus),
+                    ],
                   ],
                 ),
               ),
@@ -95,13 +130,16 @@ class PatientListTile extends StatelessWidget {
                           message: 'Paciente frágil',
                           child: Icon(Icons.priority_high, color: t.statusWarning, size: 18),
                         ),
-                      Chip(
-                        label:
-                            Text('$activeWounds herida${activeWounds == 1 ? '' : 's'}'),
-                        backgroundColor: activeWounds > 0
-                            ? t.info.withOpacity(0.10)
-                            : t.border.withOpacity(0.35),
-                      ),
+                      if (showHospital)
+                        BradenBadge(info: hospitalInfo!)
+                      else
+                        Chip(
+                          label: Text(
+                              '$activeWounds herida${activeWounds == 1 ? '' : 's'}'),
+                          backgroundColor: activeWounds > 0
+                              ? t.info.withOpacity(0.10)
+                              : t.border.withOpacity(0.35),
+                        ),
                     ],
                   ),
                   if (onValoracion != null || onSeguimiento != null) ...[
@@ -139,6 +177,105 @@ class PatientListTile extends StatelessWidget {
         ),
     );
     return surfaceBuilder != null ? surfaceBuilder!(inner) : Card(child: inner);
+  }
+}
+
+/// Señales de PREVENCIÓN del tile hospitalario (paciente sin heridas activas):
+/// nivel de riesgo (banda de Braden), internamiento, comorbilidades y dx.
+class HospitalSignalsRow extends StatelessWidget {
+  final PatientHospitalInfo info;
+  const HospitalSignalsRow({super.key, required this.info});
+
+  @override
+  Widget build(BuildContext context) {
+    final t = BrandTokens.of(context);
+    final riskColor =
+        info.riskLevel != null ? riskLevelColor(info.riskLevel!) : t.textDisabled;
+    final riskLabel = info.riskLevel != null
+        ? 'Riesgo ${info.riskLevel!.label.toLowerCase()}'
+        : 'Sin valoración';
+    final chips = <Widget>[
+      _MiniInfoChip(label: riskLabel, color: riskColor, filled: true),
+      if (info.admission?.locationLabel.isNotEmpty ?? false)
+        _MiniInfoChip(
+            label: info.admission!.locationLabel,
+            color: t.info,
+            icon: Icons.local_hotel_outlined),
+      for (final c in info.comorbidities.take(2))
+        _MiniInfoChip(label: c, color: t.textSecondary),
+      if (info.comorbidities.length > 2)
+        _MiniInfoChip(
+            label: '+${info.comorbidities.length - 2}', color: t.textSecondary),
+    ];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Wrap(spacing: 6, runSpacing: 4, children: chips),
+        if (info.primaryDiagnosis != null) ...[
+          const SizedBox(height: 4),
+          Text('Dx: ${info.primaryDiagnosis}',
+              style: TextStyle(fontSize: 11, color: t.textSecondary),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis),
+        ],
+      ],
+    );
+  }
+}
+
+/// Chip compacto reutilizable para las señales de prevención.
+class _MiniInfoChip extends StatelessWidget {
+  final String label;
+  final Color color;
+  final IconData? icon;
+  final bool filled;
+  const _MiniInfoChip({
+    required this.label,
+    required this.color,
+    this.icon,
+    this.filled = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withOpacity(filled ? 0.14 : 0.08),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (icon != null) ...[
+            Icon(icon, size: 12, color: color),
+            const SizedBox(width: 3),
+          ],
+          Text(label,
+              style: TextStyle(
+                  fontSize: 11, fontWeight: FontWeight.w600, color: color)),
+        ],
+      ),
+    );
+  }
+}
+
+/// Insignia de la última valoración de Braden (score + color por banda).
+class BradenBadge extends StatelessWidget {
+  final PatientHospitalInfo info;
+  const BradenBadge({super.key, required this.info});
+
+  @override
+  Widget build(BuildContext context) {
+    final t = BrandTokens.of(context);
+    if (info.bradenScore == null) {
+      return _MiniInfoChip(label: 'Sin Braden', color: t.textDisabled);
+    }
+    final color = info.riskLevel != null
+        ? riskLevelColor(info.riskLevel!)
+        : t.textSecondary;
+    return _MiniInfoChip(
+        label: 'Braden ${info.bradenScore}', color: color, filled: true);
   }
 }
 
