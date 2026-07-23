@@ -80,6 +80,7 @@ enum _View { dia, semana }
 class _PreventiveTasksViewState extends State<PreventiveTasksView> {
   _View _view = _View.dia;
   late DateTime _anchor; // día ancla (solo fecha)
+  String? _patientFilter; // null = todos
 
   @override
   void initState() {
@@ -107,8 +108,19 @@ class _PreventiveTasksViewState extends State<PreventiveTasksView> {
     final end = _rangeEnd;
     final now = DateTime.now();
 
+    // Opciones de filtro por paciente (solo si hay varios y se muestra paciente).
+    final patientIds = widget.showPatient
+        ? (widget.tasks.map((x) => x.patientId).toSet().toList())
+        : const <String>[];
+    if (_patientFilter != null && !patientIds.contains(_patientFilter)) {
+      _patientFilter = null;
+    }
+
     final inRange = widget.tasks
-        .where((x) => !x.scheduledAt.isBefore(start) && x.scheduledAt.isBefore(end))
+        .where((x) =>
+            !x.scheduledAt.isBefore(start) &&
+            x.scheduledAt.isBefore(end) &&
+            (_patientFilter == null || x.patientId == _patientFilter))
         .toList()
       ..sort((a, b) => a.scheduledAt.compareTo(b.scheduledAt));
 
@@ -128,6 +140,34 @@ class _PreventiveTasksViewState extends State<PreventiveTasksView> {
     return Column(
       children: [
         _controls(t, start, end),
+        if (patientIds.length > 1)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+            child: Row(
+              children: [
+                Icon(Icons.person_search_outlined, size: 18, color: t.textSecondary),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: DropdownButton<String?>(
+                    isExpanded: true,
+                    value: _patientFilter,
+                    hint: const Text('Paciente: Todos'),
+                    underline: const SizedBox.shrink(),
+                    items: [
+                      const DropdownMenuItem<String?>(
+                          value: null, child: Text('Todos los pacientes')),
+                      ...patientIds.map((id) => DropdownMenuItem<String?>(
+                            value: id,
+                            child: Text(widget.repo.getPatient(id)?.fullName ?? 'Paciente',
+                                overflow: TextOverflow.ellipsis),
+                          )),
+                    ],
+                    onChanged: (v) => setState(() => _patientFilter = v),
+                  ),
+                ),
+              ],
+            ),
+          ),
         if (adherence != null)
           Container(
             width: double.infinity,
@@ -283,31 +323,49 @@ class _TaskTile extends StatelessWidget {
       }
     }
 
+    final actColor = _activityColor(task.actionId);
     return Card(
       child: ListTile(
-        leading: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          mainAxisSize: MainAxisSize.min,
+        // Icono/color sutil por tipo de actividad (identificación rápida) +
+        // un punto de estado (hecha/pendiente/vencida).
+        leading: Stack(
+          clipBehavior: Clip.none,
           children: [
-            Text(hhmm, style: const TextStyle(fontWeight: FontWeight.w700)),
-            Icon(
-              task.status == PreventiveTaskStatus.done
-                  ? Icons.check_circle
-                  : task.status == PreventiveTaskStatus.skipped
-                      ? Icons.remove_circle_outline
-                      : Icons.schedule,
-              size: 16,
-              color: statusColor(),
+            CircleAvatar(
+              radius: 18,
+              backgroundColor: actColor.withOpacity(0.14),
+              child: Icon(_activityIcon(task.actionId), size: 18, color: actColor),
+            ),
+            Positioned(
+              right: -1,
+              bottom: -1,
+              child: Icon(
+                task.status == PreventiveTaskStatus.done
+                    ? Icons.check_circle
+                    : task.status == PreventiveTaskStatus.skipped
+                        ? Icons.remove_circle
+                        : Icons.circle,
+                size: 12,
+                color: statusColor(),
+              ),
             ),
           ],
         ),
-        title: Text(task.title,
-            style: TextStyle(
-              fontWeight: FontWeight.w600,
-              decoration: task.status == PreventiveTaskStatus.done
-                  ? TextDecoration.lineThrough
-                  : null,
-            )),
+        title: Row(
+          children: [
+            Text('$hhmm  ',
+                style: TextStyle(fontWeight: FontWeight.w700, color: t.textSecondary)),
+            Expanded(
+              child: Text(task.title,
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    decoration: task.status == PreventiveTaskStatus.done
+                        ? TextDecoration.lineThrough
+                        : null,
+                  )),
+            ),
+          ],
+        ),
         subtitle: Text([
           if (patientName.isNotEmpty) patientName,
           if (task.actionLabel != null && task.actionLabel != task.title)
@@ -341,5 +399,48 @@ class _TaskTile extends StatelessWidget {
                 style: TextStyle(color: statusColor(), fontSize: 12)),
       ),
     );
+  }
+}
+
+/// Icono por tipo de actividad preventiva (identificación rápida en la agenda).
+IconData _activityIcon(String? actionId) {
+  switch (actionId) {
+    case 'cambios_2h_registro':
+    case 'cambios_2_3h':
+    case 'cambios_4h':
+      return Icons.airline_seat_flat_angled; // cambio postural
+    case 'agho':
+      return Icons.opacity; // ácidos grasos hiperoxigenados
+    case 'control_humedad':
+      return Icons.water_drop_outlined;
+    case 'exam_piel_diario':
+    case 'valoracion_piel_completa_diaria':
+      return Icons.visibility_outlined; // examen/valoración de piel
+    case 'aposito_preventivo':
+      return Icons.healing;
+    default:
+      return Icons.task_alt;
+  }
+}
+
+/// Color sutil por tipo de actividad (categoría), independiente del color de
+/// estado (hecha/pendiente/vencida).
+Color _activityColor(String? actionId) {
+  switch (actionId) {
+    case 'cambios_2h_registro':
+    case 'cambios_2_3h':
+    case 'cambios_4h':
+      return const Color(0xFF2563EB); // azul
+    case 'agho':
+      return const Color(0xFF0D9488); // teal
+    case 'control_humedad':
+      return const Color(0xFF0891B2); // cian
+    case 'exam_piel_diario':
+    case 'valoracion_piel_completa_diaria':
+      return const Color(0xFF7C3AED); // violeta
+    case 'aposito_preventivo':
+      return const Color(0xFF1B8A5A); // verde
+    default:
+      return const Color(0xFF6B6577); // gris neutro
   }
 }
