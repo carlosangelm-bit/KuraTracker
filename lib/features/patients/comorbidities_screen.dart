@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/theme/kura_theme.dart';
+import '../../core/layout/responsive.dart';
 import '../../core/providers/session_provider.dart';
 import '../../engine/models/kura_engine_enums.dart';
 import '../../models/app_user.dart';
@@ -69,7 +70,7 @@ class _ComorbiditiesScreenState extends ConsumerState<ComorbiditiesScreen> {
         error: (e, st) => Center(child: Text('Error: $e')),
         data: (repo) {
           _loadIfNeeded(repo);
-          return ListView(
+          return PageMaxWidth(child: ListView(
             padding: const EdgeInsets.all(20),
             children: [
               Container(
@@ -94,7 +95,7 @@ class _ComorbiditiesScreenState extends ConsumerState<ComorbiditiesScreen> {
               ),
               const SizedBox(height: 40),
             ],
-          );
+          ));
         },
       ),
     );

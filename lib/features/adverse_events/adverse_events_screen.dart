@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
 import '../../core/theme/kura_theme.dart';
+import '../../core/layout/responsive.dart';
 import '../../core/providers/session_provider.dart';
 import '../../models/adverse_event.dart';
 import '../../services/data_repository.dart';
@@ -86,7 +87,7 @@ class _AdverseEventsScreenState extends ConsumerState<AdverseEventsScreen> {
           final now = DateTime.now();
           final pendientes = events.where((e) => e.needsReport).toList();
 
-          return ListView(
+          return PageMaxWidth(child: ListView(
             padding: const EdgeInsets.all(20),
             children: [
               if (pendientes.isNotEmpty) ...[
@@ -101,7 +102,7 @@ class _AdverseEventsScreenState extends ConsumerState<AdverseEventsScreen> {
                   )),
               const SizedBox(height: 40),
             ],
-          );
+          ));
         },
       ),
     );

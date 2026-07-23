@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/theme/kura_theme.dart';
+import '../../core/layout/responsive.dart';
 import '../../core/providers/session_provider.dart';
 import '../../engine/cie10_catalog.dart';
 import '../../models/app_user.dart';
@@ -167,7 +168,7 @@ class _DiagnosesScreenState extends ConsumerState<DiagnosesScreen> {
           error: (e, st) => Center(child: Text('Error al cargar catálogo: $e')),
           data: (catalog) {
             final diagnoses = repo.listDiagnoses(widget.patientId);
-            return ListView(
+            return PageMaxWidth(child: ListView(
               padding: const EdgeInsets.all(20),
               children: [
                 Container(
@@ -208,7 +209,7 @@ class _DiagnosesScreenState extends ConsumerState<DiagnosesScreen> {
                       )),
                 const SizedBox(height: 40),
               ],
-            );
+            ));
           },
         ),
       ),
