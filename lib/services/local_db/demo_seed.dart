@@ -31,7 +31,7 @@ class DemoSeed {
   // una sola vez en instalaciones demo previas (wipeAll + _seed), evitando
   // duplicados y datos viejos. Cada rediseño del roster sube este número.
   // v12: roster curado por escenario (clínica 7 / hospital 5 / cuidadores 3).
-  static const String _seedFlag = 'seeded_v14';
+  static const String _seedFlag = 'seeded_v15';
 
   static Future<void> ensureSeeded(LocalStore store) async {
     if (store.getBool(_seedFlag)) return;
@@ -77,9 +77,10 @@ class DemoSeed {
         // Demo: la clínica opera su agenda en modo MANUAL (la integración Acuity
         // solo lee de Supabase, no aplica en local) para poder mostrar citas.
         'scheduling_mode': 'manual',
-        // Demo: licencia premium de Insumos activa para mostrar las funciones
-        // avanzadas del módulo (0047).
+        // Demo: add-ons premium del centro activos para mostrar el módulo de
+        // Insumos (0047) y el Protocolo Kura+ para todo el centro (0049).
         'premium_insumos': true,
+        'premium_protocolo_kura': true,
         'created_at': iso(now.subtract(const Duration(days: 400))),
       },
       {

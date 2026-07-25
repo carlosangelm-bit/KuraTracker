@@ -552,6 +552,27 @@ class DataRepository {
   bool premiumInsumosFor(String? organizationId) =>
       organizationById(organizationId)?.premiumInsumos ?? false;
 
+  /// ¿El centro tiene el add-on premium "Protocolo Kura+"? (0049)
+  bool premiumProtocoloKuraFor(String? organizationId) =>
+      organizationById(organizationId)?.premiumProtocoloKura ?? false;
+
+  /// Activa/desactiva el add-on premium "Protocolo Kura+" del centro (RPC
+  /// set_org_premium_protocolo_kura, 0049, solo master).
+  Future<void> setOrgPremiumProtocoloKura(
+      String organizationId, bool enabled) async {
+    final store = _store;
+    if (store is SupabaseDataStore) {
+      await store.callRpc('set_org_premium_protocolo_kura', {
+        'p_org': organizationId,
+        'p_enabled': enabled,
+      });
+      await store.refreshCollection(Collections.organizations);
+    } else {
+      await _store.updateRow(Collections.organizations, organizationId,
+          {'premium_protocolo_kura': enabled});
+    }
+  }
+
   /// Activa/desactiva la licencia premium de Insumos de un centro. En Supabase
   /// usa el RPC set_org_premium_insumos (0047, solo master); en demo actualiza
   /// la fila directo.
