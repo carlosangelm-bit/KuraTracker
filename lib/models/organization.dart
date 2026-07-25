@@ -15,6 +15,9 @@ class Organization {
   final String? brandLogoPath;
   // Tipo de centro (0040): determina paleta y módulos por defecto.
   final CenterType centerType;
+  // Licencia premium del módulo de Insumos (0047): habilita mapeo insumo↔
+  // producto, inventario, costeo y reabasto. La tienda base no la requiere.
+  final bool premiumInsumos;
 
   const Organization({
     required this.id,
@@ -24,6 +27,7 @@ class Organization {
     this.brandPrimaryColor,
     this.brandLogoPath,
     this.centerType = CenterType.clinicaHeridas,
+    this.premiumInsumos = false,
   });
 
   factory Organization.fromJson(Map<String, dynamic> json) => Organization(
@@ -34,6 +38,7 @@ class Organization {
         brandPrimaryColor: json['brand_primary_color'] as String?,
         brandLogoPath: json['brand_logo_path'] as String?,
         centerType: CenterTypeX.fromDb(json['center_type'] as String?),
+        premiumInsumos: json['premium_insumos'] as bool? ?? false,
       );
 
   Map<String, dynamic> toJson() => {
@@ -44,5 +49,6 @@ class Organization {
         'brand_primary_color': brandPrimaryColor,
         'brand_logo_path': brandLogoPath,
         'center_type': centerType.dbValue,
+        'premium_insumos': premiumInsumos,
       };
 }

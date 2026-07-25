@@ -32,6 +32,7 @@ import '../../features/import_export/import_export_screen.dart';
 import '../../features/platform/platform_home_screen.dart';
 import '../../features/prevention_agenda/prevention_agenda_screen.dart';
 import '../../features/hospital_dashboard/hospital_dashboard_screen.dart';
+import '../../features/insumos/insumos_home_screen.dart';
 import '../../features/caregiver/caregiver_home_screen.dart';
 import '../../features/caregiver/caregiver_patient_screen.dart';
 import 'app_shell.dart';
@@ -261,6 +262,7 @@ final routerProvider = Provider<GoRouter>((ref) {
             ),
           ),
           GoRoute(path: '/reports', builder: (context, state) => const ReportsScreen()),
+          GoRoute(path: '/insumos', builder: (context, state) => const InsumosHomeScreen()),
           GoRoute(path: '/agenda', builder: (context, state) => const AgendaScreen()),
           GoRoute(path: '/risk', builder: (context, state) => const RiskBoardScreen()),
           GoRoute(

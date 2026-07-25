@@ -11,6 +11,7 @@ enum ModuleKey {
   prevention,
   reports,
   ekare,
+  insumos,
 }
 
 extension ModuleKeyX on ModuleKey {
@@ -26,6 +27,8 @@ extension ModuleKeyX on ModuleKey {
         return 'reports';
       case ModuleKey.ekare:
         return 'ekare';
+      case ModuleKey.insumos:
+        return 'insumos';
     }
   }
 
@@ -41,6 +44,8 @@ extension ModuleKeyX on ModuleKey {
         return 'Reportes';
       case ModuleKey.ekare:
         return 'eKare';
+      case ModuleKey.insumos:
+        return 'Insumos';
     }
   }
 
@@ -58,6 +63,8 @@ extension ModuleKeyX on ModuleKey {
         return '/reports';
       case ModuleKey.ekare:
         return '/import-export';
+      case ModuleKey.insumos:
+        return '/insumos';
     }
   }
 
@@ -67,6 +74,9 @@ extension ModuleKeyX on ModuleKey {
   /// clínica de heridas (enfoque en tratamiento) y se enciende en hospital y
   /// cuidadores; reportes/eKare se apagan por defecto en cuidadores.
   bool defaultFor(CenterType type) {
+    // Insumos/Tienda: por default SOLO en clínica de heridas (segmento objetivo).
+    // El master puede encenderlo en otro tipo de centro si lo desea.
+    if (this == ModuleKey.insumos) return type == CenterType.clinicaHeridas;
     switch (type) {
       case CenterType.clinicaHeridas:
         return this != ModuleKey.prevention;
