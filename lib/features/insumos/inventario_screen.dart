@@ -1,0 +1,572 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/intl.dart';
+
+import '../../core/theme/kura_theme.dart';
+import '../../core/providers/session_provider.dart';
+import '../../core/router/app_shell.dart' show UserMenuButton;
+import '../../models/inventory.dart';
+import '../../services/data_repository.dart';
+import 'product_picker.dart';
+
+String _money(double? v, [String? cur]) =>
+    v == null ? '—' : '\$${v.toStringAsFixed(2)} ${cur ?? 'MXN'}';
+
+/// Inventario de insumos por SITIO (Insumos, Fase 3 premium): existencias de
+/// productos de la tienda Kura+ y externos, con bitácora de movimientos.
+class InventarioScreen extends ConsumerStatefulWidget {
+  const InventarioScreen({super.key});
+  @override
+  ConsumerState<InventarioScreen> createState() => _InventarioScreenState();
+}
+
+class _InventarioScreenState extends ConsumerState<InventarioScreen> {
+  String? _siteId;
+
+  @override
+  Widget build(BuildContext context) {
+    final repoAsync = ref.watch(dataRepositoryProvider);
+    final user = ref.watch(sessionProvider).user;
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Inventario'),
+        actions: const [UserMenuButton()],
+      ),
+      body: repoAsync.when(
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (e, st) => Center(child: Text('Error: $e')),
+        data: (repo) {
+          final orgId = user?.organizationId;
+          if (!repo.premiumInsumosFor(orgId)) return const _PremiumLocked();
+
+          final sites =
+              repo.listSites(organizationId: orgId).where((s) => s.isActive).toList();
+          if (sites.isEmpty) {
+            return const Center(
+                child: Padding(
+                    padding: EdgeInsets.all(32),
+                    child: Text('Este centro no tiene sitios configurados.')));
+          }
+          _siteId ??= repo.primarySiteIdForProfile(user?.id) ?? sites.first.id;
+          if (!sites.any((s) => s.id == _siteId)) _siteId = sites.first.id;
+
+          final items = repo.listInventoryItems(organizationId: orgId, siteId: _siteId);
+          final onHand = repo.inventoryOnHand(_siteId!);
+
+          return Column(
+            children: [
+              if (sites.length > 1)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.place_outlined, size: 18),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: DropdownButton<String>(
+                          isExpanded: true,
+                          value: _siteId,
+                          underline: const SizedBox.shrink(),
+                          items: [
+                            for (final s in sites)
+                              DropdownMenuItem(value: s.id, child: Text(s.name)),
+                          ],
+                          onChanged: (v) => setState(() => _siteId = v),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              Expanded(
+                child: items.isEmpty
+                    ? const Center(
+                        child: Padding(
+                          padding: EdgeInsets.all(32),
+                          child: Text(
+                            'Sin artículos en este sitio.\n'
+                            'Agrega productos de tu tienda o externos.',
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                      )
+                    : ListView.separated(
+                        padding: const EdgeInsets.fromLTRB(12, 8, 12, 88),
+                        itemCount: items.length,
+                        separatorBuilder: (_, __) => const SizedBox(height: 8),
+                        itemBuilder: (_, i) => _ItemTile(
+                          item: items[i],
+                          onHand: onHand[items[i].id] ?? 0,
+                          onTap: () => _openItem(repo, items[i]),
+                        ),
+                      ),
+              ),
+            ],
+          );
+        },
+      ),
+      floatingActionButton: repoAsync.valueOrNull != null &&
+              repoAsync.value!.premiumInsumosFor(user?.organizationId)
+          ? FloatingActionButton.extended(
+              onPressed: () => _addItem(repoAsync.value!, user?.organizationId),
+              icon: const Icon(Icons.add),
+              label: const Text('Agregar'),
+            )
+          : null,
+    );
+  }
+
+  // ---- Alta de artículo ----
+  Future<void> _addItem(DataRepository repo, String? orgId) async {
+    if (orgId == null || _siteId == null) return;
+    final kind = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.storefront_outlined),
+              title: const Text('Producto de la tienda Kura+'),
+              subtitle: const Text('Trae foto y precio; se puede reabastecer.'),
+              onTap: () => Navigator.of(context).pop('store'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.edit_outlined),
+              title: const Text('Producto externo (otro proveedor)'),
+              subtitle: const Text('Captura manual: nombre, costo, proveedor.'),
+              onTap: () => Navigator.of(context).pop('external'),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+    if (kind == null || !mounted) return;
+
+    InventoryItem? created;
+    if (kind == 'store') {
+      final picked = await showShopifyProductPicker(context,
+          title: 'Agregar producto de la tienda al inventario');
+      if (picked == null) return;
+      final price = picked.variant?.price ?? picked.product.fromPrice;
+      created = await repo.addInventoryItem(
+        organizationId: orgId,
+        siteId: _siteId!,
+        name: picked.product.title,
+        shopifyProductId: picked.product.id,
+        shopifyVariantId: picked.variant?.id,
+        imageUrl: picked.product.imageUrl,
+        unitCost: price?.amount,
+        currency: price?.currencyCode,
+        createdBy: ref.read(sessionProvider).user?.id,
+      );
+    } else {
+      created = await _externalForm(repo, orgId);
+    }
+    if (created == null || !mounted) return;
+    setState(() {});
+    // Ofrecer registrar existencia inicial.
+    await _movementDialog(repo, created, sign: 1, title: 'Existencia inicial',
+        reasons: const [InventoryReason.conteo, InventoryReason.compra]);
+  }
+
+  Future<InventoryItem?> _externalForm(DataRepository repo, String orgId) async {
+    final nameCtrl = TextEditingController();
+    final costCtrl = TextEditingController();
+    final supplierCtrl = TextEditingController();
+    final thresholdCtrl = TextEditingController();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Producto externo'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: nameCtrl,
+                decoration: const InputDecoration(labelText: 'Nombre *'),
+              ),
+              TextField(
+                controller: supplierCtrl,
+                decoration: const InputDecoration(labelText: 'Proveedor (opcional)'),
+              ),
+              TextField(
+                controller: costCtrl,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(labelText: 'Costo unitario (opcional)'),
+              ),
+              TextField(
+                controller: thresholdCtrl,
+                keyboardType: TextInputType.number,
+                decoration:
+                    const InputDecoration(labelText: 'Umbral de reorden (opcional)'),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Cancelar')),
+          FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('Crear')),
+        ],
+      ),
+    );
+    if (ok != true || nameCtrl.text.trim().isEmpty) return null;
+    return repo.addInventoryItem(
+      organizationId: orgId,
+      siteId: _siteId!,
+      name: nameCtrl.text.trim(),
+      isExternal: true,
+      unitCost: double.tryParse(costCtrl.text.trim()),
+      supplier: supplierCtrl.text.trim().isEmpty ? null : supplierCtrl.text.trim(),
+      reorderThreshold: int.tryParse(thresholdCtrl.text.trim()),
+      createdBy: ref.read(sessionProvider).user?.id,
+    );
+  }
+
+  // ---- Detalle del artículo ----
+  Future<void> _openItem(DataRepository repo, InventoryItem item) async {
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (_) => _ItemDetailSheet(
+        repo: repo,
+        item: item,
+        onEntrada: () => _movementDialog(repo, item, sign: 1,
+            title: 'Entrada / reabasto',
+            reasons: const [InventoryReason.compra, InventoryReason.devolucion]),
+        onSalida: () => _movementDialog(repo, item, sign: -1, title: 'Salida',
+            reasons: const [InventoryReason.consumo, InventoryReason.merma]),
+        onAjuste: () => _adjustDialog(repo, item),
+      ),
+    );
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _movementDialog(DataRepository repo, InventoryItem item,
+      {required int sign,
+      required String title,
+      required List<InventoryReason> reasons}) async {
+    final qtyCtrl = TextEditingController();
+    final noteCtrl = TextEditingController();
+    var reason = reasons.first;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setD) => AlertDialog(
+          title: Text(title),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(item.name, style: const TextStyle(fontWeight: FontWeight.w600)),
+              const SizedBox(height: 8),
+              TextField(
+                controller: qtyCtrl,
+                keyboardType: TextInputType.number,
+                autofocus: true,
+                decoration: const InputDecoration(labelText: 'Cantidad (piezas)'),
+              ),
+              const SizedBox(height: 8),
+              DropdownButtonFormField<InventoryReason>(
+                value: reason,
+                decoration: const InputDecoration(labelText: 'Motivo'),
+                items: [
+                  for (final r in reasons)
+                    DropdownMenuItem(value: r, child: Text(r.label)),
+                ],
+                onChanged: (v) => setD(() => reason = v ?? reason),
+              ),
+              TextField(
+                controller: noteCtrl,
+                decoration: const InputDecoration(labelText: 'Nota (opcional)'),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.of(ctx).pop(false),
+                child: const Text('Cancelar')),
+            FilledButton(
+                onPressed: () => Navigator.of(ctx).pop(true),
+                child: const Text('Registrar')),
+          ],
+        ),
+      ),
+    );
+    if (ok != true) return;
+    final qty = int.tryParse(qtyCtrl.text.trim()) ?? 0;
+    if (qty <= 0) return;
+    await repo.addInventoryMovement(
+      item: item,
+      delta: sign * qty,
+      reason: reason,
+      unitCost: sign > 0 ? item.unitCost : null,
+      note: noteCtrl.text.trim().isEmpty ? null : noteCtrl.text.trim(),
+      createdBy: ref.read(sessionProvider).user?.id,
+    );
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _adjustDialog(DataRepository repo, InventoryItem item) async {
+    final current = repo.onHandFor(item.id);
+    final ctrl = TextEditingController(text: '$current');
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Ajuste por conteo físico'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(item.name, style: const TextStyle(fontWeight: FontWeight.w600)),
+            const SizedBox(height: 4),
+            Text('Existencia actual: $current'),
+            const SizedBox(height: 8),
+            TextField(
+              controller: ctrl,
+              keyboardType: TextInputType.number,
+              autofocus: true,
+              decoration: const InputDecoration(labelText: 'Existencia real (conteo)'),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Cancelar')),
+          FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('Ajustar')),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    final real = int.tryParse(ctrl.text.trim());
+    if (real == null) return;
+    final delta = real - current;
+    if (delta == 0) return;
+    await repo.addInventoryMovement(
+      item: item,
+      delta: delta,
+      reason: InventoryReason.conteo,
+      note: 'Ajuste por conteo físico',
+      createdBy: ref.read(sessionProvider).user?.id,
+    );
+    if (mounted) setState(() {});
+  }
+}
+
+class _PremiumLocked extends StatelessWidget {
+  const _PremiumLocked();
+  @override
+  Widget build(BuildContext context) => const Center(
+        child: Padding(
+          padding: EdgeInsets.all(32),
+          child: Text('El inventario es una función premium.',
+              textAlign: TextAlign.center),
+        ),
+      );
+}
+
+class _ItemTile extends StatelessWidget {
+  final InventoryItem item;
+  final int onHand;
+  final VoidCallback onTap;
+  const _ItemTile({required this.item, required this.onHand, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final low = item.reorderThreshold != null && onHand <= item.reorderThreshold!;
+    final stockColor = onHand <= 0
+        ? KuraColors.danger
+        : (low ? KuraColors.warning : KuraColors.success);
+    return Card(
+      margin: EdgeInsets.zero,
+      child: ListTile(
+        onTap: onTap,
+        leading: ClipRRect(
+          borderRadius: BorderRadius.circular(6),
+          child: Container(
+            width: 44,
+            height: 44,
+            color: KuraColors.chipBg,
+            child: item.imageUrl == null
+                ? Icon(item.isExternal ? Icons.inventory_2_outlined : Icons.medical_services_outlined,
+                    size: 20)
+                : Image.network(item.imageUrl!,
+                    fit: BoxFit.contain,
+                    errorBuilder: (_, __, ___) =>
+                        const Icon(Icons.image_not_supported_outlined, size: 20)),
+          ),
+        ),
+        title: Text(item.name,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+        subtitle: Text(
+          [
+            item.isExternal ? 'Externo' : 'Tienda Kura+',
+            if (item.supplier != null && item.supplier!.isNotEmpty) item.supplier!,
+            if (item.unitCost != null) _money(item.unitCost, item.currency),
+          ].join(' · '),
+          style: const TextStyle(fontSize: 11),
+        ),
+        trailing: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Text('$onHand',
+                style: TextStyle(
+                    fontSize: 20, fontWeight: FontWeight.w800, color: stockColor)),
+            Text(low ? 'Reordenar' : 'en stock',
+                style: TextStyle(fontSize: 10, color: stockColor)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ItemDetailSheet extends StatelessWidget {
+  final DataRepository repo;
+  final InventoryItem item;
+  final Future<void> Function() onEntrada;
+  final Future<void> Function() onSalida;
+  final Future<void> Function() onAjuste;
+  const _ItemDetailSheet({
+    required this.repo,
+    required this.item,
+    required this.onEntrada,
+    required this.onSalida,
+    required this.onAjuste,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final onHand = repo.onHandFor(item.id);
+    final movements = repo.listInventoryMovements(inventoryItemId: item.id);
+    final fmt = DateFormat('dd/MM/yyyy HH:mm');
+    return Padding(
+      padding: EdgeInsets.only(
+        left: 20,
+        right: 20,
+        top: 4,
+        bottom: MediaQuery.of(context).viewInsets.bottom + 20,
+      ),
+      child: ConstrainedBox(
+        constraints:
+            BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.85),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(item.name, style: const TextStyle(fontWeight: FontWeight.w800)),
+            const SizedBox(height: 2),
+            Text(
+              [
+                item.isExternal ? 'Externo' : 'Tienda Kura+',
+                if (item.supplier != null && item.supplier!.isNotEmpty) item.supplier!,
+                if (item.unitCost != null) _money(item.unitCost, item.currency),
+              ].join(' · '),
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Text('Existencia: ',
+                    style: Theme.of(context).textTheme.bodyMedium),
+                Text('$onHand',
+                    style: const TextStyle(
+                        fontSize: 22, fontWeight: FontWeight.w800)),
+                if (item.reorderThreshold != null) ...[
+                  const SizedBox(width: 8),
+                  Text('(umbral ${item.reorderThreshold})',
+                      style: Theme.of(context).textTheme.bodySmall),
+                ],
+              ],
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              children: [
+                FilledButton.tonalIcon(
+                  icon: const Icon(Icons.add, size: 18),
+                  label: const Text('Entrada'),
+                  onPressed: () async {
+                    Navigator.of(context).pop();
+                    await onEntrada();
+                  },
+                ),
+                FilledButton.tonalIcon(
+                  icon: const Icon(Icons.remove, size: 18),
+                  label: const Text('Salida'),
+                  onPressed: () async {
+                    Navigator.of(context).pop();
+                    await onSalida();
+                  },
+                ),
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.tune, size: 18),
+                  label: const Text('Ajuste'),
+                  onPressed: () async {
+                    Navigator.of(context).pop();
+                    await onAjuste();
+                  },
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            const Text('Movimientos', style: TextStyle(fontWeight: FontWeight.w700)),
+            const SizedBox(height: 4),
+            Flexible(
+              child: movements.isEmpty
+                  ? const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 16),
+                      child: Text('Sin movimientos.'))
+                  : ListView.separated(
+                      shrinkWrap: true,
+                      itemCount: movements.length,
+                      separatorBuilder: (_, __) => const Divider(height: 8),
+                      itemBuilder: (_, i) {
+                        final m = movements[i];
+                        final pos = m.delta > 0;
+                        return Row(
+                          children: [
+                            Text(pos ? '+${m.delta}' : '${m.delta}',
+                                style: TextStyle(
+                                    fontWeight: FontWeight.w800,
+                                    color: pos
+                                        ? KuraColors.success
+                                        : KuraColors.danger)),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(m.reason.label,
+                                      style: const TextStyle(fontSize: 13)),
+                                  Text(
+                                    '${fmt.format(m.createdAt)}'
+                                    '${m.note != null && m.note!.isNotEmpty ? ' · ${m.note}' : ''}',
+                                    style: const TextStyle(fontSize: 11),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        );
+                      },
+                    ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
