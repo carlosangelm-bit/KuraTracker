@@ -163,8 +163,9 @@ class ShopifyService {
     }
   ''';
 
-  /// Lista productos de la tienda. `search` filtra por texto (title/tipo/tag).
-  Future<List<ShopifyProduct>> fetchProducts({String? search, int first = 50}) async {
+  /// Lista productos de la tienda (hasta `first`; el máximo por página de la
+  /// Storefront API es 250). `search` filtra por texto (title/tipo/tag).
+  Future<List<ShopifyProduct>> fetchProducts({String? search, int first = 250}) async {
     final data = await _query('''
       query Products(\$first: Int!, \$query: String) {
         products(first: \$first, query: \$query, sortKey: TITLE) {
