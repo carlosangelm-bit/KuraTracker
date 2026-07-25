@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../core/theme/kura_theme.dart';
 import '../../core/providers/session_provider.dart';
 import '../../core/router/app_shell.dart' show UserMenuButton;
-import '../../services/data_repository.dart';
 
 /// Módulo de Insumos (clínica de heridas): tienda de productos de heridas
 /// (Shopify) + —con licencia premium— mapeo insumo↔producto, inventario, costeo
@@ -46,14 +46,15 @@ class InsumosHomeScreen extends ConsumerWidget {
               _LicenseBanner(premium: premium),
               const SizedBox(height: 8),
 
-              // Base (no premium).
-              const _SectionCard(
+              // Base (no premium) — YA disponible.
+              _SectionCard(
                 icon: Icons.storefront_outlined,
                 title: 'Tienda',
                 subtitle:
                     'Catálogo de productos de heridas y compra con checkout seguro.',
-                status: _Status.pronto,
+                status: _Status.disponible,
                 phase: 'Fase 1',
+                onTap: () => context.go('/insumos/tienda'),
               ),
 
               // Premium.
@@ -98,7 +99,7 @@ class InsumosHomeScreen extends ConsumerWidget {
   }
 }
 
-enum _Status { pronto, premium }
+enum _Status { disponible, pronto, premium }
 
 class _LicenseBanner extends StatelessWidget {
   final bool premium;
@@ -139,12 +140,14 @@ class _SectionCard extends StatelessWidget {
   final String subtitle;
   final _Status status;
   final String phase;
+  final VoidCallback? onTap;
   const _SectionCard({
     required this.icon,
     required this.title,
     required this.subtitle,
     required this.status,
     required this.phase,
+    this.onTap,
   });
 
   @override
@@ -152,7 +155,10 @@ class _SectionCard extends StatelessWidget {
     final isPremiumLocked = status == _Status.premium;
     return Card(
       margin: const EdgeInsets.only(top: 12),
-      child: Padding(
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
         padding: const EdgeInsets.all(14),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -180,6 +186,7 @@ class _SectionCard extends StatelessWidget {
               ),
             ),
           ],
+          ),
         ),
       ),
     );
@@ -194,6 +201,7 @@ class _StatusChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final (label, color, icon) = switch (status) {
+      _Status.disponible => ('Disponible', KuraColors.success, Icons.check_circle_outline),
       _Status.pronto => ('Próximamente · $phase', KuraColors.primary, Icons.schedule),
       _Status.premium => ('Premium · $phase', KuraColors.warning, Icons.lock_outline),
     };

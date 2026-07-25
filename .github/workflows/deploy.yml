@@ -116,7 +116,8 @@ jobs:
         run: |
           flutter build web --release \
             --dart-define=SUPABASE_URL="${{ secrets.SUPABASE_URL }}" \
-            --dart-define=SUPABASE_ANON_KEY="${{ secrets.SUPABASE_ANON_KEY }}"
+            --dart-define=SUPABASE_ANON_KEY="${{ secrets.SUPABASE_ANON_KEY }}" \
+            --dart-define=SHOPIFY_STOREFRONT_TOKEN="${{ secrets.SHOPIFY_STOREFRONT_TOKEN }}"
 
       - name: Deploy prod → kuratracker-prod
         uses: cloudflare/wrangler-action@v3
@@ -133,7 +134,8 @@ jobs:
         run: |
           flutter clean
           flutter pub get
-          flutter build web --release
+          flutter build web --release \
+            --dart-define=SHOPIFY_STOREFRONT_TOKEN="${{ secrets.SHOPIFY_STOREFRONT_TOKEN }}"
 
       - name: Deploy demo → kuratracker-demo
         uses: cloudflare/wrangler-action@v3
