@@ -9,11 +9,42 @@ import 'cart_provider.dart';
 /// Tienda del módulo de Insumos: catálogo de productos de heridas (Shopify
 /// Storefront API) + carrito → checkout alojado de Shopify. Parte BASE del
 /// módulo (no requiere licencia premium).
-class TiendaScreen extends ConsumerWidget {
+class TiendaScreen extends ConsumerStatefulWidget {
   const TiendaScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<TiendaScreen> createState() => _TiendaScreenState();
+}
+
+class _TiendaScreenState extends ConsumerState<TiendaScreen> {
+  final _searchCtrl = TextEditingController();
+  String _search = '';
+  String? _category; // clave normalizada (minúsculas sin acento)
+  String? _brand; // vendor exacto
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  /// Normaliza a minúsculas sin acentos (para comparar/buscar sin depender de
+  /// mayúsculas ni tildes; la data de la tienda es inconsistente).
+  static String fold(String s) {
+    s = s.toLowerCase().trim();
+    const from = 'áàäâãéèëêíìïîóòöôõúùüûñ';
+    const to = 'aaaaaeeeeiiiiooooouuuun';
+    final b = StringBuffer();
+    for (final ch in s.runes) {
+      final c = String.fromCharCode(ch);
+      final i = from.indexOf(c);
+      b.write(i >= 0 ? to[i] : c);
+    }
+    return b.toString();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final service = ref.watch(shopifyServiceProvider);
     final count = ref.watch(cartCountProvider);
 
@@ -28,17 +59,15 @@ class TiendaScreen extends ConsumerWidget {
               label: Text('$count'),
               child: const Icon(Icons.shopping_cart_outlined),
             ),
-            onPressed: () => _openCart(context, ref),
+            onPressed: _openCart,
           ),
         ],
       ),
-      body: !service.isConfigured
-          ? const _NotConfigured()
-          : _ProductsBody(),
+      body: !service.isConfigured ? const _NotConfigured() : _buildBody(),
     );
   }
 
-  static void _openCart(BuildContext context, WidgetRef ref) {
+  void _openCart() {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -46,26 +75,8 @@ class TiendaScreen extends ConsumerWidget {
       builder: (_) => const _CartSheet(),
     );
   }
-}
 
-class _NotConfigured extends StatelessWidget {
-  const _NotConfigured();
-  @override
-  Widget build(BuildContext context) => const Center(
-        child: Padding(
-          padding: EdgeInsets.all(32),
-          child: Text(
-            'La tienda no está configurada en este entorno.\n'
-            'Falta el Storefront access token de Shopify.',
-            textAlign: TextAlign.center,
-          ),
-        ),
-      );
-}
-
-class _ProductsBody extends ConsumerWidget {
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget _buildBody() {
     final productsAsync = ref.watch(shopifyProductsProvider);
     return productsAsync.when(
       loading: () => const Center(child: CircularProgressIndicator()),
@@ -92,26 +103,248 @@ class _ProductsBody extends ConsumerWidget {
         if (products.isEmpty) {
           return const Center(child: Text('No hay productos disponibles.'));
         }
-        return RefreshIndicator(
-          onRefresh: () async => ref.invalidate(shopifyProductsProvider),
-          child: LayoutBuilder(
-            builder: (context, c) {
-              final cols = (c.maxWidth / 260).floor().clamp(1, 5);
-              return GridView.builder(
-                padding: const EdgeInsets.all(16),
-                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: cols,
-                  crossAxisSpacing: 12,
-                  mainAxisSpacing: 12,
-                  childAspectRatio: 0.66,
-                ),
-                itemCount: products.length,
-                itemBuilder: (_, i) => _ProductCard(product: products[i]),
-              );
-            },
-          ),
+        // Facetas: categorías (productType, deduplicadas por clave normalizada,
+        // conservando una etiqueta legible) y marcas (vendor, ya limpio).
+        final catLabels = <String, String>{};
+        for (final p in products) {
+          final pt = (p.productType ?? '').trim();
+          if (pt.isEmpty) continue;
+          catLabels.putIfAbsent(fold(pt), () => pt);
+        }
+        final categories = catLabels.entries.toList()
+          ..sort((a, b) => a.value.compareTo(b.value));
+        final brands = <String>{
+          for (final p in products)
+            if ((p.vendor ?? '').trim().isNotEmpty) p.vendor!.trim()
+        }.toList()
+          ..sort();
+
+        // Selecciones inválidas (tras recarga) → limpiar.
+        if (_category != null && !catLabels.containsKey(_category)) _category = null;
+        if (_brand != null && !brands.contains(_brand)) _brand = null;
+
+        final q = fold(_search);
+        final filtered = products.where((p) {
+          if (_category != null && fold(p.productType ?? '') != _category) {
+            return false;
+          }
+          if (_brand != null && (p.vendor ?? '').trim() != _brand) return false;
+          if (q.isNotEmpty) {
+            final hay = fold('${p.title} ${p.vendor ?? ''} ${p.productType ?? ''}');
+            if (!hay.contains(q)) return false;
+          }
+          return true;
+        }).toList();
+
+        return Column(
+          children: [
+            _FilterBar(
+              searchController: _searchCtrl,
+              categories: categories,
+              brands: brands,
+              category: _category,
+              brand: _brand,
+              resultCount: filtered.length,
+              totalCount: products.length,
+              onSearch: (v) => setState(() => _search = v),
+              onCategory: (v) => setState(() => _category = v),
+              onBrand: (v) => setState(() => _brand = v),
+            ),
+            const Divider(height: 1),
+            Expanded(
+              child: filtered.isEmpty
+                  ? const Center(
+                      child: Padding(
+                        padding: EdgeInsets.all(32),
+                        child: Text('Ningún producto coincide con los filtros.',
+                            textAlign: TextAlign.center),
+                      ),
+                    )
+                  : RefreshIndicator(
+                      onRefresh: () async =>
+                          ref.invalidate(shopifyProductsProvider),
+                      child: LayoutBuilder(
+                        builder: (context, c) {
+                          final cols = (c.maxWidth / 260).floor().clamp(1, 5);
+                          return GridView.builder(
+                            padding: const EdgeInsets.all(16),
+                            gridDelegate:
+                                SliverGridDelegateWithFixedCrossAxisCount(
+                              crossAxisCount: cols,
+                              crossAxisSpacing: 12,
+                              mainAxisSpacing: 12,
+                              childAspectRatio: 0.66,
+                            ),
+                            itemCount: filtered.length,
+                            itemBuilder: (_, i) =>
+                                _ProductCard(product: filtered[i]),
+                          );
+                        },
+                      ),
+                    ),
+            ),
+          ],
         );
       },
+    );
+  }
+}
+
+class _NotConfigured extends StatelessWidget {
+  const _NotConfigured();
+  @override
+  Widget build(BuildContext context) => const Center(
+        child: Padding(
+          padding: EdgeInsets.all(32),
+          child: Text(
+            'La tienda no está configurada en este entorno.\n'
+            'Falta el Storefront access token de Shopify.',
+            textAlign: TextAlign.center,
+          ),
+        ),
+      );
+}
+
+/// Barra de filtros: buscador + categoría + marca + conteo de resultados.
+class _FilterBar extends StatelessWidget {
+  final TextEditingController searchController;
+  final List<MapEntry<String, String>> categories; // clave -> etiqueta
+  final List<String> brands;
+  final String? category;
+  final String? brand;
+  final int resultCount;
+  final int totalCount;
+  final ValueChanged<String> onSearch;
+  final ValueChanged<String?> onCategory;
+  final ValueChanged<String?> onBrand;
+
+  const _FilterBar({
+    required this.searchController,
+    required this.categories,
+    required this.brands,
+    required this.category,
+    required this.brand,
+    required this.resultCount,
+    required this.totalCount,
+    required this.onSearch,
+    required this.onCategory,
+    required this.onBrand,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          TextField(
+            controller: searchController,
+            onChanged: onSearch,
+            decoration: InputDecoration(
+              isDense: true,
+              hintText: 'Buscar producto…',
+              prefixIcon: const Icon(Icons.search),
+              suffixIcon: searchController.text.isEmpty
+                  ? null
+                  : IconButton(
+                      icon: const Icon(Icons.close),
+                      onPressed: () {
+                        searchController.clear();
+                        onSearch('');
+                      },
+                    ),
+              border: const OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              _FilterDropdown<String>(
+                icon: Icons.category_outlined,
+                hint: 'Categoría',
+                value: category,
+                items: [
+                  for (final c in categories)
+                    DropdownMenuItem(value: c.key, child: Text(c.value)),
+                ],
+                onChanged: onCategory,
+              ),
+              _FilterDropdown<String>(
+                icon: Icons.sell_outlined,
+                hint: 'Marca',
+                value: brand,
+                items: [
+                  for (final b in brands)
+                    DropdownMenuItem(value: b, child: Text(b)),
+                ],
+                onChanged: onBrand,
+              ),
+              if (category != null || brand != null || searchController.text.isNotEmpty)
+                TextButton.icon(
+                  icon: const Icon(Icons.clear_all, size: 18),
+                  label: const Text('Limpiar'),
+                  onPressed: () {
+                    searchController.clear();
+                    onSearch('');
+                    onCategory(null);
+                    onBrand(null);
+                  },
+                ),
+              Text('$resultCount de $totalCount',
+                  style: Theme.of(context).textTheme.bodySmall),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Dropdown compacto con opción "Todos" (null) al inicio.
+class _FilterDropdown<T> extends StatelessWidget {
+  final IconData icon;
+  final String hint;
+  final T? value;
+  final List<DropdownMenuItem<T>> items;
+  final ValueChanged<T?> onChanged;
+  const _FilterDropdown({
+    required this.icon,
+    required this.hint,
+    required this.value,
+    required this.items,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+      decoration: BoxDecoration(
+        border: Border.all(color: KuraColors.chipBg),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 16, color: KuraColors.darkText),
+          const SizedBox(width: 6),
+          DropdownButton<T?>(
+            value: value,
+            hint: Text(hint, style: const TextStyle(fontSize: 13)),
+            underline: const SizedBox.shrink(),
+            isDense: true,
+            items: [
+              DropdownMenuItem<T?>(value: null, child: Text('$hint: todas')),
+              ...items,
+            ],
+            onChanged: onChanged,
+          ),
+        ],
+      ),
     );
   }
 }
