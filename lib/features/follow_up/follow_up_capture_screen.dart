@@ -800,12 +800,13 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
                     onSelected: (v) => setState(() => _careTypeSelected = v),
                   ),
                   const SizedBox(height: 16),
-                  // Toggle premium "Utilizar protocolo Kura+" (Parte D): solo
-                  // visible si session.user?.premiumEnabled == true. Se
-                  // muestra justo antes de los 2 campos multi-seleccion que
-                  // pre-selecciona (procedimiento/material), para que la
-                  // relacion causa->efecto sea obvia en la UI.
-                  if (session.user?.premiumEnabled == true) ...[
+                  // Toggle premium "Utilizar protocolo Kura+" (Parte D): visible
+                  // si el usuario tiene Kura+ (premium_enabled por usuario O el
+                  // add-on "Protocolo Kura+" del centro, 0049). Se muestra justo
+                  // antes de los 2 campos multi-seleccion que pre-selecciona
+                  // (procedimiento/material), para que la relacion causa->efecto
+                  // sea obvia en la UI.
+                  if (ref.watch(kuraProtocolEnabledProvider)) ...[
                     _kuraProtocolToggle(repo: repo, session: session),
                     const SizedBox(height: 16),
                   ],

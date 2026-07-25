@@ -15,9 +15,10 @@ class Organization {
   final String? brandLogoPath;
   // Tipo de centro (0040): determina paleta y módulos por defecto.
   final CenterType centerType;
-  // Licencia premium del módulo de Insumos (0047): habilita mapeo insumo↔
-  // producto, inventario, costeo y reabasto. La tienda base no la requiere.
+  // Add-ons premium a nivel CENTRO (módulos que se añaden a la licencia):
+  // Insumos (0047: mapeo/inventario/costeo/reabasto) y Protocolo Kura+ (0049).
   final bool premiumInsumos;
+  final bool premiumProtocoloKura;
 
   const Organization({
     required this.id,
@@ -28,6 +29,7 @@ class Organization {
     this.brandLogoPath,
     this.centerType = CenterType.clinicaHeridas,
     this.premiumInsumos = false,
+    this.premiumProtocoloKura = false,
   });
 
   factory Organization.fromJson(Map<String, dynamic> json) => Organization(
@@ -39,6 +41,7 @@ class Organization {
         brandLogoPath: json['brand_logo_path'] as String?,
         centerType: CenterTypeX.fromDb(json['center_type'] as String?),
         premiumInsumos: json['premium_insumos'] as bool? ?? false,
+        premiumProtocoloKura: json['premium_protocolo_kura'] as bool? ?? false,
       );
 
   Map<String, dynamic> toJson() => {
@@ -50,5 +53,6 @@ class Organization {
         'brand_logo_path': brandLogoPath,
         'center_type': centerType.dbValue,
         'premium_insumos': premiumInsumos,
+        'premium_protocolo_kura': premiumProtocoloKura,
       };
 }

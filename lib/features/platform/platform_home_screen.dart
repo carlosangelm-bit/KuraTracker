@@ -433,26 +433,57 @@ class _ModulesTabState extends State<_ModulesTab> {
         Text('Tipo: ${org.centerType.label}. Sin ajuste = hereda el valor por tipo.',
             style: const TextStyle(fontSize: 12, color: Colors.black54)),
         const SizedBox(height: 12),
-        // Licencia premium del módulo de Insumos (0047), por centro. La tienda
-        // base no la requiere; sí las funciones avanzadas (mapeo/inventario/
-        // costeo/reabasto).
+        // Módulos premium (add-ons de la licencia del centro): funciones de pago
+        // que se añaden por centro, independientes entre sí. Protocolo Kura+
+        // (0049) e Insumos (0047).
         Card(
-          child: SwitchListTile(
-            secondary: const Icon(Icons.workspace_premium_outlined),
-            title: const Text('Licencia premium de Insumos'),
-            subtitle: const Text(
-                'Habilita mapeo insumo↔producto, inventario, costeo y reabasto.'),
-            value: org.premiumInsumos,
-            onChanged: _busy
-                ? null
-                : (v) async {
-                    setState(() => _busy = true);
-                    try {
-                      await widget.repo.setOrgPremiumInsumos(org.id, v);
-                    } finally {
-                      if (mounted) setState(() => _busy = false);
-                    }
-                  },
+          child: Column(
+            children: [
+              const ListTile(
+                dense: true,
+                leading: Icon(Icons.workspace_premium_outlined),
+                title: Text('Módulos premium (add-ons)',
+                    style: TextStyle(fontWeight: FontWeight.w700)),
+                subtitle: Text(
+                    'Funciones premium que se añaden a la licencia de este centro.'),
+              ),
+              const Divider(height: 1),
+              SwitchListTile(
+                title: const Text('Protocolo Kura+'),
+                subtitle: const Text(
+                    'Sugerencia de tratamiento del motor para todo el centro '
+                    '(además de la activación por usuario).'),
+                value: org.premiumProtocoloKura,
+                onChanged: _busy
+                    ? null
+                    : (v) async {
+                        setState(() => _busy = true);
+                        try {
+                          await widget.repo
+                              .setOrgPremiumProtocoloKura(org.id, v);
+                        } finally {
+                          if (mounted) setState(() => _busy = false);
+                        }
+                      },
+              ),
+              SwitchListTile(
+                title: const Text('Insumos'),
+                subtitle: const Text(
+                    'Mapeo insumo↔producto, inventario, costeo y reabasto '
+                    '(la tienda base no requiere premium).'),
+                value: org.premiumInsumos,
+                onChanged: _busy
+                    ? null
+                    : (v) async {
+                        setState(() => _busy = true);
+                        try {
+                          await widget.repo.setOrgPremiumInsumos(org.id, v);
+                        } finally {
+                          if (mounted) setState(() => _busy = false);
+                        }
+                      },
+              ),
+            ],
           ),
         ),
         const SizedBox(height: 12),

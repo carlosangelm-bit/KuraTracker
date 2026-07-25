@@ -153,11 +153,11 @@ class _TreatmentStepScreenState extends ConsumerState<TreatmentStepScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final session = ref.watch(sessionProvider);
     final controller = ref.read(
       woundCaptureControllerProvider(widget.draftKey).notifier,
     );
-    final isPremium = session.user?.premiumEnabled ?? false;
+    // Kura+ habilitado por usuario (premium_enabled) O por el add-on del centro.
+    final isPremium = ref.watch(kuraProtocolEnabledProvider);
 
     if (!_initializedFromEngine) {
       _initializedFromEngine = true;
