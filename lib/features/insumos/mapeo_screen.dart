@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/theme/kura_theme.dart';
 import '../../core/providers/session_provider.dart';
 import '../../core/router/app_shell.dart' show UserMenuButton;
+import '../../models/note_option_catalog.dart';
 import '../../models/supply_product_mapping.dart';
 import '../../services/data_repository.dart';
 import '../../services/shopify_service.dart';
@@ -21,6 +22,11 @@ const _mappableMethods = [
   'Tratamiento para la infección',
   'Terapia compresiva',
 ];
+
+/// "Método" sintético para los insumos que el CENTRO agrega en su catálogo
+/// (Configuración → Material utilizado). No es del protocolo; es lo que cada
+/// centro configura por su cuenta.
+const _centerMaterialsMethod = 'Material del centro';
 
 /// Mapeo insumo↔producto (Insumos, Fase 2 premium): el centro liga cada insumo
 /// genérico de su protocolo a un producto concreto de su tienda Shopify.
@@ -51,34 +57,52 @@ class _MapeoScreenState extends ConsumerState<MapeoScreen> {
           }
           final index = repo.supplyMappingIndex(orgId);
 
+          // Insumos que el CENTRO agrega en su catálogo (Configuración →
+          // Material utilizado). Así, lo que el centro configure aparece aquí
+          // para mapear, además de los insumos del protocolo incorporado.
+          final centerMaterials = repo
+              .listNoteOptions(NoteOptionField.materialsUsed, organizationId: orgId)
+              .map((e) => e.label.trim())
+              .where((s) => s.isNotEmpty)
+              .toSet()
+              .toList()
+            ..sort();
+
+          _MethodGroup groupFor(String method, List<String> products) =>
+              _MethodGroup(
+                method: method,
+                products: products,
+                index: index,
+                onEdit: (product) => _assign(context, repo, orgId, method, product),
+                onClear: (product) async {
+                  await repo.deleteSupplyMapping(
+                    organizationId: orgId!,
+                    method: method,
+                    genericProduct: product,
+                  );
+                  if (mounted) setState(() {});
+                },
+              );
+
           return ListView(
             padding: const EdgeInsets.fromLTRB(12, 12, 12, 32),
             children: [
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 4),
                 child: Text(
-                  'Liga cada insumo de tu protocolo a un producto de tu tienda. '
-                  'Se usa para asignar insumos a pacientes, costear y sugerir '
-                  'reabasto. Puedes dejar sin asignar los que no manejes.',
+                  'Liga cada insumo (de tu protocolo y de tu catálogo del centro) '
+                  'a un producto de tu tienda. Se usa para asignar insumos a '
+                  'pacientes, costear y sugerir reabasto. Puedes dejar sin asignar '
+                  'los que no manejes.',
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
               ),
               const SizedBox(height: 8),
+              if (centerMaterials.isNotEmpty)
+                groupFor(_centerMaterialsMethod, centerMaterials),
               for (final method in _mappableMethods)
-                _MethodGroup(
-                  method: method,
-                  products: TreatmentCatalog.methodToProducts[method] ?? const [],
-                  index: index,
-                  onEdit: (product) => _assign(context, repo, orgId, method, product),
-                  onClear: (product) async {
-                    await repo.deleteSupplyMapping(
-                      organizationId: orgId!,
-                      method: method,
-                      genericProduct: product,
-                    );
-                    if (mounted) setState(() {});
-                  },
-                ),
+                groupFor(method,
+                    TreatmentCatalog.methodToProducts[method] ?? const []),
             ],
           );
         },
