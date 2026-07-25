@@ -57,15 +57,16 @@ class InsumosHomeScreen extends ConsumerWidget {
                 onTap: () => context.go('/insumos/tienda'),
               ),
 
-              // Premium.
+              // Premium — Mapeo YA disponible (Fase 2) cuando hay licencia.
               _SectionCard(
                 icon: Icons.link_outlined,
                 title: 'Mapeo insumo ↔ producto',
                 subtitle:
                     'Liga cada insumo del protocolo a un producto concreto '
                     '(p. ej. Apósito de espuma → Mepilex Border).',
-                status: premium ? _Status.pronto : _Status.premium,
+                status: premium ? _Status.disponible : _Status.premium,
                 phase: 'Fase 2',
+                onTap: premium ? () => context.go('/insumos/mapeo') : null,
               ),
               _SectionCard(
                 icon: Icons.inventory_2_outlined,
