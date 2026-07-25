@@ -800,6 +800,47 @@ class DataRepository {
     return InventoryMovement.fromJson(saved);
   }
 
+  // ------------- Consumo por paciente + costeo (Insumos Fase 4) -------------
+
+  /// Movimientos de CONSUMO de un paciente (salidas ligadas a él).
+  List<InventoryMovement> listConsumptionForPatient(String patientId) => _store
+      .getAll(Collections.inventoryMovements)
+      .map(InventoryMovement.fromJson)
+      .where((m) => m.patientId == patientId && m.reason == InventoryReason.consumo)
+      .toList()
+    ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
+  /// Costo total de insumos consumidos por un paciente (Σ |delta| × costo).
+  double consumptionCostForPatient(String patientId) {
+    final itemsById = {for (final it in listInventoryItems(activeOnly: false)) it.id: it};
+    var total = 0.0;
+    for (final m in listConsumptionForPatient(patientId)) {
+      final cost = m.unitCost ?? itemsById[m.inventoryItemId]?.unitCost ?? 0;
+      total += cost * m.delta.abs();
+    }
+    return total;
+  }
+
+  /// Componentes (método/producto) del plan de tratamiento MÁS RECIENTE del
+  /// paciente. Sirve para sugerir qué insumos descontar (vía los mapeos Fase 2).
+  List<TreatmentComponentRecord> latestTreatmentComponentsForPatient(String patientId) {
+    final consultIds =
+        listConsultationsForPatient(patientId).map((c) => c.id).toSet();
+    if (consultIds.isEmpty) return const [];
+    final plans = _store
+        .getAll(Collections.treatmentPlans)
+        .where((p) => consultIds.contains(p['consultation_id']))
+        .toList()
+      ..sort((a, b) => '${b['created_at']}'.compareTo('${a['created_at']}'));
+    if (plans.isEmpty) return const [];
+    final planId = plans.first['id'];
+    return _store
+        .getAll(Collections.treatmentComponents)
+        .where((c) => c['treatment_plan_id'] == planId)
+        .map(TreatmentComponentRecord.fromJson)
+        .toList();
+  }
+
   /// Citas manuales del centro (admin) o de un Kurador (clínico). El aislamiento
   /// real lo aplica la RLS; el filtro aquí acota la vista.
   List<ManualAppointment> listManualAppointments({String? organizationId, String? staffId}) =>

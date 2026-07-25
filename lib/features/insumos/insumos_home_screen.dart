@@ -82,8 +82,9 @@ class InsumosHomeScreen extends ConsumerWidget {
                 subtitle:
                     'Insumos usados por tratamiento, costo por paciente y '
                     'trazabilidad del consumo.',
-                status: premium ? _Status.pronto : _Status.premium,
+                status: premium ? _Status.disponible : _Status.premium,
                 phase: 'Fase 4',
+                onTap: premium ? () => context.go('/insumos/consumo') : null,
               ),
               _SectionCard(
                 icon: Icons.autorenew_outlined,
