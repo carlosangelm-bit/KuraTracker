@@ -547,6 +547,27 @@ class DataRepository {
     }
   }
 
+  /// ¿El centro tiene la licencia premium del módulo de Insumos? (0047)
+  bool premiumInsumosFor(String? organizationId) =>
+      organizationById(organizationId)?.premiumInsumos ?? false;
+
+  /// Activa/desactiva la licencia premium de Insumos de un centro. En Supabase
+  /// usa el RPC set_org_premium_insumos (0047, solo master); en demo actualiza
+  /// la fila directo.
+  Future<void> setOrgPremiumInsumos(String organizationId, bool enabled) async {
+    final store = _store;
+    if (store is SupabaseDataStore) {
+      await store.callRpc('set_org_premium_insumos', {
+        'p_org': organizationId,
+        'p_enabled': enabled,
+      });
+      await store.refreshCollection(Collections.organizations);
+    } else {
+      await _store.updateRow(Collections.organizations, organizationId,
+          {'premium_insumos': enabled});
+    }
+  }
+
   /// Citas manuales del centro (admin) o de un Kurador (clínico). El aislamiento
   /// real lo aplica la RLS; el filtro aquí acota la vista.
   List<ManualAppointment> listManualAppointments({String? organizationId, String? staffId}) =>

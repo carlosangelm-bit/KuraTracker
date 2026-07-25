@@ -433,6 +433,29 @@ class _ModulesTabState extends State<_ModulesTab> {
         Text('Tipo: ${org.centerType.label}. Sin ajuste = hereda el valor por tipo.',
             style: const TextStyle(fontSize: 12, color: Colors.black54)),
         const SizedBox(height: 12),
+        // Licencia premium del módulo de Insumos (0047), por centro. La tienda
+        // base no la requiere; sí las funciones avanzadas (mapeo/inventario/
+        // costeo/reabasto).
+        Card(
+          child: SwitchListTile(
+            secondary: const Icon(Icons.workspace_premium_outlined),
+            title: const Text('Licencia premium de Insumos'),
+            subtitle: const Text(
+                'Habilita mapeo insumo↔producto, inventario, costeo y reabasto.'),
+            value: org.premiumInsumos,
+            onChanged: _busy
+                ? null
+                : (v) async {
+                    setState(() => _busy = true);
+                    try {
+                      await widget.repo.setOrgPremiumInsumos(org.id, v);
+                    } finally {
+                      if (mounted) setState(() => _busy = false);
+                    }
+                  },
+          ),
+        ),
+        const SizedBox(height: 12),
         SegmentedButton<_ModuleScope>(
           segments: const [
             ButtonSegment(value: _ModuleScope.centro, label: Text('Centro')),
