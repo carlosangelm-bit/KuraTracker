@@ -31,7 +31,7 @@ class DemoSeed {
   // una sola vez en instalaciones demo previas (wipeAll + _seed), evitando
   // duplicados y datos viejos. Cada rediseño del roster sube este número.
   // v12: roster curado por escenario (clínica 7 / hospital 5 / cuidadores 3).
-  static const String _seedFlag = 'seeded_v12';
+  static const String _seedFlag = 'seeded_v13';
 
   static Future<void> ensureSeeded(LocalStore store) async {
     if (store.getBool(_seedFlag)) return;
@@ -74,6 +74,9 @@ class DemoSeed {
         'name': 'Kura+',
         'is_active': true,
         'center_type': 'clinica_heridas',
+        // Demo: la clínica opera su agenda en modo MANUAL (la integración Acuity
+        // solo lee de Supabase, no aplica en local) para poder mostrar citas.
+        'scheduling_mode': 'manual',
         'created_at': iso(now.subtract(const Duration(days: 400))),
       },
       {
@@ -1581,5 +1584,51 @@ class DemoSeed {
         },
       ],
     );
+
+    // ---------------- Agenda de la clínica (citas manuales) ----------------
+    // Kura+ opera su agenda en modo MANUAL en la demo. Se puebla con citas de
+    // seguimiento para los pacientes dados de alta en la clínica, repartidas por
+    // la semana (con un par ya realizadas para dar historial). Se asignan a los
+    // dos Kuradores (Dra. Ana Martínez / Lic. Carlos Ramírez) por turnos.
+    final clinicaPatients = store
+        .getAll(Collections.patients)
+        .where((p) =>
+            p['organization_id'] == organizationId && p['is_active'] == true)
+        .toList();
+    final kuradorIds = [staff1Id, staff2Id];
+    const citaTitulos = [
+      'Curación y valoración',
+      'Seguimiento de herida',
+      'Control de evolución',
+      'Revisión de tratamiento',
+    ];
+    // Franjas [díaRelativoAHoy, hora] para repartir las citas sin encimarlas.
+    const franjas = [
+      [-4, 10], [-1, 12], // ya realizadas (historial)
+      [0, 9], [0, 11], [0, 16], // hoy
+      [1, 10], [1, 15], // mañana
+      [2, 12], [3, 9], [4, 16], [6, 11], [7, 13], // resto de la semana
+    ];
+    final citasClinica = <Map<String, dynamic>>[];
+    for (var i = 0; i < franjas.length && clinicaPatients.isNotEmpty; i++) {
+      final p = clinicaPatients[i % clinicaPatients.length];
+      final f = franjas[i];
+      final when =
+          DateTime(now.year, now.month, now.day + f[0], f[1], 0);
+      final past = when.isBefore(now);
+      citasClinica.add({
+        'id': _uuid.v4(),
+        'organization_id': organizationId,
+        'staff_id': kuradorIds[i % kuradorIds.length],
+        'patient_id': p['id'],
+        'title': citaTitulos[i % citaTitulos.length],
+        'datetime': iso(when),
+        'end_time': iso(when.add(const Duration(minutes: 40))),
+        'notes': null,
+        'status': past ? 'completed' : 'scheduled',
+        'created_at': iso(now.subtract(const Duration(days: 3))),
+      });
+    }
+    await appendRows(Collections.manualAppointments, citasClinica);
   }
 }
