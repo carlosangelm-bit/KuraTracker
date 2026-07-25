@@ -31,7 +31,7 @@ class DemoSeed {
   // una sola vez en instalaciones demo previas (wipeAll + _seed), evitando
   // duplicados y datos viejos. Cada rediseño del roster sube este número.
   // v12: roster curado por escenario (clínica 7 / hospital 5 / cuidadores 3).
-  static const String _seedFlag = 'seeded_v16';
+  static const String _seedFlag = 'seeded_v17';
 
   static Future<void> ensureSeeded(LocalStore store) async {
     if (store.getBool(_seedFlag)) return;
@@ -1682,6 +1682,43 @@ class DemoSeed {
         'created_at': iso(now.subtract(const Duration(days: 20))),
       });
     }
+    // Un artículo de la TIENDA Kura+ bajo umbral, para demostrar el reabasto con
+    // carrito de Shopify (usa una variante real de la tienda kuramas).
+    final storeItemId = _uuid.v4();
+    invItems.add({
+      'id': storeItemId,
+      'organization_id': organizationId,
+      'site_id': siteClinicaCdmx,
+      'name': 'Prontosan® Solución 350 ml',
+      'is_external': false,
+      'shopify_product_id': 'gid://shopify/Product/demo-prontosan-350',
+      'shopify_variant_id': 'gid://shopify/ProductVariant/31712507002942',
+      'image_url':
+          'https://cdn.shopify.com/s/files/1/0260/4128/6718/files/Prontosan.png?v=1739829824',
+      'unit_cost': 863.0,
+      'currency': 'MXN',
+      'supplier': null,
+      'reorder_threshold': 6,
+      'notes': null,
+      'is_active': true,
+      'created_by': staff1Id,
+      'created_at': iso(now.subtract(const Duration(days: 20))),
+      'updated_at': iso(now.subtract(const Duration(days: 20))),
+    });
+    invMoves.add({
+      'id': _uuid.v4(),
+      'organization_id': organizationId,
+      'site_id': siteClinicaCdmx,
+      'inventory_item_id': storeItemId,
+      'delta': 2, // 2 en stock < umbral 6 → aparece en reabasto
+      'reason': 'compra',
+      'unit_cost': 863.0,
+      'patient_id': null,
+      'consultation_id': null,
+      'note': 'Existencia inicial (demo)',
+      'created_by': staff1Id,
+      'created_at': iso(now.subtract(const Duration(days: 20))),
+    });
     await appendRows(Collections.inventoryItems, invItems);
     await appendRows(Collections.inventoryMovements, invMoves);
   }

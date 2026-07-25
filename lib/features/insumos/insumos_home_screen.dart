@@ -90,9 +90,10 @@ class InsumosHomeScreen extends ConsumerWidget {
                 icon: Icons.autorenew_outlined,
                 title: 'Reabasto sugerido',
                 subtitle:
-                    'Sugerencias de reorden según el consumo y las existencias.',
-                status: premium ? _Status.pronto : _Status.premium,
+                    'Artículos bajo su umbral → carrito de reorden en tu tienda.',
+                status: premium ? _Status.disponible : _Status.premium,
                 phase: 'Fase 5',
+                onTap: premium ? () => context.go('/insumos/reabasto') : null,
               ),
             ],
           );
