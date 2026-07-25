@@ -15,6 +15,7 @@ import '../models/consent.dart';
 import '../models/consultation.dart';
 import '../models/manual_appointment.dart';
 import '../models/organization.dart';
+import '../models/supply_product_mapping.dart';
 import '../models/user_center_membership.dart';
 import '../models/patient.dart';
 import '../models/patient_admission.dart';
@@ -565,6 +566,78 @@ class DataRepository {
     } else {
       await _store.updateRow(Collections.organizations, organizationId,
           {'premium_insumos': enabled});
+    }
+  }
+
+  // ---------------- Mapeo insumo↔producto (Insumos Fase 2, 0048) ----------------
+
+  /// Mapeos insumo↔producto del centro.
+  List<SupplyProductMapping> listSupplyMappings(String? organizationId) => _store
+      .getAll(Collections.supplyProductMappings)
+      .map(SupplyProductMapping.fromJson)
+      .where((m) => organizationId == null || m.organizationId == organizationId)
+      .toList();
+
+  /// Mapa clave(`método::producto`) → mapeo, para resolver rápido en la UI.
+  Map<String, SupplyProductMapping> supplyMappingIndex(String? organizationId) =>
+      {for (final m in listSupplyMappings(organizationId)) m.key: m};
+
+  /// Crea o actualiza (upsert por centro+método+producto) el mapeo de un insumo
+  /// genérico a un producto de la tienda.
+  Future<void> setSupplyMapping({
+    required String organizationId,
+    required String method,
+    required String genericProduct,
+    required String shopifyProductId,
+    required String shopifyTitle,
+    String? shopifyVariantId,
+    String? shopifyVariantTitle,
+    String? shopifyHandle,
+    String? imageUrl,
+    double? priceAmount,
+    String? priceCurrency,
+    String? updatedBy,
+  }) async {
+    final existing = listSupplyMappings(organizationId).where(
+        (m) => m.method == method && m.genericProduct == genericProduct);
+    final now = DateTime.now().toIso8601String();
+    final data = {
+      'organization_id': organizationId,
+      'method': method,
+      'generic_product': genericProduct,
+      'shopify_product_id': shopifyProductId,
+      'shopify_variant_id': shopifyVariantId,
+      'shopify_title': shopifyTitle,
+      'shopify_variant_title': shopifyVariantTitle,
+      'shopify_handle': shopifyHandle,
+      'image_url': imageUrl,
+      'price_amount': priceAmount,
+      'price_currency': priceCurrency,
+      'updated_by': updatedBy,
+      'updated_at': now,
+    };
+    if (existing.isNotEmpty) {
+      await _store.updateRow(
+          Collections.supplyProductMappings, existing.first.id, data);
+    } else {
+      await _store.insertRow(Collections.supplyProductMappings, {
+        'id': _uuid.v4(),
+        'created_at': now,
+        ...data,
+      });
+    }
+  }
+
+  /// Elimina el mapeo de un insumo genérico (deja el insumo sin producto).
+  Future<void> deleteSupplyMapping({
+    required String organizationId,
+    required String method,
+    required String genericProduct,
+  }) async {
+    final existing = listSupplyMappings(organizationId).where(
+        (m) => m.method == method && m.genericProduct == genericProduct);
+    for (final m in existing) {
+      await _store.deleteRow(Collections.supplyProductMappings, m.id);
     }
   }
 
