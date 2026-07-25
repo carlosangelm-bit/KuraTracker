@@ -16,6 +16,7 @@ import '../models/consultation.dart';
 import '../models/manual_appointment.dart';
 import '../models/organization.dart';
 import '../models/supply_product_mapping.dart';
+import '../models/inventory.dart';
 import '../models/user_center_membership.dart';
 import '../models/patient.dart';
 import '../models/patient_admission.dart';
@@ -660,6 +661,143 @@ class DataRepository {
     for (final m in existing) {
       await _store.deleteRow(Collections.supplyProductMappings, m.id);
     }
+  }
+
+  // ---------------- Inventario (Insumos Fase 3, 0050) ----------------
+
+  List<InventoryItem> listInventoryItems({
+    String? organizationId,
+    String? siteId,
+    bool activeOnly = true,
+  }) =>
+      _store
+          .getAll(Collections.inventoryItems)
+          .map(InventoryItem.fromJson)
+          .where((it) =>
+              (organizationId == null || it.organizationId == organizationId) &&
+              (siteId == null || it.siteId == siteId) &&
+              (!activeOnly || it.isActive))
+          .toList()
+        ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+
+  List<InventoryMovement> listInventoryMovements({
+    String? inventoryItemId,
+    String? siteId,
+  }) =>
+      _store
+          .getAll(Collections.inventoryMovements)
+          .map(InventoryMovement.fromJson)
+          .where((m) =>
+              (inventoryItemId == null || m.inventoryItemId == inventoryItemId) &&
+              (siteId == null || m.siteId == siteId))
+          .toList()
+        ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
+  /// Existencia actual de un artículo = suma de sus movimientos.
+  int onHandFor(String inventoryItemId) => _store
+      .getAll(Collections.inventoryMovements)
+      .map(InventoryMovement.fromJson)
+      .where((m) => m.inventoryItemId == inventoryItemId)
+      .fold<int>(0, (a, m) => a + m.delta);
+
+  /// Existencias por artículo (itemId → cantidad) de un sitio.
+  Map<String, int> inventoryOnHand(String siteId) {
+    final byItem = <String, int>{};
+    for (final m in _store
+        .getAll(Collections.inventoryMovements)
+        .map(InventoryMovement.fromJson)
+        .where((m) => m.siteId == siteId)) {
+      byItem[m.inventoryItemId] = (byItem[m.inventoryItemId] ?? 0) + m.delta;
+    }
+    return byItem;
+  }
+
+  /// Crea un artículo de inventario (de la tienda Kura+ o externo).
+  Future<InventoryItem> addInventoryItem({
+    required String organizationId,
+    required String siteId,
+    required String name,
+    bool isExternal = false,
+    String? shopifyProductId,
+    String? shopifyVariantId,
+    String? imageUrl,
+    double? unitCost,
+    String? currency,
+    String? supplier,
+    int? reorderThreshold,
+    String? notes,
+    String? createdBy,
+  }) async {
+    final now = DateTime.now().toIso8601String();
+    final data = {
+      'id': _uuid.v4(),
+      'organization_id': organizationId,
+      'site_id': siteId,
+      'name': name,
+      'is_external': isExternal,
+      'shopify_product_id': shopifyProductId,
+      'shopify_variant_id': shopifyVariantId,
+      'image_url': imageUrl,
+      'unit_cost': unitCost,
+      'currency': currency ?? 'MXN',
+      'supplier': supplier,
+      'reorder_threshold': reorderThreshold,
+      'notes': notes,
+      'is_active': true,
+      'created_by': createdBy,
+      'created_at': now,
+      'updated_at': now,
+    };
+    final saved = await _store.insertRow(Collections.inventoryItems, data);
+    return InventoryItem.fromJson(saved);
+  }
+
+  Future<void> updateInventoryItem(
+    String id, {
+    String? name,
+    double? unitCost,
+    String? supplier,
+    int? reorderThreshold,
+    String? notes,
+    bool? isActive,
+  }) async {
+    final patch = <String, dynamic>{'updated_at': DateTime.now().toIso8601String()};
+    if (name != null) patch['name'] = name;
+    if (unitCost != null) patch['unit_cost'] = unitCost;
+    if (supplier != null) patch['supplier'] = supplier;
+    if (reorderThreshold != null) patch['reorder_threshold'] = reorderThreshold;
+    if (notes != null) patch['notes'] = notes;
+    if (isActive != null) patch['is_active'] = isActive;
+    await _store.updateRow(Collections.inventoryItems, id, patch);
+  }
+
+  /// Registra un movimiento (entrada +, salida −) y actualiza la existencia.
+  Future<InventoryMovement> addInventoryMovement({
+    required InventoryItem item,
+    required int delta,
+    required InventoryReason reason,
+    double? unitCost,
+    String? patientId,
+    String? consultationId,
+    String? note,
+    String? createdBy,
+  }) async {
+    final data = {
+      'id': _uuid.v4(),
+      'organization_id': item.organizationId,
+      'site_id': item.siteId,
+      'inventory_item_id': item.id,
+      'delta': delta,
+      'reason': reason.dbValue,
+      'unit_cost': unitCost,
+      'patient_id': patientId,
+      'consultation_id': consultationId,
+      'note': note,
+      'created_by': createdBy,
+      'created_at': DateTime.now().toIso8601String(),
+    };
+    final saved = await _store.insertRow(Collections.inventoryMovements, data);
+    return InventoryMovement.fromJson(saved);
   }
 
   /// Citas manuales del centro (admin) o de un Kurador (clínico). El aislamiento

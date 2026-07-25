@@ -71,9 +71,10 @@ class InsumosHomeScreen extends ConsumerWidget {
               _SectionCard(
                 icon: Icons.inventory_2_outlined,
                 title: 'Inventario',
-                subtitle: 'Existencias por centro/sitio con entradas y salidas.',
-                status: premium ? _Status.pronto : _Status.premium,
+                subtitle: 'Existencias por sitio con entradas, salidas y ajustes.',
+                status: premium ? _Status.disponible : _Status.premium,
                 phase: 'Fase 3',
+                onTap: premium ? () => context.go('/insumos/inventario') : null,
               ),
               _SectionCard(
                 icon: Icons.receipt_long_outlined,

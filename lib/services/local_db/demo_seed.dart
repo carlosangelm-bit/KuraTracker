@@ -31,7 +31,7 @@ class DemoSeed {
   // una sola vez en instalaciones demo previas (wipeAll + _seed), evitando
   // duplicados y datos viejos. Cada rediseño del roster sube este número.
   // v12: roster curado por escenario (clínica 7 / hospital 5 / cuidadores 3).
-  static const String _seedFlag = 'seeded_v15';
+  static const String _seedFlag = 'seeded_v16';
 
   static Future<void> ensureSeeded(LocalStore store) async {
     if (store.getBool(_seedFlag)) return;
@@ -1634,5 +1634,55 @@ class DemoSeed {
       });
     }
     await appendRows(Collections.manualAppointments, citasClinica);
+
+    // ---------------- Inventario demo (Insumos Fase 3) ----------------
+    // Existencias en el sitio Kura+ CDMX: unos productos EXTERNOS con stock
+    // inicial y un artículo bajo de existencia (para mostrar "Reordenar").
+    final invSeed = [
+      ('Gasa estéril 10x10 (caja 100)', 'Proveedor local', 85.0, 12, 40),
+      ('Cinta micropore 2.5cm', 'Farmacia mayorista', 28.0, 30, 60),
+      ('Guantes de nitrilo (caja 100)', 'Proveedor local', 210.0, 8, 25),
+      ('Suero fisiológico 500 ml', 'Distribuidora médica', 35.0, 20, 3),
+    ];
+    final invItems = <Map<String, dynamic>>[];
+    final invMoves = <Map<String, dynamic>>[];
+    for (final row in invSeed) {
+      final itemId = _uuid.v4();
+      invItems.add({
+        'id': itemId,
+        'organization_id': organizationId,
+        'site_id': siteClinicaCdmx,
+        'name': row.$1,
+        'is_external': true,
+        'shopify_product_id': null,
+        'shopify_variant_id': null,
+        'image_url': null,
+        'unit_cost': row.$3,
+        'currency': 'MXN',
+        'supplier': row.$2,
+        'reorder_threshold': row.$4,
+        'notes': null,
+        'is_active': true,
+        'created_by': staff1Id,
+        'created_at': iso(now.subtract(const Duration(days: 20))),
+        'updated_at': iso(now.subtract(const Duration(days: 20))),
+      });
+      invMoves.add({
+        'id': _uuid.v4(),
+        'organization_id': organizationId,
+        'site_id': siteClinicaCdmx,
+        'inventory_item_id': itemId,
+        'delta': row.$5,
+        'reason': 'compra',
+        'unit_cost': row.$3,
+        'patient_id': null,
+        'consultation_id': null,
+        'note': 'Existencia inicial (demo)',
+        'created_by': staff1Id,
+        'created_at': iso(now.subtract(const Duration(days: 20))),
+      });
+    }
+    await appendRows(Collections.inventoryItems, invItems);
+    await appendRows(Collections.inventoryMovements, invMoves);
   }
 }
