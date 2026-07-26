@@ -2066,7 +2066,8 @@ class _ManualAgendaState extends ConsumerState<_ManualAgenda> {
                       for (final a in appts)
                         InkWell(
                           borderRadius: BorderRadius.circular(8),
-                          onTap: () => _openForm(repo, existing: a),
+                          onTap: () =>
+                              _openManualDetail(repo, a, patientName, staffNames),
                           child: Container(
                             margin: const EdgeInsets.only(bottom: 6),
                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
@@ -2099,6 +2100,89 @@ class _ManualAgendaState extends ConsumerState<_ManualAgenda> {
                   ),
           ),
         ],
+      ),
+    );
+  }
+
+  /// Detalle de una cita manual (usado al tocar una cita en la vista de semana
+  /// de escritorio): datos + acciones "Paciente" / "Iniciar/Ver consulta"
+  /// (mismo botón inteligente que Acuity y la vista de día) + Editar/Cancelar.
+  void _openManualDetail(
+    DataRepository repo,
+    ManualAppointment a,
+    String Function(String?) patientName,
+    Map<String, String> staffNames,
+  ) {
+    showModalBottomSheet(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(patientName(a.patientId),
+                  style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+              const SizedBox(height: 4),
+              Text(
+                [
+                  '${_wd[a.datetime.weekday - 1]} ${a.datetime.day} '
+                      '${_mo[a.datetime.month - 1]} · ${DateFormat('HH:mm').format(a.datetime)}',
+                  if ((a.title ?? '').isNotEmpty) a.title!,
+                  if (widget.isAdmin && staffNames[a.staffId] != null)
+                    staffNames[a.staffId]!,
+                ].join('  ·  '),
+                style: Theme.of(ctx).textTheme.bodySmall,
+              ),
+              const SizedBox(height: 12),
+              if (a.patientId == null)
+                const Padding(
+                  padding: EdgeInsets.only(bottom: 8),
+                  child: Text(
+                    'Esta cita no tiene paciente ligado; edítala para asociar uno '
+                    'antes de iniciar la consulta.',
+                    style: TextStyle(fontSize: 12, color: KuraColors.darkText),
+                  ),
+                )
+              else
+                _BlockActions(
+                  repo: repo,
+                  patientId: a.patientId,
+                  apptRef: 'manual:${a.id}',
+                ),
+              const Divider(height: 20),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      icon: const Icon(Icons.edit_outlined, size: 18),
+                      label: const Text('Editar'),
+                      onPressed: () {
+                        Navigator.of(ctx).pop();
+                        _openForm(repo, existing: a);
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                          foregroundColor: KuraColors.danger),
+                      icon: const Icon(Icons.event_busy_outlined, size: 18),
+                      label: const Text('Cancelar cita'),
+                      onPressed: () {
+                        Navigator.of(ctx).pop();
+                        _cancel(repo, a);
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
