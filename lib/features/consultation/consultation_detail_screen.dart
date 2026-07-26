@@ -8,6 +8,9 @@ import '../../core/providers/session_provider.dart';
 import '../../models/app_user.dart';
 import '../../engine/models/kura_engine_enums.dart';
 import '../../models/consultation.dart';
+import '../../models/consultation_supply_usage.dart';
+import '../../models/inventory.dart';
+import '../../models/supply_product_mapping.dart';
 import '../../models/treatment_plan.dart';
 import '../../models/wound.dart';
 import '../../services/data_repository.dart';
@@ -119,6 +122,13 @@ class ConsultationDetailScreen extends ConsumerWidget {
                         consultationId: consultationId,
                         dateFmt: dateFmt,
                       )),
+                const SizedBox(height: 16),
+                _SuppliesUsedSection(
+                  consultationId: consultationId,
+                  patientId: patientId,
+                  organizationId: patient?.organizationId,
+                  siteId: consultation.siteId,
+                ),
                 const SizedBox(height: 16),
                 _AmendmentsSection(
                   patientId: patientId,
@@ -757,6 +767,289 @@ class _AddAmendmentDialogState extends State<_AddAmendmentDialog> {
           child: const Text('Firmar y agregar'),
         ),
       ],
+    );
+  }
+}
+
+/// Insumos utilizados en la consulta (Fase B, premium). El profesional marca los
+/// insumos usados y, por cada uno, si se COBRA y si se DESCUENTA del inventario
+/// (independientes). Sugiere del plan de tratamiento vía los mapeos (Fase 2) +
+/// inventario (Fase 3). El cobro/descuento real se materializa en fases C/D.
+class _SuppliesUsedSection extends ConsumerStatefulWidget {
+  final String consultationId;
+  final String patientId;
+  final String? organizationId;
+  final String? siteId;
+  const _SuppliesUsedSection({
+    required this.consultationId,
+    required this.patientId,
+    required this.organizationId,
+    required this.siteId,
+  });
+
+  @override
+  ConsumerState<_SuppliesUsedSection> createState() =>
+      _SuppliesUsedSectionState();
+}
+
+class _SuppliesUsedSectionState extends ConsumerState<_SuppliesUsedSection> {
+  String _money(double v) => '\$${v.toStringAsFixed(2)} MXN';
+
+  @override
+  Widget build(BuildContext context) {
+    final repo = ref.watch(dataRepositoryProvider).valueOrNull;
+    if (repo == null) return const SizedBox.shrink();
+    final orgId = widget.organizationId;
+    // Solo centros con el módulo de Insumos premium.
+    if (!repo.premiumInsumosFor(orgId)) return const SizedBox.shrink();
+
+    final usage = repo.listSupplyUsageForConsultation(widget.consultationId);
+    final chargeTotal = repo.consultationSuppliesChargeTotal(widget.consultationId);
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Expanded(
+                  child: Text('Insumos utilizados',
+                      style: TextStyle(fontWeight: FontWeight.w800)),
+                ),
+                if (chargeTotal > 0)
+                  Text(_money(chargeTotal),
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w800, color: KuraColors.primary)),
+              ],
+            ),
+            const SizedBox(height: 2),
+            Text(
+              'Marca los insumos usados. Por cada uno elige si se cobra al paciente '
+              'y si se descuenta del inventario (p. ej. algo que rinde para varias '
+              'consultas no se cobra ni descuenta cada vez).',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              children: [
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.auto_awesome_outlined, size: 18),
+                  label: const Text('Sugerir del plan'),
+                  onPressed: () => _suggestFromPlan(repo),
+                ),
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.add, size: 18),
+                  label: const Text('Agregar insumo'),
+                  onPressed: () => _addManual(repo),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            if (usage.isEmpty)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 8),
+                child: Text('Aún no se registran insumos para esta consulta.',
+                    style: TextStyle(fontSize: 13)),
+              )
+            else
+              ...usage.map((u) => _UsageRow(
+                    usage: u,
+                    onQty: (q) async {
+                      await repo.updateSupplyUsage(u.id, quantity: q);
+                      if (mounted) setState(() {});
+                    },
+                    onCharge: (v) async {
+                      await repo.updateSupplyUsage(u.id, charge: v);
+                      if (mounted) setState(() {});
+                    },
+                    onDiscount: (v) async {
+                      await repo.updateSupplyUsage(u.id, discount: v);
+                      if (mounted) setState(() {});
+                    },
+                    onDelete: () async {
+                      await repo.deleteSupplyUsage(u.id);
+                      if (mounted) setState(() {});
+                    },
+                  )),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _suggestFromPlan(DataRepository repo) async {
+    final orgId = widget.organizationId;
+    final siteId = widget.siteId;
+    if (orgId == null || siteId == null) return;
+    final mapIndex = repo.supplyMappingIndex(orgId);
+    final inventory = repo.listInventoryItems(organizationId: orgId, siteId: siteId);
+    final byProduct = <String, InventoryItem>{
+      for (final it in inventory)
+        if (it.shopifyProductId != null) it.shopifyProductId!: it
+    };
+    final existing =
+        repo.listSupplyUsageForConsultation(widget.consultationId)
+            .map((u) => u.inventoryItemId)
+            .whereType<String>()
+            .toSet();
+    var added = 0;
+    for (final comp in repo.treatmentComponentsForConsultation(widget.consultationId)) {
+      final m = mapIndex[SupplyProductMapping.keyFor(comp.method, comp.product)];
+      if (m == null) continue;
+      final item = byProduct[m.shopifyProductId];
+      if (item == null || existing.contains(item.id)) continue;
+      existing.add(item.id);
+      await repo.addSupplyUsage(
+        organizationId: orgId,
+        consultationId: widget.consultationId,
+        patientId: widget.patientId,
+        name: item.name,
+        inventoryItemId: item.id,
+        unitCost: item.unitCost,
+        currency: item.currency,
+        createdBy: ref.read(sessionProvider).user?.id,
+      );
+      added++;
+    }
+    if (mounted) {
+      setState(() {});
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(added == 0
+              ? 'No hay insumos del plan mapeados en el inventario de este sitio.'
+              : 'Se agregaron $added insumo(s) del plan.')));
+    }
+  }
+
+  Future<void> _addManual(DataRepository repo) async {
+    final orgId = widget.organizationId;
+    final siteId = widget.siteId;
+    if (orgId == null || siteId == null) return;
+    final inventory = repo.listInventoryItems(organizationId: orgId, siteId: siteId);
+    final item = await showModalBottomSheet<InventoryItem>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (_) => SafeArea(
+        child: ConstrainedBox(
+          constraints:
+              BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.7),
+          child: inventory.isEmpty
+              ? const Padding(
+                  padding: EdgeInsets.all(24),
+                  child: Text('No hay inventario en el sitio de esta consulta.'))
+              : ListView(
+                  shrinkWrap: true,
+                  children: [
+                    const Padding(
+                      padding: EdgeInsets.all(16),
+                      child: Text('Elegir insumo del inventario',
+                          style: TextStyle(fontWeight: FontWeight.w700)),
+                    ),
+                    for (final it in inventory)
+                      ListTile(
+                        title: Text(it.name),
+                        subtitle: it.unitCost == null
+                            ? null
+                            : Text(_money(it.unitCost!)),
+                        onTap: () => Navigator.of(context).pop(it),
+                      ),
+                  ],
+                ),
+        ),
+      ),
+    );
+    if (item == null || !mounted) return;
+    await repo.addSupplyUsage(
+      organizationId: orgId,
+      consultationId: widget.consultationId,
+      patientId: widget.patientId,
+      name: item.name,
+      inventoryItemId: item.id,
+      unitCost: item.unitCost,
+      currency: item.currency,
+      createdBy: ref.read(sessionProvider).user?.id,
+    );
+    if (mounted) setState(() {});
+  }
+}
+
+class _UsageRow extends StatelessWidget {
+  final ConsultationSupplyUsage usage;
+  final ValueChanged<int> onQty;
+  final ValueChanged<bool> onCharge;
+  final ValueChanged<bool> onDiscount;
+  final VoidCallback onDelete;
+  const _UsageRow({
+    required this.usage,
+    required this.onQty,
+    required this.onCharge,
+    required this.onDiscount,
+    required this.onDelete,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(usage.name,
+                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+              ),
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                icon: const Icon(Icons.remove_circle_outline, size: 18),
+                onPressed:
+                    usage.quantity > 1 ? () => onQty(usage.quantity - 1) : null,
+              ),
+              Text('${usage.quantity}',
+                  style: const TextStyle(fontWeight: FontWeight.w700)),
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                icon: const Icon(Icons.add_circle_outline, size: 18),
+                onPressed: () => onQty(usage.quantity + 1),
+              ),
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                icon: const Icon(Icons.close, size: 18),
+                onPressed: onDelete,
+              ),
+            ],
+          ),
+          Wrap(
+            spacing: 4,
+            children: [
+              FilterChip(
+                label: const Text('Cobrar'),
+                selected: usage.charge,
+                onSelected: onCharge,
+                visualDensity: VisualDensity.compact,
+              ),
+              FilterChip(
+                label: const Text('Descontar'),
+                selected: usage.discount,
+                onSelected: onDiscount,
+                visualDensity: VisualDensity.compact,
+              ),
+              if (usage.unitCost != null)
+                Padding(
+                  padding: const EdgeInsets.only(left: 4, top: 6),
+                  child: Text(
+                    '\$${usage.lineTotal.toStringAsFixed(2)} MXN',
+                    style: const TextStyle(fontSize: 12, color: KuraColors.primary),
+                  ),
+                ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 }

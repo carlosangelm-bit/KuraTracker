@@ -17,6 +17,7 @@ import '../models/manual_appointment.dart';
 import '../models/organization.dart';
 import '../models/supply_product_mapping.dart';
 import '../models/inventory.dart';
+import '../models/consultation_supply_usage.dart';
 import '../models/user_center_membership.dart';
 import '../models/patient.dart';
 import '../models/patient_admission.dart';
@@ -820,6 +821,87 @@ class DataRepository {
     }
     return total;
   }
+
+  // -------- Insumos utilizados en la consulta (Fase B) --------
+
+  List<ConsultationSupplyUsage> listSupplyUsageForConsultation(String consultationId) =>
+      _store
+          .getAll(Collections.consultationSupplyUsage)
+          .map(ConsultationSupplyUsage.fromJson)
+          .where((u) => u.consultationId == consultationId)
+          .toList()
+        ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+
+  /// Total a COBRAR por insumos de una consulta (solo las líneas con charge).
+  double consultationSuppliesChargeTotal(String consultationId) =>
+      listSupplyUsageForConsultation(consultationId)
+          .where((u) => u.charge)
+          .fold<double>(0, (a, u) => a + u.lineTotal);
+
+  /// Componentes (método/producto) de TODOS los planes de una consulta.
+  List<TreatmentComponentRecord> treatmentComponentsForConsultation(
+      String consultationId) {
+    final planIds = _store
+        .getAll(Collections.treatmentPlans)
+        .where((p) => p['consultation_id'] == consultationId)
+        .map((p) => p['id'])
+        .toSet();
+    return _store
+        .getAll(Collections.treatmentComponents)
+        .where((c) => planIds.contains(c['treatment_plan_id']))
+        .map(TreatmentComponentRecord.fromJson)
+        .toList();
+  }
+
+  Future<ConsultationSupplyUsage> addSupplyUsage({
+    required String organizationId,
+    required String consultationId,
+    required String? patientId,
+    required String name,
+    String? inventoryItemId,
+    int quantity = 1,
+    bool charge = true,
+    bool discount = true,
+    double? unitCost,
+    String? currency,
+    String? createdBy,
+  }) async {
+    final now = DateTime.now().toIso8601String();
+    final saved = await _store.insertRow(Collections.consultationSupplyUsage, {
+      'id': _uuid.v4(),
+      'organization_id': organizationId,
+      'consultation_id': consultationId,
+      'patient_id': patientId,
+      'inventory_item_id': inventoryItemId,
+      'name': name,
+      'quantity': quantity,
+      'charge': charge,
+      'discount': discount,
+      'unit_cost': unitCost,
+      'currency': currency ?? 'MXN',
+      'discounted': false,
+      'created_by': createdBy,
+      'created_at': now,
+      'updated_at': now,
+    });
+    return ConsultationSupplyUsage.fromJson(saved);
+  }
+
+  Future<void> updateSupplyUsage(
+    String id, {
+    int? quantity,
+    bool? charge,
+    bool? discount,
+  }) async {
+    final patch = <String, dynamic>{'updated_at': DateTime.now().toIso8601String()};
+    if (quantity != null) patch['quantity'] = quantity;
+    if (charge != null) patch['charge'] = charge;
+    if (discount != null) patch['discount'] = discount;
+    await _store.updateRow(Collections.consultationSupplyUsage, id, patch);
+  }
+
+  Future<void> deleteSupplyUsage(String id) async =>
+      _store.deleteRow(Collections.consultationSupplyUsage, id);
 
   /// Componentes (método/producto) del plan de tratamiento MÁS RECIENTE del
   /// paciente. Sirve para sugerir qué insumos descontar (vía los mapeos Fase 2).
