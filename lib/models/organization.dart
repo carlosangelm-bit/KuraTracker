@@ -19,6 +19,8 @@ class Organization {
   // Insumos (0047: mapeo/inventario/costeo/reabasto) y Protocolo Kura+ (0049).
   final bool premiumInsumos;
   final bool premiumProtocoloKura;
+  // Alcance del inventario (0053): 'site' (por sitio) | 'center' (por centro).
+  final String inventoryScope;
 
   const Organization({
     required this.id,
@@ -30,6 +32,7 @@ class Organization {
     this.centerType = CenterType.clinicaHeridas,
     this.premiumInsumos = false,
     this.premiumProtocoloKura = false,
+    this.inventoryScope = 'site',
   });
 
   factory Organization.fromJson(Map<String, dynamic> json) => Organization(
@@ -42,6 +45,7 @@ class Organization {
         centerType: CenterTypeX.fromDb(json['center_type'] as String?),
         premiumInsumos: json['premium_insumos'] as bool? ?? false,
         premiumProtocoloKura: json['premium_protocolo_kura'] as bool? ?? false,
+        inventoryScope: (json['inventory_scope'] as String?) ?? 'site',
       );
 
   Map<String, dynamic> toJson() => {
@@ -54,5 +58,6 @@ class Organization {
         'center_type': centerType.dbValue,
         'premium_insumos': premiumInsumos,
         'premium_protocolo_kura': premiumProtocoloKura,
+        'inventory_scope': inventoryScope,
       };
 }

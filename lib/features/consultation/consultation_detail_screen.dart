@@ -1073,10 +1073,20 @@ class _SuppliesUsedSectionState extends ConsumerState<_SuppliesUsedSection> {
         ),
       );
 
+  /// Sitio efectivo del inventario según el alcance (0053): en 'center' se usa
+  /// el sitio principal como bolsa única; en 'site' el de la consulta.
+  String? _effectiveSite(DataRepository repo, String orgId) {
+    if (repo.inventoryScopeFor(orgId) != 'center') return widget.siteId;
+    final sites =
+        repo.listSites(organizationId: orgId).where((s) => s.isActive).toList();
+    return sites.isEmpty ? widget.siteId : sites.first.id;
+  }
+
   Future<void> _suggestFromPlan(DataRepository repo) async {
     final orgId = widget.organizationId;
-    final siteId = widget.siteId;
-    if (orgId == null || siteId == null) return;
+    if (orgId == null) return;
+    final siteId = _effectiveSite(repo, orgId);
+    if (siteId == null) return;
     final mapIndex = repo.supplyMappingIndex(orgId);
     final inventory = repo.listInventoryItems(organizationId: orgId, siteId: siteId);
     final byProduct = <String, InventoryItem>{
@@ -1118,8 +1128,9 @@ class _SuppliesUsedSectionState extends ConsumerState<_SuppliesUsedSection> {
 
   Future<void> _addManual(DataRepository repo) async {
     final orgId = widget.organizationId;
-    final siteId = widget.siteId;
-    if (orgId == null || siteId == null) return;
+    if (orgId == null) return;
+    final siteId = _effectiveSite(repo, orgId);
+    if (siteId == null) return;
     final inventory = repo.listInventoryItems(organizationId: orgId, siteId: siteId);
     final item = await showModalBottomSheet<InventoryItem>(
       context: context,

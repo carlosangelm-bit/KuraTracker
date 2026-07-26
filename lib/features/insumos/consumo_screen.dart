@@ -123,7 +123,12 @@ class _ConsumoScreenState extends ConsumerState<ConsumoScreen> {
       return const Center(child: Text('Paciente no encontrado.'));
     }
     final sites = repo.listSites(organizationId: orgId).where((s) => s.isActive).toList();
-    final siteId = patient.primarySiteId ?? (sites.isNotEmpty ? sites.first.id : null);
+    // Alcance del inventario (0053): en 'center' se usa el sitio principal como
+    // bolsa única; en 'site' el del paciente.
+    final centerMode = repo.inventoryScopeFor(orgId) == 'center';
+    final siteId = centerMode
+        ? (sites.isNotEmpty ? sites.first.id : null)
+        : (patient.primarySiteId ?? (sites.isNotEmpty ? sites.first.id : null));
     if (siteId == null) {
       return const Center(child: Text('El centro no tiene sitios configurados.'));
     }
