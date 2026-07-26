@@ -31,7 +31,7 @@ class DemoSeed {
   // una sola vez en instalaciones demo previas (wipeAll + _seed), evitando
   // duplicados y datos viejos. Cada rediseño del roster sube este número.
   // v12: roster curado por escenario (clínica 7 / hospital 5 / cuidadores 3).
-  static const String _seedFlag = 'seeded_v18';
+  static const String _seedFlag = 'seeded_v19';
 
   static Future<void> ensureSeeded(LocalStore store) async {
     if (store.getBool(_seedFlag)) return;
@@ -1741,5 +1741,88 @@ class DemoSeed {
           'updated_at': iso(now.subtract(const Duration(days: 20))),
         },
     ]);
+
+    // ---------------- Datos demo para los dashboards ----------------
+    // Consumo (salidas) y cobros de ejemplo, repartidos por mes, para que las
+    // gráficas del dashboard de Insumos y Comercial no salgan vacías.
+    final demoPatients = store
+        .getAll(Collections.patients)
+        .where((p) => p['organization_id'] == organizationId && p['is_active'] == true)
+        .toList();
+    final demoInvItems = store
+        .getAll(Collections.inventoryItems)
+        .where((it) => it['site_id'] == siteClinicaCdmx)
+        .toList();
+    if (demoPatients.isNotEmpty && demoInvItems.isNotEmpty) {
+      final consumoRows = <Map<String, dynamic>>[];
+      // 2 artículos × 3 meses de consumo.
+      for (var mi = 0; mi < 3; mi++) {
+        final when = DateTime(now.year, now.month - mi, 14);
+        for (var k = 0; k < 2 && k < demoInvItems.length; k++) {
+          final it = demoInvItems[k];
+          final p = demoPatients[(mi + k) % demoPatients.length];
+          consumoRows.add({
+            'id': _uuid.v4(),
+            'organization_id': organizationId,
+            'site_id': siteClinicaCdmx,
+            'inventory_item_id': it['id'],
+            'delta': -(2 + k),
+            'reason': 'consumo',
+            'unit_cost': it['unit_cost'],
+            'patient_id': p['id'],
+            'consultation_id': null,
+            'note': 'Consumo (demo)',
+            'created_by': staff1Id,
+            'created_at': iso(when),
+          });
+        }
+      }
+      await appendRows(Collections.inventoryMovements, consumoRows);
+
+      // Cobros: 2 pagados (meses distintos, métodos distintos) + 1 pendiente.
+      final chargeSeed = [
+        (0, 'pagado', 'efectivo', 800.0, 'Valoración inicial'),
+        (1, 'pagado', 'transferencia', 500.0, 'Consulta de seguimiento'),
+        (0, 'pendiente', null, 650.0, 'Curación avanzada'),
+      ];
+      final chargeRows = <Map<String, dynamic>>[];
+      final chargeItemRows = <Map<String, dynamic>>[];
+      for (var ci = 0; ci < chargeSeed.length; ci++) {
+        final s = chargeSeed[ci];
+        final when = DateTime(now.year, now.month - (s.$1 as int), 10);
+        final p = demoPatients[ci % demoPatients.length];
+        final chargeId = _uuid.v4();
+        chargeRows.add({
+          'id': chargeId,
+          'organization_id': organizationId,
+          'patient_id': p['id'],
+          'consultation_id': null,
+          'site_id': siteClinicaCdmx,
+          'subtotal_service': s.$4,
+          'subtotal_supplies': 0.0,
+          'total': s.$4,
+          'currency': 'MXN',
+          'status': s.$2,
+          'payment_method': s.$3,
+          'paid_at': s.$2 == 'pagado' ? iso(when) : null,
+          'created_by': staff1Id,
+          'created_at': iso(when),
+          'updated_at': iso(when),
+        });
+        chargeItemRows.add({
+          'id': _uuid.v4(),
+          'charge_id': chargeId,
+          'organization_id': organizationId,
+          'kind': 'servicio',
+          'name': s.$5,
+          'quantity': 1,
+          'unit_price': s.$4,
+          'line_total': s.$4,
+          'created_at': iso(when),
+        });
+      }
+      await appendRows(Collections.charges, chargeRows);
+      await appendRows(Collections.chargeItems, chargeItemRows);
+    }
   }
 }

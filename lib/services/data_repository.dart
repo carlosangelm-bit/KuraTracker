@@ -685,13 +685,15 @@ class DataRepository {
   List<InventoryMovement> listInventoryMovements({
     String? inventoryItemId,
     String? siteId,
+    String? organizationId,
   }) =>
       _store
           .getAll(Collections.inventoryMovements)
           .map(InventoryMovement.fromJson)
           .where((m) =>
               (inventoryItemId == null || m.inventoryItemId == inventoryItemId) &&
-              (siteId == null || m.siteId == siteId))
+              (siteId == null || m.siteId == siteId) &&
+              (organizationId == null || m.organizationId == organizationId))
           .toList()
         ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
 

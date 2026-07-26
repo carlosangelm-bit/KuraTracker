@@ -5,6 +5,9 @@ import 'package:go_router/go_router.dart';
 import '../../core/theme/kura_theme.dart';
 import '../../core/providers/session_provider.dart';
 import '../../core/router/app_shell.dart' show UserMenuButton;
+import '../../models/inventory.dart';
+import '../../services/data_repository.dart';
+import 'dashboard_charts.dart';
 
 /// Módulo de Insumos (clínica de heridas): tienda de productos de heridas
 /// (Shopify) + —con licencia premium— mapeo insumo↔producto, inventario, costeo
@@ -44,7 +47,10 @@ class InsumosHomeScreen extends ConsumerWidget {
               ),
               const SizedBox(height: 8),
               _LicenseBanner(premium: premium),
-              const SizedBox(height: 8),
+              const SizedBox(height: 12),
+
+              // Dashboard: gráficos (solo con datos/premium).
+              if (premium) ..._insumosCharts(repo, user?.organizationId),
 
               // Base (no premium) — YA disponible.
               _SectionCard(
@@ -227,4 +233,47 @@ class _StatusChip extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Gráficos del dashboard de Insumos: estado del inventario (dona) + consumo
+/// mensual (barras), agregados a nivel centro.
+List<Widget> _insumosCharts(DataRepository repo, String? orgId) {
+  final items = repo.listInventoryItems(organizationId: orgId);
+  var ok = 0, low = 0, out = 0;
+  for (final it in items) {
+    final oh = repo.onHandFor(it.id);
+    if (oh <= 0) {
+      out++;
+    } else if (it.reorderThreshold != null && oh <= it.reorderThreshold!) {
+      low++;
+    } else {
+      ok++;
+    }
+  }
+
+  final now = DateTime.now();
+  final consumo = repo
+      .listInventoryMovements(organizationId: orgId)
+      .where((m) => m.reason == InventoryReason.consumo)
+      .toList();
+  final months = <MonthValue>[];
+  for (var i = 5; i >= 0; i--) {
+    final m = DateTime(now.year, now.month - i, 1);
+    final next = DateTime(m.year, m.month + 1, 1);
+    final qty = consumo
+        .where((x) => !x.createdAt.isBefore(m) && x.createdAt.isBefore(next))
+        .fold<double>(0, (a, x) => a + x.delta.abs());
+    months.add(MonthValue(kMonthShort[m.month - 1], qty));
+  }
+
+  return [
+    DonutCard(title: 'Estado del inventario', slices: [
+      DonutSlice('Con stock', ok.toDouble(), KuraColors.success),
+      DonutSlice('Por reordenar', low.toDouble(), KuraColors.warning),
+      DonutSlice('Agotado', out.toDouble(), KuraColors.danger),
+    ]),
+    const SizedBox(height: 12),
+    MonthlyBarChart(title: 'Consumo por mes (piezas)', data: months),
+    const SizedBox(height: 16),
+  ];
 }
