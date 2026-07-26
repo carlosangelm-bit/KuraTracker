@@ -24,12 +24,14 @@ class MonthlyBarChart extends StatelessWidget {
   final List<MonthValue> data;
   final Color color;
   final String Function(double)? valueLabel;
+  final Widget? headerTrailing;
   const MonthlyBarChart({
     super.key,
     required this.title,
     required this.data,
     this.color = KuraColors.primary,
     this.valueLabel,
+    this.headerTrailing,
   });
 
   @override
@@ -42,7 +44,14 @@ class MonthlyBarChart extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
+            Row(
+              children: [
+                Expanded(
+                    child: Text(title,
+                        style: const TextStyle(fontWeight: FontWeight.w700))),
+                if (headerTrailing != null) headerTrailing!,
+              ],
+            ),
             const SizedBox(height: 12),
             SizedBox(
               height: 160,
@@ -51,9 +60,11 @@ class MonthlyBarChart extends StatelessWidget {
                   : BarChart(
                       BarChartData(
                         alignment: BarChartAlignment.spaceAround,
-                        maxY: maxV * 1.2,
+                        maxY: maxV * 1.25,
                         gridData: const FlGridData(show: false),
                         borderData: FlBorderData(show: false),
+                        // Sin tooltip por defecto (el fondo/texto verde no se leía).
+                        barTouchData: BarTouchData(enabled: false),
                         titlesData: FlTitlesData(
                           leftTitles: const AxisTitles(
                               sideTitles: SideTitles(showTitles: false)),
@@ -64,16 +75,32 @@ class MonthlyBarChart extends StatelessWidget {
                           bottomTitles: AxisTitles(
                             sideTitles: SideTitles(
                               showTitles: true,
-                              reservedSize: 22,
+                              reservedSize: 34,
                               getTitlesWidget: (value, meta) {
                                 final i = value.toInt();
                                 if (i < 0 || i >= data.length) {
                                   return const SizedBox.shrink();
                                 }
+                                final v = data[i].value;
                                 return Padding(
                                   padding: const EdgeInsets.only(top: 6),
-                                  child: Text(data[i].label,
-                                      style: const TextStyle(fontSize: 10)),
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text(data[i].label,
+                                          style: const TextStyle(
+                                              fontSize: 10,
+                                              color: KuraColors.darkText)),
+                                      if (v > 0)
+                                        Text(
+                                          valueLabel?.call(v) ?? '${v.toInt()}',
+                                          style: TextStyle(
+                                              fontSize: 9,
+                                              fontWeight: FontWeight.w700,
+                                              color: color),
+                                        ),
+                                    ],
+                                  ),
                                 );
                               },
                             ),
