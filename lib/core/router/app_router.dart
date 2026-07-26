@@ -38,6 +38,7 @@ import '../../features/insumos/mapeo_screen.dart';
 import '../../features/insumos/inventario_screen.dart';
 import '../../features/insumos/consumo_screen.dart';
 import '../../features/insumos/reabasto_screen.dart';
+import '../../features/comercial/comercial_screen.dart';
 import '../../features/caregiver/caregiver_home_screen.dart';
 import '../../features/caregiver/caregiver_patient_screen.dart';
 import 'app_shell.dart';
@@ -268,6 +269,7 @@ final routerProvider = Provider<GoRouter>((ref) {
           ),
           GoRoute(path: '/reports', builder: (context, state) => const ReportsScreen()),
           GoRoute(path: '/insumos', builder: (context, state) => const InsumosHomeScreen()),
+          GoRoute(path: '/comercial', builder: (context, state) => const ComercialScreen()),
           GoRoute(
               path: '/insumos/tienda',
               builder: (context, state) => const TiendaScreen()),

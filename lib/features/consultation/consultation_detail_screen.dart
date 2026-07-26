@@ -7,6 +7,7 @@ import '../../core/theme/kura_theme.dart';
 import '../../core/providers/session_provider.dart';
 import '../../models/app_user.dart';
 import '../../engine/models/kura_engine_enums.dart';
+import '../../models/commercial.dart';
 import '../../models/consultation.dart';
 import '../../models/consultation_supply_usage.dart';
 import '../../models/inventory.dart';
@@ -874,11 +875,203 @@ class _SuppliesUsedSectionState extends ConsumerState<_SuppliesUsedSection> {
                       if (mounted) setState(() {});
                     },
                   )),
+            const Divider(height: 20),
+            _chargeArea(repo),
           ],
         ),
       ),
     );
   }
+
+  Widget _chargeArea(DataRepository repo) {
+    final existing = repo.chargeForConsultation(widget.consultationId);
+    if (existing != null) {
+      final paid = existing.status == ChargeStatus.pagado;
+      return Row(
+        children: [
+          Expanded(
+            child: Text(
+              'Cobro de la consulta: ${_money(existing.total)} · ${existing.status.label}',
+              style: TextStyle(
+                  fontWeight: FontWeight.w700,
+                  color: paid ? KuraColors.success : KuraColors.warning),
+            ),
+          ),
+          if (existing.status == ChargeStatus.pendiente)
+            FilledButton.tonal(
+              onPressed: () => _registrarPago(repo, existing),
+              child: const Text('Registrar pago'),
+            )
+          else if (paid)
+            const Icon(Icons.verified_outlined, color: KuraColors.success),
+        ],
+      );
+    }
+    return SizedBox(
+      width: double.infinity,
+      child: FilledButton.icon(
+        icon: const Icon(Icons.point_of_sale_outlined, size: 18),
+        label: const Text('Cobrar consulta'),
+        onPressed: () => _cobrarConsulta(repo),
+      ),
+    );
+  }
+
+  Future<void> _cobrarConsulta(DataRepository repo) async {
+    final orgId = widget.organizationId;
+    if (orgId == null) return;
+    final services = repo.listServices(orgId);
+    final suppliesTotal =
+        repo.consultationSuppliesChargeTotal(widget.consultationId);
+    ServiceCatalogItem? selected = services.isNotEmpty ? services.first : null;
+    final manualCtrl = TextEditingController();
+    var manual = services.isEmpty;
+
+    final ok = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheet) {
+          final servicePrice = manual
+              ? (double.tryParse(manualCtrl.text.trim()) ?? 0)
+              : (selected?.price ?? 0);
+          final total = servicePrice + suppliesTotal;
+          return Padding(
+            padding: EdgeInsets.only(
+                left: 20,
+                right: 20,
+                top: 4,
+                bottom: MediaQuery.of(ctx).viewInsets.bottom + 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Cobrar consulta',
+                    style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+                const SizedBox(height: 12),
+                if (services.isNotEmpty) ...[
+                  const Text('Servicio (honorario)', style: TextStyle(fontSize: 13)),
+                  const SizedBox(height: 4),
+                  DropdownButtonFormField<Object>(
+                    value: manual ? 'manual' : selected,
+                    isExpanded: true,
+                    items: [
+                      for (final s in services)
+                        DropdownMenuItem(value: s, child: Text('${s.name} · ${_money(s.price)}')),
+                      const DropdownMenuItem(value: 'manual', child: Text('Otro (capturar honorario)')),
+                    ],
+                    onChanged: (v) => setSheet(() {
+                      if (v == 'manual') {
+                        manual = true;
+                      } else {
+                        manual = false;
+                        selected = v as ServiceCatalogItem;
+                      }
+                    }),
+                  ),
+                ],
+                if (manual)
+                  TextField(
+                    controller: manualCtrl,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    decoration: const InputDecoration(labelText: 'Honorario (MXN)'),
+                    onChanged: (_) => setSheet(() {}),
+                  ),
+                const SizedBox(height: 12),
+                _line('Honorario', servicePrice),
+                _line('Insumos a cobrar', suppliesTotal),
+                const Divider(),
+                _line('Total', total, bold: true),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton(
+                    onPressed: total <= 0 && suppliesTotal <= 0
+                        ? null
+                        : () => Navigator.of(ctx).pop(true),
+                    child: const Text('Registrar cobro'),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+    if (ok != true) return;
+    final servicePrice = manual
+        ? (double.tryParse(manualCtrl.text.trim()) ?? 0)
+        : (selected?.price ?? 0);
+    final serviceName = manual ? 'Honorario' : (selected?.name ?? 'Honorario');
+    final charge = await repo.createChargeForConsultation(
+      organizationId: orgId,
+      consultationId: widget.consultationId,
+      patientId: widget.patientId,
+      siteId: widget.siteId,
+      serviceName: serviceName,
+      servicePrice: servicePrice,
+      createdBy: ref.read(sessionProvider).user?.id,
+    );
+    if (mounted) {
+      setState(() {});
+      await _registrarPago(repo, charge);
+    }
+  }
+
+  Future<void> _registrarPago(DataRepository repo, Charge charge) async {
+    final method = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Text('Registrar pago · ${_money(charge.total)}',
+                  style: const TextStyle(fontWeight: FontWeight.w700)),
+            ),
+            for (final m in const [
+              ('efectivo', 'Efectivo', Icons.payments_outlined),
+              ('transferencia', 'Transferencia', Icons.account_balance_outlined),
+              ('tarjeta', 'Tarjeta (manual)', Icons.credit_card_outlined),
+            ])
+              ListTile(
+                leading: Icon(m.$3),
+                title: Text(m.$2),
+                onTap: () => Navigator.of(ctx).pop(m.$1),
+              ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+    if (method == null) return;
+    await repo.markChargePaid(charge.id, method,
+        createdBy: ref.read(sessionProvider).user?.id);
+    if (mounted) {
+      setState(() {});
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Pago registrado. Inventario descontado.')),
+      );
+    }
+  }
+
+  Widget _line(String label, double v, {bool bold = false}) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 2),
+        child: Row(
+          children: [
+            Expanded(
+                child: Text(label,
+                    style: TextStyle(
+                        fontWeight: bold ? FontWeight.w800 : FontWeight.w400))),
+            Text(_money(v),
+                style: TextStyle(
+                    fontWeight: bold ? FontWeight.w800 : FontWeight.w600)),
+          ],
+        ),
+      );
 
   Future<void> _suggestFromPlan(DataRepository repo) async {
     final orgId = widget.organizationId;

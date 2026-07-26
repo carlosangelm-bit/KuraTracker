@@ -18,6 +18,7 @@ import '../models/organization.dart';
 import '../models/supply_product_mapping.dart';
 import '../models/inventory.dart';
 import '../models/consultation_supply_usage.dart';
+import '../models/commercial.dart';
 import '../models/user_center_membership.dart';
 import '../models/patient.dart';
 import '../models/patient_admission.dart';
@@ -902,6 +903,187 @@ class DataRepository {
 
   Future<void> deleteSupplyUsage(String id) async =>
       _store.deleteRow(Collections.consultationSupplyUsage, id);
+
+  // ---------------- Módulo comercial (Fase C, 0052) ----------------
+
+  List<ServiceCatalogItem> listServices(String? organizationId,
+          {bool activeOnly = true}) =>
+      _store
+          .getAll(Collections.serviceCatalog)
+          .map(ServiceCatalogItem.fromJson)
+          .where((s) =>
+              (organizationId == null || s.organizationId == organizationId) &&
+              (!activeOnly || s.isActive))
+          .toList()
+        ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+
+  Future<ServiceCatalogItem> addService({
+    required String organizationId,
+    required String name,
+    required double price,
+    String? createdBy,
+  }) async {
+    final now = DateTime.now().toIso8601String();
+    final saved = await _store.insertRow(Collections.serviceCatalog, {
+      'id': _uuid.v4(),
+      'organization_id': organizationId,
+      'name': name,
+      'price': price,
+      'currency': 'MXN',
+      'is_active': true,
+      'created_by': createdBy,
+      'created_at': now,
+      'updated_at': now,
+    });
+    return ServiceCatalogItem.fromJson(saved);
+  }
+
+  Future<void> updateService(String id,
+      {String? name, double? price, bool? isActive}) async {
+    final patch = <String, dynamic>{'updated_at': DateTime.now().toIso8601String()};
+    if (name != null) patch['name'] = name;
+    if (price != null) patch['price'] = price;
+    if (isActive != null) patch['is_active'] = isActive;
+    await _store.updateRow(Collections.serviceCatalog, id, patch);
+  }
+
+  List<Charge> listCharges({String? organizationId, String? patientId, ChargeStatus? status}) =>
+      _store
+          .getAll(Collections.charges)
+          .map(Charge.fromJson)
+          .where((c) =>
+              (organizationId == null || c.organizationId == organizationId) &&
+              (patientId == null || c.patientId == patientId) &&
+              (status == null || c.status == status))
+          .toList()
+        ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
+  Charge? chargeForConsultation(String consultationId) {
+    final list = _store
+        .getAll(Collections.charges)
+        .map(Charge.fromJson)
+        .where((c) => c.consultationId == consultationId && c.status != ChargeStatus.cancelado)
+        .toList()
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return list.isEmpty ? null : list.first;
+  }
+
+  List<ChargeItem> listChargeItems(String chargeId) => _store
+      .getAll(Collections.chargeItems)
+      .map(ChargeItem.fromJson)
+      .where((i) => i.chargeId == chargeId)
+      .toList();
+
+  /// Totales de cobros de un paciente: {pagado, pendiente}.
+  ({double paid, double pending}) patientChargeTotals(String patientId) {
+    var paid = 0.0, pending = 0.0;
+    for (final c in listCharges(patientId: patientId)) {
+      if (c.status == ChargeStatus.pagado) paid += c.total;
+      if (c.status == ChargeStatus.pendiente) pending += c.total;
+    }
+    return (paid: paid, pending: pending);
+  }
+
+  /// Crea el cobro de una consulta: honorario del servicio + insumos marcados
+  /// "cobrar" (0051). Genera el desglose (charge_items). Estado inicial pendiente.
+  Future<Charge> createChargeForConsultation({
+    required String organizationId,
+    required String consultationId,
+    required String? patientId,
+    required String? siteId,
+    required String serviceName,
+    required double servicePrice,
+    String? createdBy,
+  }) async {
+    final usage = listSupplyUsageForConsultation(consultationId).where((u) => u.charge);
+    final suppliesTotal = usage.fold<double>(0, (a, u) => a + u.lineTotal);
+    final total = servicePrice + suppliesTotal;
+    final now = DateTime.now().toIso8601String();
+    final chargeId = _uuid.v4();
+    final saved = await _store.insertRow(Collections.charges, {
+      'id': chargeId,
+      'organization_id': organizationId,
+      'patient_id': patientId,
+      'consultation_id': consultationId,
+      'site_id': siteId,
+      'subtotal_service': servicePrice,
+      'subtotal_supplies': suppliesTotal,
+      'total': total,
+      'currency': 'MXN',
+      'status': 'pendiente',
+      'created_by': createdBy,
+      'created_at': now,
+      'updated_at': now,
+    });
+    // Desglose: servicio + un renglón por insumo cobrado.
+    await _store.insertRow(Collections.chargeItems, {
+      'id': _uuid.v4(),
+      'charge_id': chargeId,
+      'organization_id': organizationId,
+      'kind': 'servicio',
+      'name': serviceName,
+      'quantity': 1,
+      'unit_price': servicePrice,
+      'line_total': servicePrice,
+      'created_at': now,
+    });
+    for (final u in usage) {
+      await _store.insertRow(Collections.chargeItems, {
+        'id': _uuid.v4(),
+        'charge_id': chargeId,
+        'organization_id': organizationId,
+        'kind': 'insumo',
+        'name': u.name,
+        'quantity': u.quantity,
+        'unit_price': u.unitCost ?? 0,
+        'line_total': u.lineTotal,
+        'usage_id': u.id,
+        'inventory_item_id': u.inventoryItemId,
+        'created_at': now,
+      });
+    }
+    return Charge.fromJson(saved);
+  }
+
+  /// Marca un cobro como pagado y materializa el DESCUENTO de inventario de los
+  /// insumos de la consulta marcados "descontar" (que aún no se hayan descontado).
+  Future<void> markChargePaid(String chargeId, String method, {String? createdBy}) async {
+    final charge = _store
+        .getAll(Collections.charges)
+        .map(Charge.fromJson)
+        .firstWhere((c) => c.id == chargeId);
+    await _store.updateRow(Collections.charges, chargeId, {
+      'status': 'pagado',
+      'payment_method': method,
+      'paid_at': DateTime.now().toIso8601String(),
+      'updated_at': DateTime.now().toIso8601String(),
+    });
+    // Descontar del inventario los insumos "descontar" no descontados.
+    final consultId = charge.consultationId;
+    if (consultId == null) return;
+    final items = {for (final it in listInventoryItems(activeOnly: false)) it.id: it};
+    for (final u in listSupplyUsageForConsultation(consultId)) {
+      if (!u.discount || u.discounted || u.inventoryItemId == null) continue;
+      final item = items[u.inventoryItemId];
+      if (item == null) continue;
+      await addInventoryMovement(
+        item: item,
+        delta: -u.quantity,
+        reason: InventoryReason.consumo,
+        unitCost: u.unitCost ?? item.unitCost,
+        patientId: u.patientId,
+        consultationId: consultId,
+        note: 'Consumo cobrado (consulta)',
+        createdBy: createdBy,
+      );
+      await _store.updateRow(Collections.consultationSupplyUsage, u.id,
+          {'discounted': true, 'updated_at': DateTime.now().toIso8601String()});
+    }
+  }
+
+  Future<void> cancelCharge(String chargeId) async => _store.updateRow(
+      Collections.charges, chargeId,
+      {'status': 'cancelado', 'updated_at': DateTime.now().toIso8601String()});
 
   /// Componentes (método/producto) del plan de tratamiento MÁS RECIENTE del
   /// paciente. Sirve para sugerir qué insumos descontar (vía los mapeos Fase 2).

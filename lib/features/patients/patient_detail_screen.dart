@@ -173,6 +173,10 @@ class _PatientDetailScreenState extends ConsumerState<PatientDetailScreen> {
                     const SizedBox(height: 16),
                     _ConsentsSummaryCard(patientId: patient.id, repo: repo),
                     const SizedBox(height: 16),
+                    _CobrosCard(
+                        patientId: patient.id,
+                        organizationId: patient.organizationId,
+                        repo: repo),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
@@ -1141,6 +1145,43 @@ class _ConsentsSummaryCard extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Resumen de cobros del paciente en el expediente (módulo comercial, Fase C).
+/// Solo se muestra en centros con Insumos premium y si hay cobros.
+class _CobrosCard extends StatelessWidget {
+  final String patientId;
+  final String? organizationId;
+  final DataRepository repo;
+  const _CobrosCard({
+    required this.patientId,
+    required this.organizationId,
+    required this.repo,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (!repo.premiumInsumosFor(organizationId)) return const SizedBox.shrink();
+    final t = repo.patientChargeTotals(patientId);
+    if (t.paid == 0 && t.pending == 0) return const SizedBox.shrink();
+    String money(double v) => '\$${v.toStringAsFixed(2)} MXN';
+    return Column(
+      children: [
+        Card(
+          margin: EdgeInsets.zero,
+          child: ListTile(
+            leading: const Icon(Icons.point_of_sale_outlined, color: KuraColors.primary),
+            title: const Text('Cobros', style: TextStyle(fontWeight: FontWeight.w700)),
+            subtitle: Text('Pagado: ${money(t.paid)}'
+                '${t.pending > 0 ? '  ·  Pendiente: ${money(t.pending)}' : ''}'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => context.go('/comercial'),
+          ),
+        ),
+        const SizedBox(height: 16),
+      ],
     );
   }
 }

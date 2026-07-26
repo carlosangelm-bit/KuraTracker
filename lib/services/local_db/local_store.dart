@@ -192,6 +192,9 @@ class Collections {
   static const inventoryItems = 'inventory_items';
   static const inventoryMovements = 'inventory_movements';
   static const consultationSupplyUsage = 'consultation_supply_usage';
+  static const serviceCatalog = 'service_catalog';
+  static const charges = 'charges';
+  static const chargeItems = 'charge_items';
 
   /// Todas las colecciones/tablas, en un orden razonable para hidratar la
   /// cache de [SupabaseDataStore] tras el login (catalogos primero, luego
@@ -236,5 +239,8 @@ class Collections {
     inventoryItems,
     inventoryMovements,
     consultationSupplyUsage,
+    serviceCatalog,
+    charges,
+    chargeItems,
   ];
 }
