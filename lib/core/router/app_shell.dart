@@ -80,6 +80,10 @@ class AppShell extends ConsumerWidget {
       items.add(const _NavItem(
           '/insumos', Icons.medical_services_outlined, Icons.medical_services, 'Insumos'));
     }
+    if (modules.contains(ModuleKey.comercial)) {
+      items.add(const _NavItem(
+          '/comercial', Icons.point_of_sale_outlined, Icons.point_of_sale, 'Comercial'));
+    }
     if (user?.role == AppRole.admin) {
       items.add(const _NavItem(
           '/admin', Icons.admin_panel_settings_outlined, Icons.admin_panel_settings, 'Administración'));

@@ -31,7 +31,7 @@ class DemoSeed {
   // una sola vez en instalaciones demo previas (wipeAll + _seed), evitando
   // duplicados y datos viejos. Cada rediseño del roster sube este número.
   // v12: roster curado por escenario (clínica 7 / hospital 5 / cuidadores 3).
-  static const String _seedFlag = 'seeded_v17';
+  static const String _seedFlag = 'seeded_v18';
 
   static Future<void> ensureSeeded(LocalStore store) async {
     if (store.getBool(_seedFlag)) return;
@@ -1721,5 +1721,25 @@ class DemoSeed {
     });
     await appendRows(Collections.inventoryItems, invItems);
     await appendRows(Collections.inventoryMovements, invMoves);
+
+    // ---------------- Catálogo de servicios demo (módulo comercial) ----------
+    await appendRows(Collections.serviceCatalog, [
+      for (final s in const [
+        ('Valoración inicial', 800.0),
+        ('Consulta de seguimiento', 500.0),
+        ('Curación avanzada', 650.0),
+      ])
+        {
+          'id': _uuid.v4(),
+          'organization_id': organizationId,
+          'name': s.$1,
+          'price': s.$2,
+          'currency': 'MXN',
+          'is_active': true,
+          'created_by': staff1Id,
+          'created_at': iso(now.subtract(const Duration(days: 20))),
+          'updated_at': iso(now.subtract(const Duration(days: 20))),
+        },
+    ]);
   }
 }
