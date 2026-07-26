@@ -251,21 +251,6 @@ List<Widget> _insumosCharts(DataRepository repo, String? orgId) {
     }
   }
 
-  final now = DateTime.now();
-  final consumo = repo
-      .listInventoryMovements(organizationId: orgId)
-      .where((m) => m.reason == InventoryReason.consumo)
-      .toList();
-  final months = <MonthValue>[];
-  for (var i = 5; i >= 0; i--) {
-    final m = DateTime(now.year, now.month - i, 1);
-    final next = DateTime(m.year, m.month + 1, 1);
-    final qty = consumo
-        .where((x) => !x.createdAt.isBefore(m) && x.createdAt.isBefore(next))
-        .fold<double>(0, (a, x) => a + x.delta.abs());
-    months.add(MonthValue(kMonthShort[m.month - 1], qty));
-  }
-
   return [
     DonutCard(title: 'Estado del inventario', slices: [
       DonutSlice('Con stock', ok.toDouble(), KuraColors.success),
@@ -273,7 +258,84 @@ List<Widget> _insumosCharts(DataRepository repo, String? orgId) {
       DonutSlice('Agotado', out.toDouble(), KuraColors.danger),
     ]),
     const SizedBox(height: 12),
-    MonthlyBarChart(title: 'Consumo por mes (piezas)', data: months),
+    _ConsumoChartCard(repo: repo, orgId: orgId),
     const SizedBox(height: 16),
   ];
+}
+
+/// Gráfico "Consumo por mes" con filtro por producto (Todos o un insumo).
+class _ConsumoChartCard extends ConsumerStatefulWidget {
+  final DataRepository repo;
+  final String? orgId;
+  const _ConsumoChartCard({required this.repo, required this.orgId});
+  @override
+  ConsumerState<_ConsumoChartCard> createState() => _ConsumoChartCardState();
+}
+
+class _ConsumoChartCardState extends ConsumerState<_ConsumoChartCard> {
+  String? _productId; // null = todos
+
+  @override
+  Widget build(BuildContext context) {
+    final repo = widget.repo;
+    final consumo = repo
+        .listInventoryMovements(organizationId: widget.orgId)
+        .where((m) => m.reason == InventoryReason.consumo)
+        .toList();
+    final nameById = {
+      for (final it in repo.listInventoryItems(
+          organizationId: widget.orgId, activeOnly: false))
+        it.id: it.name
+    };
+    final productIds = consumo
+        .map((m) => m.inventoryItemId)
+        .whereType<String>()
+        .toSet()
+        .toList()
+      ..sort((a, b) => (nameById[a] ?? '').compareTo(nameById[b] ?? ''));
+    if (_productId != null && !productIds.contains(_productId)) _productId = null;
+
+    final filtered = _productId == null
+        ? consumo
+        : consumo.where((m) => m.inventoryItemId == _productId).toList();
+
+    final now = DateTime.now();
+    final months = <MonthValue>[];
+    for (var i = 5; i >= 0; i--) {
+      final m = DateTime(now.year, now.month - i, 1);
+      final next = DateTime(m.year, m.month + 1, 1);
+      final qty = filtered
+          .where((x) => !x.createdAt.isBefore(m) && x.createdAt.isBefore(next))
+          .fold<double>(0, (a, x) => a + x.delta.abs());
+      months.add(MonthValue(kMonthShort[m.month - 1], qty));
+    }
+
+    return MonthlyBarChart(
+      title: 'Consumo por mes (piezas)',
+      data: months,
+      headerTrailing: productIds.isEmpty
+          ? null
+          : ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 170),
+              child: DropdownButton<String?>(
+                value: _productId,
+                isExpanded: true,
+                isDense: true,
+                underline: const SizedBox.shrink(),
+                hint: const Text('Producto', style: TextStyle(fontSize: 12)),
+                items: [
+                  const DropdownMenuItem<String?>(
+                      value: null, child: Text('Todos', style: TextStyle(fontSize: 12))),
+                  for (final id in productIds)
+                    DropdownMenuItem<String?>(
+                        value: id,
+                        child: Text(nameById[id] ?? 'Producto',
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontSize: 12))),
+                ],
+                onChanged: (v) => setState(() => _productId = v),
+              ),
+            ),
+    );
+  }
 }
