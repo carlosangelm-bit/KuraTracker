@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import '../../core/theme/kura_theme.dart';
 import '../../core/providers/session_provider.dart';
 import '../../core/router/app_shell.dart' show UserMenuButton;
+import '../../models/app_user.dart';
 import '../../models/inventory.dart';
 import '../../services/data_repository.dart';
 import 'product_picker.dart';
@@ -48,17 +49,44 @@ class _InventarioScreenState extends ConsumerState<InventarioScreen> {
                     padding: EdgeInsets.all(32),
                     child: Text('Este centro no tiene sitios configurados.')));
           }
-          _siteId ??= repo.primarySiteIdForProfile(user?.id) ?? sites.first.id;
-          if (!sites.any((s) => s.id == _siteId)) _siteId = sites.first.id;
+          // Alcance del inventario (0053): 'center' = una sola bolsa (sitio
+          // principal, sin selector); 'site' = por sitio con selector.
+          final scope = repo.inventoryScopeFor(orgId);
+          final centerMode = scope == 'center';
+          if (centerMode) {
+            _siteId = sites.first.id;
+          } else {
+            _siteId ??= repo.primarySiteIdForProfile(user?.id) ?? sites.first.id;
+            if (!sites.any((s) => s.id == _siteId)) _siteId = sites.first.id;
+          }
 
           final items = repo.listInventoryItems(organizationId: orgId, siteId: _siteId);
           final onHand = repo.inventoryOnHand(_siteId!);
+          final lowCount = items
+              .where((it) =>
+                  it.reorderThreshold != null &&
+                  (onHand[it.id] ?? 0) <= it.reorderThreshold!)
+              .length;
+          final invValue = items.fold<double>(
+              0, (a, it) => a + (it.unitCost ?? 0) * (onHand[it.id] ?? 0));
+          final isAdmin = user?.role == AppRole.admin;
 
           return Column(
             children: [
-              if (sites.length > 1)
+              _InvSummary(
+                total: items.length,
+                low: lowCount,
+                value: invValue,
+                scope: scope,
+                canEditScope: isAdmin,
+                onScope: (s) async {
+                  await repo.setInventoryScope(orgId!, s);
+                  if (mounted) setState(() {});
+                },
+              ),
+              if (!centerMode && sites.length > 1)
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
                   child: Row(
                     children: [
                       const Icon(Icons.place_outlined, size: 18),
@@ -569,4 +597,79 @@ class _ItemDetailSheet extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Resumen del inventario (mini-dashboard): total de artículos, cuántos bajo su
+/// umbral y el valor del inventario. El admin puede fijar el alcance (por sitio
+/// o por centro).
+class _InvSummary extends StatelessWidget {
+  final int total;
+  final int low;
+  final double value;
+  final String scope; // 'site' | 'center'
+  final bool canEditScope;
+  final ValueChanged<String> onScope;
+  const _InvSummary({
+    required this.total,
+    required this.low,
+    required this.value,
+    required this.scope,
+    required this.canEditScope,
+    required this.onScope,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      margin: const EdgeInsets.fromLTRB(12, 12, 12, 4),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          children: [
+            Row(
+              children: [
+                _kpi(context, '$total', 'Artículos', KuraColors.primary),
+                _kpi(context, '$low', 'Reordenar',
+                    low > 0 ? KuraColors.warning : KuraColors.success),
+                _kpi(context, _money(value), 'Valor', KuraColors.darkText),
+              ],
+            ),
+            if (canEditScope) ...[
+              const Divider(height: 16),
+              Row(
+                children: [
+                  const Icon(Icons.tune, size: 16),
+                  const SizedBox(width: 8),
+                  const Text('Inventario:', style: TextStyle(fontSize: 13)),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: SegmentedButton<String>(
+                      style: const ButtonStyle(visualDensity: VisualDensity.compact),
+                      segments: const [
+                        ButtonSegment(value: 'site', label: Text('Por sitio')),
+                        ButtonSegment(value: 'center', label: Text('Por centro')),
+                      ],
+                      selected: {scope},
+                      onSelectionChanged: (s) => onScope(s.first),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _kpi(BuildContext context, String v, String label, Color color) => Expanded(
+        child: Column(
+          children: [
+            Text(v,
+                style: TextStyle(
+                    fontSize: 18, fontWeight: FontWeight.w800, color: color)),
+            Text(label, style: Theme.of(context).textTheme.bodySmall),
+          ],
+        ),
+      );
 }

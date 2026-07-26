@@ -695,6 +695,35 @@ class DataRepository {
           .toList()
         ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
+  /// Alcance del inventario del centro: 'site' | 'center' (0053).
+  String inventoryScopeFor(String? organizationId) =>
+      organizationById(organizationId)?.inventoryScope ?? 'site';
+
+  Future<void> setInventoryScope(String organizationId, String scope) async {
+    final store = _store;
+    if (store is SupabaseDataStore) {
+      await store.callRpc('set_org_inventory_scope', {
+        'p_org': organizationId,
+        'p_scope': scope,
+      });
+      await store.refreshCollection(Collections.organizations);
+    } else {
+      await _store.updateRow(
+          Collections.organizations, organizationId, {'inventory_scope': scope});
+    }
+  }
+
+  /// Compras (entradas reason=compra) recientes de un sitio, más nuevas primero.
+  List<InventoryMovement> listRecentPurchases(String siteId, {int limit = 20}) {
+    final all = _store
+        .getAll(Collections.inventoryMovements)
+        .map(InventoryMovement.fromJson)
+        .where((m) => m.siteId == siteId && m.reason == InventoryReason.compra)
+        .toList()
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return all.take(limit).toList();
+  }
+
   /// Existencia actual de un artículo = suma de sus movimientos.
   int onHandFor(String inventoryItemId) => _store
       .getAll(Collections.inventoryMovements)

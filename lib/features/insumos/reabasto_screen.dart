@@ -63,8 +63,13 @@ class _ReabastoScreenState extends ConsumerState<ReabastoScreen> {
                     padding: EdgeInsets.all(32),
                     child: Text('Este centro no tiene sitios configurados.')));
           }
-          _siteId ??= repo.primarySiteIdForProfile(user?.id) ?? sites.first.id;
-          if (!sites.any((s) => s.id == _siteId)) _siteId = sites.first.id;
+          final centerMode = repo.inventoryScopeFor(orgId) == 'center';
+          if (centerMode) {
+            _siteId = sites.first.id;
+          } else {
+            _siteId ??= repo.primarySiteIdForProfile(user?.id) ?? sites.first.id;
+            if (!sites.any((s) => s.id == _siteId)) _siteId = sites.first.id;
+          }
 
           final items = repo.listInventoryItems(organizationId: orgId, siteId: _siteId);
           final onHand = repo.inventoryOnHand(_siteId!);
@@ -79,9 +84,12 @@ class _ReabastoScreenState extends ConsumerState<ReabastoScreen> {
               .where((it) => it.isExternal || it.shopifyVariantId == null)
               .toList();
 
+          final purchases = repo.listRecentPurchases(_siteId!, limit: 15);
+          final nameById = {for (final it in items) it.id: it.name};
+
           return Column(
             children: [
-              if (sites.length > 1)
+              if (!centerMode && sites.length > 1)
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
                   child: Row(
@@ -104,50 +112,61 @@ class _ReabastoScreenState extends ConsumerState<ReabastoScreen> {
                   ),
                 ),
               Expanded(
-                child: low.isEmpty
-                    ? const Center(
-                        child: Padding(
-                          padding: EdgeInsets.all(32),
-                          child: Text(
-                            'Todo con existencia suficiente.\n'
-                            'No hay artículos bajo su umbral de reorden.',
-                            textAlign: TextAlign.center,
-                          ),
+                child: ListView(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
+                  children: [
+                    if (low.isEmpty)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 24),
+                        child: Text(
+                          'Todo con existencia suficiente.\n'
+                          'No hay artículos bajo su umbral de reorden.',
+                          textAlign: TextAlign.center,
                         ),
-                      )
-                    : ListView(
-                        padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
-                        children: [
-                          if (storeLow.isNotEmpty) ...[
-                            const Text('De tu tienda Kura+',
-                                style: TextStyle(fontWeight: FontWeight.w700)),
-                            Text('Ajusta la cantidad y arma el carrito de reorden.',
-                                style: Theme.of(context).textTheme.bodySmall),
-                            const SizedBox(height: 8),
-                            for (final it in storeLow)
-                              _StoreRow(
-                                item: it,
-                                onHand: onHand[it.id] ?? 0,
-                                qty: _qty[it.id] ?? _suggested(it, onHand[it.id] ?? 0),
-                                onQty: (q) => setState(() => _qty[it.id] = q),
-                              ),
-                            const SizedBox(height: 16),
-                          ],
-                          if (externalLow.isNotEmpty) ...[
-                            const Text('Externos (comprar aparte)',
-                                style: TextStyle(fontWeight: FontWeight.w700)),
-                            Text('No están en tu tienda Kura+; cómpralos con su proveedor.',
-                                style: Theme.of(context).textTheme.bodySmall),
-                            const SizedBox(height: 8),
-                            for (final it in externalLow)
-                              _ExternalRow(
-                                item: it,
-                                onHand: onHand[it.id] ?? 0,
-                                suggested: _suggested(it, onHand[it.id] ?? 0),
-                              ),
-                          ],
-                        ],
                       ),
+                    if (storeLow.isNotEmpty) ...[
+                      const Text('De tu tienda Kura+',
+                          style: TextStyle(fontWeight: FontWeight.w700)),
+                      Text('Ajusta la cantidad y arma el carrito; al recibir, confirma la recepción.',
+                          style: Theme.of(context).textTheme.bodySmall),
+                      const SizedBox(height: 8),
+                      for (final it in storeLow)
+                        _StoreRow(
+                          item: it,
+                          onHand: onHand[it.id] ?? 0,
+                          qty: _qty[it.id] ?? _suggested(it, onHand[it.id] ?? 0),
+                          onQty: (q) => setState(() => _qty[it.id] = q),
+                          onReceive: () => _recepcion(repo, it, _qty[it.id] ?? _suggested(it, onHand[it.id] ?? 0)),
+                        ),
+                      const SizedBox(height: 16),
+                    ],
+                    if (externalLow.isNotEmpty) ...[
+                      const Text('Externos (comprar aparte)',
+                          style: TextStyle(fontWeight: FontWeight.w700)),
+                      Text('No están en tu tienda Kura+; cómpralos con su proveedor.',
+                          style: Theme.of(context).textTheme.bodySmall),
+                      const SizedBox(height: 8),
+                      for (final it in externalLow)
+                        _ExternalRow(
+                          item: it,
+                          onHand: onHand[it.id] ?? 0,
+                          suggested: _suggested(it, onHand[it.id] ?? 0),
+                          onReceive: () => _recepcion(repo, it, _suggested(it, onHand[it.id] ?? 0)),
+                        ),
+                      const SizedBox(height: 16),
+                    ],
+                    if (purchases.isNotEmpty) ...[
+                      const Text('Compras recientes',
+                          style: TextStyle(fontWeight: FontWeight.w700)),
+                      const SizedBox(height: 4),
+                      for (final m in purchases)
+                        _PurchaseRow(
+                          name: nameById[m.inventoryItemId] ?? 'Artículo',
+                          movement: m,
+                        ),
+                    ],
+                  ],
+                ),
               ),
             ],
           );
@@ -181,6 +200,52 @@ class _ReabastoScreenState extends ConsumerState<ReabastoScreen> {
     );
   }
 
+  /// Confirmar recepción: registra la entrada (compra) al inventario cuando
+  /// llega el pedido (Shopify no lo actualiza solo). Cantidad editable.
+  Future<void> _recepcion(DataRepository repo, InventoryItem item, int suggested) async {
+    final ctrl = TextEditingController(text: '$suggested');
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Confirmar recepción'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(item.name, style: const TextStyle(fontWeight: FontWeight.w600)),
+            const SizedBox(height: 8),
+            TextField(
+              controller: ctrl,
+              keyboardType: TextInputType.number,
+              autofocus: true,
+              decoration: const InputDecoration(labelText: 'Cantidad recibida'),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancelar')),
+          FilledButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('Registrar')),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    final qty = int.tryParse(ctrl.text.trim()) ?? 0;
+    if (qty <= 0) return;
+    await repo.addInventoryMovement(
+      item: item,
+      delta: qty,
+      reason: InventoryReason.compra,
+      unitCost: item.unitCost,
+      note: 'Recepción de compra',
+      createdBy: ref.read(sessionProvider).user?.id,
+    );
+    if (mounted) {
+      setState(() {});
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Recepción registrada: +$qty ${item.name}')),
+      );
+    }
+  }
+
   Future<void> _checkout(
       DataRepository repo, List<InventoryItem> storeLow, Map<String, int> onHand) async {
     final lines = <String, int>{};
@@ -211,11 +276,13 @@ class _StoreRow extends StatelessWidget {
   final int onHand;
   final int qty;
   final ValueChanged<int> onQty;
+  final VoidCallback onReceive;
   const _StoreRow({
     required this.item,
     required this.onHand,
     required this.qty,
     required this.onQty,
+    required this.onReceive,
   });
 
   @override
@@ -268,6 +335,12 @@ class _StoreRow extends StatelessWidget {
                   icon: const Icon(Icons.add_circle_outline, size: 20),
                   onPressed: () => onQty(qty + 1),
                 ),
+                IconButton(
+                  tooltip: 'Confirmar recepción',
+                  visualDensity: VisualDensity.compact,
+                  icon: const Icon(Icons.inventory_outlined, size: 18),
+                  onPressed: onReceive,
+                ),
               ],
             ),
           ],
@@ -281,8 +354,12 @@ class _ExternalRow extends StatelessWidget {
   final InventoryItem item;
   final int onHand;
   final int suggested;
+  final VoidCallback onReceive;
   const _ExternalRow(
-      {required this.item, required this.onHand, required this.suggested});
+      {required this.item,
+      required this.onHand,
+      required this.suggested,
+      required this.onReceive});
 
   @override
   Widget build(BuildContext context) {
@@ -299,15 +376,52 @@ class _ExternalRow extends StatelessWidget {
           ].join(' · '),
           style: const TextStyle(fontSize: 11),
         ),
-        trailing: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.end,
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Text('Sugerido', style: TextStyle(fontSize: 10, color: KuraColors.darkText)),
-            Text('+$suggested',
-                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
+            Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                const Text('Sugerido',
+                    style: TextStyle(fontSize: 10, color: KuraColors.darkText)),
+                Text('+$suggested',
+                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
+              ],
+            ),
+            IconButton(
+              tooltip: 'Confirmar recepción',
+              icon: const Icon(Icons.inventory_outlined, size: 18),
+              onPressed: onReceive,
+            ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Renglón del historial de compras (entradas reason=compra).
+class _PurchaseRow extends StatelessWidget {
+  final String name;
+  final InventoryMovement movement;
+  const _PurchaseRow({required this.name, required this.movement});
+
+  @override
+  Widget build(BuildContext context) {
+    final d = movement.createdAt;
+    final date = '${d.day.toString().padLeft(2, '0')}/'
+        '${d.month.toString().padLeft(2, '0')}/${d.year}';
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        children: [
+          const Icon(Icons.local_shipping_outlined, size: 18, color: KuraColors.success),
+          const SizedBox(width: 10),
+          Expanded(child: Text(name, style: const TextStyle(fontSize: 13))),
+          Text('+${movement.delta}  ·  $date',
+              style: const TextStyle(fontSize: 12)),
+        ],
       ),
     );
   }
