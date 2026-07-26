@@ -7,6 +7,7 @@ import '../../core/providers/session_provider.dart';
 import '../../core/router/app_shell.dart' show UserMenuButton;
 import '../../models/commercial.dart';
 import '../../services/data_repository.dart';
+import '../insumos/dashboard_charts.dart';
 
 String _money(double v) => '\$${v.toStringAsFixed(2)} MXN';
 
@@ -36,17 +37,19 @@ class ComercialScreen extends ConsumerWidget {
           );
         }
         return DefaultTabController(
-          length: 2,
+          length: 3,
           child: Scaffold(
             appBar: AppBar(
               title: const Text('Comercial'),
               actions: const [UserMenuButton()],
               bottom: const TabBar(tabs: [
+                Tab(text: 'Resumen'),
                 Tab(text: 'Cobros'),
                 Tab(text: 'Servicios'),
               ]),
             ),
             body: TabBarView(children: [
+              _ResumenTab(repo: repo, orgId: orgId),
               _CobrosTab(repo: repo, orgId: orgId),
               _ServiciosTab(repo: repo, orgId: orgId),
             ]),
@@ -357,6 +360,108 @@ class _KpiBox extends StatelessWidget {
                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: color)),
             Text(label, style: Theme.of(context).textTheme.bodySmall),
           ],
+        ),
+      );
+}
+
+/// Pestaña Resumen: dashboard comercial con gráficos + tarjetas de acceso.
+class _ResumenTab extends StatelessWidget {
+  final DataRepository repo;
+  final String? orgId;
+  const _ResumenTab({required this.repo, required this.orgId});
+
+  @override
+  Widget build(BuildContext context) {
+    final charges = repo.listCharges(organizationId: orgId);
+    final paid = charges.where((c) => c.status == ChargeStatus.pagado).toList();
+    final paidTotal = paid.fold<double>(0, (a, c) => a + c.total);
+    final pendingTotal = charges
+        .where((c) => c.status == ChargeStatus.pendiente)
+        .fold<double>(0, (a, c) => a + c.total);
+
+    // Ingresos últimos 6 meses (por fecha de pago).
+    final now = DateTime.now();
+    final months = <MonthValue>[];
+    for (var i = 5; i >= 0; i--) {
+      final m = DateTime(now.year, now.month - i, 1);
+      final next = DateTime(m.year, m.month + 1, 1);
+      final v = paid.where((c) {
+        final d = c.paidAt ?? c.createdAt;
+        return !d.isBefore(m) && d.isBefore(next);
+      }).fold<double>(0, (a, c) => a + c.total);
+      months.add(MonthValue(kMonthShort[m.month - 1], v));
+    }
+
+    // Por método de pago.
+    final byMethod = <String, double>{};
+    for (final c in paid) {
+      final k = c.paymentMethod ?? 'otro';
+      byMethod[k] = (byMethod[k] ?? 0) + c.total;
+    }
+    Color methodColor(String m) => switch (m) {
+          'efectivo' => KuraColors.success,
+          'transferencia' => KuraColors.infoBlue,
+          'tarjeta' => KuraColors.primary,
+          'stripe' => KuraColors.primary,
+          _ => KuraColors.darkText,
+        };
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+      children: [
+        Row(children: [
+          Expanded(child: _KpiBox(label: 'Cobrado', value: _money(paidTotal), color: KuraColors.success)),
+          const SizedBox(width: 10),
+          Expanded(child: _KpiBox(label: 'Pendiente', value: _money(pendingTotal), color: KuraColors.warning)),
+        ]),
+        const SizedBox(height: 12),
+        MonthlyBarChart(title: 'Ingresos por mes', data: months, color: KuraColors.success),
+        const SizedBox(height: 12),
+        DonutCard(
+          title: 'Cobrado por método de pago',
+          slices: [
+            for (final e in byMethod.entries) DonutSlice(e.key, e.value, methodColor(e.key)),
+          ],
+        ),
+        const SizedBox(height: 16),
+        _ProcessCard(
+          icon: Icons.receipt_long_outlined,
+          title: 'Cobros',
+          subtitle: 'Historial de cobros y pagos; marcar pagado o cancelar.',
+          onTap: () => DefaultTabController.of(context).animateTo(1),
+        ),
+        _ProcessCard(
+          icon: Icons.sell_outlined,
+          title: 'Servicios',
+          subtitle: 'Catálogo de honorarios del centro.',
+          onTap: () => DefaultTabController.of(context).animateTo(2),
+        ),
+      ],
+    );
+  }
+}
+
+class _ProcessCard extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+  const _ProcessCard({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) => Card(
+        margin: const EdgeInsets.only(top: 10),
+        child: ListTile(
+          leading: Icon(icon, color: KuraColors.primary),
+          title: Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
+          subtitle: Text(subtitle),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: onTap,
         ),
       );
 }
