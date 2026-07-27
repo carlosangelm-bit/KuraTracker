@@ -7,14 +7,21 @@
 // adjunta). El Access Token de MP vive solo aquí (nunca en el cliente).
 //
 // Deploy: supabase functions deploy mercadopago-create-preference  (verify_jwt)
-// Secret: MP_ACCESS_TOKEN (Supabase).
+// Secrets (Supabase):
+//   MP_MODE              — 'test' (por defecto) | 'prod'. Fail-safe a prueba.
+//   MP_ACCESS_TOKEN      — token de PRODUCCIÓN (APP_USR-…).
+//   MP_ACCESS_TOKEN_TEST — token de PRUEBA (TEST-…).
 
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const MP_ACCESS_TOKEN = Deno.env.get("MP_ACCESS_TOKEN") ?? "";
+// Modo por defecto TEST (fail-safe): solo cobra real con MP_MODE=prod explícito.
+const MP_MODE = (Deno.env.get("MP_MODE") ?? "test").toLowerCase();
+const MP_ACCESS_TOKEN = (MP_MODE === "prod"
+  ? Deno.env.get("MP_ACCESS_TOKEN")
+  : Deno.env.get("MP_ACCESS_TOKEN_TEST")) ?? "";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",

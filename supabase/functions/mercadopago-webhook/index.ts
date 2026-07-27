@@ -9,7 +9,11 @@
 //   supabase functions deploy mercadopago-webhook --no-verify-jwt
 //
 // Secrets (Supabase; SUPABASE_URL/SERVICE_ROLE_KEY los inyecta Supabase):
-//   MP_ACCESS_TOKEN     — para consultar el pago (GET /v1/payments/{id}).
+//   MP_MODE             — 'test' (por defecto) | 'prod'. Elige qué token usar.
+//                         Fail-safe: si no se define, usa PRUEBA (nunca cobra
+//                         real por descuido). En go-live: MP_MODE=prod.
+//   MP_ACCESS_TOKEN     — token de PRODUCCIÓN (APP_USR-…).
+//   MP_ACCESS_TOKEN_TEST— token de PRUEBA (TEST-…).
 //   MP_WEBHOOK_SECRET   — clave de firma del webhook (panel MP → Webhooks).
 //                         Si NO está configurada, se OMITE la validación de
 //                         firma (modo prueba). Configúrala para producción.
@@ -26,7 +30,11 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const MP_ACCESS_TOKEN = Deno.env.get("MP_ACCESS_TOKEN") ?? "";
+// Modo por defecto TEST (fail-safe): solo cobra real con MP_MODE=prod explícito.
+const MP_MODE = (Deno.env.get("MP_MODE") ?? "test").toLowerCase();
+const MP_ACCESS_TOKEN = (MP_MODE === "prod"
+  ? Deno.env.get("MP_ACCESS_TOKEN")
+  : Deno.env.get("MP_ACCESS_TOKEN_TEST")) ?? "";
 const MP_WEBHOOK_SECRET = Deno.env.get("MP_WEBHOOK_SECRET") ?? "";
 
 const supabase = createClient(SUPABASE_URL, SERVICE_ROLE, {
