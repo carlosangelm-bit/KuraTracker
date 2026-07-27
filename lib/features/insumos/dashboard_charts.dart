@@ -54,17 +54,35 @@ class MonthlyBarChart extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             SizedBox(
-              height: 160,
+              height: 170,
               child: maxV <= 0
                   ? const Center(child: Text('Sin datos en el periodo.'))
                   : BarChart(
                       BarChartData(
                         alignment: BarChartAlignment.spaceAround,
-                        maxY: maxV * 1.25,
+                        maxY: maxV * 1.32,
                         gridData: const FlGridData(show: false),
                         borderData: FlBorderData(show: false),
-                        // Sin tooltip por defecto (el fondo/texto verde no se leía).
-                        barTouchData: BarTouchData(enabled: false),
+                        // Valor SIEMPRE visible encima de cada barra, con fondo
+                        // transparente (el tooltip verde por defecto no se leía).
+                        barTouchData: BarTouchData(
+                          enabled: false,
+                          touchTooltipData: BarTouchTooltipData(
+                            getTooltipColor: (_) => Colors.transparent,
+                            tooltipPadding: EdgeInsets.zero,
+                            tooltipMargin: 2,
+                            getTooltipItem: (group, groupIndex, rod, rodIndex) {
+                              if (rod.toY <= 0) return null;
+                              return BarTooltipItem(
+                                valueLabel?.call(rod.toY) ?? '${rod.toY.toInt()}',
+                                TextStyle(
+                                    color: color,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w800),
+                              );
+                            },
+                          ),
+                        ),
                         titlesData: FlTitlesData(
                           leftTitles: const AxisTitles(
                               sideTitles: SideTitles(showTitles: false)),
@@ -75,32 +93,18 @@ class MonthlyBarChart extends StatelessWidget {
                           bottomTitles: AxisTitles(
                             sideTitles: SideTitles(
                               showTitles: true,
-                              reservedSize: 34,
+                              reservedSize: 22,
                               getTitlesWidget: (value, meta) {
                                 final i = value.toInt();
                                 if (i < 0 || i >= data.length) {
                                   return const SizedBox.shrink();
                                 }
-                                final v = data[i].value;
                                 return Padding(
                                   padding: const EdgeInsets.only(top: 6),
-                                  child: Column(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Text(data[i].label,
-                                          style: const TextStyle(
-                                              fontSize: 10,
-                                              color: KuraColors.darkText)),
-                                      if (v > 0)
-                                        Text(
-                                          valueLabel?.call(v) ?? '${v.toInt()}',
-                                          style: TextStyle(
-                                              fontSize: 9,
-                                              fontWeight: FontWeight.w700,
-                                              color: color),
-                                        ),
-                                    ],
-                                  ),
+                                  child: Text(data[i].label,
+                                      style: const TextStyle(
+                                          fontSize: 10,
+                                          color: KuraColors.darkText)),
                                 );
                               },
                             ),
@@ -108,15 +112,20 @@ class MonthlyBarChart extends StatelessWidget {
                         ),
                         barGroups: [
                           for (var i = 0; i < data.length; i++)
-                            BarChartGroupData(x: i, barRods: [
-                              BarChartRodData(
-                                toY: data[i].value,
-                                color: color,
-                                width: 16,
-                                borderRadius:
-                                    const BorderRadius.vertical(top: Radius.circular(4)),
-                              ),
-                            ]),
+                            BarChartGroupData(
+                              x: i,
+                              showingTooltipIndicators:
+                                  data[i].value > 0 ? const [0] : const [],
+                              barRods: [
+                                BarChartRodData(
+                                  toY: data[i].value,
+                                  color: color,
+                                  width: 16,
+                                  borderRadius: const BorderRadius.vertical(
+                                      top: Radius.circular(4)),
+                                ),
+                              ],
+                            ),
                         ],
                       ),
                     ),
