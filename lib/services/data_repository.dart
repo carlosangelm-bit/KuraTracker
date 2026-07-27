@@ -1157,6 +1157,7 @@ class DataRepository {
   Future<PointPayment> addPointPayment({
     required String organizationId,
     required double amount,
+    String provider = 'mercadopago_point',
     String? method,
     String? externalReference,
     String? mpPaymentId,
@@ -1171,6 +1172,7 @@ class DataRepository {
     final saved = await _store.insertRow(Collections.pointPayments, {
       'id': _uuid.v4(),
       'organization_id': organizationId,
+      'provider': provider,
       'mp_payment_id': mpPaymentId,
       'amount': amount,
       'currency': 'MXN',

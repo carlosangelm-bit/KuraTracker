@@ -805,6 +805,7 @@ class _PaymentCard extends StatelessWidget {
                       style: const TextStyle(fontWeight: FontWeight.w800)),
                   Text(
                     [
+                      p.providerLabel,
                       _methodLabel(p.method),
                       fmt.format(p.capturedAt ?? p.createdAt),
                       if (p.externalReference != null)

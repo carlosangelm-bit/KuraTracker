@@ -115,6 +115,7 @@ class Charge {
 class PointPayment {
   final String id;
   final String organizationId;
+  final String provider; // mercadopago_point | mercadopago | acuity | manual | ...
   final String? mpPaymentId;
   final double amount;
   final String currency;
@@ -136,6 +137,7 @@ class PointPayment {
     required this.amount,
     required this.status,
     required this.createdAt,
+    this.provider = 'mercadopago_point',
     this.currency = 'MXN',
     this.mpPaymentId,
     this.method,
@@ -151,9 +153,22 @@ class PointPayment {
 
   bool get isLinked => chargeId != null;
 
+  /// Etiqueta legible de la pasarela.
+  String get providerLabel => switch (provider) {
+        'mercadopago_point' => 'Mercado Pago Point',
+        'mercadopago' => 'Mercado Pago',
+        'acuity' => 'Acuity (prepago)',
+        'clip' => 'Clip',
+        'stripe' => 'Stripe',
+        'paypal' => 'PayPal',
+        'manual' => 'Manual',
+        _ => provider,
+      };
+
   factory PointPayment.fromJson(Map<String, dynamic> j) => PointPayment(
         id: j['id'] as String,
         organizationId: j['organization_id'] as String,
+        provider: j['provider'] as String? ?? 'mercadopago_point',
         mpPaymentId: j['mp_payment_id'] as String?,
         amount: (j['amount'] as num?)?.toDouble() ?? 0,
         currency: j['currency'] as String? ?? 'MXN',
