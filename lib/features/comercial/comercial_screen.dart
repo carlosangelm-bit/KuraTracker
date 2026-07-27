@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/theme/kura_theme.dart';
 import '../../core/layout/responsive.dart';
@@ -238,7 +239,16 @@ class _ChargeDetailSheet extends StatelessWidget {
             Text(_money(charge.total), style: const TextStyle(fontWeight: FontWeight.w800)),
           ]),
           const SizedBox(height: 12),
-          if (charge.status == ChargeStatus.pendiente)
+          if (charge.status == ChargeStatus.pendiente) ...[
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                icon: const Icon(Icons.link),
+                label: const Text('Cobrar en línea (Mercado Pago)'),
+                onPressed: () => _cobrarEnLinea(context),
+              ),
+            ),
+            const SizedBox(height: 8),
             Row(children: [
               Expanded(
                 child: OutlinedButton(
@@ -262,9 +272,36 @@ class _ChargeDetailSheet extends StatelessWidget {
                 ),
               ),
             ]),
+          ],
         ],
       ),
     );
+  }
+
+  /// Genera el link de pago de Mercado Pago (Edge Function) y lo abre. El pago
+  /// se concilia solo por webhook (external_reference = id del cobro).
+  Future<void> _cobrarEnLinea(BuildContext context) async {
+    final patient = charge.patientId == null ? null : repo.getPatient(charge.patientId!);
+    try {
+      final url = await repo.createMercadoPagoCheckout(
+        charge.id,
+        title: patient != null ? 'Cobro · ${patient.fullName}' : 'Cobro de consulta',
+      );
+      final launched = await launchUrl(
+        Uri.parse(url),
+        mode: LaunchMode.externalApplication,
+        webOnlyWindowName: '_blank',
+      );
+      if (!launched && context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('No se pudo abrir el link: $url')));
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('$e'.replaceFirst('Exception: ', ''))));
+      }
+    }
   }
 
   Future<String?> _pickMethod(BuildContext context) => showModalBottomSheet<String>(
