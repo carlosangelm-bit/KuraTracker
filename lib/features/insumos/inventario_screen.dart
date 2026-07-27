@@ -203,11 +203,13 @@ class _InventarioScreenState extends ConsumerState<InventarioScreen> {
   Future<InventoryItem?> _externalForm(DataRepository repo, String orgId) async {
     final nameCtrl = TextEditingController();
     final costCtrl = TextEditingController();
+    final priceCtrl = TextEditingController();
     final supplierCtrl = TextEditingController();
     final thresholdCtrl = TextEditingController();
     final ok = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setD) => AlertDialog(
         title: const Text('Producto externo'),
         content: SingleChildScrollView(
           child: Column(
@@ -225,6 +227,20 @@ class _InventarioScreenState extends ConsumerState<InventarioScreen> {
                 controller: costCtrl,
                 keyboardType: const TextInputType.numberWithOptions(decimal: true),
                 decoration: const InputDecoration(labelText: 'Costo unitario (opcional)'),
+                // Autocompleta el precio con costo +30% (editable).
+                onChanged: (v) {
+                  final c = double.tryParse(v.trim());
+                  if (c != null) {
+                    priceCtrl.text = (c * 1.3).toStringAsFixed(2);
+                    setD(() {});
+                  }
+                },
+              ),
+              TextField(
+                controller: priceCtrl,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(
+                    labelText: 'Precio de venta (default costo +30%)'),
               ),
               TextField(
                 controller: thresholdCtrl,
@@ -244,6 +260,7 @@ class _InventarioScreenState extends ConsumerState<InventarioScreen> {
               child: const Text('Crear')),
         ],
       ),
+      ),
     );
     if (ok != true || nameCtrl.text.trim().isEmpty) return null;
     return repo.addInventoryItem(
@@ -252,6 +269,7 @@ class _InventarioScreenState extends ConsumerState<InventarioScreen> {
       name: nameCtrl.text.trim(),
       isExternal: true,
       unitCost: double.tryParse(costCtrl.text.trim()),
+      unitPrice: double.tryParse(priceCtrl.text.trim()),
       supplier: supplierCtrl.text.trim().isEmpty ? null : supplierCtrl.text.trim(),
       reorderThreshold: int.tryParse(thresholdCtrl.text.trim()),
       createdBy: ref.read(sessionProvider).user?.id,
@@ -260,6 +278,7 @@ class _InventarioScreenState extends ConsumerState<InventarioScreen> {
 
   // ---- Detalle del artículo ----
   Future<void> _openItem(DataRepository repo, InventoryItem item) async {
+    final isAdmin = ref.read(sessionProvider).user?.role == AppRole.admin;
     await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -273,7 +292,70 @@ class _InventarioScreenState extends ConsumerState<InventarioScreen> {
         onSalida: () => _movementDialog(repo, item, sign: -1, title: 'Salida',
             reasons: const [InventoryReason.consumo, InventoryReason.merma]),
         onAjuste: () => _adjustDialog(repo, item),
+        onEditPrices: isAdmin
+            ? () {
+                Navigator.of(context).pop();
+                _editPrices(repo, item);
+              }
+            : null,
       ),
+    );
+    if (mounted) setState(() {});
+  }
+
+  /// Editar costo y precio del insumo (solo admin). El precio es el que se cobra
+  /// al paciente; al cambiar el costo se sugiere costo +30% (editable).
+  Future<void> _editPrices(DataRepository repo, InventoryItem item) async {
+    final costCtrl = TextEditingController(
+        text: item.unitCost == null ? '' : '${item.unitCost}');
+    final priceCtrl = TextEditingController(
+        text: item.unitPrice == null ? '' : '${item.unitPrice}');
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setD) => AlertDialog(
+          title: const Text('Costo y precio'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(item.name, style: const TextStyle(fontWeight: FontWeight.w600)),
+              const SizedBox(height: 8),
+              TextField(
+                controller: costCtrl,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(labelText: 'Costo (del centro)'),
+                onChanged: (v) {
+                  final c = double.tryParse(v.trim());
+                  if (c != null) {
+                    priceCtrl.text = (c * 1.3).toStringAsFixed(2);
+                    setD(() {});
+                  }
+                },
+              ),
+              TextField(
+                controller: priceCtrl,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(
+                    labelText: 'Precio de venta (al paciente)'),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.of(ctx).pop(false),
+                child: const Text('Cancelar')),
+            FilledButton(
+                onPressed: () => Navigator.of(ctx).pop(true),
+                child: const Text('Guardar')),
+          ],
+        ),
+      ),
+    );
+    if (ok != true) return;
+    await repo.updateInventoryItem(
+      item.id,
+      unitCost: double.tryParse(costCtrl.text.trim()),
+      unitPrice: double.tryParse(priceCtrl.text.trim()),
     );
     if (mounted) setState(() {});
   }
@@ -441,7 +523,8 @@ class _ItemTile extends StatelessWidget {
           [
             item.isExternal ? 'Externo' : 'Tienda Kura+',
             if (item.supplier != null && item.supplier!.isNotEmpty) item.supplier!,
-            if (item.unitCost != null) _money(item.unitCost, item.currency),
+            if (item.unitCost != null) 'Costo ${_money(item.unitCost, item.currency)}',
+            if (item.unitPrice != null) 'Precio ${_money(item.unitPrice, item.currency)}',
           ].join(' · '),
           style: const TextStyle(fontSize: 11),
         ),
@@ -467,12 +550,14 @@ class _ItemDetailSheet extends StatelessWidget {
   final Future<void> Function() onEntrada;
   final Future<void> Function() onSalida;
   final Future<void> Function() onAjuste;
+  final VoidCallback? onEditPrices; // solo admin
   const _ItemDetailSheet({
     required this.repo,
     required this.item,
     required this.onEntrada,
     required this.onSalida,
     required this.onAjuste,
+    this.onEditPrices,
   });
 
   @override
@@ -500,9 +585,26 @@ class _ItemDetailSheet extends StatelessWidget {
               [
                 item.isExternal ? 'Externo' : 'Tienda Kura+',
                 if (item.supplier != null && item.supplier!.isNotEmpty) item.supplier!,
-                if (item.unitCost != null) _money(item.unitCost, item.currency),
               ].join(' · '),
               style: Theme.of(context).textTheme.bodySmall,
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Costo ${_money(item.unitCost, item.currency)}   ·   '
+                    'Precio ${_money(item.unitPrice, item.currency)}',
+                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                  ),
+                ),
+                if (onEditPrices != null)
+                  TextButton.icon(
+                    icon: const Icon(Icons.edit_outlined, size: 16),
+                    label: const Text('Editar'),
+                    onPressed: onEditPrices,
+                  ),
+              ],
             ),
             const SizedBox(height: 12),
             Row(

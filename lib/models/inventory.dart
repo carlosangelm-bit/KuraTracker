@@ -10,7 +10,8 @@ class InventoryItem {
   final String? shopifyProductId;
   final String? shopifyVariantId;
   final String? imageUrl;
-  final double? unitCost;
+  final double? unitCost; // costo del centro
+  final double? unitPrice; // precio de venta al paciente (default costo +30%)
   final String? currency;
   final String? supplier;
   final int? reorderThreshold;
@@ -27,6 +28,7 @@ class InventoryItem {
     this.shopifyVariantId,
     this.imageUrl,
     this.unitCost,
+    this.unitPrice,
     this.currency,
     this.supplier,
     this.reorderThreshold,
@@ -44,6 +46,7 @@ class InventoryItem {
         shopifyVariantId: j['shopify_variant_id'] as String?,
         imageUrl: j['image_url'] as String?,
         unitCost: (j['unit_cost'] as num?)?.toDouble(),
+        unitPrice: (j['unit_price'] as num?)?.toDouble(),
         currency: j['currency'] as String?,
         supplier: j['supplier'] as String?,
         reorderThreshold: (j['reorder_threshold'] as num?)?.toInt(),

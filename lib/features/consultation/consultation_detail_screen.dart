@@ -1112,6 +1112,7 @@ class _SuppliesUsedSectionState extends ConsumerState<_SuppliesUsedSection> {
         name: item.name,
         inventoryItemId: item.id,
         unitCost: item.unitCost,
+        unitPrice: item.unitPrice,
         currency: item.currency,
         createdBy: ref.read(sessionProvider).user?.id,
       );
@@ -1173,6 +1174,7 @@ class _SuppliesUsedSectionState extends ConsumerState<_SuppliesUsedSection> {
       name: item.name,
       inventoryItemId: item.id,
       unitCost: item.unitCost,
+      unitPrice: item.unitPrice,
       currency: item.currency,
       createdBy: ref.read(sessionProvider).user?.id,
     );

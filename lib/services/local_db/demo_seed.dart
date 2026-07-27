@@ -31,7 +31,7 @@ class DemoSeed {
   // una sola vez en instalaciones demo previas (wipeAll + _seed), evitando
   // duplicados y datos viejos. Cada rediseño del roster sube este número.
   // v12: roster curado por escenario (clínica 7 / hospital 5 / cuidadores 3).
-  static const String _seedFlag = 'seeded_v19';
+  static const String _seedFlag = 'seeded_v20';
 
   static Future<void> ensureSeeded(LocalStore store) async {
     if (store.getBool(_seedFlag)) return;
@@ -1658,6 +1658,7 @@ class DemoSeed {
         'shopify_variant_id': null,
         'image_url': null,
         'unit_cost': row.$3,
+        'unit_price': double.parse((row.$3 * 1.3).toStringAsFixed(2)),
         'currency': 'MXN',
         'supplier': row.$2,
         'reorder_threshold': row.$4,
@@ -1696,6 +1697,7 @@ class DemoSeed {
       'image_url':
           'https://cdn.shopify.com/s/files/1/0260/4128/6718/files/Prontosan.png?v=1739829824',
       'unit_cost': 863.0,
+      'unit_price': 1121.90,
       'currency': 'MXN',
       'supplier': null,
       'reorder_threshold': 6,
@@ -1789,7 +1791,7 @@ class DemoSeed {
       final chargeItemRows = <Map<String, dynamic>>[];
       for (var ci = 0; ci < chargeSeed.length; ci++) {
         final s = chargeSeed[ci];
-        final when = DateTime(now.year, now.month - (s.$1 as int), 10);
+        final when = DateTime(now.year, now.month - s.$1, 10);
         final p = demoPatients[ci % demoPatients.length];
         final chargeId = _uuid.v4();
         chargeRows.add({
