@@ -1087,7 +1087,15 @@ class DataRepository {
 
   /// Marca un cobro como pagado y materializa el DESCUENTO de inventario de los
   /// insumos de la consulta marcados "descontar" (que aún no se hayan descontado).
-  Future<void> markChargePaid(String chargeId, String method, {String? createdBy}) async {
+  Future<void> markChargePaid(
+    String chargeId,
+    String method, {
+    String? createdBy,
+    String? provider,
+    String? mpPaymentId,
+    String? externalReference,
+    String? mpStatus,
+  }) async {
     final charge = _store
         .getAll(Collections.charges)
         .map(Charge.fromJson)
@@ -1097,6 +1105,10 @@ class DataRepository {
       'payment_method': method,
       'paid_at': DateTime.now().toIso8601String(),
       'updated_at': DateTime.now().toIso8601String(),
+      if (provider != null) 'payment_provider': provider,
+      if (mpPaymentId != null) 'mp_payment_id': mpPaymentId,
+      if (externalReference != null) 'external_reference': externalReference,
+      if (mpStatus != null) 'mp_status': mpStatus,
     });
     // Descontar del inventario los insumos "descontar" no descontados.
     final consultId = charge.consultationId;
@@ -1124,6 +1136,111 @@ class DataRepository {
   Future<void> cancelCharge(String chargeId) async => _store.updateRow(
       Collections.charges, chargeId,
       {'status': 'cancelado', 'updated_at': DateTime.now().toIso8601String()});
+
+  // ---------------- Conciliación Mercado Pago Point (0055) ----------------
+
+  /// Pagos de terminal en la bandeja de conciliación. [linked]: true = ya
+  /// ligados a un cobro, false = pendientes de ligar, null = todos.
+  List<PointPayment> listPointPayments({String? organizationId, bool? linked}) =>
+      _store
+          .getAll(Collections.pointPayments)
+          .map(PointPayment.fromJson)
+          .where((p) =>
+              (organizationId == null || p.organizationId == organizationId) &&
+              (linked == null || p.isLinked == linked))
+          .toList()
+        ..sort((a, b) => (b.capturedAt ?? b.createdAt)
+            .compareTo(a.capturedAt ?? a.createdAt));
+
+  /// Registra un pago entrante de la terminal en la bandeja. En Fase 1 lo crea
+  /// el staff a mano; en Fase 2 lo inserta la Edge Function del webhook de MP.
+  Future<PointPayment> addPointPayment({
+    required String organizationId,
+    required double amount,
+    String? method,
+    String? externalReference,
+    String? mpPaymentId,
+    String? deviceId,
+    String? description,
+    DateTime? capturedAt,
+    String status = 'approved',
+    String source = 'manual',
+    String? createdBy,
+  }) async {
+    final now = DateTime.now();
+    final saved = await _store.insertRow(Collections.pointPayments, {
+      'id': _uuid.v4(),
+      'organization_id': organizationId,
+      'mp_payment_id': mpPaymentId,
+      'amount': amount,
+      'currency': 'MXN',
+      'status': status,
+      'method': method,
+      'external_reference': externalReference,
+      'device_id': deviceId,
+      'description': description,
+      'captured_at': (capturedAt ?? now).toIso8601String(),
+      'source': source,
+      'created_by': createdBy,
+      'created_at': now.toIso8601String(),
+      'updated_at': now.toIso8601String(),
+    });
+    return PointPayment.fromJson(saved);
+  }
+
+  /// Liga un pago de terminal a un cobro y marca el cobro como pagado por MP
+  /// (incluye el descuento de inventario, vía [markChargePaid]).
+  Future<void> linkPointPaymentToCharge({
+    required String paymentId,
+    required String chargeId,
+    String? linkedBy,
+  }) async {
+    final payment = _store
+        .getAll(Collections.pointPayments)
+        .map(PointPayment.fromJson)
+        .firstWhere((p) => p.id == paymentId);
+    await _store.updateRow(Collections.pointPayments, paymentId, {
+      'charge_id': chargeId,
+      'linked_by': linkedBy,
+      'linked_at': DateTime.now().toIso8601String(),
+      'updated_at': DateTime.now().toIso8601String(),
+    });
+    await markChargePaid(
+      chargeId,
+      'tarjeta',
+      createdBy: linkedBy,
+      provider: 'mercadopago',
+      mpPaymentId: payment.mpPaymentId,
+      externalReference: payment.externalReference,
+      mpStatus: payment.status,
+    );
+  }
+
+  /// Deshace el vínculo de un pago con su cobro (el cobro vuelve a pendiente).
+  /// No revierte movimientos de inventario ya materializados.
+  Future<void> unlinkPointPayment(String paymentId) async {
+    final payment = _store
+        .getAll(Collections.pointPayments)
+        .map(PointPayment.fromJson)
+        .firstWhere((p) => p.id == paymentId);
+    await _store.updateRow(Collections.pointPayments, paymentId, {
+      'charge_id': null,
+      'linked_by': null,
+      'linked_at': null,
+      'updated_at': DateTime.now().toIso8601String(),
+    });
+    if (payment.chargeId != null) {
+      await _store.updateRow(Collections.charges, payment.chargeId!, {
+        'status': 'pendiente',
+        'payment_method': null,
+        'paid_at': null,
+        'payment_provider': null,
+        'mp_payment_id': null,
+        'mp_status': null,
+        'updated_at': DateTime.now().toIso8601String(),
+      });
+    }
+  }
 
   /// Componentes (método/producto) del plan de tratamiento MÁS RECIENTE del
   /// paciente. Sirve para sugerir qué insumos descontar (vía los mapeos Fase 2).

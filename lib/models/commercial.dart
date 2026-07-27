@@ -61,6 +61,11 @@ class Charge {
   final DateTime? paidAt;
   final String? notes;
   final DateTime createdAt;
+  // Pago externo (Mercado Pago Point, migr 0055).
+  final String? paymentProvider; // 'manual' | 'mercadopago'
+  final String? externalReference; // ref enviada a la terminal
+  final String? mpPaymentId;
+  final String? mpStatus;
 
   const Charge({
     required this.id,
@@ -77,6 +82,10 @@ class Charge {
     this.paymentMethod,
     this.paidAt,
     this.notes,
+    this.paymentProvider,
+    this.externalReference,
+    this.mpPaymentId,
+    this.mpStatus,
   });
 
   factory Charge.fromJson(Map<String, dynamic> j) => Charge(
@@ -94,6 +103,76 @@ class Charge {
         paidAt: j['paid_at'] == null ? null : DateTime.tryParse('${j['paid_at']}')?.toLocal(),
         notes: j['notes'] as String?,
         createdAt: DateTime.tryParse('${j['created_at']}')?.toLocal() ?? DateTime.now(),
+        paymentProvider: j['payment_provider'] as String?,
+        externalReference: j['external_reference'] as String?,
+        mpPaymentId: j['mp_payment_id'] as String?,
+        mpStatus: j['mp_status'] as String?,
+      );
+}
+
+/// Pago entrante de una terminal Mercado Pago Point (bandeja de conciliación,
+/// migr 0055). Si [chargeId] es null, aún no está ligado a un cobro.
+class PointPayment {
+  final String id;
+  final String organizationId;
+  final String? mpPaymentId;
+  final double amount;
+  final String currency;
+  final String status; // approved | rejected | refunded | pending
+  final String? method; // credit_card | debit_card | ...
+  final String? externalReference;
+  final String? deviceId;
+  final String? description;
+  final DateTime? capturedAt;
+  final String? chargeId; // null = sin ligar
+  final String? linkedBy;
+  final DateTime? linkedAt;
+  final String source; // manual | webhook
+  final DateTime createdAt;
+
+  const PointPayment({
+    required this.id,
+    required this.organizationId,
+    required this.amount,
+    required this.status,
+    required this.createdAt,
+    this.currency = 'MXN',
+    this.mpPaymentId,
+    this.method,
+    this.externalReference,
+    this.deviceId,
+    this.description,
+    this.capturedAt,
+    this.chargeId,
+    this.linkedBy,
+    this.linkedAt,
+    this.source = 'manual',
+  });
+
+  bool get isLinked => chargeId != null;
+
+  factory PointPayment.fromJson(Map<String, dynamic> j) => PointPayment(
+        id: j['id'] as String,
+        organizationId: j['organization_id'] as String,
+        mpPaymentId: j['mp_payment_id'] as String?,
+        amount: (j['amount'] as num?)?.toDouble() ?? 0,
+        currency: j['currency'] as String? ?? 'MXN',
+        status: j['status'] as String? ?? 'approved',
+        method: j['method'] as String?,
+        externalReference: j['external_reference'] as String?,
+        deviceId: j['device_id'] as String?,
+        description: j['description'] as String?,
+        capturedAt: j['captured_at'] == null
+            ? null
+            : DateTime.tryParse('${j['captured_at']}')?.toLocal(),
+        chargeId: j['charge_id'] as String?,
+        linkedBy: j['linked_by'] as String?,
+        linkedAt: j['linked_at'] == null
+            ? null
+            : DateTime.tryParse('${j['linked_at']}')?.toLocal(),
+        source: j['source'] as String? ?? 'manual',
+        createdAt:
+            DateTime.tryParse('${j['created_at']}')?.toLocal() ?? DateTime.now(),
       );
 }
 

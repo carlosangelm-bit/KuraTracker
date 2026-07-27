@@ -195,6 +195,7 @@ class Collections {
   static const serviceCatalog = 'service_catalog';
   static const charges = 'charges';
   static const chargeItems = 'charge_items';
+  static const pointPayments = 'point_payments';
 
   /// Todas las colecciones/tablas, en un orden razonable para hidratar la
   /// cache de [SupabaseDataStore] tras el login (catalogos primero, luego
@@ -242,5 +243,6 @@ class Collections {
     serviceCatalog,
     charges,
     chargeItems,
+    pointPayments,
   ];
 }

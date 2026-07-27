@@ -31,7 +31,7 @@ class DemoSeed {
   // una sola vez en instalaciones demo previas (wipeAll + _seed), evitando
   // duplicados y datos viejos. Cada rediseño del roster sube este número.
   // v12: roster curado por escenario (clínica 7 / hospital 5 / cuidadores 3).
-  static const String _seedFlag = 'seeded_v20';
+  static const String _seedFlag = 'seeded_v21';
 
   static Future<void> ensureSeeded(LocalStore store) async {
     if (store.getBool(_seedFlag)) return;
@@ -1825,6 +1825,43 @@ class DemoSeed {
       }
       await appendRows(Collections.charges, chargeRows);
       await appendRows(Collections.chargeItems, chargeItemRows);
+
+      // Pagos de terminal (Mercado Pago Point) para la BANDEJA de conciliación:
+      // uno que calza con el cobro pendiente ($650) por folio del paciente, y
+      // otro suelto (sin referencia) que hay que ligar a mano.
+      final pendingPatient = demoPatients[2 % demoPatients.length];
+      await appendRows(Collections.pointPayments, [
+        {
+          'id': _uuid.v4(),
+          'organization_id': organizationId,
+          'amount': 650.0,
+          'currency': 'MXN',
+          'status': 'approved',
+          'method': 'credit_card',
+          'external_reference': pendingPatient['folio'],
+          'device_id': 'POINT-SMART-DEMO',
+          'description': 'Pago en terminal Point',
+          'captured_at': iso(now.subtract(const Duration(hours: 2))),
+          'source': 'webhook',
+          'created_at': iso(now.subtract(const Duration(hours: 2))),
+          'updated_at': iso(now.subtract(const Duration(hours: 2))),
+        },
+        {
+          'id': _uuid.v4(),
+          'organization_id': organizationId,
+          'amount': 1200.0,
+          'currency': 'MXN',
+          'status': 'approved',
+          'method': 'debit_card',
+          'external_reference': null,
+          'device_id': 'POINT-SMART-DEMO',
+          'description': 'Pago en terminal Point (sin referencia)',
+          'captured_at': iso(now.subtract(const Duration(hours: 5))),
+          'source': 'webhook',
+          'created_at': iso(now.subtract(const Duration(hours: 5))),
+          'updated_at': iso(now.subtract(const Duration(hours: 5))),
+        },
+      ]);
     }
   }
 }
