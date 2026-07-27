@@ -8,6 +8,7 @@ import '../../core/layout/responsive.dart';
 import '../../core/providers/session_provider.dart';
 import '../../core/router/app_shell.dart' show UserMenuButton;
 import '../../models/commercial.dart';
+import '../../services/acuity_service.dart';
 import '../../services/data_repository.dart';
 import '../insumos/dashboard_charts.dart';
 
@@ -338,6 +339,16 @@ class _ServiciosTabState extends ConsumerState<_ServiciosTab> {
   @override
   Widget build(BuildContext context) {
     final repo = widget.repo;
+    // Si el centro tiene Acuity integrado, el catálogo es el de Acuity (tipos de
+    // cita con su precio) — se administra allá; aquí es de solo lectura.
+    if (repo.schedulingModeFor(widget.orgId) == 'acuity') {
+      return _acuityView(context);
+    }
+    return _localView(context, repo);
+  }
+
+  /// Catálogo LOCAL de servicios (centros sin Acuity): CRUD de honorarios.
+  Widget _localView(BuildContext context, DataRepository repo) {
     final services = repo.listServices(widget.orgId, activeOnly: false);
     return Scaffold(
       body: services.isEmpty
@@ -382,6 +393,80 @@ class _ServiciosTabState extends ConsumerState<_ServiciosTab> {
         icon: const Icon(Icons.add),
         label: const Text('Servicio'),
       ),
+    );
+  }
+
+  /// Catálogo tomado de Acuity (tipos de cita con su precio). Solo lectura: el
+  /// alta/edición/precio se administra en Acuity y aquí se refleja en vivo.
+  Widget _acuityView(BuildContext context) {
+    return FutureBuilder<List<dynamic>>(
+      future: ref.read(acuityServiceProvider).appointmentTypes(),
+      builder: (context, snap) {
+        if (snap.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (snap.hasError) {
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(32),
+              child: Text(
+                'No se pudo cargar el catálogo de Acuity.\n${snap.error}',
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: KuraColors.darkText),
+              ),
+            ),
+          );
+        }
+        final types = (snap.data ?? const []).whereType<Map>().toList();
+        return ListView(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+          children: [
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: KuraColors.infoBlue.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.sync, size: 18, color: KuraColors.infoBlue),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Catálogo sincronizado con Acuity. Los servicios y sus '
+                      'precios se administran en Acuity; aquí se muestran en vivo.',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
+            if (types.isEmpty)
+              const Padding(
+                padding: EdgeInsets.all(24),
+                child: Center(child: Text('Acuity no devolvió tipos de cita.')),
+              )
+            else
+              for (final t in types)
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.event_available_outlined,
+                      color: KuraColors.primary),
+                  title: Text('${t['name'] ?? ''}',
+                      style: TextStyle(
+                          decoration: t['active'] == false
+                              ? TextDecoration.lineThrough
+                              : null)),
+                  subtitle: Text([
+                    _money(double.tryParse('${t['price'] ?? ''}') ?? 0),
+                    if (t['duration'] != null) '${t['duration']} min',
+                    if ('${t['category'] ?? ''}'.isNotEmpty) '${t['category']}',
+                  ].join(' · ')),
+                ),
+          ],
+        );
+      },
     );
   }
 
