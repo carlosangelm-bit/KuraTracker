@@ -1245,6 +1245,29 @@ class DataRepository {
     return url;
   }
 
+  /// Consulta (PULL) a Mercado Pago el estado del pago de un cobro (por
+  /// external_reference) y concilia si está aprobado. Devuelve el estado
+  /// ('pagado' | 'approved' | 'pending' | 'sin_pago' | ...). Solo en producción.
+  Future<String> syncMercadoPagoCharge(String chargeId) async {
+    final store = _store;
+    if (store is! SupabaseDataStore) {
+      throw Exception('Verificar el pago requiere el entorno de producción.');
+    }
+    Map<String, dynamic> data;
+    try {
+      data = await store.invokeFunction('mercadopago-sync-charge', {
+        'chargeId': chargeId,
+      });
+    } on FunctionException catch (e) {
+      throw Exception(_edgeErrorMessage(e));
+    }
+    if (data['error'] != null) throw Exception(data['error'].toString());
+    // El cobro pudo haber cambiado a 'pagado'; refresca la cache local.
+    await store.refreshCollection(Collections.charges);
+    await store.refreshCollection(Collections.pointPayments);
+    return (data['status'] ?? 'desconocido').toString();
+  }
+
   /// Deshace el vínculo de un pago con su cobro (el cobro vuelve a pendiente).
   /// No revierte movimientos de inventario ya materializados.
   Future<void> unlinkPointPayment(String paymentId) async {
