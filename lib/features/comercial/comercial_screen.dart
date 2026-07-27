@@ -201,15 +201,28 @@ class _CobrosTabState extends ConsumerState<_CobrosTab> {
   }
 }
 
-class _ChargeDetailSheet extends StatelessWidget {
+class _ChargeDetailSheet extends StatefulWidget {
   final DataRepository repo;
   final Charge charge;
   const _ChargeDetailSheet({required this.repo, required this.charge});
 
   @override
+  State<_ChargeDetailSheet> createState() => _ChargeDetailSheetState();
+}
+
+class _ChargeDetailSheetState extends State<_ChargeDetailSheet> {
+  bool _busy = false;
+  bool _mpInitiated = false;
+
+  @override
   Widget build(BuildContext context) {
+    final repo = widget.repo;
+    final charge = widget.charge;
     final items = repo.listChargeItems(charge.id);
     final patient = charge.patientId == null ? null : repo.getPatient(charge.patientId!);
+    // Muestra "Verificar pago" si ya se generó un link de MP para este cobro
+    // (en esta sesión, o antes: payment_provider == mercadopago).
+    final showVerify = _mpInitiated || charge.paymentProvider == 'mercadopago';
     return Padding(
       padding: EdgeInsets.only(
           left: 20, right: 20, top: 4, bottom: MediaQuery.of(context).viewInsets.bottom + 20),
@@ -246,29 +259,49 @@ class _ChargeDetailSheet extends StatelessWidget {
               child: FilledButton.icon(
                 icon: const Icon(Icons.link),
                 label: const Text('Cobrar en línea (Mercado Pago)'),
-                onPressed: () => _cobrarEnLinea(context),
+                onPressed: _busy ? null : _cobrarEnLinea,
               ),
             ),
+            if (showVerify) ...[
+              const SizedBox(height: 8),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  icon: _busy
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2))
+                      : const Icon(Icons.refresh),
+                  label: const Text('Verificar pago'),
+                  onPressed: _busy ? null : _verificarPago,
+                ),
+              ),
+            ],
             const SizedBox(height: 8),
             Row(children: [
               Expanded(
                 child: OutlinedButton(
-                  onPressed: () async {
-                    await repo.cancelCharge(charge.id);
-                    if (context.mounted) Navigator.of(context).pop();
-                  },
+                  onPressed: _busy
+                      ? null
+                      : () async {
+                          await repo.cancelCharge(charge.id);
+                          if (mounted) Navigator.of(context).pop();
+                        },
                   child: const Text('Cancelar cobro'),
                 ),
               ),
               const SizedBox(width: 12),
               Expanded(
                 child: FilledButton(
-                  onPressed: () async {
-                    final method = await _pickMethod(context);
-                    if (method == null) return;
-                    await repo.markChargePaid(charge.id, method);
-                    if (context.mounted) Navigator.of(context).pop();
-                  },
+                  onPressed: _busy
+                      ? null
+                      : () async {
+                          final method = await _pickMethod(context);
+                          if (method == null) return;
+                          await repo.markChargePaid(charge.id, method);
+                          if (mounted) Navigator.of(context).pop();
+                        },
                   child: const Text('Registrar pago'),
                 ),
               ),
@@ -279,10 +312,15 @@ class _ChargeDetailSheet extends StatelessWidget {
     );
   }
 
-  /// Genera el link de pago de Mercado Pago (Edge Function) y lo abre. El pago
-  /// se concilia solo por webhook (external_reference = id del cobro).
-  Future<void> _cobrarEnLinea(BuildContext context) async {
-    final patient = charge.patientId == null ? null : repo.getPatient(charge.patientId!);
+  /// Genera el link de pago de Mercado Pago (Edge Function) y lo abre en otra
+  /// pestaña. Deja el cobro listo para "Verificar pago" (el webhook lo concilia
+  /// solo; el botón es la red de seguridad / actualización inmediata).
+  Future<void> _cobrarEnLinea() async {
+    final repo = widget.repo;
+    final charge = widget.charge;
+    final patient =
+        charge.patientId == null ? null : repo.getPatient(charge.patientId!);
+    setState(() => _busy = true);
     try {
       final url = await repo.createMercadoPagoCheckout(
         charge.id,
@@ -293,17 +331,41 @@ class _ChargeDetailSheet extends StatelessWidget {
         mode: LaunchMode.externalApplication,
         webOnlyWindowName: '_blank',
       );
-      if (!launched && context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('No se pudo abrir el link: $url')));
-      }
+      if (!mounted) return;
+      setState(() => _mpInitiated = true);
+      _snack(launched
+          ? 'Link de pago abierto. Cuando termines, toca "Verificar pago".'
+          : 'No se pudo abrir el link: $url');
     } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('$e'.replaceFirst('Exception: ', ''))));
-      }
+      if (mounted) _snack('$e'.replaceFirst('Exception: ', ''));
+    } finally {
+      if (mounted) setState(() => _busy = false);
     }
   }
+
+  /// Consulta a Mercado Pago el estado del pago (pull) y actualiza al instante.
+  Future<void> _verificarPago() async {
+    setState(() => _busy = true);
+    try {
+      final status = await widget.repo.syncMercadoPagoCharge(widget.charge.id);
+      if (!mounted) return;
+      if (status == 'pagado' || status == 'approved') {
+        _snack('Pago confirmado ✅');
+        Navigator.of(context).pop();
+      } else if (status == 'sin_pago') {
+        _snack('Aún no hay un pago registrado para este cobro.');
+      } else {
+        _snack('El pago está "$status". Aún no se acredita.');
+      }
+    } catch (e) {
+      if (mounted) _snack('$e'.replaceFirst('Exception: ', ''));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  void _snack(String msg) => ScaffoldMessenger.of(context)
+      .showSnackBar(SnackBar(content: Text(msg)));
 
   Future<String?> _pickMethod(BuildContext context) => showModalBottomSheet<String>(
         context: context,

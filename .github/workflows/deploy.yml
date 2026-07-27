@@ -86,6 +86,8 @@ jobs:
         run: supabase functions deploy mercadopago-create-preference --use-api --project-ref "$SUPABASE_PROJECT_REF"
       - name: Deploy mercadopago-webhook (--use-api, --no-verify-jwt)
         run: supabase functions deploy mercadopago-webhook --use-api --no-verify-jwt --project-ref "$SUPABASE_PROJECT_REF"
+      - name: Deploy mercadopago-sync-charge (--use-api)
+        run: supabase functions deploy mercadopago-sync-charge --use-api --project-ref "$SUPABASE_PROJECT_REF"
 
   build_deploy:
     needs: migrations
