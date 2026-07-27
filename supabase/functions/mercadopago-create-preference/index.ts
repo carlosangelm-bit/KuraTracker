@@ -91,10 +91,19 @@ serve(async (req) => {
     },
     body: JSON.stringify(pref),
   });
-  const mp = await mpRes.json();
+  const mp = await mpRes.json().catch(() => ({}));
   if (!mpRes.ok) {
-    console.error("MP preference error", mp);
-    return json({ error: "No se pudo crear la preferencia en Mercado Pago.", detail: mp }, 502);
+    console.error("MP preference error", mpRes.status, JSON.stringify(mp));
+    // Propaga la razón real de MP al cliente para diagnosticar sin logs.
+    const base = (mp?.message ?? mp?.error ?? `HTTP ${mpRes.status}`) as string;
+    const cause = Array.isArray(mp?.cause) && mp.cause.length
+      ? " · " + mp.cause.map((c: Record<string, unknown>) => c.description ?? c.code).join("; ")
+      : "";
+    return json({
+      error: `Mercado Pago rechazó la preferencia: ${base}${cause}`,
+      status: mpRes.status,
+      detail: mp,
+    }, 502);
   }
 
   // 4) Deja el cobro marcado como "esperando pago" por MP.
