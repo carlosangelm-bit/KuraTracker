@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
 import '../../core/theme/kura_theme.dart';
+import '../../core/layout/responsive.dart';
 import '../../core/providers/session_provider.dart';
 import '../../core/router/app_shell.dart' show UserMenuButton;
 import '../../models/commercial.dart';
@@ -13,11 +14,32 @@ String _money(double v) => '\$${v.toStringAsFixed(2)} MXN';
 
 /// Módulo comercial (Fase C, premium): historial de cobros/pagos y catálogo de
 /// servicios del centro. A futuro: facturación. Gateado por premium_insumos.
-class ComercialScreen extends ConsumerWidget {
+class ComercialScreen extends ConsumerStatefulWidget {
   const ComercialScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<ComercialScreen> createState() => _ComercialScreenState();
+}
+
+class _ComercialScreenState extends ConsumerState<ComercialScreen>
+    with SingleTickerProviderStateMixin {
+  int _section = 0;
+  late final TabController _tabController =
+      TabController(length: 5, vsync: this);
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
+
+  void _go(int i) => setState(() {
+        _section = i;
+        _tabController.index = i;
+      });
+
+  @override
+  Widget build(BuildContext context) {
     final repoAsync = ref.watch(dataRepositoryProvider);
     final user = ref.watch(sessionProvider).user;
 
@@ -28,7 +50,9 @@ class ComercialScreen extends ConsumerWidget {
         final orgId = user?.organizationId;
         if (!repo.premiumInsumosFor(orgId)) {
           return Scaffold(
-            appBar: AppBar(title: const Text('Comercial')),
+            appBar: AppBar(
+                title: const Text('Comercial'),
+                actions: const [UserMenuButton()]),
             body: const Center(
                 child: Padding(
                     padding: EdgeInsets.all(32),
@@ -36,24 +60,53 @@ class ComercialScreen extends ConsumerWidget {
                         textAlign: TextAlign.center))),
           );
         }
-        return DefaultTabController(
-          length: 3,
-          child: Scaffold(
-            appBar: AppBar(
-              title: const Text('Comercial'),
-              actions: const [UserMenuButton()],
-              bottom: const TabBar(tabs: [
-                Tab(text: 'Resumen'),
-                Tab(text: 'Cobros'),
-                Tab(text: 'Servicios'),
-              ]),
-            ),
-            body: TabBarView(children: [
-              _ResumenTab(repo: repo, orgId: orgId),
-              _CobrosTab(repo: repo, orgId: orgId),
-              _ServiciosTab(repo: repo, orgId: orgId),
-            ]),
+        final wide =
+            MediaQuery.of(context).size.width >= Breakpoints.twoPane;
+        Widget content() => switch (_section) {
+              1 => _CobrosTab(repo: repo, orgId: orgId),
+              2 => _ConciliacionTab(repo: repo, orgId: orgId),
+              3 => _ServiciosTab(repo: repo, orgId: orgId),
+              4 => const _FacturacionTab(),
+              _ => _ResumenTab(repo: repo, orgId: orgId, onOpenSection: _go),
+            };
+        return Scaffold(
+          appBar: AppBar(
+            title: const Text('Comercial'),
+            actions: const [UserMenuButton()],
+            bottom: wide
+                ? null
+                : TabBar(
+                    controller: _tabController,
+                    isScrollable: true,
+                    onTap: _go,
+                    tabs: const [
+                      Tab(text: 'Resumen'),
+                      Tab(text: 'Cobros'),
+                      Tab(text: 'Conciliación'),
+                      Tab(text: 'Servicios'),
+                      Tab(text: 'Facturación'),
+                    ],
+                  ),
           ),
+          body: wide
+              ? Row(
+                  children: [
+                    SectionRail(
+                      selectedIndex: _section,
+                      onSelected: _go,
+                      destinations: const [
+                        (Icons.dashboard_outlined, 'Resumen'),
+                        (Icons.receipt_long_outlined, 'Cobros'),
+                        (Icons.sync_alt_outlined, 'Conciliación'),
+                        (Icons.sell_outlined, 'Servicios'),
+                        (Icons.description_outlined, 'Facturación'),
+                      ],
+                    ),
+                    const VerticalDivider(width: 1),
+                    Expanded(child: content()),
+                  ],
+                )
+              : content(),
         );
       },
     );
@@ -368,7 +421,9 @@ class _KpiBox extends StatelessWidget {
 class _ResumenTab extends StatelessWidget {
   final DataRepository repo;
   final String? orgId;
-  const _ResumenTab({required this.repo, required this.orgId});
+  final void Function(int) onOpenSection;
+  const _ResumenTab(
+      {required this.repo, required this.orgId, required this.onOpenSection});
 
   @override
   Widget build(BuildContext context) {
@@ -415,13 +470,19 @@ class _ResumenTab extends StatelessWidget {
           icon: Icons.receipt_long_outlined,
           title: 'Cobros',
           subtitle: 'Historial de cobros y pagos; marcar pagado o cancelar.',
-          onTap: () => DefaultTabController.of(context).animateTo(1),
+          onTap: () => onOpenSection(1),
+        ),
+        _ProcessCard(
+          icon: Icons.sync_alt_outlined,
+          title: 'Conciliación',
+          subtitle: 'Pagos de terminal (Point) ligados al cobro del paciente.',
+          onTap: () => onOpenSection(2),
         ),
         _ProcessCard(
           icon: Icons.sell_outlined,
           title: 'Servicios',
           subtitle: 'Catálogo de honorarios del centro.',
-          onTap: () => DefaultTabController.of(context).animateTo(2),
+          onTap: () => onOpenSection(3),
         ),
       ],
     );
@@ -449,6 +510,351 @@ class _ProcessCard extends StatelessWidget {
           subtitle: Text(subtitle),
           trailing: const Icon(Icons.chevron_right),
           onTap: onTap,
+        ),
+      );
+}
+
+String _methodLabel(String? m) => switch (m) {
+      'credit_card' => 'Tarjeta de crédito',
+      'debit_card' => 'Tarjeta de débito',
+      'efectivo' => 'Efectivo',
+      'transferencia' => 'Transferencia',
+      null => 'Terminal',
+      _ => m,
+    };
+
+/// Conciliación: bandeja de pagos de terminal (Mercado Pago Point). Los sin
+/// ligar se concilian a mano; en Fase 2 el webhook los liga automáticamente por
+/// la referencia (folio del paciente / consulta).
+class _ConciliacionTab extends ConsumerStatefulWidget {
+  final DataRepository repo;
+  final String? orgId;
+  const _ConciliacionTab({required this.repo, required this.orgId});
+  @override
+  ConsumerState<_ConciliacionTab> createState() => _ConciliacionTabState();
+}
+
+class _ConciliacionTabState extends ConsumerState<_ConciliacionTab> {
+  final _fmt = DateFormat('dd/MM/yyyy HH:mm');
+
+  @override
+  Widget build(BuildContext context) {
+    final repo = widget.repo;
+    final all = repo.listPointPayments(organizationId: widget.orgId);
+    final unlinked = all.where((p) => !p.isLinked).toList();
+    final linked = all.where((p) => p.isLinked).toList();
+    final unlinkedTotal = unlinked.fold<double>(0, (a, p) => a + p.amount);
+
+    return Scaffold(
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 88),
+        children: [
+          Row(children: [
+            Expanded(
+                child: _KpiBox(
+                    label: 'Sin ligar',
+                    value: '${unlinked.length}',
+                    color: KuraColors.warning)),
+            const SizedBox(width: 10),
+            Expanded(
+                child: _KpiBox(
+                    label: 'Monto sin ligar',
+                    value: _money(unlinkedTotal),
+                    color: KuraColors.warning)),
+          ]),
+          const SizedBox(height: 10),
+          Text(
+              'La terminal envía el pago con una referencia (folio del paciente / '
+              'consulta) para ligarlo automáticamente al cobro. Mientras tanto, '
+              'los pagos sin ligar se concilian a mano aquí.',
+              style: Theme.of(context).textTheme.bodySmall),
+          const SizedBox(height: 12),
+          if (all.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 32),
+              child: Center(child: Text('Sin pagos de terminal registrados.')),
+            )
+          else ...[
+            if (unlinked.isNotEmpty) ...[
+              const _SectionLabel('Sin ligar'),
+              ...unlinked.map((p) => _PaymentCard(
+                    payment: p,
+                    repo: repo,
+                    fmt: _fmt,
+                    onLink: () => _link(repo, p),
+                    onUnlink: null,
+                  )),
+              const SizedBox(height: 12),
+            ],
+            if (linked.isNotEmpty) ...[
+              const _SectionLabel('Ligados'),
+              ...linked.map((p) => _PaymentCard(
+                    payment: p,
+                    repo: repo,
+                    fmt: _fmt,
+                    onLink: null,
+                    onUnlink: () async {
+                      await repo.unlinkPointPayment(p.id);
+                      if (mounted) setState(() {});
+                    },
+                  )),
+            ],
+          ],
+        ],
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () => _addManual(repo),
+        icon: const Icon(Icons.add_card),
+        label: const Text('Registrar pago'),
+      ),
+    );
+  }
+
+  Future<void> _link(DataRepository repo, PointPayment p) async {
+    final charges = repo.listCharges(
+        organizationId: widget.orgId, status: ChargeStatus.pendiente);
+    if (charges.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('No hay cobros pendientes para ligar.')));
+      return;
+    }
+    // Sugerencia: primero los cobros cuyo folio de paciente == referencia del
+    // pago, luego los que calzan por monto.
+    int rank(Charge c) {
+      final folio =
+          c.patientId == null ? null : repo.getPatient(c.patientId!)?.folio;
+      final refMatch =
+          p.externalReference != null && folio == p.externalReference;
+      final amtMatch = (c.total - p.amount).abs() < 0.01;
+      return (refMatch ? 0 : 2) + (amtMatch ? 0 : 1);
+    }
+
+    final sorted = [...charges]..sort((a, b) => rank(a).compareTo(rank(b)));
+    final chosen = await showModalBottomSheet<Charge>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(16, 4, 16, 8),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text('Ligar a cobro pendiente',
+                    style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+              ),
+            ),
+            Flexible(
+              child: ListView(
+                shrinkWrap: true,
+                children: [
+                  for (final c in sorted)
+                    ListTile(
+                      title: Text(c.patientId == null
+                          ? 'Paciente'
+                          : (repo.getPatient(c.patientId!)?.fullName ??
+                              'Paciente')),
+                      subtitle: Text(c.patientId == null
+                          ? ''
+                          : (repo.getPatient(c.patientId!)?.folio ?? '')),
+                      trailing: Text(_money(c.total),
+                          style: TextStyle(
+                              fontWeight: FontWeight.w800,
+                              color: (c.total - p.amount).abs() < 0.01
+                                  ? KuraColors.success
+                                  : null)),
+                      onTap: () => Navigator.of(ctx).pop(c),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (chosen == null) return;
+    await repo.linkPointPaymentToCharge(
+        paymentId: p.id,
+        chargeId: chosen.id,
+        linkedBy: ref.read(sessionProvider).user?.id);
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _addManual(DataRepository repo) async {
+    if (widget.orgId == null) return;
+    final amountCtrl = TextEditingController();
+    final refCtrl = TextEditingController();
+    var method = 'credit_card';
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSt) => AlertDialog(
+          title: const Text('Registrar pago de terminal'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: amountCtrl,
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(labelText: 'Monto (MXN) *'),
+              ),
+              const SizedBox(height: 8),
+              DropdownButtonFormField<String>(
+                value: method,
+                decoration: const InputDecoration(labelText: 'Método'),
+                items: const [
+                  DropdownMenuItem(
+                      value: 'credit_card', child: Text('Tarjeta de crédito')),
+                  DropdownMenuItem(
+                      value: 'debit_card', child: Text('Tarjeta de débito')),
+                  DropdownMenuItem(value: 'other', child: Text('Otro')),
+                ],
+                onChanged: (v) => setSt(() => method = v ?? 'credit_card'),
+              ),
+              TextField(
+                controller: refCtrl,
+                decoration: const InputDecoration(
+                    labelText: 'Referencia (folio del paciente, opcional)'),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.of(ctx).pop(false),
+                child: const Text('Cancelar')),
+            FilledButton(
+                onPressed: () => Navigator.of(ctx).pop(true),
+                child: const Text('Registrar')),
+          ],
+        ),
+      ),
+    );
+    if (ok != true) return;
+    final amount = double.tryParse(amountCtrl.text.trim()) ?? 0;
+    if (amount <= 0) return;
+    final refText = refCtrl.text.trim();
+    await repo.addPointPayment(
+      organizationId: widget.orgId!,
+      amount: amount,
+      method: method,
+      externalReference: refText.isEmpty ? null : refText,
+      description: 'Registrado manualmente',
+      createdBy: ref.read(sessionProvider).user?.id,
+    );
+    if (mounted) setState(() {});
+  }
+}
+
+class _SectionLabel extends StatelessWidget {
+  final String text;
+  const _SectionLabel(this.text);
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.fromLTRB(4, 4, 4, 6),
+        child: Text(text,
+            style: TextStyle(
+                fontWeight: FontWeight.w800,
+                color: KuraColors.darkText.withValues(alpha: 0.6))),
+      );
+}
+
+class _PaymentCard extends StatelessWidget {
+  final PointPayment payment;
+  final DataRepository repo;
+  final DateFormat fmt;
+  final VoidCallback? onLink;
+  final Future<void> Function()? onUnlink;
+  const _PaymentCard({
+    required this.payment,
+    required this.repo,
+    required this.fmt,
+    required this.onLink,
+    required this.onUnlink,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final p = payment;
+    // Paciente ligado (si aplica): se busca el cobro en la lista del centro.
+    String? linkedPatient;
+    if (p.chargeId != null) {
+      final charge = repo
+          .listCharges(organizationId: p.organizationId)
+          .where((c) => c.id == p.chargeId);
+      if (charge.isNotEmpty && charge.first.patientId != null) {
+        linkedPatient = repo.getPatient(charge.first.patientId!)?.fullName;
+      }
+    }
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 10, 8, 10),
+        child: Row(
+          children: [
+            Icon(Icons.point_of_sale,
+                color: p.isLinked ? KuraColors.success : KuraColors.warning),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(_money(p.amount),
+                      style: const TextStyle(fontWeight: FontWeight.w800)),
+                  Text(
+                    [
+                      _methodLabel(p.method),
+                      fmt.format(p.capturedAt ?? p.createdAt),
+                      if (p.externalReference != null)
+                        'Ref: ${p.externalReference}',
+                      if (linkedPatient != null) '→ $linkedPatient',
+                    ].join(' · '),
+                    style: Theme.of(context).textTheme.bodySmall,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+            if (onLink != null)
+              FilledButton(onPressed: onLink, child: const Text('Ligar'))
+            else if (onUnlink != null)
+              TextButton(
+                  onPressed: () => onUnlink!(), child: const Text('Desligar')),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Facturación: placeholder — requiere integrar un PAC/facturador.
+class _FacturacionTab extends StatelessWidget {
+  const _FacturacionTab();
+  @override
+  Widget build(BuildContext context) => Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.description_outlined,
+                  size: 44, color: KuraColors.darkText.withValues(alpha: 0.3)),
+              const SizedBox(height: 12),
+              const Text('Facturación (CFDI)',
+                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+              const SizedBox(height: 6),
+              Text(
+                'Pendiente de integrar un PAC/facturador. Los datos del pago '
+                '(monto, método, referencia) ya quedan registrados en Cobros y '
+                'Conciliación para alimentar la factura cuando se conecte.',
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ],
+          ),
         ),
       );
 }
