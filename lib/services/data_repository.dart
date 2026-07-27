@@ -755,6 +755,7 @@ class DataRepository {
     String? shopifyVariantId,
     String? imageUrl,
     double? unitCost,
+    double? unitPrice,
     String? currency,
     String? supplier,
     int? reorderThreshold,
@@ -762,6 +763,9 @@ class DataRepository {
     String? createdBy,
   }) async {
     final now = DateTime.now().toIso8601String();
+    // Precio de venta por default = costo + 30% (editable después).
+    final price = unitPrice ??
+        (unitCost != null ? double.parse((unitCost * 1.3).toStringAsFixed(2)) : null);
     final data = {
       'id': _uuid.v4(),
       'organization_id': organizationId,
@@ -772,6 +776,7 @@ class DataRepository {
       'shopify_variant_id': shopifyVariantId,
       'image_url': imageUrl,
       'unit_cost': unitCost,
+      'unit_price': price,
       'currency': currency ?? 'MXN',
       'supplier': supplier,
       'reorder_threshold': reorderThreshold,
@@ -789,6 +794,7 @@ class DataRepository {
     String id, {
     String? name,
     double? unitCost,
+    double? unitPrice,
     String? supplier,
     int? reorderThreshold,
     String? notes,
@@ -797,6 +803,7 @@ class DataRepository {
     final patch = <String, dynamic>{'updated_at': DateTime.now().toIso8601String()};
     if (name != null) patch['name'] = name;
     if (unitCost != null) patch['unit_cost'] = unitCost;
+    if (unitPrice != null) patch['unit_price'] = unitPrice;
     if (supplier != null) patch['supplier'] = supplier;
     if (reorderThreshold != null) patch['reorder_threshold'] = reorderThreshold;
     if (notes != null) patch['notes'] = notes;
@@ -895,6 +902,7 @@ class DataRepository {
     bool charge = true,
     bool discount = true,
     double? unitCost,
+    double? unitPrice,
     String? currency,
     String? createdBy,
   }) async {
@@ -910,6 +918,7 @@ class DataRepository {
       'charge': charge,
       'discount': discount,
       'unit_cost': unitCost,
+      'unit_price': unitPrice,
       'currency': currency ?? 'MXN',
       'discounted': false,
       'created_by': createdBy,
@@ -1066,7 +1075,7 @@ class DataRepository {
         'kind': 'insumo',
         'name': u.name,
         'quantity': u.quantity,
-        'unit_price': u.unitCost ?? 0,
+        'unit_price': u.unitPrice ?? u.unitCost ?? 0,
         'line_total': u.lineTotal,
         'usage_id': u.id,
         'inventory_item_id': u.inventoryItemId,

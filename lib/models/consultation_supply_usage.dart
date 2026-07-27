@@ -11,7 +11,8 @@ class ConsultationSupplyUsage {
   final int quantity;
   final bool charge;
   final bool discount;
-  final double? unitCost;
+  final double? unitCost; // costo (para costeo interno / descuento)
+  final double? unitPrice; // precio de venta (lo que se cobra al paciente)
   final String? currency;
   final bool discounted; // ya se materializó la salida de inventario
 
@@ -26,11 +27,13 @@ class ConsultationSupplyUsage {
     this.charge = true,
     this.discount = true,
     this.unitCost,
+    this.unitPrice,
     this.currency,
     this.discounted = false,
   });
 
-  double get lineTotal => (unitCost ?? 0) * quantity;
+  /// Importe a COBRAR de la línea (precio × cantidad; si no hay precio, costo).
+  double get lineTotal => (unitPrice ?? unitCost ?? 0) * quantity;
 
   factory ConsultationSupplyUsage.fromJson(Map<String, dynamic> j) =>
       ConsultationSupplyUsage(
@@ -44,6 +47,7 @@ class ConsultationSupplyUsage {
         charge: j['charge'] as bool? ?? true,
         discount: j['discount'] as bool? ?? true,
         unitCost: (j['unit_cost'] as num?)?.toDouble(),
+        unitPrice: (j['unit_price'] as num?)?.toDouble(),
         currency: j['currency'] as String?,
         discounted: j['discounted'] as bool? ?? false,
       );
