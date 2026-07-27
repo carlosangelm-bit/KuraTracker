@@ -75,12 +75,17 @@ serve(async (req) => {
   // 3) Preferencia de Checkout Pro. external_reference = id del cobro (así el
   //    webhook lo liga solo). notification_url = nuestro webhook.
   const title = (payload["title"] as string | undefined) ?? "Cobro de consulta";
+  // URL de regreso a la app tras el pago (configurable con APP_PUBLIC_URL).
+  const appUrl = Deno.env.get("APP_PUBLIC_URL") ?? "https://app.kuramas.com";
   const pref = {
     items: [
       { title, quantity: 1, unit_price: total, currency_id: "MXN" },
     ],
     external_reference: chargeId,
-    notification_url: `${SUPABASE_URL}/functions/v1/mercadopago-webhook`,
+    notification_url:
+        `${SUPABASE_URL}/functions/v1/mercadopago-webhook?source_news=webhooks`,
+    back_urls: { success: appUrl, failure: appUrl, pending: appUrl },
+    statement_descriptor: "KURAMAS",
   };
 
   const mpRes = await fetch("https://api.mercadopago.com/checkout/preferences", {
