@@ -379,19 +379,6 @@ class _ResumenTab extends StatelessWidget {
         .where((c) => c.status == ChargeStatus.pendiente)
         .fold<double>(0, (a, c) => a + c.total);
 
-    // Ingresos últimos 6 meses (por fecha de pago).
-    final now = DateTime.now();
-    final months = <MonthValue>[];
-    for (var i = 5; i >= 0; i--) {
-      final m = DateTime(now.year, now.month - i, 1);
-      final next = DateTime(m.year, m.month + 1, 1);
-      final v = paid.where((c) {
-        final d = c.paidAt ?? c.createdAt;
-        return !d.isBefore(m) && d.isBefore(next);
-      }).fold<double>(0, (a, c) => a + c.total);
-      months.add(MonthValue(kMonthShort[m.month - 1], v));
-    }
-
     // Por método de pago.
     final byMethod = <String, double>{};
     for (final c in paid) {
@@ -415,7 +402,7 @@ class _ResumenTab extends StatelessWidget {
           Expanded(child: _KpiBox(label: 'Pendiente', value: _money(pendingTotal), color: KuraColors.warning)),
         ]),
         const SizedBox(height: 12),
-        MonthlyBarChart(title: 'Ingresos por mes', data: months, color: KuraColors.success),
+        _IngresosChartCard(repo: repo, orgId: orgId),
         const SizedBox(height: 12),
         DonutCard(
           title: 'Cobrado por método de pago',
@@ -464,4 +451,86 @@ class _ProcessCard extends StatelessWidget {
           onTap: onTap,
         ),
       );
+}
+
+/// Gráfico "Ingresos por mes" con filtro por servicio (Todos o un servicio).
+class _IngresosChartCard extends ConsumerStatefulWidget {
+  final DataRepository repo;
+  final String? orgId;
+  const _IngresosChartCard({required this.repo, required this.orgId});
+  @override
+  ConsumerState<_IngresosChartCard> createState() => _IngresosChartCardState();
+}
+
+class _IngresosChartCardState extends ConsumerState<_IngresosChartCard> {
+  String? _service; // null = todos
+
+  @override
+  Widget build(BuildContext context) {
+    final repo = widget.repo;
+    final paid = repo
+        .listCharges(organizationId: widget.orgId)
+        .where((c) => c.status == ChargeStatus.pagado)
+        .toList();
+
+    // Servicio de cada cobro = renglón kind 'servicio' de su desglose.
+    String serviceOf(Charge c) {
+      final items = repo.listChargeItems(c.id);
+      for (final it in items) {
+        if (it.kind == 'servicio') return it.name;
+      }
+      return 'Otro';
+    }
+
+    final serviceByCharge = {for (final c in paid) c.id: serviceOf(c)};
+    final services = serviceByCharge.values.toSet().toList()..sort();
+    if (_service != null && !services.contains(_service)) _service = null;
+
+    final filtered = _service == null
+        ? paid
+        : paid.where((c) => serviceByCharge[c.id] == _service).toList();
+
+    final now = DateTime.now();
+    final months = <MonthValue>[];
+    for (var i = 5; i >= 0; i--) {
+      final m = DateTime(now.year, now.month - i, 1);
+      final next = DateTime(m.year, m.month + 1, 1);
+      final v = filtered.where((c) {
+        final d = c.paidAt ?? c.createdAt;
+        return !d.isBefore(m) && d.isBefore(next);
+      }).fold<double>(0, (a, c) => a + c.total);
+      months.add(MonthValue(kMonthShort[m.month - 1], v));
+    }
+
+    return MonthlyBarChart(
+      title: 'Ingresos por mes',
+      data: months,
+      color: KuraColors.success,
+      valueLabel: (v) => '\$${v.toInt()}',
+      headerTrailing: services.isEmpty
+          ? null
+          : ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 170),
+              child: DropdownButton<String?>(
+                value: _service,
+                isExpanded: true,
+                isDense: true,
+                underline: const SizedBox.shrink(),
+                hint: const Text('Servicio', style: TextStyle(fontSize: 12)),
+                items: [
+                  const DropdownMenuItem<String?>(
+                      value: null,
+                      child: Text('Todos', style: TextStyle(fontSize: 12))),
+                  for (final s in services)
+                    DropdownMenuItem<String?>(
+                        value: s,
+                        child: Text(s,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontSize: 12))),
+                ],
+                onChanged: (v) => setState(() => _service = v),
+              ),
+            ),
+    );
+  }
 }
