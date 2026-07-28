@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/theme/kura_theme.dart';
 import '../../core/layout/responsive.dart';
@@ -212,7 +211,6 @@ class _ChargeDetailSheet extends StatefulWidget {
 
 class _ChargeDetailSheetState extends State<_ChargeDetailSheet> {
   bool _busy = false;
-  bool _mpInitiated = false;
 
   @override
   Widget build(BuildContext context) {
@@ -220,9 +218,8 @@ class _ChargeDetailSheetState extends State<_ChargeDetailSheet> {
     final charge = widget.charge;
     final items = repo.listChargeItems(charge.id);
     final patient = charge.patientId == null ? null : repo.getPatient(charge.patientId!);
-    // Muestra "Verificar pago" si ya se generó un link de MP para este cobro
-    // (en esta sesión, o antes: payment_provider == mercadopago).
-    final showVerify = _mpInitiated || charge.paymentProvider == 'mercadopago';
+    // "Verificar pago (Point)" visible si el cobro ya está ligado a Mercado Pago.
+    final showVerify = charge.paymentProvider == 'mercadopago';
     return Padding(
       padding: EdgeInsets.only(
           left: 20, right: 20, top: 4, bottom: MediaQuery.of(context).viewInsets.bottom + 20),
@@ -254,16 +251,10 @@ class _ChargeDetailSheetState extends State<_ChargeDetailSheet> {
           ]),
           const SizedBox(height: 12),
           if (charge.status == ChargeStatus.pendiente) ...[
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton.icon(
-                icon: const Icon(Icons.link),
-                label: const Text('Cobrar en línea (Mercado Pago)'),
-                onPressed: _busy ? null : _cobrarEnLinea,
-              ),
-            ),
+            // Mercado Pago aquí es SOLO terminal Point (presencial). El cobro
+            // en línea (tarjeta a distancia) lo hará Stripe, no MP. El botón de
+            // "Cobrar con terminal (Point)" se agrega con la integración Point.
             if (showVerify) ...[
-              const SizedBox(height: 8),
               SizedBox(
                 width: double.infinity,
                 child: OutlinedButton.icon(
@@ -273,12 +264,12 @@ class _ChargeDetailSheetState extends State<_ChargeDetailSheet> {
                           height: 16,
                           child: CircularProgressIndicator(strokeWidth: 2))
                       : const Icon(Icons.refresh),
-                  label: const Text('Verificar pago'),
+                  label: const Text('Verificar pago (Point)'),
                   onPressed: _busy ? null : _verificarPago,
                 ),
               ),
+              const SizedBox(height: 8),
             ],
-            const SizedBox(height: 8),
             Row(children: [
               Expanded(
                 child: OutlinedButton(
@@ -310,37 +301,6 @@ class _ChargeDetailSheetState extends State<_ChargeDetailSheet> {
         ],
       ),
     );
-  }
-
-  /// Genera el link de pago de Mercado Pago (Edge Function) y lo abre en otra
-  /// pestaña. Deja el cobro listo para "Verificar pago" (el webhook lo concilia
-  /// solo; el botón es la red de seguridad / actualización inmediata).
-  Future<void> _cobrarEnLinea() async {
-    final repo = widget.repo;
-    final charge = widget.charge;
-    final patient =
-        charge.patientId == null ? null : repo.getPatient(charge.patientId!);
-    setState(() => _busy = true);
-    try {
-      final url = await repo.createMercadoPagoCheckout(
-        charge.id,
-        title: patient != null ? 'Cobro · ${patient.fullName}' : 'Cobro de consulta',
-      );
-      final launched = await launchUrl(
-        Uri.parse(url),
-        mode: LaunchMode.externalApplication,
-        webOnlyWindowName: '_blank',
-      );
-      if (!mounted) return;
-      setState(() => _mpInitiated = true);
-      _snack(launched
-          ? 'Link de pago abierto. Cuando termines, toca "Verificar pago".'
-          : 'No se pudo abrir el link: $url');
-    } catch (e) {
-      if (mounted) _snack('$e'.replaceFirst('Exception: ', ''));
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
   }
 
   /// Consulta a Mercado Pago el estado del pago (pull) y actualiza al instante.

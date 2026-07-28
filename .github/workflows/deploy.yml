@@ -80,10 +80,8 @@ jobs:
           version: latest
       - name: Deploy admin-create-user (--use-api)
         run: supabase functions deploy admin-create-user --use-api --project-ref "$SUPABASE_PROJECT_REF"
-      # Mercado Pago: create-preference con verify_jwt (la app la invoca con
-      # JWT); webhook SIN verify_jwt (MP no manda JWT; valida firma propia).
-      - name: Deploy mercadopago-create-preference (--use-api)
-        run: supabase functions deploy mercadopago-create-preference --use-api --project-ref "$SUPABASE_PROJECT_REF"
+      # Mercado Pago (SOLO terminal Point / presencial; el pago en línea lo hace
+      # Stripe). webhook SIN verify_jwt (MP no manda JWT; valida firma propia).
       - name: Deploy mercadopago-webhook (--use-api, --no-verify-jwt)
         run: supabase functions deploy mercadopago-webhook --use-api --no-verify-jwt --project-ref "$SUPABASE_PROJECT_REF"
       - name: Deploy mercadopago-sync-charge (--use-api)
