@@ -1218,33 +1218,6 @@ class DataRepository {
     );
   }
 
-  /// Crea un link de pago (Checkout Pro de Mercado Pago) para un cobro vía Edge
-  /// Function y devuelve la URL a abrir. El pago dispara el webhook que lo liga
-  /// al cobro. Solo en modo producción (Supabase); en demo lanza excepción.
-  Future<String> createMercadoPagoCheckout(String chargeId, {String? title}) async {
-    final store = _store;
-    if (store is! SupabaseDataStore) {
-      throw Exception('El cobro en línea requiere el entorno de producción.');
-    }
-    Map<String, dynamic> data;
-    try {
-      data = await store.invokeFunction('mercadopago-create-preference', {
-        'chargeId': chargeId,
-        if (title != null) 'title': title,
-      });
-    } on FunctionException catch (e) {
-      throw Exception(_edgeErrorMessage(e));
-    }
-    if (data['error'] != null) throw Exception(data['error'].toString());
-    // init_point corresponde al entorno del token configurado (TEST-… → checkout
-    // de prueba; APP_USR-… → real). No forzamos sandbox para no romper prod.
-    final url = (data['init_point'] ?? data['sandbox_init_point']) as String?;
-    if (url == null || url.isEmpty) {
-      throw Exception('Mercado Pago no devolvió el link de pago.');
-    }
-    return url;
-  }
-
   /// Consulta (PULL) a Mercado Pago el estado del pago de un cobro (por
   /// external_reference) y concilia si está aprobado. Devuelve el estado
   /// ('pagado' | 'approved' | 'pending' | 'sin_pago' | ...). Solo en producción.
