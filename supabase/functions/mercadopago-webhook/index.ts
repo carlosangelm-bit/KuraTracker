@@ -110,7 +110,7 @@ serve(async (req) => {
     let dateApproved: string | null = null;
     let mpPaymentId = String(dataId);
     let description = "Pago Mercado Pago";
-    let raw: unknown = body;
+    let rawPayload: unknown = body;
 
     if (type === "order") {
       // Orders API (Point / nuevo modelo): el pago viene EMBEBIDO en el body,
@@ -149,7 +149,7 @@ serve(async (req) => {
       dateApproved = (pay["date_approved"] as string | undefined) ?? null;
       mpPaymentId = String(pay["id"] ?? dataId);
       description = (pay["description"] as string | undefined) ?? description;
-      raw = pay;
+      rawPayload = pay;
     }
 
     if (!externalRef) return ok200("no external_reference");
@@ -181,7 +181,7 @@ serve(async (req) => {
       charge_id: approved ? (charge["id"] as string) : null,
       linked_at: approved ? nowIso : null,
       source: "webhook",
-      raw,
+      raw: rawPayload,
       updated_at: nowIso,
     };
     if (existing) {
