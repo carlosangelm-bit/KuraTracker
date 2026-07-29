@@ -6,6 +6,7 @@ import '../providers/session_provider.dart';
 import '../../models/app_user.dart';
 import '../../models/module_key.dart';
 import '../../features/auth/login_screen.dart';
+import '../../features/comercial/payment_result_screen.dart';
 import '../../features/dashboard/dashboard_screen.dart';
 import '../../features/patients/patients_list_screen.dart';
 import '../../features/patients/patient_detail_screen.dart';
@@ -65,6 +66,9 @@ final routerProvider = Provider<GoRouter>((ref) {
       final session = ref.read(sessionProvider);
       final loggedIn = session.isAuthenticated;
       final goingToLogin = state.matchedLocation == '/login';
+      // Rutas PÚBLICAS (sin sesión): páginas de resultado de pago a las que
+      // Stripe redirige al PACIENTE. No deben pasar por el login ni la app.
+      if (state.matchedLocation.startsWith('/pago-')) return null;
       if (!loggedIn && !goingToLogin) return '/login';
 
       // El master (administrador de plataforma) no tiene datos clinicos
@@ -153,6 +157,13 @@ final routerProvider = Provider<GoRouter>((ref) {
     },
     routes: [
       GoRoute(path: '/login', builder: (context, state) => const LoginScreen()),
+      // Resultado de pago (público, fuera del shell): Stripe redirige aquí.
+      GoRoute(
+          path: '/pago-recibido',
+          builder: (context, state) => const PaymentResultScreen(success: true)),
+      GoRoute(
+          path: '/pago-cancelado',
+          builder: (context, state) => const PaymentResultScreen(success: false)),
       ShellRoute(
         builder: (context, state, child) =>
             AppShell(currentPath: state.matchedLocation, child: child),

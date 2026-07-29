@@ -1266,6 +1266,40 @@ class DataRepository {
     return url;
   }
 
+  /// Realtime: se suscribe a cambios en una tabla ([collection]) y, cada vez que
+  /// llega un evento (INSERT/UPDATE/DELETE), refresca la caché de esa tabla y
+  /// llama [onChange]. Sirve para que Cobros/Conciliación reflejen un pago en
+  /// cuanto el webhook lo registra, sin refrescar la página a mano.
+  ///
+  /// Solo aplica en producción (Supabase); en demo devuelve `null` (sin
+  /// realtime). Devuelve el canal como [Object] opaco para que la UI no dependa
+  /// del tipo de Supabase; se cancela con [unwatch] en `dispose()`.
+  Object? watchCollection(String collection, void Function() onChange) {
+    final store = _store;
+    if (store is! SupabaseDataStore) return null;
+    final channel = store.client.channel('rt-$collection-${_uuid.v4()}');
+    channel
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: collection,
+          callback: (_) async {
+            await store.refreshCollection(collection);
+            onChange();
+          },
+        )
+        .subscribe();
+    return channel;
+  }
+
+  /// Cancela una suscripción Realtime abierta con [watchCollection].
+  Future<void> unwatch(Object? channel) async {
+    final store = _store;
+    if (store is SupabaseDataStore && channel is RealtimeChannel) {
+      await store.client.removeChannel(channel);
+    }
+  }
+
   /// Deshace el vínculo de un pago con su cobro (el cobro vuelve a pendiente).
   /// No revierte movimientos de inventario ya materializados.
   Future<void> unlinkPointPayment(String paymentId) async {
