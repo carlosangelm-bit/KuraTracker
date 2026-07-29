@@ -14,11 +14,17 @@ import 'vac_therapy_form.dart';
 /// al paciente (transversal: hospital / clínica / domicilio). Toca "+" para
 /// registrar una nueva eligiendo al paciente; toca una tarjeta para ver el
 /// detalle y su bitácora.
-class VacTherapiesScreen extends ConsumerWidget {
+class VacTherapiesScreen extends ConsumerStatefulWidget {
   const VacTherapiesScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<VacTherapiesScreen> createState() =>
+      _VacTherapiesScreenState();
+}
+
+class _VacTherapiesScreenState extends ConsumerState<VacTherapiesScreen> {
+  @override
+  Widget build(BuildContext context) {
     final repoAsync = ref.watch(dataRepositoryProvider);
     final orgId = ref.watch(sessionProvider).user?.organizationId;
     final t = BrandTokens.of(context);
@@ -29,7 +35,7 @@ class VacTherapiesScreen extends ConsumerWidget {
         actions: const [UserMenuButton()],
       ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _newTherapy(context, ref, orgId),
+        onPressed: () => _newTherapy(orgId),
         icon: const Icon(Icons.add),
         label: const Text('Nueva terapia'),
       ),
@@ -62,8 +68,7 @@ class VacTherapiesScreen extends ConsumerWidget {
     );
   }
 
-  Future<void> _newTherapy(
-      BuildContext context, WidgetRef ref, String? orgId) async {
+  Future<void> _newTherapy(String? orgId) async {
     if (orgId == null) return;
     final repo = ref.read(dataRepositoryProvider).valueOrNull;
     if (repo == null) return;
@@ -83,8 +88,11 @@ class VacTherapiesScreen extends ConsumerWidget {
       showDragHandle: true,
       builder: (_) => _PatientPickerSheet(repo: repo, patients: patients),
     );
-    if (patientId == null || !context.mounted) return;
-    await showVacTherapyForm(context, ref, orgId: orgId, patientId: patientId);
+    if (patientId == null || !mounted) return;
+    final saved = await showVacTherapyForm(context, ref,
+        orgId: orgId, patientId: patientId);
+    // Refleja la terapia recién creada sin recargar la página.
+    if (saved == true && mounted) setState(() {});
   }
 }
 
