@@ -140,7 +140,9 @@ class _ConsumoScreenState extends ConsumerState<ConsumoScreen> {
 
     // Sugerencias del plan: componentes del plan más reciente → mapeo (Fase 2)
     // → artículo de inventario del sitio (si existe).
-    final mapIndex = repo.supplyMappingIndex(orgId);
+    // Un insumo genérico puede tener VARIOS productos ligados: se sugieren
+    // todos los que existan en el inventario del sitio.
+    final mapGroups = repo.supplyMappingGroups(orgId);
     final byShopifyProduct = <String, InventoryItem>{
       for (final it in inventory)
         if (it.shopifyProductId != null) it.shopifyProductId!: it
@@ -148,10 +150,13 @@ class _ConsumoScreenState extends ConsumerState<ConsumoScreen> {
     final suggestions = <InventoryItem>[];
     final seen = <String>{};
     for (final comp in repo.latestTreatmentComponentsForPatient(_patientId!)) {
-      final m = mapIndex[SupplyProductMapping.keyFor(comp.method, comp.product)];
-      if (m == null) continue;
-      final item = byShopifyProduct[m.shopifyProductId];
-      if (item != null && seen.add(item.id)) suggestions.add(item);
+      final ms =
+          mapGroups[SupplyProductMapping.keyFor(comp.method, comp.product)] ??
+              const [];
+      for (final m in ms) {
+        final item = byShopifyProduct[m.shopifyProductId];
+        if (item != null && seen.add(item.id)) suggestions.add(item);
+      }
     }
 
     return ListView(
