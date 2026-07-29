@@ -602,12 +602,29 @@ class DataRepository {
       .where((m) => organizationId == null || m.organizationId == organizationId)
       .toList();
 
-  /// Mapa clave(`método::producto`) → mapeo, para resolver rápido en la UI.
-  Map<String, SupplyProductMapping> supplyMappingIndex(String? organizationId) =>
-      {for (final m in listSupplyMappings(organizationId)) m.key: m};
+  /// Mapa clave(`método::producto`) → LISTA de productos ligados. Un insumo
+  /// genérico puede tener varios productos (distintas medidas/marcas/SKU); el
+  /// especialista elige el específico al usarlo.
+  Map<String, List<SupplyProductMapping>> supplyMappingGroups(
+      String? organizationId) {
+    final groups = <String, List<SupplyProductMapping>>{};
+    for (final m in listSupplyMappings(organizationId)) {
+      (groups[m.key] ??= []).add(m);
+    }
+    return groups;
+  }
 
-  /// Crea o actualiza (upsert por centro+método+producto) el mapeo de un insumo
-  /// genérico a un producto de la tienda.
+  /// Productos ligados a un insumo genérico concreto (método + genérico).
+  List<SupplyProductMapping> supplyMappingsFor(
+          String? organizationId, String method, String genericProduct) =>
+      listSupplyMappings(organizationId)
+          .where((m) => m.method == method && m.genericProduct == genericProduct)
+          .toList();
+
+  /// Crea o actualiza el mapeo de un insumo genérico a un producto CONCRETO de
+  /// la tienda. El upsert es por (centro, método, genérico, producto, variante):
+  /// re-ligar el mismo producto/presentación actualiza su foto/precio; ligar uno
+  /// distinto AGREGA otro producto al mismo insumo genérico (1→varios).
   Future<void> setSupplyMapping({
     required String organizationId,
     required String method,
@@ -622,8 +639,11 @@ class DataRepository {
     String? priceCurrency,
     String? updatedBy,
   }) async {
-    final existing = listSupplyMappings(organizationId).where(
-        (m) => m.method == method && m.genericProduct == genericProduct);
+    final existing = listSupplyMappings(organizationId).where((m) =>
+        m.method == method &&
+        m.genericProduct == genericProduct &&
+        m.shopifyProductId == shopifyProductId &&
+        m.shopifyVariantId == shopifyVariantId);
     final now = DateTime.now().toIso8601String();
     final data = {
       'organization_id': organizationId,
@@ -652,7 +672,14 @@ class DataRepository {
     }
   }
 
-  /// Elimina el mapeo de un insumo genérico (deja el insumo sin producto).
+  /// Elimina UN producto ligado (por id de mapeo). Los demás productos del mismo
+  /// insumo genérico se conservan.
+  Future<void> deleteSupplyMappingById(String mappingId) async {
+    await _store.deleteRow(Collections.supplyProductMappings, mappingId);
+  }
+
+  /// Elimina TODOS los productos ligados a un insumo genérico (deja el insumo
+  /// sin producto).
   Future<void> deleteSupplyMapping({
     required String organizationId,
     required String method,
