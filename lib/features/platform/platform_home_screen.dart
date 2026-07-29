@@ -487,6 +487,16 @@ class _ModulesTabState extends State<_ModulesTab> {
           ),
         ),
         const SizedBox(height: 12),
+        // Guardia VAC: número de WhatsApp al que escalan las alarmas del módulo
+        // de Terapia VAC. Se muestra solo si el módulo está activo en el centro.
+        if (widget.repo.isModuleEnabled(ModuleKey.vac, organizationId: orgId)) ...[
+          _VacGuardiaCard(
+            repo: widget.repo,
+            orgId: orgId,
+            initial: widget.repo.vacOncallPhone(orgId) ?? '',
+          ),
+          const SizedBox(height: 12),
+        ],
         SegmentedButton<_ModuleScope>(
           segments: const [
             ButtonSegment(value: _ModuleScope.centro, label: Text('Centro')),
@@ -800,6 +810,102 @@ class _OrganizationFormDialogState extends State<_OrganizationFormDialog> {
               : const Text('Crear'),
         ),
       ],
+    );
+  }
+}
+
+/// Configuración de la GUARDIA VAC del centro: número de WhatsApp al que se
+/// escalan las alarmas del módulo de Terapia VAC. Vive en vac_settings.
+class _VacGuardiaCard extends StatefulWidget {
+  final DataRepository repo;
+  final String orgId;
+  final String initial;
+  const _VacGuardiaCard({
+    required this.repo,
+    required this.orgId,
+    required this.initial,
+  });
+  @override
+  State<_VacGuardiaCard> createState() => _VacGuardiaCardState();
+}
+
+class _VacGuardiaCardState extends State<_VacGuardiaCard> {
+  late final TextEditingController _ctrl =
+      TextEditingController(text: widget.initial);
+  bool _busy = false;
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    setState(() => _busy = true);
+    try {
+      await widget.repo.setVacOncallPhone(
+          organizationId: widget.orgId, phone: _ctrl.text.trim());
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Número de guardia VAC guardado.')));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('No se pudo guardar: $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Row(
+              children: [
+                Icon(Icons.healing_outlined),
+                SizedBox(width: 8),
+                Expanded(
+                  child: Text('Guardia VAC',
+                      style: TextStyle(fontWeight: FontWeight.w700)),
+                ),
+              ],
+            ),
+            const SizedBox(height: 2),
+            const Text(
+                'WhatsApp al que se escalan las alarmas de terapia VAC.',
+                style: TextStyle(fontSize: 12, color: Colors.black54)),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _ctrl,
+                    keyboardType: TextInputType.phone,
+                    decoration: const InputDecoration(
+                      isDense: true,
+                      labelText: 'Número con lada',
+                      hintText: '52 55 1234 5678',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                FilledButton(
+                  onPressed: _busy ? null : _save,
+                  child: Text(_busy ? 'Guardando…' : 'Guardar'),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
