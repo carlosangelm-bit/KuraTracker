@@ -126,6 +126,23 @@ class _CobrosTab extends ConsumerStatefulWidget {
 
 class _CobrosTabState extends ConsumerState<_CobrosTab> {
   ChargeStatus? _filter;
+  Object? _sub;
+
+  @override
+  void initState() {
+    super.initState();
+    // Realtime: refresca la lista en cuanto un cobro cambia (p. ej. el webhook
+    // de Stripe lo marca Pagado), sin tener que recargar la página.
+    _sub = widget.repo.watchCollection('charges', () {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    widget.repo.unwatch(_sub);
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -756,6 +773,28 @@ class _ConciliacionTab extends ConsumerStatefulWidget {
 
 class _ConciliacionTabState extends ConsumerState<_ConciliacionTab> {
   final _fmt = DateFormat('dd/MM/yyyy HH:mm');
+  Object? _subPayments;
+  Object? _subCharges;
+
+  @override
+  void initState() {
+    super.initState();
+    // Realtime: un pago nuevo (point_payments) o un cambio de vínculo/estado en
+    // el cobro (charges) se refleja al instante en la bandeja de conciliación.
+    void refresh() {
+      if (mounted) setState(() {});
+    }
+
+    _subPayments = widget.repo.watchCollection('point_payments', refresh);
+    _subCharges = widget.repo.watchCollection('charges', refresh);
+  }
+
+  @override
+  void dispose() {
+    widget.repo.unwatch(_subPayments);
+    widget.repo.unwatch(_subCharges);
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {

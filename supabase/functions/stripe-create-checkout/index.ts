@@ -60,8 +60,9 @@ serve(async (req) => {
   // Stripe usa form-urlencoded. Monto en centavos (MXN).
   const form = new URLSearchParams();
   form.set("mode", "payment");
-  form.set("success_url", `${APP_URL}?pago=exitoso`);
-  form.set("cancel_url", `${APP_URL}?pago=cancelado`);
+  // Páginas PÚBLICAS de resultado (el paciente no entra a la app del personal).
+  form.set("success_url", `${APP_URL}/pago-recibido`);
+  form.set("cancel_url", `${APP_URL}/pago-cancelado`);
   form.set("client_reference_id", chargeId);
   form.set("metadata[charge_id]", chargeId);
   form.set("line_items[0][quantity]", "1");
