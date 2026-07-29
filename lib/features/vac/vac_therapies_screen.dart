@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/design/tokens.dart';
 import '../../core/providers/session_provider.dart';
 import '../../core/router/app_shell.dart' show UserMenuButton;
+import '../../models/patient.dart';
 import '../../models/vac_therapy.dart';
 import '../../services/data_repository.dart';
 import 'vac_therapy_form.dart';
@@ -80,27 +81,7 @@ class VacTherapiesScreen extends ConsumerWidget {
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
-      builder: (_) => SafeArea(
-        child: ConstrainedBox(
-          constraints: BoxConstraints(
-              maxHeight: MediaQuery.of(context).size.height * 0.7),
-          child: ListView(
-            shrinkWrap: true,
-            children: [
-              const Padding(
-                padding: EdgeInsets.all(16),
-                child: Text('Paciente para la terapia',
-                    style: TextStyle(fontWeight: FontWeight.w700)),
-              ),
-              for (final p in patients)
-                ListTile(
-                  title: Text(p.fullName),
-                  onTap: () => Navigator.of(context).pop(p.id),
-                ),
-            ],
-          ),
-        ),
-      ),
+      builder: (_) => _PatientPickerSheet(repo: repo, patients: patients),
     );
     if (patientId == null || !context.mounted) return;
     await showVacTherapyForm(context, ref, orgId: orgId, patientId: patientId);
@@ -166,6 +147,155 @@ class _Label extends StatelessWidget {
                 fontWeight: FontWeight.w700,
                 color: BrandTokens.of(context).textSecondary)),
       );
+}
+
+/// Selector de paciente para crear una terapia: busca por nombre / piso / área
+/// / cama y filtra por piso y área (ubicación del internamiento activo).
+class _PatientPickerSheet extends StatefulWidget {
+  final DataRepository repo;
+  final List<Patient> patients;
+  const _PatientPickerSheet({required this.repo, required this.patients});
+  @override
+  State<_PatientPickerSheet> createState() => _PatientPickerSheetState();
+}
+
+class _PatientPickerSheetState extends State<_PatientPickerSheet> {
+  String _q = '';
+  String? _floor;
+  String? _area;
+  final _floorOf = <String, String?>{};
+  final _areaOf = <String, String?>{};
+  final _locOf = <String, String>{};
+  final _searchOf = <String, String>{};
+  List<String> _floors = const [];
+  List<String> _areas = const [];
+
+  static String _fold(String s) {
+    s = s.toLowerCase().trim();
+    const from = 'áàäâãéèëêíìïîóòöôõúùüûñ';
+    const to = 'aaaaaeeeeiiiiooooouuuun';
+    final b = StringBuffer();
+    for (final ch in s.runes) {
+      final c = String.fromCharCode(ch);
+      final i = from.indexOf(c);
+      b.write(i >= 0 ? to[i] : c);
+    }
+    return b.toString();
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    for (final p in widget.patients) {
+      final adm = widget.repo.activeAdmission(p.id);
+      _floorOf[p.id] = adm?.floor;
+      _areaOf[p.id] = adm?.area;
+      _locOf[p.id] = adm?.locationLabel ?? '';
+      _searchOf[p.id] = _fold(
+          '${p.fullName} ${adm?.floor ?? ''} ${adm?.area ?? ''} ${adm?.bed ?? ''}');
+    }
+    _floors = _floorOf.values.whereType<String>().toSet().toList()..sort();
+    _areas = _areaOf.values.whereType<String>().toSet().toList()..sort();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final q = _fold(_q);
+    final list = widget.patients.where((p) {
+      if (_floor != null && _floorOf[p.id] != _floor) return false;
+      if (_area != null && _areaOf[p.id] != _area) return false;
+      if (q.isNotEmpty && !(_searchOf[p.id] ?? '').contains(q)) return false;
+      return true;
+    }).toList();
+
+    return Padding(
+      padding: EdgeInsets.only(
+        left: 16,
+        right: 16,
+        top: 4,
+        bottom: MediaQuery.of(context).viewInsets.bottom + 16,
+      ),
+      child: ConstrainedBox(
+        constraints:
+            BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.85),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Paciente para la terapia',
+                style: TextStyle(fontWeight: FontWeight.w700)),
+            const SizedBox(height: 8),
+            TextField(
+              autofocus: true,
+              onChanged: (v) => setState(() => _q = v),
+              decoration: const InputDecoration(
+                isDense: true,
+                hintText: 'Buscar por nombre, piso, área o cama…',
+                prefixIcon: Icon(Icons.search),
+                border: OutlineInputBorder(),
+              ),
+            ),
+            if (_floors.isNotEmpty || _areas.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  if (_floors.isNotEmpty)
+                    _filter('Piso', _floor, _floors,
+                        (v) => setState(() => _floor = v)),
+                  if (_areas.isNotEmpty)
+                    _filter('Área', _area, _areas,
+                        (v) => setState(() => _area = v)),
+                ],
+              ),
+            ],
+            const SizedBox(height: 8),
+            Flexible(
+              child: list.isEmpty
+                  ? const Padding(
+                      padding: EdgeInsets.all(24),
+                      child: Center(child: Text('Sin coincidencias.')))
+                  : ListView.separated(
+                      shrinkWrap: true,
+                      itemCount: list.length,
+                      separatorBuilder: (_, __) => const Divider(height: 1),
+                      itemBuilder: (_, i) {
+                        final p = list[i];
+                        final loc = _locOf[p.id] ?? '';
+                        return ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: Text(p.fullName),
+                          subtitle: loc.isEmpty
+                              ? const Text('Sin internamiento',
+                                  style: TextStyle(fontSize: 12))
+                              : Text(loc, style: const TextStyle(fontSize: 12)),
+                          onTap: () => Navigator.of(context).pop(p.id),
+                        );
+                      },
+                    ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _filter(String label, String? value, List<String> options,
+      ValueChanged<String?> onChanged) {
+    return DropdownButton<String?>(
+      value: value,
+      hint: Text(label, style: const TextStyle(fontSize: 13)),
+      underline: const SizedBox.shrink(),
+      items: [
+        DropdownMenuItem<String?>(
+            value: null, child: Text('$label: todos', style: const TextStyle(fontSize: 13))),
+        ...options.map((o) => DropdownMenuItem<String?>(
+            value: o, child: Text(o, style: const TextStyle(fontSize: 13)))),
+      ],
+      onChanged: onChanged,
+    );
+  }
 }
 
 class _Empty extends StatelessWidget {
