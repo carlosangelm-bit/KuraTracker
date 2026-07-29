@@ -430,6 +430,10 @@ class _TaskTile extends StatelessWidget {
     final hhmm = task.scheduledAt.toIso8601String().substring(11, 16);
     final patientName =
         showPatient ? (repo.getPatient(task.patientId)?.fullName ?? '') : '';
+    // Ubicación del paciente en la ronda: habitación/cama · piso · área
+    // (del internamiento activo). Guía al personal a dónde ir.
+    final location =
+        showPatient ? (repo.activeAdmission(task.patientId)?.locationLabel ?? '') : '';
     final overdue = task.isPending && task.scheduledAt.isBefore(DateTime.now());
 
     Color statusColor() {
@@ -518,6 +522,25 @@ class _TaskTile extends StatelessWidget {
                     ),
                     const SizedBox(width: 3),
                     Icon(Icons.open_in_new, size: 12, color: t.brandPrimary),
+                  ],
+                ),
+              ),
+            // Ubicación en la ronda: habitación/cama · piso · área.
+            if (location.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 2),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.meeting_room_outlined,
+                        size: 13, color: t.textSecondary),
+                    const SizedBox(width: 4),
+                    Flexible(
+                      child: Text(location,
+                          style: TextStyle(
+                              fontSize: 12, color: t.textSecondary),
+                          overflow: TextOverflow.ellipsis),
+                    ),
                   ],
                 ),
               ),
