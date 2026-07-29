@@ -168,6 +168,8 @@ enum VacEventType {
   cambioEquipo,
   cambioAposito,
   ajuste,
+  alarma,
+  reinstalacion,
   suspension,
   reinicio,
   egresoDomicilio,
@@ -201,6 +203,10 @@ extension VacEventTypeX on VacEventType {
         return 'Cambio de apósito';
       case VacEventType.ajuste:
         return 'Ajuste de parámetros';
+      case VacEventType.alarma:
+        return 'Alarma';
+      case VacEventType.reinstalacion:
+        return 'Reinstalación';
       case VacEventType.suspension:
         return 'Suspensión';
       case VacEventType.reinicio:

@@ -35,6 +35,7 @@ import '../../features/prevention_agenda/prevention_agenda_screen.dart';
 import '../../features/hospital_dashboard/hospital_dashboard_screen.dart';
 import '../../features/vac/vac_therapies_screen.dart';
 import '../../features/vac/vac_therapy_detail_screen.dart';
+import '../../features/vac/vac_alarm_screen.dart';
 import '../../features/insumos/insumos_home_screen.dart';
 import '../../features/insumos/tienda_screen.dart';
 import '../../features/insumos/mapeo_screen.dart';
@@ -312,6 +313,12 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: '/vac/:therapyId',
             builder: (context, state) => VacTherapyDetailScreen(
+              therapyId: state.pathParameters['therapyId']!,
+            ),
+          ),
+          GoRoute(
+            path: '/vac/:therapyId/alarm',
+            builder: (context, state) => VacAlarmScreen(
               therapyId: state.pathParameters['therapyId']!,
             ),
           ),
