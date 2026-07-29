@@ -20,7 +20,44 @@ class VacBotScreen extends ConsumerStatefulWidget {
 class _Msg {
   final bool user;
   final String text;
-  const _Msg(this.user, this.text);
+  /// Cuando es true, esta "burbuja" no muestra texto sino el botón para
+  /// contactar a un representante (handoff inline en la conversación).
+  final bool handoff;
+  const _Msg(this.user, this.text, {this.handoff = false});
+}
+
+/// Marca que el agente puede emitir (según sus instrucciones en CustomGPT) para
+/// que la app ofrezca el contacto con un humano. Se oculta del texto mostrado.
+const _handoffMarker = '[[CONTACTAR_HUMANO]]';
+
+/// Detecta si el usuario está pidiendo hablar con una persona.
+bool _wantsHuman(String text) {
+  var s = text.toLowerCase();
+  const from = 'áàäâãéèëêíìïîóòöôõúùüûñ';
+  const to = 'aaaaaeeeeiiiiooooouuuun';
+  final b = StringBuffer();
+  for (final ch in s.runes) {
+    final c = String.fromCharCode(ch);
+    final i = from.indexOf(c);
+    b.write(i >= 0 ? to[i] : c);
+  }
+  s = b.toString();
+  const kws = [
+    'human',
+    'persona',
+    'representante',
+    'asesor',
+    'alguien',
+    'guardia',
+    'tecnic',
+    'contactar',
+    'contacto',
+    'llamar',
+    'hablar con',
+    'agente',
+    'soporte',
+  ];
+  return kws.any(s.contains);
 }
 
 class _VacBotScreenState extends ConsumerState<VacBotScreen> {
@@ -80,6 +117,7 @@ class _VacBotScreenState extends ConsumerState<VacBotScreen> {
     if (text.isEmpty || _sessionId == null || _sending) return;
     final repo = ref.read(dataRepositoryProvider).valueOrNull;
     if (repo == null) return;
+    final userWantsHuman = _wantsHuman(text);
     setState(() {
       _msgs.add(_Msg(true, text));
       _sending = true;
@@ -89,8 +127,21 @@ class _VacBotScreenState extends ConsumerState<VacBotScreen> {
     try {
       final reply = await repo.vacBotSend(_sessionId!, text);
       if (!mounted) return;
-      setState(() => _msgs.add(_Msg(
-          false, reply.trim().isEmpty ? '(sin respuesta)' : reply.trim())));
+      // El agente puede pedir el handoff con una marca; se oculta del texto.
+      final markerHit =
+          reply.toUpperCase().contains(_handoffMarker.toUpperCase());
+      final clean = reply
+          .replaceAll(RegExp(RegExp.escape(_handoffMarker), caseSensitive: false), '')
+          .trim();
+      setState(() {
+        _msgs.add(_Msg(false, clean.isEmpty ? '(sin respuesta)' : clean));
+        // Handoff inline: si el usuario pidió humano o el bot lo marcó, y no
+        // hay ya un botón al final, se ofrece contactar a un representante.
+        if ((userWantsHuman || markerHit) &&
+            !(_msgs.isNotEmpty && _msgs.last.handoff)) {
+          _msgs.add(const _Msg(false, '', handoff: true));
+        }
+      });
     } catch (e) {
       if (!mounted) return;
       setState(() => _msgs.add(_Msg(
@@ -147,7 +198,8 @@ class _VacBotScreenState extends ConsumerState<VacBotScreen> {
                         itemCount: _msgs.length + (_sending ? 1 : 0),
                         itemBuilder: (_, i) {
                           if (i >= _msgs.length) return _typing(t);
-                          return _bubble(t, _msgs[i]);
+                          final m = _msgs[i];
+                          return m.handoff ? _handoffBubble(t) : _bubble(t, m);
                         },
                       ),
           ),
@@ -197,6 +249,36 @@ class _VacBotScreenState extends ConsumerState<VacBotScreen> {
       ),
     );
   }
+
+  Widget _handoffBubble(BrandTokens t) => Align(
+        alignment: Alignment.centerLeft,
+        child: Container(
+          margin: const EdgeInsets.symmetric(vertical: 6),
+          padding: const EdgeInsets.all(12),
+          constraints: BoxConstraints(
+              maxWidth: MediaQuery.of(context).size.width * 0.78),
+          decoration: BoxDecoration(
+            color: t.statusNeutral.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('¿Quieres que te contacte un representante?',
+                  style: TextStyle(fontSize: 13, color: t.textSecondary)),
+              const SizedBox(height: 8),
+              FilledButton.icon(
+                style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xFF25D366)),
+                icon: const Icon(Icons.chat),
+                label: const Text('Contactar a un representante'),
+                onPressed: _contactHuman,
+              ),
+            ],
+          ),
+        ),
+      );
 
   Widget _typing(BrandTokens t) => Align(
         alignment: Alignment.centerLeft,
