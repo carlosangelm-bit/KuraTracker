@@ -196,6 +196,8 @@ class Collections {
   static const charges = 'charges';
   static const chargeItems = 'charge_items';
   static const pointPayments = 'point_payments';
+  static const vacTherapies = 'vac_therapies';
+  static const vacEvents = 'vac_events';
 
   /// Todas las colecciones/tablas, en un orden razonable para hidratar la
   /// cache de [SupabaseDataStore] tras el login (catalogos primero, luego
@@ -244,5 +246,7 @@ class Collections {
     charges,
     chargeItems,
     pointPayments,
+    vacTherapies,
+    vacEvents,
   ];
 }

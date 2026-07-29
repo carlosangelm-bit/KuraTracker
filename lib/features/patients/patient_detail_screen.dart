@@ -6,6 +6,9 @@ import 'package:intl/intl.dart';
 import '../../core/theme/kura_theme.dart';
 import '../../core/providers/session_provider.dart';
 import '../../models/center_type.dart';
+import '../../models/module_key.dart';
+import '../../models/vac_therapy.dart';
+import '../vac/vac_therapy_form.dart';
 import '../../engine/models/kura_engine_enums.dart';
 import '../../engine/risk/prevention_risk_engine.dart';
 import '../../models/app_user.dart';
@@ -133,6 +136,34 @@ class _PatientDetailScreenState extends ConsumerState<PatientDetailScreen> {
           final diagnosesCard = _DiagnosesCard(
               patientId: patient.id, diagnoses: diagnoses, canWrite: canWrite);
           final riskCard = _RiskCard(patientId: patient.id);
+          // Terapia VAC (módulo transversal): entrada desde el paciente. Se
+          // muestra solo si el módulo está habilitado para el centro.
+          final vacEnabled =
+              ref.watch(enabledModulesProvider).contains(ModuleKey.vac);
+          final activeVac = repo.activeVacTherapy(patient.id);
+          final vacOrg = patient.organizationId;
+          final vacCard = Card(
+            margin: EdgeInsets.zero,
+            child: ListTile(
+              leading:
+                  const Icon(Icons.healing_outlined, color: KuraColors.primary),
+              title: const Text('Terapia VAC'),
+              subtitle: Text(activeVac == null
+                  ? 'Sin terapia activa · registrar'
+                  : '${activeVac.equipment.label}'
+                      '${activeVac.settingsLabel.isNotEmpty ? ' · ${activeVac.settingsLabel}' : ''}'),
+              trailing: const Icon(Icons.chevron_right, size: 18),
+              onTap: () async {
+                if (activeVac != null) {
+                  context.push('/vac/${activeVac.id}');
+                } else if (vacOrg != null) {
+                  final ok = await showVacTherapyForm(context, ref,
+                      orgId: vacOrg, patientId: patient.id);
+                  if (ok == true && mounted) setState(() {});
+                }
+              },
+            ),
+          );
           final caregiversCard = _CaregiversCard(
               patientId: patient.id, organizationId: patient.organizationId);
           final consentsCard =
@@ -292,6 +323,10 @@ class _PatientDetailScreenState extends ConsumerState<PatientDetailScreen> {
               // Prevención/Riesgo primero (lo que se usa en hospital).
               riskCard,
               const SizedBox(height: 16),
+              if (vacEnabled) ...[
+                vacCard,
+                const SizedBox(height: 16),
+              ],
               _AdvancedSection(children: advancedSections),
               const SizedBox(height: 40),
             ] else ...[
@@ -301,6 +336,10 @@ class _PatientDetailScreenState extends ConsumerState<PatientDetailScreen> {
               const SizedBox(height: 16),
               riskCard,
               const SizedBox(height: 16),
+              if (vacEnabled) ...[
+                vacCard,
+                const SizedBox(height: 16),
+              ],
               caregiversCard,
               const SizedBox(height: 16),
               consentsCard,
