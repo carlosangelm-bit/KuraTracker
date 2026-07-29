@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 import '../../core/theme/kura_theme.dart';
 import '../../core/layout/responsive.dart';
 import '../../core/providers/session_provider.dart';
+import '../../models/center_type.dart';
 import '../../engine/risk/prevention_risk_engine.dart';
 import '../../engine/risk/braden_scale.dart';
 import '../../models/app_user.dart';
@@ -308,6 +309,10 @@ class _PatientRiskScreenState extends ConsumerState<PatientRiskScreen> {
     // Solo clínico/admin pueden DEFINIR el plan de cuidados. Enfermería (y
     // cuidador) solo lo consultan y ejecutan las tareas en las rondas.
     final canDefinePlan = ref.watch(sessionProvider).user?.canDiagnose == true;
+    // Hospital: manejo preventivo centrado en el paciente (no hay cuidador
+    // externo), así que no aplican las indicaciones libres para el cuidador.
+    final isHospital =
+        ref.watch(sessionProvider).activeCenterType == CenterType.hospital;
 
     return Scaffold(
       appBar: AppBar(
@@ -423,21 +428,24 @@ class _PatientRiskScreenState extends ConsumerState<PatientRiskScreen> {
                       ),
                     ),
                     // Indicaciones libres del profesional para el cuidador (0044).
-                    _InfoTile(
-                      icon: Icons.sticky_note_2_outlined,
-                      title: 'Indicaciones para el cuidador',
-                      body: (repo.caregiverInstructionsFor(widget.patientId) ?? '')
-                              .trim()
-                              .isEmpty
-                          ? 'Sin indicaciones. Deja el set de cuidados para el '
-                              'cuidador (según diagnóstico).'
-                          : repo.caregiverInstructionsFor(widget.patientId)!,
-                      action: TextButton(
-                        onPressed: () => _editCaregiverInstructions(
-                            repo, patient.organizationId),
-                        child: const Text('Editar'),
+                    // No aplican en hospital (sin cuidador externo).
+                    if (!isHospital)
+                      _InfoTile(
+                        icon: Icons.sticky_note_2_outlined,
+                        title: 'Indicaciones para el cuidador',
+                        body: (repo.caregiverInstructionsFor(widget.patientId) ??
+                                    '')
+                                .trim()
+                                .isEmpty
+                            ? 'Sin indicaciones. Deja el set de cuidados para el '
+                                'cuidador (según diagnóstico).'
+                            : repo.caregiverInstructionsFor(widget.patientId)!,
+                        action: TextButton(
+                          onPressed: () => _editCaregiverInstructions(
+                              repo, patient.organizationId),
+                          child: const Text('Editar'),
+                        ),
                       ),
-                    ),
                     _CompliancePanel(repo: repo, patient: patient),
                     _PatientAuditLog(repo: repo, patientId: widget.patientId),
                     // Signos a vigilar (solo lectura): qué observar, no tareas.

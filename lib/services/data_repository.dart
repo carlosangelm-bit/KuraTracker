@@ -395,6 +395,10 @@ class DataRepository {
     if (organizationId == null) {
       return module.defaultFor(CenterType.clinicaHeridas);
     }
+    final centerType = centerTypeFor(organizationId);
+    // Módulo no disponible para este tipo de centro: apagado siempre, sin
+    // importar ajustes previos (p.ej. eKare en hospital).
+    if (!module.availableFor(centerType)) return false;
     final settings = listModuleSettings(organizationId: organizationId)
         .where((m) => m.moduleKey == module.dbValue)
         .toList();
@@ -415,7 +419,7 @@ class DataRepository {
         matchWhere((m) => m.siteId == null && m.profileId == null);
     if (centerOverride != null) return centerOverride.enabled;
 
-    return module.defaultFor(centerTypeFor(organizationId));
+    return module.defaultFor(centerType);
   }
 
   /// Sitio primario del usuario (vía su fila de staff), para resolver overrides

@@ -522,12 +522,16 @@ class _ModulesTabState extends State<_ModulesTab> {
             child: Center(child: Text('Elige un sitio o usuario para configurar.')),
           )
         else
-          ...ModuleKey.values.map((m) => _moduleRow(
-                m,
-                orgId: orgId,
-                siteId: scopeSiteId,
-                profileId: scopeProfileId,
-              )),
+          // Solo módulos que aplican al tipo de centro (p.ej. eKare no en
+          // hospital); los no disponibles ni se ofrecen para configurar.
+          ...ModuleKey.values
+              .where((m) => _org == null || m.availableFor(_org!.centerType))
+              .map((m) => _moduleRow(
+                    m,
+                    orgId: orgId,
+                    siteId: scopeSiteId,
+                    profileId: scopeProfileId,
+                  )),
       ],
     );
   }

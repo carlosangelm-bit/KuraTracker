@@ -98,6 +98,17 @@ extension ModuleKeyX on ModuleKey {
     }
   }
 
+  /// Si el módulo APLICA a este tipo de centro. Un módulo no disponible no se
+  /// ofrece en la configuración y queda apagado aunque exista un ajuste previo.
+  ///
+  /// eKare (interoperabilidad propia de la clínica de heridas) NO aplica en
+  /// hospital: ahí la herramienta funge como apoyo al manejo preventivo de
+  /// lesiones, no como expediente/interoperabilidad de heridas.
+  bool availableFor(CenterType type) {
+    if (this == ModuleKey.ekare) return type != CenterType.hospital;
+    return true;
+  }
+
   static ModuleKey? fromDb(String? s) {
     for (final m in ModuleKey.values) {
       if (m.dbValue == s) return m;
