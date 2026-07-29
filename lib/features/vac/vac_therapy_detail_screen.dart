@@ -166,7 +166,7 @@ class _VacTherapyDetailScreenState
               ),
               const SizedBox(height: 12),
 
-              // Atender alarma (triage + escalamiento a guardia).
+              // Atender alarma (triage + escalamiento a guardia) + asesoría (bot).
               if (active) ...[
                 SizedBox(
                   width: double.infinity,
@@ -175,6 +175,15 @@ class _VacTherapyDetailScreenState
                     label: const Text('Atender una alarma'),
                     onPressed: () =>
                         context.push('/vac/${therapy.id}/alarm'),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    icon: const Icon(Icons.smart_toy_outlined),
+                    label: const Text('Asesoría del equipo (chat)'),
+                    onPressed: () => context.push('/vac/${therapy.id}/bot'),
                   ),
                 ),
                 const SizedBox(height: 12),

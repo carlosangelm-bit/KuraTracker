@@ -1298,6 +1298,47 @@ class DataRepository {
     return url;
   }
 
+  /// Inicia una conversación con el asistente VAC (CustomGPT vía Edge Function)
+  /// y devuelve el sessionId. Solo en producción.
+  Future<String> vacBotStart() async {
+    final store = _store;
+    if (store is! SupabaseDataStore) {
+      throw Exception('El asistente requiere el entorno de producción.');
+    }
+    Map<String, dynamic> data;
+    try {
+      data = await store.invokeFunction('vac-bot', {'action': 'create'});
+    } on FunctionException catch (e) {
+      throw Exception(_edgeErrorMessage(e));
+    }
+    if (data['error'] != null) throw Exception(data['error'].toString());
+    final id = data['sessionId'] as String?;
+    if (id == null || id.isEmpty) {
+      throw Exception('El asistente no devolvió una sesión.');
+    }
+    return id;
+  }
+
+  /// Envía un mensaje al asistente VAC y devuelve la respuesta.
+  Future<String> vacBotSend(String sessionId, String prompt) async {
+    final store = _store;
+    if (store is! SupabaseDataStore) {
+      throw Exception('El asistente requiere el entorno de producción.');
+    }
+    Map<String, dynamic> data;
+    try {
+      data = await store.invokeFunction('vac-bot', {
+        'action': 'message',
+        'sessionId': sessionId,
+        'prompt': prompt,
+      });
+    } on FunctionException catch (e) {
+      throw Exception(_edgeErrorMessage(e));
+    }
+    if (data['error'] != null) throw Exception(data['error'].toString());
+    return (data['reply'] as String?) ?? '';
+  }
+
   /// Realtime: se suscribe a cambios en una tabla ([collection]) y, cada vez que
   /// llega un evento (INSERT/UPDATE/DELETE), refresca la caché de esa tabla y
   /// llama [onChange]. Sirve para que Cobros/Conciliación reflejen un pago en
