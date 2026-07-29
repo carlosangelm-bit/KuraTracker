@@ -166,6 +166,20 @@ class _VacTherapyDetailScreenState
               ),
               const SizedBox(height: 12),
 
+              // Atender alarma (triage + escalamiento a guardia).
+              if (active) ...[
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.tonalIcon(
+                    icon: const Icon(Icons.notifications_active_outlined),
+                    label: const Text('Atender una alarma'),
+                    onPressed: () =>
+                        context.push('/vac/${therapy.id}/alarm'),
+                  ),
+                ),
+                const SizedBox(height: 12),
+              ],
+
               // Acciones.
               if (active)
                 Wrap(

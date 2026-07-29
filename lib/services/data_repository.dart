@@ -2564,6 +2564,45 @@ class DataRepository {
     });
   }
 
+  /// Número de guardia VAC del centro (para escalar alarmas por WhatsApp), o
+  /// null si no se ha configurado.
+  String? vacOncallPhone(String? organizationId) {
+    if (organizationId == null) return null;
+    final match = _store.getAll(Collections.vacSettings).where(
+        (s) => s['organization_id'] == organizationId);
+    if (match.isEmpty) return null;
+    final phone = match.first['oncall_phone'] as String?;
+    return (phone == null || phone.trim().isEmpty) ? null : phone.trim();
+  }
+
+  /// Fija el número de guardia VAC del centro (upsert por organización).
+  Future<void> setVacOncallPhone({
+    required String organizationId,
+    required String phone,
+    String? updatedBy,
+  }) async {
+    final existing = _store
+        .getAll(Collections.vacSettings)
+        .where((s) => s['organization_id'] == organizationId);
+    final now = DateTime.now().toIso8601String();
+    final data = {
+      'organization_id': organizationId,
+      'oncall_phone': phone.trim(),
+      'updated_by': updatedBy,
+      'updated_at': now,
+    };
+    if (existing.isNotEmpty) {
+      await _store.updateRow(
+          Collections.vacSettings, existing.first['id'] as String, data);
+    } else {
+      await _store.insertRow(Collections.vacSettings, {
+        'id': _uuid.v4(),
+        'created_at': now,
+        ...data,
+      });
+    }
+  }
+
   PatientAdmission? activeAdmission(String patientId) {
     final match = _store.getAll(Collections.patientAdmissions).where((a) =>
         a['patient_id'] == patientId && (a['status'] as String?) == 'activo');
