@@ -1569,30 +1569,39 @@ class _NoteCatalogTabState extends State<NoteCatalogTab> {
                                       ),
                                     ),
                                     // Etiqueta kura_tag (puente hacia el motor Protocolo
-                                    // Kura+): opcional, "Sin etiqueta" permitido y por
-                                    // defecto -- ver 0013_note_option_catalog_kura_tag.sql.
-                                    DropdownButton<KuraTag?>(
-                                      value: o.kuraTag,
-                                      isDense: true,
-                                      underline: const SizedBox.shrink(),
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        color: KuraColors.darkText.withOpacity(0.7),
-                                      ),
-                                      items: [
-                                        const DropdownMenuItem<KuraTag?>(
-                                          value: null,
-                                          child: Text('Sin etiqueta'),
+                                    // Kura+): cada campo ofrece SOLO sus etiquetas
+                                    // (NoteOptionField.availableTags). Los campos que no
+                                    // usan etiqueta (Tipo de atención, Evolución) devuelven
+                                    // lista vacía y aquí NO se muestra el menú.
+                                    if (_selectedField.availableTags.isNotEmpty)
+                                      DropdownButton<KuraTag?>(
+                                        // Si el concepto trae una etiqueta que no pertenece
+                                        // a este campo (dato antiguo), se muestra como "Sin
+                                        // etiqueta" para no romper el Dropdown.
+                                        value: _selectedField.availableTags
+                                                .contains(o.kuraTag)
+                                            ? o.kuraTag
+                                            : null,
+                                        isDense: true,
+                                        underline: const SizedBox.shrink(),
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: KuraColors.darkText.withOpacity(0.7),
                                         ),
-                                        ...KuraTag.values.map(
-                                          (t) => DropdownMenuItem<KuraTag?>(
-                                            value: t,
-                                            child: Text(t.label),
+                                        items: [
+                                          const DropdownMenuItem<KuraTag?>(
+                                            value: null,
+                                            child: Text('Sin etiqueta'),
                                           ),
-                                        ),
-                                      ],
-                                      onChanged: (t) => _setKuraTag(o, t),
-                                    ),
+                                          ..._selectedField.availableTags.map(
+                                            (t) => DropdownMenuItem<KuraTag?>(
+                                              value: t,
+                                              child: Text(t.label),
+                                            ),
+                                          ),
+                                        ],
+                                        onChanged: (t) => _setKuraTag(o, t),
+                                      ),
                                   ],
                                 ),
                               ),

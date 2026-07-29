@@ -113,6 +113,40 @@ extension NoteOptionFieldDb on NoteOptionField {
     }
   }
 
+  /// Etiquetas kura_tag DISPONIBLES para este campo en la configuración del
+  /// catálogo. Cada campo ofrece SOLO las etiquetas que le corresponden; los
+  /// campos que no las usan devuelven una lista vacía y la UI oculta el menú
+  /// de etiqueta (no todas las configuraciones necesitan etiqueta).
+  ///
+  /// El motor Protocolo Kura+ solo consume etiquetas de `procedureDesc` y
+  /// `materialsUsed` (ver la auto-selección en follow_up_capture_screen.dart),
+  /// así que `careType` y `evolution` no llevan etiqueta. El reparto entre
+  /// procedimiento (acciones) y material (productos) sigue la semántica de cada
+  /// campo; es el punto único a ajustar si la validación clínica lo afina.
+  List<KuraTag> get availableTags {
+    switch (this) {
+      case NoteOptionField.careType:
+        return const [];
+      case NoteOptionField.procedureDesc:
+        return const [
+          KuraTag.limpieza,
+          KuraTag.desbridamiento,
+          KuraTag.educacion,
+        ];
+      case NoteOptionField.materialsUsed:
+        return const [
+          KuraTag.rellenoCavidad,
+          KuraTag.aposito,
+          KuraTag.proteccionPiel,
+          KuraTag.antimicrobiano,
+          KuraTag.compresion,
+          KuraTag.descarga,
+        ];
+      case NoteOptionField.evolution:
+        return const [];
+    }
+  }
+
   static NoteOptionField? fromDb(String? s) {
     switch (s) {
       case 'care_type':
