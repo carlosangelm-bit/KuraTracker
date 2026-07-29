@@ -46,6 +46,13 @@ class _VacAlarmScreenState extends ConsumerState<VacAlarmScreen> {
           },
         ),
         title: Text(_selected == null ? 'Atender alarma' : _selected!.label),
+        actions: [
+          IconButton(
+            tooltip: 'Preguntar al asistente',
+            icon: const Icon(Icons.smart_toy_outlined),
+            onPressed: () => context.push('/vac/${widget.therapyId}/bot'),
+          ),
+        ],
       ),
       body: repoAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
