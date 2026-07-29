@@ -86,6 +86,12 @@ jobs:
         run: supabase functions deploy mercadopago-webhook --use-api --no-verify-jwt --project-ref "$SUPABASE_PROJECT_REF"
       - name: Deploy mercadopago-sync-charge (--use-api)
         run: supabase functions deploy mercadopago-sync-charge --use-api --project-ref "$SUPABASE_PROJECT_REF"
+      # Stripe: create-checkout con verify_jwt (la app la invoca con JWT);
+      # webhook SIN verify_jwt (Stripe no manda JWT; valida su firma propia).
+      - name: Deploy stripe-create-checkout (--use-api)
+        run: supabase functions deploy stripe-create-checkout --use-api --project-ref "$SUPABASE_PROJECT_REF"
+      - name: Deploy stripe-webhook (--use-api, --no-verify-jwt)
+        run: supabase functions deploy stripe-webhook --use-api --no-verify-jwt --project-ref "$SUPABASE_PROJECT_REF"
 
   build_deploy:
     needs: migrations

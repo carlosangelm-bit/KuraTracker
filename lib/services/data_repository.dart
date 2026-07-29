@@ -1241,6 +1241,31 @@ class DataRepository {
     return (data['status'] ?? 'desconocido').toString();
   }
 
+  /// Crea un link de pago (Stripe Checkout) para un cobro vía Edge Function y
+  /// devuelve la URL para ENVIAR al paciente. El pago se concilia por webhook.
+  /// Solo en producción (Supabase).
+  Future<String> createStripeCheckout(String chargeId, {String? title}) async {
+    final store = _store;
+    if (store is! SupabaseDataStore) {
+      throw Exception('El link de pago requiere el entorno de producción.');
+    }
+    Map<String, dynamic> data;
+    try {
+      data = await store.invokeFunction('stripe-create-checkout', {
+        'chargeId': chargeId,
+        if (title != null) 'title': title,
+      });
+    } on FunctionException catch (e) {
+      throw Exception(_edgeErrorMessage(e));
+    }
+    if (data['error'] != null) throw Exception(data['error'].toString());
+    final url = data['url'] as String?;
+    if (url == null || url.isEmpty) {
+      throw Exception('Stripe no devolvió el link de pago.');
+    }
+    return url;
+  }
+
   /// Deshace el vínculo de un pago con su cobro (el cobro vuelve a pendiente).
   /// No revierte movimientos de inventario ya materializados.
   Future<void> unlinkPointPayment(String paymentId) async {
