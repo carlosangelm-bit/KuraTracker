@@ -13,6 +13,7 @@ enum ModuleKey {
   ekare,
   insumos,
   comercial,
+  vac,
 }
 
 extension ModuleKeyX on ModuleKey {
@@ -32,6 +33,8 @@ extension ModuleKeyX on ModuleKey {
         return 'insumos';
       case ModuleKey.comercial:
         return 'comercial';
+      case ModuleKey.vac:
+        return 'vac';
     }
   }
 
@@ -51,6 +54,8 @@ extension ModuleKeyX on ModuleKey {
         return 'Insumos';
       case ModuleKey.comercial:
         return 'Comercial';
+      case ModuleKey.vac:
+        return 'Terapia VAC';
     }
   }
 
@@ -72,6 +77,8 @@ extension ModuleKeyX on ModuleKey {
         return '/insumos';
       case ModuleKey.comercial:
         return '/comercial';
+      case ModuleKey.vac:
+        return '/vac';
     }
   }
 

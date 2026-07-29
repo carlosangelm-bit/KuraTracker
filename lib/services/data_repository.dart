@@ -16,6 +16,7 @@ import '../models/consultation.dart';
 import '../models/manual_appointment.dart';
 import '../models/organization.dart';
 import '../models/supply_product_mapping.dart';
+import '../models/vac_therapy.dart';
 import '../models/inventory.dart';
 import '../models/consultation_supply_usage.dart';
 import '../models/commercial.dart';
@@ -2390,6 +2391,179 @@ class DataRepository {
     ..sort((a, b) => b.admittedAt.compareTo(a.admittedAt));
 
   /// Internamiento ACTIVO del paciente (o null si no está internado).
+  // ---------------- Terapia VAC (NPWT, módulo transversal, 0064) ------------
+
+  /// Terapias VAC del centro (o de un paciente), opcionalmente solo activas.
+  List<VacTherapy> listVacTherapies({
+    String? organizationId,
+    String? patientId,
+    bool activeOnly = false,
+  }) =>
+      _store
+          .getAll(Collections.vacTherapies)
+          .map(VacTherapy.fromJson)
+          .where((t) =>
+              (organizationId == null || t.organizationId == organizationId) &&
+              (patientId == null || t.patientId == patientId) &&
+              (!activeOnly || t.isActive))
+          .toList()
+        ..sort((a, b) => b.startedAt.compareTo(a.startedAt));
+
+  VacTherapy? getVacTherapy(String id) {
+    final match =
+        _store.getAll(Collections.vacTherapies).where((t) => t['id'] == id);
+    return match.isEmpty ? null : VacTherapy.fromJson(match.first);
+  }
+
+  /// Terapia VAC activa de un paciente (la más reciente), o null.
+  VacTherapy? activeVacTherapy(String patientId) {
+    final list = listVacTherapies(patientId: patientId, activeOnly: true);
+    return list.isEmpty ? null : list.first;
+  }
+
+  /// Crea una terapia VAC y registra el evento de colocación en la bitácora.
+  Future<VacTherapy> createVacTherapy({
+    required String organizationId,
+    required String patientId,
+    String? woundId,
+    required VacEquipment equipment,
+    String? deviceSerial,
+    VacMode? mode,
+    int? targetPressureMmhg,
+    bool instillation = false,
+    String? instillSolution,
+    int? instillDwellMin,
+    VacDressing? dressing,
+    int? changeIntervalHours,
+    DateTime? placedAt,
+    VacLocation? placedLocation,
+    String? caregiverInstructions,
+    String? notes,
+    String? createdBy,
+  }) async {
+    final now = DateTime.now();
+    final id = _uuid.v4();
+    final data = {
+      'id': id,
+      'organization_id': organizationId,
+      'patient_id': patientId,
+      'wound_id': woundId,
+      'equipment_type': equipment.dbValue,
+      'device_serial': deviceSerial,
+      'mode': mode?.dbValue,
+      'target_pressure_mmhg': targetPressureMmhg,
+      'instillation': instillation,
+      'instill_solution': instillSolution,
+      'instill_dwell_min': instillDwellMin,
+      'dressing_type': dressing?.dbValue,
+      'change_interval_hours': changeIntervalHours,
+      'placed_at': (placedAt ?? now).toIso8601String(),
+      'placed_by': createdBy,
+      'placed_location': placedLocation?.dbValue,
+      'current_location': placedLocation?.dbValue,
+      'status': VacTherapyStatus.activa.dbValue,
+      'caregiver_instructions': caregiverInstructions,
+      'notes': notes,
+      'started_at': now.toIso8601String(),
+      'created_by': createdBy,
+      'created_at': now.toIso8601String(),
+      'updated_at': now.toIso8601String(),
+    };
+    final saved = await _store.insertRow(Collections.vacTherapies, data);
+    await addVacEvent(
+      organizationId: organizationId,
+      therapyId: id,
+      patientId: patientId,
+      type: VacEventType.colocacion,
+      location: placedLocation,
+      byProfile: createdBy,
+      note: 'Colocación de terapia (${equipment.label})',
+    );
+    return VacTherapy.fromJson(saved);
+  }
+
+  /// Actualiza campos de una terapia (parámetros, ubicación, estado,
+  /// indicaciones). Solo se envían los campos provistos.
+  Future<void> updateVacTherapy(
+    String therapyId, {
+    VacEquipment? equipment,
+    String? deviceSerial,
+    VacMode? mode,
+    int? targetPressureMmhg,
+    bool? instillation,
+    String? instillSolution,
+    int? instillDwellMin,
+    VacDressing? dressing,
+    int? changeIntervalHours,
+    VacLocation? currentLocation,
+    VacTherapyStatus? status,
+    String? caregiverInstructions,
+    String? notes,
+    DateTime? endedAt,
+  }) async {
+    final patch = <String, dynamic>{
+      'updated_at': DateTime.now().toIso8601String(),
+    };
+    if (equipment != null) patch['equipment_type'] = equipment.dbValue;
+    if (deviceSerial != null) patch['device_serial'] = deviceSerial;
+    if (mode != null) patch['mode'] = mode.dbValue;
+    if (targetPressureMmhg != null) {
+      patch['target_pressure_mmhg'] = targetPressureMmhg;
+    }
+    if (instillation != null) patch['instillation'] = instillation;
+    if (instillSolution != null) patch['instill_solution'] = instillSolution;
+    if (instillDwellMin != null) patch['instill_dwell_min'] = instillDwellMin;
+    if (dressing != null) patch['dressing_type'] = dressing.dbValue;
+    if (changeIntervalHours != null) {
+      patch['change_interval_hours'] = changeIntervalHours;
+    }
+    if (currentLocation != null) {
+      patch['current_location'] = currentLocation.dbValue;
+    }
+    if (status != null) patch['status'] = status.dbValue;
+    if (caregiverInstructions != null) {
+      patch['caregiver_instructions'] = caregiverInstructions;
+    }
+    if (notes != null) patch['notes'] = notes;
+    if (endedAt != null) patch['ended_at'] = endedAt.toIso8601String();
+    await _store.updateRow(Collections.vacTherapies, therapyId, patch);
+  }
+
+  /// Bitácora de una terapia (más reciente primero).
+  List<VacEvent> listVacEvents(String therapyId) => _store
+      .getAll(Collections.vacEvents)
+      .map(VacEvent.fromJson)
+      .where((e) => e.therapyId == therapyId)
+      .toList()
+    ..sort((a, b) => b.at.compareTo(a.at));
+
+  /// Agrega un evento a la bitácora de la terapia (append-only).
+  Future<void> addVacEvent({
+    required String organizationId,
+    required String therapyId,
+    required String patientId,
+    required VacEventType type,
+    VacLocation? location,
+    String? byProfile,
+    String? note,
+    DateTime? at,
+  }) async {
+    final now = DateTime.now();
+    await _store.insertRow(Collections.vacEvents, {
+      'id': _uuid.v4(),
+      'organization_id': organizationId,
+      'therapy_id': therapyId,
+      'patient_id': patientId,
+      'event_type': type.dbValue,
+      'at': (at ?? now).toIso8601String(),
+      'by_profile': byProfile,
+      'location': location?.dbValue,
+      'detail': <String, dynamic>{},
+      'note': note,
+      'created_at': now.toIso8601String(),
+    });
+  }
+
   PatientAdmission? activeAdmission(String patientId) {
     final match = _store.getAll(Collections.patientAdmissions).where((a) =>
         a['patient_id'] == patientId && (a['status'] as String?) == 'activo');

@@ -73,6 +73,9 @@ class AppShell extends ConsumerWidget {
     if (modules.contains(ModuleKey.prevention)) {
       items.add(const _NavItem('/risk', Icons.shield_outlined, Icons.shield, 'Prevención'));
     }
+    if (modules.contains(ModuleKey.vac)) {
+      items.add(const _NavItem('/vac', Icons.healing_outlined, Icons.healing, 'VAC'));
+    }
     if (modules.contains(ModuleKey.reports)) {
       items.add(const _NavItem('/reports', Icons.description_outlined, Icons.description, 'Reportes'));
     }
