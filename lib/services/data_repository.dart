@@ -17,6 +17,7 @@ import '../models/manual_appointment.dart';
 import '../models/organization.dart';
 import '../models/supply_product_mapping.dart';
 import '../models/vac_therapy.dart';
+import '../models/product_catalog_item.dart';
 import '../models/inventory.dart';
 import '../models/consultation_supply_usage.dart';
 import '../models/commercial.dart';
@@ -643,6 +644,39 @@ class DataRepository {
             ? m.shopifyTitle
             : '${m.shopifyTitle} · ${m.shopifyVariantTitle}')
         .toList();
+  }
+
+  // ---------------- Catálogo global de productos (0067) --------------------
+
+  /// Catálogo global de productos (sembrado desde Shopify). Compartido entre
+  /// centros: cualquiera lo lee para la carga masiva de inventario.
+  List<ProductCatalogItem> listProductCatalog({bool activeOnly = true}) =>
+      _store
+          .getAll(Collections.productCatalog)
+          .map(ProductCatalogItem.fromJson)
+          .where((p) => !activeOnly || p.isActive)
+          .toList()
+        ..sort((a, b) =>
+            a.displayName.toLowerCase().compareTo(b.displayName.toLowerCase()));
+
+  /// Dispara la sincronización del catálogo global desde Shopify (Admin API).
+  /// Solo master, solo producción. Devuelve cuántos productos quedaron.
+  Future<int> syncShopifyCatalog() async {
+    final store = _store;
+    if (store is! SupabaseDataStore) {
+      throw Exception('La sincronización requiere el entorno de producción.');
+    }
+    Map<String, dynamic> data;
+    try {
+      data = await store.invokeFunction('shopify-sync-catalog', {});
+    } on FunctionException catch (e) {
+      throw Exception(_edgeErrorMessage(e));
+    }
+    if (data['error'] != null) throw Exception(data['error'].toString());
+    await store.refreshCollection(Collections.productCatalog);
+    return (data['distinct'] as num?)?.toInt() ??
+        (data['upserted'] as num?)?.toInt() ??
+        0;
   }
 
   /// Crea o actualiza el mapeo de un insumo genérico a un producto CONCRETO de
