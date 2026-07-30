@@ -74,18 +74,35 @@ serve(async (req) => {
   let cursor: string | null = null;
   let upserted = 0;
   const seen = new Set<string>();
+  // Los tokens clásicos (shpat_) usan X-Shopify-Access-Token; algunos tokens
+  // nuevos van como Authorization: Bearer. Se prueban ambos.
+  let useBearer = false;
+
+  async function gql(c: string | null) {
+    const headers: Record<string, string> = { "content-type": "application/json" };
+    if (useBearer) {
+      headers["Authorization"] = `Bearer ${ADMIN_TOKEN}`;
+    } else {
+      headers["X-Shopify-Access-Token"] = ADMIN_TOKEN;
+    }
+    const r = await fetch(endpoint, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ query: QUERY, variables: { cursor: c } }),
+    });
+    // deno-lint-ignore no-explicit-any
+    const b: any = await r.json().catch(() => ({}));
+    return { r, b };
+  }
 
   try {
     while (true) {
-      const res = await fetch(endpoint, {
-        method: "POST",
-        headers: {
-          "X-Shopify-Access-Token": ADMIN_TOKEN,
-          "content-type": "application/json",
-        },
-        body: JSON.stringify({ query: QUERY, variables: { cursor } }),
-      });
-      const body = await res.json().catch(() => ({}));
+      let { r: res, b: body } = await gql(cursor);
+      // Si el primer intento con X-Shopify-Access-Token es 401, reintenta Bearer.
+      if ((res.status === 401 || body?.errors) && !useBearer) {
+        useBearer = true;
+        ({ r: res, b: body } = await gql(cursor));
+      }
       if (!res.ok || body?.errors) {
         console.error("shopify graphql error", res.status, JSON.stringify(body));
         return json(
