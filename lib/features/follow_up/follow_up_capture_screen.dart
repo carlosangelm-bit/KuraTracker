@@ -1026,6 +1026,26 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
     final options = repo.listNoteOptions(field);
     final isAdmin = session.user?.role == AppRole.admin;
     final otherSelected = selected.contains(kOtherOptionValue);
+
+    // Nombres comerciales mapeados (Insumos → "Material del centro") de los
+    // materiales seleccionados/sugeridos: le dicen al profesional qué producto
+    // CONCRETO aplicar, con terminología consistente en todo el flujo.
+    final commercialRows = <Widget>[];
+    if (field == NoteOptionField.materialsUsed &&
+        repo.premiumInsumosFor(session.user?.organizationId)) {
+      final orgId = session.user?.organizationId;
+      for (final label in selected) {
+        if (label == kOtherOptionValue) continue;
+        final names = repo.commercialNamesForCenterMaterial(orgId, label);
+        if (names.isEmpty) continue;
+        commercialRows.add(Padding(
+          padding: const EdgeInsets.only(top: 3),
+          child: Text('• $label → ${names.join(', ')}',
+              style: const TextStyle(fontSize: 12, color: KuraColors.primary)),
+        ));
+      }
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1063,6 +1083,26 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
                 style: TextStyle(fontSize: 11, fontStyle: FontStyle.italic, color: KuraColors.primary),
               ),
             ],
+          ),
+        ],
+        if (commercialRows.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: KuraColors.primary.withOpacity(0.06),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Producto a aplicar (mapeado por el centro):',
+                    style: TextStyle(
+                        fontSize: 12, fontWeight: FontWeight.w700)),
+                ...commercialRows,
+              ],
+            ),
           ),
         ],
         if (otherSelected) ...[
