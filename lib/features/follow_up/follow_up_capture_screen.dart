@@ -1513,6 +1513,7 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
     }
 
     String? photoWarning;
+    String? newConsultationId;
     try {
       final wound = repo.getWound(widget.woundId);
       if (wound == null) {
@@ -1533,6 +1534,7 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
         staffId: staffId,
         siteId: siteId,
         visitType: VisitType.seguimiento,
+        // marcador para navegar al detalle (insumos + cobro) tras guardar.
         visitDate: _visitDate,
         isDraft: false,
         followUpCareType: _careTypeFinal,
@@ -1545,6 +1547,7 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
         followUpSignature: _signatureController.toJsonString(),
         followUpSignedAt: DateTime.now(),
       );
+      newConsultationId = consultation.id;
 
       final measurement = await repo.createMeasurement({
         'wound_id': widget.woundId,
@@ -1646,17 +1649,44 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
     }
 
     if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(photoWarning ?? 'Seguimiento registrado correctamente.'),
-          backgroundColor: photoWarning != null ? KuraColors.warning : null,
+      if (photoWarning != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(photoWarning),
+            backgroundColor: KuraColors.warning,
+          ),
+        );
+      }
+      // Tras el seguimiento, ofrece continuar al detalle de la consulta, que es
+      // donde se registran los INSUMOS utilizados y se genera el COBRO. Si no,
+      // regresa a la lista de seguimiento. (GoRouter declarativo: se usa
+      // context.go, no Navigator.pop; el diálogo hace pop con su propio ctx.)
+      final continuar = await showDialog<bool>(
+        context: context,
+        builder: (dctx) => AlertDialog(
+          title: const Text('Seguimiento registrado'),
+          content: const Text(
+              '¿Registrar los insumos utilizados y el cobro de esta consulta?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dctx).pop(false),
+              child: const Text('Ahora no'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dctx).pop(true),
+              child: const Text('Sí, continuar'),
+            ),
+          ],
         ),
       );
-      // Esta pantalla se navega declarativamente via GoRouter (no
-      // Navigator.push), por lo que el regreso tambien debe ser un
-      // context.go explicito a la pantalla de seguimiento (no
-      // Navigator.pop, que no aplica a rutas declarativas de GoRouter).
-      context.go('/patients/${widget.patientId}/wound/${widget.woundId}/follow-up');
+      if (!context.mounted) return;
+      if (continuar == true) {
+        context.go(
+            '/patients/${widget.patientId}/consultation/$newConsultationId');
+      } else {
+        context.go(
+            '/patients/${widget.patientId}/wound/${widget.woundId}/follow-up');
+      }
     }
   }
 }
