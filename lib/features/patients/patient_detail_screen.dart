@@ -272,38 +272,29 @@ class _PatientDetailScreenState extends ConsumerState<PatientDetailScreen> {
             if (consultations.isEmpty)
               const Text('Sin consultas registradas.')
             else
-              ...consultations.map((c) {
-                // Un borrador de seguimiento se RETOMA en el formulario (para
-                // completarlo y finalizarlo); el resto abre el detalle.
-                final draftWoundId = (c.isDraft &&
-                        c.visitType == VisitType.seguimiento)
-                    ? repo.woundIdForConsultation(c.id)
-                    : null;
-                return Card(
-                  margin: const EdgeInsets.only(bottom: 8),
-                  child: ListTile(
-                    onTap: () => (draftWoundId != null)
-                        ? context.go(
-                            '/patients/${widget.patientId}/wound/$draftWoundId/follow-up/draft/${c.id}')
-                        : context.go(
-                            '/patients/${widget.patientId}/consultation/${c.id}'),
-                    leading: Icon(
-                      c.visitType == VisitType.valoracion
-                          ? Icons.assignment_outlined
-                          : Icons.update,
-                      color: KuraColors.primary,
+              ...consultations.map((c) => Card(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    child: ListTile(
+                      // El borrador abre el detalle: ahí se cobra y hay botón
+                      // para completar la consulta clínica.
+                      onTap: () => context.go(
+                          '/patients/${widget.patientId}/consultation/${c.id}'),
+                      leading: Icon(
+                        c.visitType == VisitType.valoracion
+                            ? Icons.assignment_outlined
+                            : Icons.update,
+                        color: KuraColors.primary,
+                      ),
+                      title: Text(c.visitType.label),
+                      subtitle: Text(_dateFmt.format(c.visitDate)),
+                      trailing: c.isDraft
+                          ? const Chip(
+                              label: Text('Borrador'),
+                              backgroundColor: KuraColors.chipBg,
+                            )
+                          : const Icon(Icons.chevron_right, size: 18),
                     ),
-                    title: Text(c.visitType.label),
-                    subtitle: Text(_dateFmt.format(c.visitDate)),
-                    trailing: c.isDraft
-                        ? const Chip(
-                            label: Text('Borrador'),
-                            backgroundColor: KuraColors.chipBg,
-                          )
-                        : const Icon(Icons.chevron_right, size: 18),
-                  ),
-                );
-              }),
+                  )),
           ];
 
           // Todo lo que NO es prevención/riesgo (el expediente de heridas).

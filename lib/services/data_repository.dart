@@ -3410,10 +3410,10 @@ class DataRepository {
     return m.isEmpty ? null : m.first['wound_id'] as String?;
   }
 
-  /// Borra una consulta y sus hijos (mediciones, evaluaciones, fotos). Se usa al
-  /// FINALIZAR un borrador de seguimiento: se reemplaza por la consulta completa
-  /// (evita duplicar y mantiene un solo registro clínico).
-  Future<void> deleteConsultationCascade(String consultationId) async {
+  /// Borra los datos de HERIDA de una consulta (fotos, evaluaciones,
+  /// mediciones) SIN borrar la consulta ni sus cobros/insumos. Se usa al
+  /// finalizar un borrador (se re-crean con los datos definitivos).
+  Future<void> deleteWoundDataForConsultation(String consultationId) async {
     for (final coll in [
       Collections.woundPhotos,
       Collections.woundAssessments,
@@ -3427,7 +3427,13 @@ class DataRepository {
         await _store.deleteRow(coll, r['id'] as String);
       }
     }
-    await _store.deleteRow(Collections.consultations, consultationId);
+  }
+
+  /// Actualiza campos de una consulta en su lugar (finalizar borrador: conserva
+  /// el id para no huerfanar cobros/insumos ya ligados).
+  Future<void> updateConsultationFields(
+      String consultationId, Map<String, dynamic> patch) async {
+    await _store.updateRow(Collections.consultations, consultationId, patch);
   }
 
   /// Consulta ligada a una cita de la agenda, por su referencia
