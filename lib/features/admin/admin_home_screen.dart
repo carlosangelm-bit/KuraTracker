@@ -20,6 +20,7 @@ import '../../models/site.dart';
 import '../../models/staff.dart';
 import '../../services/csv_download.dart';
 import '../../services/data_repository.dart';
+import 'protocol_kura_screen.dart';
 import '../../services/photo_upload_service.dart';
 
 /// Panel de administración: gestión de personal sanitario, sitios y
@@ -1496,6 +1497,20 @@ class _NoteCatalogTabState extends State<NoteCatalogTab> {
                             )
                           : const Icon(Icons.upload_outlined, size: 18),
                       label: Text(_importing ? 'Importando…' : 'Cargar CSV'),
+                    ),
+                    // Configuración del Protocolo Kura+ vista por categoría:
+                    // asigna, por paso del protocolo, los conceptos del catálogo.
+                    FilledButton.tonalIcon(
+                      onPressed: () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => ProtocolKuraScreen(
+                            repo: widget.repo,
+                            organizationId: widget.organizationId,
+                          ),
+                        ),
+                      ),
+                      icon: const Icon(Icons.auto_awesome, size: 18),
+                      label: const Text('Protocolo Kura+'),
                     ),
                   ],
                 ),
