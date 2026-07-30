@@ -131,6 +131,13 @@ class ConsultationDetailScreen extends ConsumerWidget {
                   siteId: consultation.siteId,
                 ),
                 const SizedBox(height: 16),
+                _NotesSummaryCard(
+                  consultation: consultation,
+                  isAdmin: ref.watch(sessionProvider).user?.role ==
+                          AppRole.admin ||
+                      ref.watch(sessionProvider).user?.role == AppRole.master,
+                ),
+                const SizedBox(height: 16),
                 _AmendmentsSection(
                   patientId: patientId,
                   consultationId: consultationId,
@@ -140,6 +147,62 @@ class ConsultationDetailScreen extends ConsumerWidget {
             ),
           );
         },
+      ),
+    );
+  }
+}
+
+/// Notas del especialista + resumen (Plaud) + transcripción. La transcripción
+/// solo la ve el admin/master del centro (privacidad, 0069).
+class _NotesSummaryCard extends StatelessWidget {
+  final Consultation consultation;
+  final bool isAdmin;
+  const _NotesSummaryCard({required this.consultation, required this.isAdmin});
+
+  @override
+  Widget build(BuildContext context) {
+    final notes = (consultation.specialistNotes ?? '').trim();
+    final summary = (consultation.visitSummary ?? '').trim();
+    final transcript = (consultation.transcript ?? '').trim();
+    final showTranscript = isAdmin && transcript.isNotEmpty;
+    if (notes.isEmpty && summary.isEmpty && !showTranscript) {
+      return const SizedBox.shrink();
+    }
+    Widget block(String title, String body, {IconData? icon}) => Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(children: [
+              if (icon != null) ...[
+                Icon(icon, size: 16, color: KuraColors.primary),
+                const SizedBox(width: 6),
+              ],
+              Text(title,
+                  style: const TextStyle(
+                      fontSize: 12, fontWeight: FontWeight.w700)),
+            ]),
+            const SizedBox(height: 4),
+            Text(body),
+            const SizedBox(height: 12),
+          ],
+        );
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Notas y resumen',
+                style: TextStyle(fontWeight: FontWeight.w700)),
+            const SizedBox(height: 10),
+            if (notes.isNotEmpty) block('Notas del especialista', notes),
+            if (summary.isNotEmpty)
+              block('Resumen de la consulta', summary,
+                  icon: Icons.auto_awesome),
+            if (showTranscript)
+              block('Transcripción completa (solo admin)', transcript,
+                  icon: Icons.lock_outline),
+          ],
+        ),
       ),
     );
   }
