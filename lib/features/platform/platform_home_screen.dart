@@ -297,7 +297,12 @@ class _OrganizationsTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: organizations.isEmpty
+      body: Column(
+        children: [
+          // Catálogo global de productos (Shopify) — acción del master.
+          _ShopifyCatalogSyncCard(repo: repo),
+          Expanded(
+            child: organizations.isEmpty
           ? const _NoOrganizationsState()
           : ListView.separated(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 88),
@@ -373,6 +378,9 @@ class _OrganizationsTab extends StatelessWidget {
                 );
               },
             ),
+          ),
+        ],
+      ),
       floatingActionButton: KuraPrimaryFab(
         onPressed: onCreate,
         icon: Icons.add_business_outlined,
@@ -902,6 +910,80 @@ class _VacGuardiaCardState extends State<_VacGuardiaCard> {
                   child: Text(_busy ? 'Guardando…' : 'Guardar'),
                 ),
               ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Tarjeta (master) para sincronizar el catálogo GLOBAL de productos desde
+/// Shopify (Admin API). Muestra cuántos productos hay y dispara la Edge
+/// Function shopify-sync-catalog.
+class _ShopifyCatalogSyncCard extends StatefulWidget {
+  final DataRepository repo;
+  const _ShopifyCatalogSyncCard({required this.repo});
+  @override
+  State<_ShopifyCatalogSyncCard> createState() =>
+      _ShopifyCatalogSyncCardState();
+}
+
+class _ShopifyCatalogSyncCardState extends State<_ShopifyCatalogSyncCard> {
+  bool _busy = false;
+
+  Future<void> _sync() async {
+    setState(() => _busy = true);
+    try {
+      final n = await widget.repo.syncShopifyCatalog();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Catálogo sincronizado: $n productos.')));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('$e'.replaceFirst('Exception: ', ''))));
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final count = widget.repo.listProductCatalog().length;
+    return Card(
+      margin: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
+        child: Row(
+          children: [
+            const Icon(Icons.inventory_2_outlined, color: KuraColors.primary),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Catálogo global (Shopify)',
+                      style: TextStyle(fontWeight: FontWeight.w700)),
+                  Text(
+                      count == 0
+                          ? 'Sin productos. Sincroniza desde tu tienda.'
+                          : '$count productos en el catálogo.',
+                      style: const TextStyle(fontSize: 12, color: Colors.black54)),
+                ],
+              ),
+            ),
+            FilledButton.tonalIcon(
+              onPressed: _busy ? null : _sync,
+              icon: _busy
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Icon(Icons.sync, size: 18),
+              label: Text(_busy ? 'Sincronizando…' : 'Sincronizar'),
             ),
           ],
         ),

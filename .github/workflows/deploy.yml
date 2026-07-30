@@ -94,6 +94,8 @@ jobs:
         run: supabase functions deploy stripe-webhook --use-api --no-verify-jwt --project-ref "$SUPABASE_PROJECT_REF"
       - name: Deploy vac-bot (--use-api)
         run: supabase functions deploy vac-bot --use-api --project-ref "$SUPABASE_PROJECT_REF"
+      - name: Deploy shopify-sync-catalog (--use-api)
+        run: supabase functions deploy shopify-sync-catalog --use-api --project-ref "$SUPABASE_PROJECT_REF"
 
   build_deploy:
     needs: migrations
