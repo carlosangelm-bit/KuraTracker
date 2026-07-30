@@ -19,6 +19,7 @@ import '../models/organization.dart';
 import '../models/supply_product_mapping.dart';
 import '../models/vac_therapy.dart';
 import '../models/product_catalog_item.dart';
+import '../models/patient_lab.dart';
 import '../models/inventory.dart';
 import '../models/consultation_supply_usage.dart';
 import '../models/commercial.dart';
@@ -2428,6 +2429,55 @@ class DataRepository {
       .where((c) => c['patient_id'] == patientId)
       .map(PatientComorbidity.fromJson)
       .toList();
+
+  // ---------------- Laboratorios del paciente (0070) ------------------------
+
+  /// Laboratorios del paciente, del más reciente al más antiguo.
+  List<PatientLab> listPatientLabs(String patientId) => _store
+      .getAll(Collections.patientLabs)
+      .map(PatientLab.fromJson)
+      .where((l) => l.patientId == patientId)
+      .toList()
+    ..sort((a, b) => b.takenAt.compareTo(a.takenAt));
+
+  /// Laboratorio más reciente del paciente (el que usa el motor), o null.
+  PatientLab? latestPatientLab(String patientId) {
+    final list = listPatientLabs(patientId);
+    return list.isEmpty ? null : list.first;
+  }
+
+  Future<PatientLab> addPatientLab({
+    required String organizationId,
+    required String patientId,
+    required DateTime takenAt,
+    double? glucoseMgDl,
+    double? hba1cPct,
+    double? albuminGdl,
+    double? hemoglobinGdl,
+    double? o2SaturationPct,
+    String? notes,
+    String? createdBy,
+  }) async {
+    final saved = await _store.insertRow(Collections.patientLabs, {
+      'id': _uuid.v4(),
+      'organization_id': organizationId,
+      'patient_id': patientId,
+      'taken_at': takenAt.toIso8601String().substring(0, 10),
+      'glucose_mg_dl': glucoseMgDl,
+      'hba1c_pct': hba1cPct,
+      'albumin_g_dl': albuminGdl,
+      'hemoglobin_g_dl': hemoglobinGdl,
+      'o2_saturation_pct': o2SaturationPct,
+      'notes': notes,
+      'created_by': createdBy,
+      'created_at': DateTime.now().toIso8601String(),
+    });
+    return PatientLab.fromJson(saved);
+  }
+
+  Future<void> deletePatientLab(String id) async {
+    await _store.deleteRow(Collections.patientLabs, id);
+  }
 
   Future<void> upsertComorbidity(PatientComorbidity comorbidity) async {
     await _store.upsertRow(Collections.patientComorbidities, comorbidity.toJson());

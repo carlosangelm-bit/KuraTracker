@@ -135,6 +135,23 @@ class _PatientDetailScreenState extends ConsumerState<PatientDetailScreen> {
               canWrite: canWrite);
           final diagnosesCard = _DiagnosesCard(
               patientId: patient.id, diagnoses: diagnoses, canWrite: canWrite);
+          // Laboratorios (0070): los más recientes alimentan el motor.
+          final latestLab = repo.latestPatientLab(patient.id);
+          final labsCard = Card(
+            margin: EdgeInsets.zero,
+            child: ListTile(
+              leading: const Icon(Icons.biotech_outlined,
+                  color: KuraColors.primary),
+              title: const Text('Laboratorios'),
+              subtitle: Text(latestLab == null
+                  ? 'Registrar glucosa, albúmina, HbA1c, SatO₂…'
+                  : 'Último: ${_dateFmt.format(latestLab.takenAt)}'
+                      '${latestLab.glucoseMgDl != null ? ' · Glu ${latestLab.glucoseMgDl!.toStringAsFixed(0)}' : ''}'
+                      '${latestLab.albuminGdl != null ? ' · Alb ${latestLab.albuminGdl}' : ''}'),
+              trailing: const Icon(Icons.chevron_right, size: 18),
+              onTap: () => context.go('/patients/${patient.id}/labs'),
+            ),
+          );
           final riskCard = _RiskCard(patientId: patient.id);
           // Terapia VAC (módulo transversal): entrada desde el paciente. Se
           // muestra solo si el módulo está habilitado para el centro.
@@ -303,6 +320,8 @@ class _PatientDetailScreenState extends ConsumerState<PatientDetailScreen> {
             const SizedBox(height: 16),
             diagnosesCard,
             const SizedBox(height: 16),
+            labsCard,
+            const SizedBox(height: 16),
             caregiversCard,
             const SizedBox(height: 16),
             consentsCard,
@@ -335,6 +354,8 @@ class _PatientDetailScreenState extends ConsumerState<PatientDetailScreen> {
               comorbidityCard,
               const SizedBox(height: 16),
               diagnosesCard,
+              const SizedBox(height: 16),
+              labsCard,
               const SizedBox(height: 16),
               riskCard,
               const SizedBox(height: 16),

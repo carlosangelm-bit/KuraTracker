@@ -1315,7 +1315,11 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
         abiPieDerecho: perfusion?.abiRight,
         abiPieIzquierdo: perfusion?.abiLeft,
         esExtremidadInferior: perfusion?.isLowerExtremity ?? false,
-        albuminaGdl: perfusion?.albuminGdl,
+        // Nutrición: prioriza la albúmina de LABORATORIOS del paciente (0070);
+        // si no hay, usa la de perfusión/valoración. Así los labs alimentan el
+        // motor por la regla de albúmina ya validada.
+        albuminaGdl: repo.latestPatientLab(widget.patientId)?.albuminGdl ??
+            perfusion?.albuminGdl,
         tunelizacionOSocavamiento: _tunneling || _undermining,
         exudadoCantidad: _exudadoCantidad,
         pielPerilesional: _perilesionalSkin,
