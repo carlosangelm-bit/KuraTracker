@@ -109,7 +109,24 @@ enum Entorno { clinica, domicilio }
 
 enum ExudadoCantidad { ninguno, escaso, moderado, abundante }
 
-enum ExudadoTipo { seroso, sanguinolento, serosanguinolento, purulento, otro }
+enum ExudadoTipo { serohematico, hematico, purulento, seropurulento, otro }
+
+extension ExudadoTipoX on ExudadoTipo {
+  String get label {
+    switch (this) {
+      case ExudadoTipo.serohematico:
+        return 'Serohemático';
+      case ExudadoTipo.hematico:
+        return 'Hemático';
+      case ExudadoTipo.purulento:
+        return 'Purulento';
+      case ExudadoTipo.seropurulento:
+        return 'Seropurulento';
+      case ExudadoTipo.otro:
+        return 'Otro';
+    }
+  }
+}
 
 /// Estados posibles de piel perilesional (multiseleccion en la UI).
 enum PielPerilesionalEstado {

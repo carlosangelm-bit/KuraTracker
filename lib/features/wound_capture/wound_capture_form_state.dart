@@ -66,7 +66,7 @@ class WoundCaptureFormState {
   String? painType;
   String? painDuration;
   int painVas = 0;
-  ExudadoTipo exudadoTipo = ExudadoTipo.seroso;
+  ExudadoTipo exudadoTipo = ExudadoTipo.serohematico;
   ExudadoCantidad exudadoCantidad = ExudadoCantidad.escaso;
   Set<InfeccionCriterioIwii> infeccionCriterios = {};
   String odor = 'ninguno';

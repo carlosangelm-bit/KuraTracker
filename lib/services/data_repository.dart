@@ -2172,6 +2172,8 @@ class DataRepository {
     (NoteOptionField.careType, 'Curación en hospitalización', null),
     (NoteOptionField.careType, 'Interconsulta', null),
     (NoteOptionField.careType, 'Desbridamiento programado', KuraTag.desbridamiento),
+    (NoteOptionField.procedureDesc, 'Higiene de manos', null),
+    (NoteOptionField.procedureDesc, 'Colocación de guantes', null),
     (NoteOptionField.procedureDesc, 'Limpieza con solución salina y cambio de apósito', KuraTag.limpieza),
     (NoteOptionField.procedureDesc, 'Desbridamiento cortante parcial', KuraTag.desbridamiento),
     (NoteOptionField.procedureDesc, 'Desbridamiento autolítico/enzimático', KuraTag.desbridamiento),
