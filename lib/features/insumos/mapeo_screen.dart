@@ -24,9 +24,9 @@ const _mappableMethods = [
 ];
 
 /// "Método" sintético para los insumos que el CENTRO agrega en su catálogo
-/// (Configuración → Material utilizado). No es del protocolo; es lo que cada
-/// centro configura por su cuenta.
-const _centerMaterialsMethod = 'Material del centro';
+/// (Configuración → Material utilizado). Definido en data_repository como
+/// [kCenterMaterialsMethod] para que el mapeo y la nota apunten a lo mismo.
+const _centerMaterialsMethod = kCenterMaterialsMethod;
 
 /// Clave de un producto+presentación concretos (para checkbox/diff).
 String _pickKey(String productId, String? variantId) =>

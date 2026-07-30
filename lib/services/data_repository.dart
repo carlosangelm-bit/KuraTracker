@@ -43,6 +43,11 @@ import 'remote/supabase_data_store.dart';
 
 const _uuid = Uuid();
 
+/// "Método" sintético bajo el cual el mapeo de insumos agrupa los materiales
+/// del catálogo del centro (Configuración → Material utilizado). Fuente única
+/// de verdad para que el mapeo y la nota de seguimiento apunten a lo mismo.
+const kCenterMaterialsMethod = 'Material del centro';
+
 /// Repositorio unico de datos para toda la app.
 ///
 /// Encapsula el almacen de datos (via la interfaz [DataStore]) exponiendo
@@ -625,6 +630,20 @@ class DataRepository {
       listSupplyMappings(organizationId)
           .where((m) => m.method == method && m.genericProduct == genericProduct)
           .toList();
+
+  /// Nombres comerciales (producto de la tienda) que el centro mapeó a un
+  /// material de su catálogo ([materialLabel], de Configuración → Material
+  /// utilizado). Se usa en la nota de seguimiento para que el profesional vea
+  /// qué producto CONCRETO corresponde al material sugerido/seleccionado, con
+  /// terminología consistente en todo el flujo. Vacío si no hay mapeo.
+  List<String> commercialNamesForCenterMaterial(
+      String? organizationId, String materialLabel) {
+    return supplyMappingsFor(organizationId, kCenterMaterialsMethod, materialLabel)
+        .map((m) => m.shopifyVariantTitle == null || m.shopifyVariantTitle!.isEmpty
+            ? m.shopifyTitle
+            : '${m.shopifyTitle} · ${m.shopifyVariantTitle}')
+        .toList();
+  }
 
   /// Crea o actualiza el mapeo de un insumo genérico a un producto CONCRETO de
   /// la tienda. El upsert es por (centro, método, genérico, producto, variante):
