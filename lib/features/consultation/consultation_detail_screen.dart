@@ -947,6 +947,20 @@ class _SuppliesUsedSectionState extends ConsumerState<_SuppliesUsedSection> {
   }
 
   Widget _chargeArea(DataRepository repo) {
+    // No se puede cobrar un BORRADOR: hay que finalizar la consulta primero.
+    if (repo.getConsultation(widget.consultationId)?.isDraft == true) {
+      return Row(
+        children: const [
+          Icon(Icons.info_outline, size: 18, color: KuraColors.warning),
+          SizedBox(width: 8),
+          Expanded(
+            child: Text(
+                'Consulta en borrador. Finalízala (avanza el seguimiento) para poder cobrar.',
+                style: TextStyle(color: KuraColors.warning)),
+          ),
+        ],
+      );
+    }
     final existing = repo.chargeForConsultation(widget.consultationId);
     if (existing != null) {
       final paid = existing.status == ChargeStatus.pagado;

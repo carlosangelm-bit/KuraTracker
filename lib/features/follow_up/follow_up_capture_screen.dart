@@ -90,10 +90,13 @@ const Map<String, KuraTag?> kKuraMethodToTag = {
 class FollowUpCaptureScreen extends ConsumerStatefulWidget {
   final String patientId;
   final String woundId;
+  /// Si se abre para RETOMAR un borrador, su id. Al finalizar se reemplaza.
+  final String? draftConsultationId;
   const FollowUpCaptureScreen({
     super.key,
     required this.patientId,
     required this.woundId,
+    this.draftConsultationId,
   });
 
   @override
@@ -102,6 +105,7 @@ class FollowUpCaptureScreen extends ConsumerStatefulWidget {
 
 class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
   DateTime _visitDate = DateTime.now();
+  bool _draftLoaded = false;
   final _lengthCtrl = TextEditingController(text: '0');
   final _widthCtrl = TextEditingController(text: '0');
   final _depthCtrl = TextEditingController(text: '0');
@@ -364,6 +368,7 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
     final repoAsync = ref.watch(dataRepositoryProvider);
     final repo = repoAsync.asData?.value;
     _resolveSignatureIfNeeded(session, repo);
+    if (repo != null) _loadDraftIfNeeded(repo, session);
 
     final canSave = !_saving &&
         _lengthCm > 0 &&
@@ -881,6 +886,20 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
                 _signatureReadOnlyCard(),
 
                 const SizedBox(height: 28),
+                // Guardar BORRADOR: solo requiere la medición (largo/ancho);
+                // permite terminar la consulta después. No cobra hasta finalizar.
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.save_outlined),
+                  label: Text(widget.draftConsultationId != null
+                      ? 'Guardar cambios del borrador'
+                      : 'Guardar como borrador'),
+                  style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 14)),
+                  onPressed: (_lengthCm > 0 && _widthCm > 0 && !_saving)
+                      ? () => _saveDraft(context, session)
+                      : null,
+                ),
+                const SizedBox(height: 10),
                 FilledButton.icon(
                   icon: _saving
                       ? const SizedBox(
@@ -1514,6 +1533,149 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
       .titleMedium
       ?.copyWith(fontWeight: FontWeight.w700);
 
+  /// Precarga los datos de un borrador al reabrirlo (una sola vez).
+  void _loadDraftIfNeeded(DataRepository repo, SessionState session) {
+    if (_draftLoaded) return;
+    _draftLoaded = true;
+    final id = widget.draftConsultationId;
+    if (id == null) return;
+    final c = repo.getConsultation(id);
+    if (c == null) return;
+    final org = session.user?.organizationId;
+    _prefillSingle(NoteOptionField.careType, c.followUpCareType, repo, org,
+        (v) => _careTypeSelected = v, _careTypeOtherCtrl);
+    _prefillSingle(NoteOptionField.evolution, c.followUpEvolution, repo, org,
+        (v) => _evolutionSelected = v, _evolutionOtherCtrl);
+    _prefillMulti(NoteOptionField.procedureDesc, c.followUpProcedureDesc, repo,
+        org, _procedureDescSelected, _procedureDescOtherCtrl);
+    _prefillMulti(NoteOptionField.materialsUsed, c.followUpMaterialsUsed, repo,
+        org, _materialsUsedSelected, _materialsUsedOtherCtrl);
+    _specialistNotesCtrl.text = c.specialistNotes ?? '';
+    _visitSummaryCtrl.text = c.visitSummary ?? '';
+    final ms = repo
+        .listMeasurementsForWound(widget.woundId)
+        .where((m) => m.consultationId == id)
+        .toList();
+    if (ms.isNotEmpty) {
+      final m = ms.first;
+      String f(double v) =>
+          v == v.roundToDouble() ? v.toInt().toString() : v.toString();
+      _lengthCtrl.text = f(m.lengthCm);
+      _widthCtrl.text = f(m.widthCm);
+      _depthCtrl.text = f(m.depthCm);
+    }
+  }
+
+  void _prefillSingle(NoteOptionField field, String? saved, DataRepository repo,
+      String? org, void Function(String?) setSel, TextEditingController otherCtrl) {
+    final v = (saved ?? '').trim();
+    if (v.isEmpty) return;
+    final labels =
+        repo.listNoteOptions(field, organizationId: org).map((o) => o.label).toSet();
+    if (labels.contains(v)) {
+      setSel(v);
+    } else {
+      setSel(kOtherOptionValue);
+      otherCtrl.text = v;
+    }
+  }
+
+  void _prefillMulti(NoteOptionField field, String? saved, DataRepository repo,
+      String? org, Set<String> selected, TextEditingController otherCtrl) {
+    final v = (saved ?? '').trim();
+    if (v.isEmpty) return;
+    final labels =
+        repo.listNoteOptions(field, organizationId: org).map((o) => o.label).toSet();
+    final unmatched = <String>[];
+    for (final part
+        in v.split('; ').map((s) => s.trim()).where((s) => s.isNotEmpty)) {
+      if (labels.contains(part)) {
+        selected.add(part);
+      } else {
+        unmatched.add(part);
+      }
+    }
+    if (unmatched.isNotEmpty) {
+      selected.add(kOtherOptionValue);
+      otherCtrl.text = unmatched.join('; ');
+    }
+  }
+
+  /// Guarda un BORRADOR ligero (consulta is_draft + medición) para terminar
+  /// después. Solo requiere la medición (largo/ancho, que liga la herida); no
+  /// exige foto/firma/nota completa. Si ya venía de un borrador, lo reemplaza.
+  Future<void> _saveDraft(BuildContext context, SessionState session) async {
+    setState(() => _saving = true);
+    final repo = await DataRepository.instance();
+    var staffId = session.user?.staffId;
+    if (staffId == null && session.user?.role == AppRole.admin) {
+      staffId = await repo.ensureAdminStaffId(session.user!);
+    }
+    if (staffId == null) {
+      setState(() => _saving = false);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content:
+                Text('No se encontró personal sanitario vinculado a tu cuenta.')));
+      }
+      return;
+    }
+    try {
+      final patient = repo.getPatient(widget.patientId);
+      final sites = repo.listSites();
+      final siteId =
+          patient?.primarySiteId ?? (sites.isNotEmpty ? sites.first.id : null);
+      if (siteId == null) throw StateError('No hay sitios configurados.');
+
+      if (widget.draftConsultationId != null) {
+        await repo.deleteConsultationCascade(widget.draftConsultationId!);
+      }
+      final consultation = await repo.createConsultation(
+        patientId: widget.patientId,
+        staffId: staffId,
+        siteId: siteId,
+        visitType: VisitType.seguimiento,
+        visitDate: _visitDate,
+        isDraft: true,
+        followUpCareType: _careTypeFinal,
+        followUpProcedureDesc: _procedureDescFinal,
+        followUpMaterialsUsed: _materialsUsedFinal,
+        followUpEvolution: _evolutionFinal,
+        followUpSignedBy: _signedByReadOnly,
+        followUpSignedLicense: _signedLicenseReadOnly,
+        followUpSignedSpecialty: _signedSpecialtyReadOnly,
+        specialistNotes: _specialistNotesCtrl.text.trim().isEmpty
+            ? null
+            : _specialistNotesCtrl.text.trim(),
+        visitSummary: _visitSummaryCtrl.text.trim().isEmpty
+            ? null
+            : _visitSummaryCtrl.text.trim(),
+      );
+      // Medición: liga la herida (permite reabrir el borrador).
+      await repo.createMeasurement({
+        'wound_id': widget.woundId,
+        'consultation_id': consultation.id,
+        'measured_at': _visitDate.toIso8601String().substring(0, 10),
+        'length_cm': _lengthCm,
+        'width_cm': _widthCm,
+        'area_cm2': _areaCm2,
+        'depth_cm': _depthCm,
+      });
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text(
+                'Borrador guardado. Retómalo desde el expediente del paciente.')));
+        context.go('/patients/${widget.patientId}');
+      }
+    } catch (e) {
+      if (context.mounted) {
+        setState(() => _saving = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('No se pudo guardar el borrador: $e')));
+      }
+    }
+  }
+
   Future<void> _save(BuildContext context, SessionState session) async {
     setState(() => _saving = true);
     final repo = await DataRepository.instance();
@@ -1541,6 +1703,11 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
       final wound = repo.getWound(widget.woundId);
       if (wound == null) {
         throw StateError('Herida no encontrada.');
+      }
+      // Si venimos de un BORRADOR, se reemplaza por la consulta completa:
+      // se borra el borrador (y sus mediciones) antes de crear la definitiva.
+      if (widget.draftConsultationId != null) {
+        await repo.deleteConsultationCascade(widget.draftConsultationId!);
       }
       // Reutiliza el sitio principal del paciente (o el primero disponible)
       // igual que ConsultationHubScreen, ya que este formulario no repite
