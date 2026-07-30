@@ -104,6 +104,28 @@ class ConsultationDetailScreen extends ConsumerWidget {
                   dateFmt: dateFmt,
                 ),
                 const SizedBox(height: 16),
+                // Borrador de seguimiento: se puede cobrar aquí y completar la
+                // parte clínica cuando se pueda (retoma el formulario).
+                if (consultation.isDraft &&
+                    consultation.visitType == VisitType.seguimiento) ...[
+                  Builder(builder: (ctx) {
+                    final woundId =
+                        repo.woundIdForConsultation(consultationId);
+                    return SizedBox(
+                      width: double.infinity,
+                      child: FilledButton.tonalIcon(
+                        icon: const Icon(Icons.edit_note),
+                        label:
+                            const Text('Completar consulta clínica (borrador)'),
+                        onPressed: woundId == null
+                            ? null
+                            : () => context.go(
+                                '/patients/$patientId/wound/$woundId/follow-up/draft/$consultationId'),
+                      ),
+                    );
+                  }),
+                  const SizedBox(height: 16),
+                ],
                 if (woundsInConsultation.isEmpty)
                   const Card(
                     child: Padding(
@@ -947,20 +969,8 @@ class _SuppliesUsedSectionState extends ConsumerState<_SuppliesUsedSection> {
   }
 
   Widget _chargeArea(DataRepository repo) {
-    // No se puede cobrar un BORRADOR: hay que finalizar la consulta primero.
-    if (repo.getConsultation(widget.consultationId)?.isDraft == true) {
-      return Row(
-        children: const [
-          Icon(Icons.info_outline, size: 18, color: KuraColors.warning),
-          SizedBox(width: 8),
-          Expanded(
-            child: Text(
-                'Consulta en borrador. Finalízala (avanza el seguimiento) para poder cobrar.',
-                style: TextStyle(color: KuraColors.warning)),
-          ),
-        ],
-      );
-    }
+    // Un BORRADOR SÍ se puede cobrar: el kurador avanza al cobro aunque la
+    // consulta no esté finalizada; completa lo clínico después.
     final existing = repo.chargeForConsultation(widget.consultationId);
     if (existing != null) {
       final paid = existing.status == ChargeStatus.pagado;

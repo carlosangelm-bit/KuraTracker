@@ -1601,6 +1601,34 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
     }
   }
 
+  /// Patch de columnas de la consulta desde el formulario, para actualizar un
+  /// borrador en su lugar (conserva id → no huérfana cobros/insumos).
+  Map<String, dynamic> _consultationPatch(
+      {required bool draft, required bool withSignature}) {
+    final patch = <String, dynamic>{
+      'is_draft': draft,
+      'visit_date': _visitDate.toIso8601String().substring(0, 10),
+      'follow_up_care_type': _careTypeFinal,
+      'follow_up_procedure_desc': _procedureDescFinal,
+      'follow_up_materials_used': _materialsUsedFinal,
+      'follow_up_evolution': _evolutionFinal,
+      'specialist_notes': _specialistNotesCtrl.text.trim().isEmpty
+          ? null
+          : _specialistNotesCtrl.text.trim(),
+      'visit_summary': _visitSummaryCtrl.text.trim().isEmpty
+          ? null
+          : _visitSummaryCtrl.text.trim(),
+    };
+    if (withSignature) {
+      patch['follow_up_signed_by'] = _signedByReadOnly;
+      patch['follow_up_signed_license'] = _signedLicenseReadOnly;
+      patch['follow_up_signed_specialty'] = _signedSpecialtyReadOnly;
+      patch['follow_up_signature'] = _signatureController.toJsonString();
+      patch['follow_up_signed_at'] = DateTime.now().toIso8601String();
+    }
+    return patch;
+  }
+
   /// Guarda un BORRADOR ligero (consulta is_draft + medición) para terminar
   /// después. Solo requiere la medición (largo/ancho, que liga la herida); no
   /// exige foto/firma/nota completa. Si ya venía de un borrador, lo reemplaza.
@@ -1627,34 +1655,42 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
           patient?.primarySiteId ?? (sites.isNotEmpty ? sites.first.id : null);
       if (siteId == null) throw StateError('No hay sitios configurados.');
 
+      // Si ya venía de un borrador, se ACTUALIZA en su lugar (conserva el id
+      // para no huérfanar el cobro/insumos que se hayan hecho sobre él).
+      String consultationId;
       if (widget.draftConsultationId != null) {
-        await repo.deleteConsultationCascade(widget.draftConsultationId!);
+        consultationId = widget.draftConsultationId!;
+        await repo.updateConsultationFields(
+            consultationId, _consultationPatch(draft: true, withSignature: false));
+        await repo.deleteWoundDataForConsultation(consultationId);
+      } else {
+        final consultation = await repo.createConsultation(
+          patientId: widget.patientId,
+          staffId: staffId,
+          siteId: siteId,
+          visitType: VisitType.seguimiento,
+          visitDate: _visitDate,
+          isDraft: true,
+          followUpCareType: _careTypeFinal,
+          followUpProcedureDesc: _procedureDescFinal,
+          followUpMaterialsUsed: _materialsUsedFinal,
+          followUpEvolution: _evolutionFinal,
+          followUpSignedBy: _signedByReadOnly,
+          followUpSignedLicense: _signedLicenseReadOnly,
+          followUpSignedSpecialty: _signedSpecialtyReadOnly,
+          specialistNotes: _specialistNotesCtrl.text.trim().isEmpty
+              ? null
+              : _specialistNotesCtrl.text.trim(),
+          visitSummary: _visitSummaryCtrl.text.trim().isEmpty
+              ? null
+              : _visitSummaryCtrl.text.trim(),
+        );
+        consultationId = consultation.id;
       }
-      final consultation = await repo.createConsultation(
-        patientId: widget.patientId,
-        staffId: staffId,
-        siteId: siteId,
-        visitType: VisitType.seguimiento,
-        visitDate: _visitDate,
-        isDraft: true,
-        followUpCareType: _careTypeFinal,
-        followUpProcedureDesc: _procedureDescFinal,
-        followUpMaterialsUsed: _materialsUsedFinal,
-        followUpEvolution: _evolutionFinal,
-        followUpSignedBy: _signedByReadOnly,
-        followUpSignedLicense: _signedLicenseReadOnly,
-        followUpSignedSpecialty: _signedSpecialtyReadOnly,
-        specialistNotes: _specialistNotesCtrl.text.trim().isEmpty
-            ? null
-            : _specialistNotesCtrl.text.trim(),
-        visitSummary: _visitSummaryCtrl.text.trim().isEmpty
-            ? null
-            : _visitSummaryCtrl.text.trim(),
-      );
       // Medición: liga la herida (permite reabrir el borrador).
       await repo.createMeasurement({
         'wound_id': widget.woundId,
-        'consultation_id': consultation.id,
+        'consultation_id': consultationId,
         'measured_at': _visitDate.toIso8601String().substring(0, 10),
         'length_cm': _lengthCm,
         'width_cm': _widthCm,
@@ -1663,9 +1699,10 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
       });
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text(
-                'Borrador guardado. Retómalo desde el expediente del paciente.')));
-        context.go('/patients/${widget.patientId}');
+            content: Text('Borrador guardado. Puedes cobrar y completar la '
+                'consulta después.')));
+        // Avanza al detalle de la consulta: ahí se seleccionan insumos y se cobra.
+        context.go('/patients/${widget.patientId}/consultation/$consultationId');
       }
     } catch (e) {
       if (context.mounted) {
@@ -1704,11 +1741,6 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
       if (wound == null) {
         throw StateError('Herida no encontrada.');
       }
-      // Si venimos de un BORRADOR, se reemplaza por la consulta completa:
-      // se borra el borrador (y sus mediciones) antes de crear la definitiva.
-      if (widget.draftConsultationId != null) {
-        await repo.deleteConsultationCascade(widget.draftConsultationId!);
-      }
       // Reutiliza el sitio principal del paciente (o el primero disponible)
       // igual que ConsultationHubScreen, ya que este formulario no repite
       // esa pregunta para una visita de seguimiento breve.
@@ -1719,35 +1751,45 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
         throw StateError('No hay sitios configurados.');
       }
 
-      final consultation = await repo.createConsultation(
-        patientId: widget.patientId,
-        staffId: staffId,
-        siteId: siteId,
-        visitType: VisitType.seguimiento,
-        // marcador para navegar al detalle (insumos + cobro) tras guardar.
-        visitDate: _visitDate,
-        isDraft: false,
-        followUpCareType: _careTypeFinal,
-        followUpProcedureDesc: _procedureDescFinal,
-        followUpMaterialsUsed: _materialsUsedFinal,
-        followUpEvolution: _evolutionFinal,
-        followUpSignedBy: _signedByReadOnly!,
-        followUpSignedLicense: _signedLicenseReadOnly!,
-        followUpSignedSpecialty: _signedSpecialtyReadOnly,
-        followUpSignature: _signatureController.toJsonString(),
-        followUpSignedAt: DateTime.now(),
-        specialistNotes: _specialistNotesCtrl.text.trim().isEmpty
-            ? null
-            : _specialistNotesCtrl.text.trim(),
-        visitSummary: _visitSummaryCtrl.text.trim().isEmpty
-            ? null
-            : _visitSummaryCtrl.text.trim(),
-      );
-      newConsultationId = consultation.id;
+      // Si venimos de un BORRADOR, se ACTUALIZA en su lugar (conserva el id, así
+      // el cobro/insumos hechos sobre el borrador siguen ligados); si no, se crea.
+      final String consultationId;
+      if (widget.draftConsultationId != null) {
+        consultationId = widget.draftConsultationId!;
+        await repo.updateConsultationFields(consultationId,
+            _consultationPatch(draft: false, withSignature: true));
+        await repo.deleteWoundDataForConsultation(consultationId);
+      } else {
+        final consultation = await repo.createConsultation(
+          patientId: widget.patientId,
+          staffId: staffId,
+          siteId: siteId,
+          visitType: VisitType.seguimiento,
+          visitDate: _visitDate,
+          isDraft: false,
+          followUpCareType: _careTypeFinal,
+          followUpProcedureDesc: _procedureDescFinal,
+          followUpMaterialsUsed: _materialsUsedFinal,
+          followUpEvolution: _evolutionFinal,
+          followUpSignedBy: _signedByReadOnly!,
+          followUpSignedLicense: _signedLicenseReadOnly!,
+          followUpSignedSpecialty: _signedSpecialtyReadOnly,
+          followUpSignature: _signatureController.toJsonString(),
+          followUpSignedAt: DateTime.now(),
+          specialistNotes: _specialistNotesCtrl.text.trim().isEmpty
+              ? null
+              : _specialistNotesCtrl.text.trim(),
+          visitSummary: _visitSummaryCtrl.text.trim().isEmpty
+              ? null
+              : _visitSummaryCtrl.text.trim(),
+        );
+        consultationId = consultation.id;
+      }
+      newConsultationId = consultationId;
 
       final measurement = await repo.createMeasurement({
         'wound_id': widget.woundId,
-        'consultation_id': consultation.id,
+        'consultation_id': consultationId,
         'measured_at': _visitDate.toIso8601String().substring(0, 10),
         'length_cm': _lengthCm,
         'width_cm': _widthCm,
@@ -1768,7 +1810,7 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
       });
 
       await repo.createAssessment({
-        'consultation_id': consultation.id,
+        'consultation_id': consultationId,
         'wound_id': widget.woundId,
         'edema': _edema,
         'pain': _pain,
@@ -1795,13 +1837,13 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
       try {
         final afterCleaningPath = await PhotoUploadService.uploadWoundPhoto(
           woundId: widget.woundId,
-          consultationId: consultation.id,
+          consultationId: consultationId,
           bytes: _photoAfterCleaningBytes!,
           fileName: _photoAfterCleaning?.name ?? 'seguimiento_despues_limpiar.jpg',
         );
         await repo.createPhoto({
           'wound_id': widget.woundId,
-          'consultation_id': consultation.id,
+          'consultation_id': consultationId,
           'measurement_id': measurement.id,
           'storage_path': afterCleaningPath,
           'taken_at': _visitDate.toIso8601String(),
@@ -1812,14 +1854,14 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
         if (_photoWithMeasurementBytes != null) {
           final withMeasurementPath = await PhotoUploadService.uploadWoundPhoto(
             woundId: widget.woundId,
-            consultationId: consultation.id,
+            consultationId: consultationId,
             bytes: _photoWithMeasurementBytes!,
             fileName:
                 _photoWithMeasurement?.name ?? 'seguimiento_con_medicion.jpg',
           );
           await repo.createPhoto({
             'wound_id': widget.woundId,
-            'consultation_id': consultation.id,
+            'consultation_id': consultationId,
             'measurement_id': measurement.id,
             'storage_path': withMeasurementPath,
             'taken_at': _visitDate.toIso8601String(),
