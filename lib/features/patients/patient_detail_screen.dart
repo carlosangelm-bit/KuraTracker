@@ -519,6 +519,26 @@ class _PatientHeaderCard extends StatelessWidget {
               const SizedBox(height: 4),
               Text(patient.backgroundNotes!),
             ],
+            if ((patient.allergies ?? '').trim().isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Text('Alergias',
+                  style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: KuraColors.danger)),
+              const SizedBox(height: 4),
+              Text(patient.allergies!),
+            ],
+            if ((patient.activeMedications ?? '').trim().isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Text('Medicamentos activos',
+                  style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: KuraColors.darkText.withOpacity(0.6))),
+              const SizedBox(height: 4),
+              Text(patient.activeMedications!),
+            ],
             if (patient.familyHistory.isNotEmpty) ...[
               const SizedBox(height: 12),
               Text('Antecedentes heredo-familiares',

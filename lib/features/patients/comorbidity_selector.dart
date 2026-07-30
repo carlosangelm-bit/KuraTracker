@@ -33,7 +33,11 @@ class ComorbidityStatusSelector extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
-      children: Comorbilidad.values.map((code) {
+      // Tabaquismo se captura como APNP (Tabaquismo) en el expediente, no como
+      // comorbilidad, para no duplicarlo. Se excluye del catálogo aquí.
+      children: Comorbilidad.values
+          .where((c) => c != Comorbilidad.tabaquismoActivo)
+          .map((code) {
         final current = values[code] ?? ComorbilidadEstado.noEvaluado;
         return Padding(
           padding: const EdgeInsets.only(bottom: 12),
