@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 
@@ -842,6 +843,7 @@ class DataRepository {
     bool isExternal = false,
     String? shopifyProductId,
     String? shopifyVariantId,
+    String? shopifyInventoryItemId,
     String? imageUrl,
     double? unitCost,
     double? unitPrice,
@@ -863,6 +865,7 @@ class DataRepository {
       'is_external': isExternal,
       'shopify_product_id': shopifyProductId,
       'shopify_variant_id': shopifyVariantId,
+      'shopify_inventory_item_id': shopifyInventoryItemId,
       'image_url': imageUrl,
       'unit_cost': unitCost,
       'unit_price': price,
@@ -926,7 +929,125 @@ class DataRepository {
       'created_at': DateTime.now().toIso8601String(),
     };
     final saved = await _store.insertRow(Collections.inventoryMovements, data);
+    // Espejo Shopify (Kura+): cualquier movimiento local (salvo 'ajuste', que es
+    // la propia bajada desde Shopify) se refleja en la tienda. Best-effort: si
+    // falla, la próxima sincronización reconcilia.
+    if (reason != InventoryReason.ajuste) {
+      await _maybePushShopifyAdjust(item, delta);
+    }
     return InventoryMovement.fromJson(saved);
+  }
+
+  /// Ajusta la existencia en Shopify (espejo Kura+) si el artículo está ligado
+  /// y el centro es espejo. Solo producción; nunca rompe el flujo local.
+  Future<void> _maybePushShopifyAdjust(InventoryItem item, int delta) async {
+    final store = _store;
+    if (store is! SupabaseDataStore) return;
+    if (item.shopifyInventoryItemId == null) return;
+    if (!shopifyMirrorFor(item.organizationId)) return;
+    try {
+      await store.invokeFunction('shopify-inventory', {
+        'action': 'adjust',
+        'inventoryItemId': item.shopifyInventoryItemId,
+        'delta': delta,
+      });
+    } catch (e) {
+      debugPrint('Ajuste a Shopify falló (se reconciliará en la próxima sync): $e');
+    }
+  }
+
+  /// ¿El centro mantiene su inventario como espejo de Shopify? (Kura+.)
+  bool shopifyMirrorFor(String? organizationId) =>
+      organizationById(organizationId)?.shopifyMirror ?? false;
+
+  /// Marca/desmarca un centro como espejo de Shopify (solo master).
+  Future<void> setOrgShopifyMirror(String organizationId, bool value) async {
+    final store = _store;
+    await store.updateRow(
+        Collections.organizations, organizationId, {'shopify_mirror': value});
+    if (store is SupabaseDataStore) {
+      await store.refreshCollection(Collections.organizations);
+    }
+  }
+
+  /// Bajada del espejo: trae las existencias de Shopify y ajusta el inventario
+  /// del sitio del centro Kura+ para que coincidan. Crea los artículos ligados
+  /// que falten (con su inventory_item_id de Shopify para el push posterior).
+  /// Devuelve cuántos artículos se ajustaron.
+  Future<int> syncShopifyInventory(String? organizationId, String siteId) async {
+    final store = _store;
+    if (store is! SupabaseDataStore) {
+      throw Exception('El espejo requiere el entorno de producción.');
+    }
+    if (organizationId == null) throw Exception('Centro no resuelto.');
+    Map<String, dynamic> data;
+    try {
+      data = await store.invokeFunction('shopify-inventory', {'action': 'levels'});
+    } on FunctionException catch (e) {
+      throw Exception(_edgeErrorMessage(e));
+    }
+    if (data['error'] != null) throw Exception(data['error'].toString());
+    final levels = (data['levels'] as List?) ?? const [];
+
+    final catalog = <String, ProductCatalogItem>{
+      for (final c in listProductCatalog())
+        '${c.shopifyProductId}|${c.shopifyVariantId ?? ''}': c,
+    };
+    final existing = listInventoryItems(
+        organizationId: organizationId, siteId: siteId, activeOnly: false);
+    final onHand = inventoryOnHand(siteId);
+
+    var adjusted = 0;
+    for (final lv in levels) {
+      final m = lv as Map;
+      final pid = m['productId']?.toString();
+      final vid = m['variantId']?.toString() ?? '';
+      final invItemId = m['inventoryItemId']?.toString();
+      final available = (m['available'] as num?)?.toInt() ?? 0;
+      if (pid == null || pid.isEmpty) continue;
+
+      InventoryItem? item;
+      for (final it in existing) {
+        if (it.shopifyProductId == pid && (it.shopifyVariantId ?? '') == vid) {
+          item = it;
+          break;
+        }
+      }
+      if (item == null) {
+        final cat = catalog['$pid|$vid'] ?? catalog['$pid|'];
+        item = await addInventoryItem(
+          organizationId: organizationId,
+          siteId: siteId,
+          name: cat?.displayName ?? 'Producto',
+          isExternal: false,
+          shopifyProductId: pid,
+          shopifyVariantId: vid.isEmpty ? null : vid,
+          shopifyInventoryItemId: invItemId,
+          unitPrice: cat?.price,
+          currency: cat?.currency,
+        );
+      } else if (item.shopifyInventoryItemId == null && invItemId != null) {
+        // Backfill del inventory_item_id de Shopify (para el push posterior).
+        await store.updateRow(Collections.inventoryItems, item.id,
+            {'shopify_inventory_item_id': invItemId});
+      }
+
+      final current = onHand[item.id] ?? 0;
+      final delta = available - current;
+      if (delta != 0) {
+        // reason 'ajuste' NO hace push (evita el bucle con Shopify).
+        await addInventoryMovement(
+          item: item,
+          delta: delta,
+          reason: InventoryReason.ajuste,
+          note: 'Sincronización Shopify',
+        );
+        adjusted++;
+      }
+    }
+    await store.refreshCollection(Collections.inventoryItems);
+    await store.refreshCollection(Collections.inventoryMovements);
+    return adjusted;
   }
 
   // ------------- Consumo por paciente + costeo (Insumos Fase 4) -------------

@@ -96,6 +96,8 @@ jobs:
         run: supabase functions deploy vac-bot --use-api --project-ref "$SUPABASE_PROJECT_REF"
       - name: Deploy shopify-sync-catalog (--use-api)
         run: supabase functions deploy shopify-sync-catalog --use-api --project-ref "$SUPABASE_PROJECT_REF"
+      - name: Deploy shopify-inventory (--use-api)
+        run: supabase functions deploy shopify-inventory --use-api --project-ref "$SUPABASE_PROJECT_REF"
 
   build_deploy:
     needs: migrations

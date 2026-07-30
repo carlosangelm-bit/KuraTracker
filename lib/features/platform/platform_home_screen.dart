@@ -491,6 +491,23 @@ class _ModulesTabState extends State<_ModulesTab> {
                         }
                       },
               ),
+              SwitchListTile(
+                title: const Text('Espejo de inventario con Shopify'),
+                subtitle: const Text(
+                    'Solo el centro dueño de la tienda (Kura+): el inventario se '
+                    'refleja desde Shopify y el consumo lo descuenta allá.'),
+                value: org.shopifyMirror,
+                onChanged: _busy
+                    ? null
+                    : (v) async {
+                        setState(() => _busy = true);
+                        try {
+                          await widget.repo.setOrgShopifyMirror(org.id, v);
+                        } finally {
+                          if (mounted) setState(() => _busy = false);
+                        }
+                      },
+              ),
             ],
           ),
         ),

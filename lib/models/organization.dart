@@ -19,6 +19,7 @@ class Organization {
   // Insumos (0047: mapeo/inventario/costeo/reabasto) y Protocolo Kura+ (0049).
   final bool premiumInsumos;
   final bool premiumProtocoloKura;
+  final bool shopifyMirror;
   // Alcance del inventario (0053): 'site' (por sitio) | 'center' (por centro).
   final String inventoryScope;
 
@@ -32,6 +33,7 @@ class Organization {
     this.centerType = CenterType.clinicaHeridas,
     this.premiumInsumos = false,
     this.premiumProtocoloKura = false,
+    this.shopifyMirror = false,
     this.inventoryScope = 'site',
   });
 
@@ -45,6 +47,7 @@ class Organization {
         centerType: CenterTypeX.fromDb(json['center_type'] as String?),
         premiumInsumos: json['premium_insumos'] as bool? ?? false,
         premiumProtocoloKura: json['premium_protocolo_kura'] as bool? ?? false,
+        shopifyMirror: json['shopify_mirror'] as bool? ?? false,
         inventoryScope: (json['inventory_scope'] as String?) ?? 'site',
       );
 
@@ -58,6 +61,7 @@ class Organization {
         'center_type': centerType.dbValue,
         'premium_insumos': premiumInsumos,
         'premium_protocolo_kura': premiumProtocoloKura,
+        'shopify_mirror': shopifyMirror,
         'inventory_scope': inventoryScope,
       };
 }
