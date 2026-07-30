@@ -128,6 +128,7 @@ final routerProvider = Provider<GoRouter>((ref) {
             location.contains('/consultation/new') ||
             (location.contains('/wound/') && location.endsWith('/capture')) ||
             location.endsWith('/follow-up/new') ||
+            location.contains('/follow-up/draft/') ||
             location.endsWith('/comorbidities') ||
             location.endsWith('/diagnoses') ||
             location.endsWith('/referrals/new');
@@ -227,6 +228,14 @@ final routerProvider = Provider<GoRouter>((ref) {
             builder: (context, state) => FollowUpCaptureScreen(
               patientId: state.pathParameters['patientId']!,
               woundId: state.pathParameters['woundId']!,
+            ),
+          ),
+          GoRoute(
+            path: '/patients/:patientId/wound/:woundId/follow-up/draft/:draftId',
+            builder: (context, state) => FollowUpCaptureScreen(
+              patientId: state.pathParameters['patientId']!,
+              woundId: state.pathParameters['woundId']!,
+              draftConsultationId: state.pathParameters['draftId'],
             ),
           ),
           GoRoute(

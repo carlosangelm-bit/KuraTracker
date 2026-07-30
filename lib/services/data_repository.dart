@@ -3401,6 +3401,35 @@ class DataRepository {
     return match.isEmpty ? null : Consultation.fromJson(match.first);
   }
 
+  /// Herida asociada a una consulta (vía su medición). Sirve para reabrir un
+  /// borrador de seguimiento en el formulario correcto.
+  String? woundIdForConsultation(String consultationId) {
+    final m = _store
+        .getAll(Collections.woundMeasurements)
+        .where((x) => x['consultation_id'] == consultationId);
+    return m.isEmpty ? null : m.first['wound_id'] as String?;
+  }
+
+  /// Borra una consulta y sus hijos (mediciones, evaluaciones, fotos). Se usa al
+  /// FINALIZAR un borrador de seguimiento: se reemplaza por la consulta completa
+  /// (evita duplicar y mantiene un solo registro clínico).
+  Future<void> deleteConsultationCascade(String consultationId) async {
+    for (final coll in [
+      Collections.woundPhotos,
+      Collections.woundAssessments,
+      Collections.woundMeasurements,
+    ]) {
+      final rows = _store
+          .getAll(coll)
+          .where((r) => r['consultation_id'] == consultationId)
+          .toList();
+      for (final r in rows) {
+        await _store.deleteRow(coll, r['id'] as String);
+      }
+    }
+    await _store.deleteRow(Collections.consultations, consultationId);
+  }
+
   /// Consulta ligada a una cita de la agenda, por su referencia
   /// ("acuity:<id>" | "manual:<uuid>"), o null si aún no se ha realizado.
   /// Usado por la agenda para el botón inteligente "Iniciar / Ir a la consulta".
