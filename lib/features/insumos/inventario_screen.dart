@@ -27,6 +27,30 @@ class InventarioScreen extends ConsumerStatefulWidget {
 class _InventarioScreenState extends ConsumerState<InventarioScreen> {
   String? _siteId;
   bool _importing = false;
+  bool _syncing = false;
+
+  /// Bajada del espejo: trae existencias de Shopify y ajusta el inventario del
+  /// sitio (solo centro Kura+ marcado como espejo).
+  Future<void> _syncShopify(DataRepository repo, String? orgId) async {
+    final siteId = _siteId;
+    if (orgId == null || siteId == null) return;
+    setState(() => _syncing = true);
+    try {
+      final n = await repo.syncShopifyInventory(orgId, siteId);
+      if (mounted) {
+        setState(() {});
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('Existencias sincronizadas: $n ajuste(s).')));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('$e'.replaceFirst('Exception: ', ''))));
+      }
+    } finally {
+      if (mounted) setState(() => _syncing = false);
+    }
+  }
 
   // Encabezado del CSV de carga masiva de inventario.
   static const _csvHeader = [
@@ -222,6 +246,21 @@ class _InventarioScreenState extends ConsumerState<InventarioScreen> {
           if (repoAsync.valueOrNull
                   ?.premiumInsumosFor(user?.organizationId) ??
               false) ...[
+            if (repoAsync.valueOrNull
+                    ?.shopifyMirrorFor(user?.organizationId) ??
+                false)
+              IconButton(
+                tooltip: 'Sincronizar existencias con Shopify',
+                icon: _syncing
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Icon(Icons.sync),
+                onPressed: _syncing
+                    ? null
+                    : () => _syncShopify(repoAsync.value!, user?.organizationId),
+              ),
             IconButton(
               tooltip: 'Descargar CSV (catálogo)',
               icon: const Icon(Icons.download_outlined),
