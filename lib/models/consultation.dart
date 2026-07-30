@@ -70,6 +70,9 @@ class Consultation {
   // "<origen>:<id>" (acuity:<id> | manual:<uuid>). NULL = alta directa desde el
   // expediente. Ver migración 0035_consultation_appointment_link.sql.
   final String? scheduledAppointmentRef;
+  final String? specialistNotes; // notas del especialista (0069)
+  final String? visitSummary; // resumen de la consulta (Plaud AI)
+  final String? transcript; // transcripción completa (solo admin)
 
   const Consultation({
     required this.id,
@@ -91,6 +94,9 @@ class Consultation {
     this.followUpSignature,
     this.followUpSignedAt,
     this.scheduledAppointmentRef,
+    this.specialistNotes,
+    this.visitSummary,
+    this.transcript,
   });
 
   factory Consultation.fromJson(Map<String, dynamic> json) => Consultation(
@@ -115,6 +121,9 @@ class Consultation {
             ? null
             : DateTime.parse(json['follow_up_signed_at'] as String),
         scheduledAppointmentRef: json['scheduled_appointment_ref'] as String?,
+        specialistNotes: json['specialist_notes'] as String?,
+        visitSummary: json['visit_summary'] as String?,
+        transcript: json['transcript'] as String?,
       );
 
   Map<String, dynamic> toJson() => {
@@ -137,5 +146,8 @@ class Consultation {
         'follow_up_signature': followUpSignature,
         'follow_up_signed_at': followUpSignedAt?.toIso8601String(),
         'scheduled_appointment_ref': scheduledAppointmentRef,
+        'specialist_notes': specialistNotes,
+        'visit_summary': visitSummary,
+        'transcript': transcript,
       };
 }

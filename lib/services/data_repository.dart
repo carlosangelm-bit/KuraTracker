@@ -3434,6 +3434,9 @@ class DataRepository {
     // "acuity:<id>" | "manual:<uuid>". La pasa el hub de consulta cuando se
     // entra desde la agenda ("Iniciar consulta").
     String? scheduledAppointmentRef,
+    String? specialistNotes,
+    String? visitSummary,
+    String? transcript,
   }) async {
     final data = {
       'id': _uuid.v4(),
@@ -3455,6 +3458,9 @@ class DataRepository {
       'follow_up_signature': followUpSignature,
       'follow_up_signed_at': followUpSignedAt?.toIso8601String(),
       'scheduled_appointment_ref': scheduledAppointmentRef,
+      'specialist_notes': specialistNotes,
+      'visit_summary': visitSummary,
+      'transcript': transcript,
     };
     final saved = await _store.insertRow(Collections.consultations, data);
     return Consultation.fromJson(saved);

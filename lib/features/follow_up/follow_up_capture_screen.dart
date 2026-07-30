@@ -115,6 +115,8 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
   bool _volumeAutoFollowing = true;
   final _manualMeasurementCtrl = TextEditingController();
   final _clinicalNotesCtrl = TextEditingController();
+  final _specialistNotesCtrl = TextEditingController(); // notas del especialista (0069)
+  final _visitSummaryCtrl = TextEditingController(); // resumen de la consulta
   bool _tunneling = false;
   bool _undermining = false;
 
@@ -318,6 +320,8 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
     _volumeCtrl.dispose();
     _manualMeasurementCtrl.dispose();
     _clinicalNotesCtrl.dispose();
+    _specialistNotesCtrl.dispose();
+    _visitSummaryCtrl.dispose();
     _careTypeOtherCtrl.dispose();
     _procedureDescOtherCtrl.dispose();
     _materialsUsedOtherCtrl.dispose();
@@ -851,6 +855,28 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
                     onSelected: (v) => setState(() => _evolutionSelected = v),
                   ),
                 ],
+                const SizedBox(height: 20),
+                Text('Notas y resumen', style: _sectionStyle(context)),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: _specialistNotesCtrl,
+                  maxLines: 3,
+                  decoration: const InputDecoration(
+                    labelText: 'Notas del especialista',
+                    hintText: 'Observaciones libres de la consulta.',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _visitSummaryCtrl,
+                  maxLines: 3,
+                  decoration: const InputDecoration(
+                    labelText: 'Resumen de la consulta',
+                    hintText: 'Se autollenará con Plaud AI; editable.',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
                 const SizedBox(height: 16),
                 _signatureReadOnlyCard(),
 
@@ -1543,6 +1569,12 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
         followUpSignedSpecialty: _signedSpecialtyReadOnly,
         followUpSignature: _signatureController.toJsonString(),
         followUpSignedAt: DateTime.now(),
+        specialistNotes: _specialistNotesCtrl.text.trim().isEmpty
+            ? null
+            : _specialistNotesCtrl.text.trim(),
+        visitSummary: _visitSummaryCtrl.text.trim().isEmpty
+            ? null
+            : _visitSummaryCtrl.text.trim(),
       );
       newConsultationId = consultation.id;
 
