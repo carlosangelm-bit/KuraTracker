@@ -672,7 +672,11 @@ class DataRepository {
     } on FunctionException catch (e) {
       throw Exception(_edgeErrorMessage(e));
     }
-    if (data['error'] != null) throw Exception(data['error'].toString());
+    if (data['error'] != null) {
+      final hint = data['hint'];
+      throw Exception(
+          '${data['error']}${hint != null ? '\n$hint' : ''}');
+    }
     await store.refreshCollection(Collections.productCatalog);
     return (data['distinct'] as num?)?.toInt() ??
         (data['upserted'] as num?)?.toInt() ??

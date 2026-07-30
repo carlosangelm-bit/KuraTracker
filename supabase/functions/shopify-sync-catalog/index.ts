@@ -71,7 +71,16 @@ serve(async (req) => {
         const txt = await res.text().catch(() => "");
         console.error("shopify products error", res.status, txt);
         return json(
-          { error: `Shopify rechazó la lectura de productos (HTTP ${res.status}). Revisa el token y los scopes read_products.` },
+          {
+            error:
+                `Shopify HTTP ${res.status} en https://${STORE_DOMAIN}/admin/api/${API_VERSION}. `
+                + `Detalle: ${txt.slice(0, 300)}`,
+            hint: res.status === 401 || res.status === 403
+                ? 'Token inválido, app no instalada en la tienda, o falta el scope read_products.'
+                : res.status === 404
+                    ? 'Revisa SHOPIFY_STORE_DOMAIN (debe ser algo.myshopify.com) y SHOPIFY_API_VERSION.'
+                    : 'Revisa token/dominio/versión.',
+          },
           502,
         );
       }
