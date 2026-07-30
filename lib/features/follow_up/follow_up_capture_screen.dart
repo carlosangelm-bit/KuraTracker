@@ -131,7 +131,7 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
   String _painDuration = 'agudo';
   int _painVas = 0;
   ExudadoCantidad _exudadoCantidad = ExudadoCantidad.escaso;
-  ExudadoTipo _exudadoTipo = ExudadoTipo.seroso;
+  ExudadoTipo _exudadoTipo = ExudadoTipo.serohematico;
   final Set<InfeccionCriterioIwii> _infeccionCriterios = {};
   String _odor = 'ninguno';
   String _woundEdge = 'definido';
@@ -365,7 +365,6 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
         _lengthCm > 0 &&
         _widthCm > 0 &&
         _photoAfterCleaningBytes != null &&
-        _photoWithMeasurementBytes != null &&
         _followUpNoteComplete &&
         _signedByReadOnly != null &&
         _signedByReadOnly!.isNotEmpty &&
@@ -571,7 +570,8 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
                 ],
 
                 const SizedBox(height: 24),
-                Text('Fotografía 2: con medición', style: _sectionStyle(context)),
+                Text('Fotografía 2: con medición (opcional)',
+                    style: _sectionStyle(context)),
                 const SizedBox(height: 4),
                 const Text(
                   'Protocolo de Fotografías §1.2: se toma justo después de registrar '
@@ -660,7 +660,7 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
                         value: _exudadoTipo,
                         decoration: const InputDecoration(labelText: 'Exudado (tipo)'),
                         items: ExudadoTipo.values
-                            .map((e) => DropdownMenuItem(value: e, child: Text(e.name)))
+                            .map((e) => DropdownMenuItem(value: e, child: Text(e.label)))
                             .toList(),
                         onChanged: (v) => setState(() => _exudadoTipo = v ?? _exudadoTipo),
                       ),
@@ -889,10 +889,7 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
   String _saveBlockedReason() {
     if (_lengthCm <= 0 || _widthCm <= 0) return 'Completa al menos largo y ancho para guardar.';
     if (_photoAfterCleaningBytes == null) {
-      return 'Falta la fotografía 1 (después de limpiar, sin medición).';
-    }
-    if (_photoWithMeasurementBytes == null) {
-      return 'Falta la fotografía 2 (con medición).';
+      return 'Falta la fotografía de la herida.';
     }
     if (!_followUpNoteComplete) {
       return 'Completa todos los conceptos de la nota de seguimiento (sin campos vacíos).';
@@ -1612,20 +1609,24 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
           'photo_stage': PhotoStage.despuesLimpiar.dbValue,
         });
 
-        final withMeasurementPath = await PhotoUploadService.uploadWoundPhoto(
-          woundId: widget.woundId,
-          consultationId: consultation.id,
-          bytes: _photoWithMeasurementBytes!,
-          fileName: _photoWithMeasurement?.name ?? 'seguimiento_con_medicion.jpg',
-        );
-        await repo.createPhoto({
-          'wound_id': widget.woundId,
-          'consultation_id': consultation.id,
-          'measurement_id': measurement.id,
-          'storage_path': withMeasurementPath,
-          'taken_at': _visitDate.toIso8601String(),
-          'photo_stage': PhotoStage.conMedicion.dbValue,
-        });
+        // Foto 2 (con medición) ya es OPCIONAL: solo se sube si se capturó.
+        if (_photoWithMeasurementBytes != null) {
+          final withMeasurementPath = await PhotoUploadService.uploadWoundPhoto(
+            woundId: widget.woundId,
+            consultationId: consultation.id,
+            bytes: _photoWithMeasurementBytes!,
+            fileName:
+                _photoWithMeasurement?.name ?? 'seguimiento_con_medicion.jpg',
+          );
+          await repo.createPhoto({
+            'wound_id': widget.woundId,
+            'consultation_id': consultation.id,
+            'measurement_id': measurement.id,
+            'storage_path': withMeasurementPath,
+            'taken_at': _visitDate.toIso8601String(),
+            'photo_stage': PhotoStage.conMedicion.dbValue,
+          });
+        }
       } catch (e) {
         debugPrint('Fotos de seguimiento no guardadas: $e');
         photoWarning = e.toString().contains('Quota')

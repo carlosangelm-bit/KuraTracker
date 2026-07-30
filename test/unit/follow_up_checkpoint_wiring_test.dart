@@ -66,7 +66,7 @@ void main() {
       'consultation_id': baselineConsultation.id,
       'wound_id': wound.id,
       'exudate_amount': ExudadoCantidad.moderado.name,
-      'exudate_type': ExudadoTipo.seroso.name,
+      'exudate_type': ExudadoTipo.serohematico.name,
       'infection_criteria': <String>[],
       'low_adherence': false,
     });
@@ -93,7 +93,7 @@ void main() {
       'consultation_id': followUp1.id,
       'wound_id': wound.id,
       'exudate_amount': ExudadoCantidad.escaso.name,
-      'exudate_type': ExudadoTipo.seroso.name,
+      'exudate_type': ExudadoTipo.serohematico.name,
       'infection_criteria': <String>[],
       'low_adherence': false,
     });
