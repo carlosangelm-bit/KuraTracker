@@ -1,12 +1,13 @@
 // shopify-sync-catalog — Siembra/actualiza el catálogo GLOBAL de productos
-// (product_catalog) desde la Admin API de Shopify. Solo el master (Kura+, dueño
-// de la tienda) puede dispararla. Los centros cliente solo LEEN el catálogo.
+// (product_catalog) desde la Admin GraphQL API de Shopify. Solo el master
+// (Kura+, dueño de la tienda) puede dispararla; los centros cliente solo leen.
+//
+// NOTA: las apps nuevas del dev dashboard de Shopify ya NO exponen la REST
+// Admin API (deprecada); se usa GraphQL con el token atkn_… en el header
+// X-Shopify-Access-Token.
 //
 // Deploy: supabase functions deploy shopify-sync-catalog --use-api   (verify_jwt)
-// Secrets (Supabase):
-//   SHOPIFY_ADMIN_TOKEN   -> token de automatización / Admin API (shpat_… o similar)
-//   SHOPIFY_STORE_DOMAIN  -> dominio interno de la tienda (algo.myshopify.com)
-//   SHOPIFY_API_VERSION   -> versión de la Admin API (default 2025-01)
+// Secrets: SHOPIFY_ADMIN_TOKEN, SHOPIFY_STORE_DOMAIN, SHOPIFY_API_VERSION (default 2025-01)
 
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -29,6 +30,22 @@ function json(body: unknown, status = 200) {
   });
 }
 
+// gid://shopify/Product/123 -> "123"
+function numId(gid: unknown): string {
+  return String(gid ?? "").split("/").pop() ?? "";
+}
+
+const QUERY = `query($cursor: String) {
+  products(first: 100, after: $cursor) {
+    pageInfo { hasNextPage endCursor }
+    edges { node {
+      id title vendor productType
+      featuredImage { url }
+      variants(first: 100) { edges { node { id sku title price } } }
+    } }
+  }
+}`;
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
 
@@ -36,7 +53,6 @@ serve(async (req) => {
     auth: { autoRefreshToken: false, persistSession: false },
   });
 
-  // Autenticación + autorización: solo master.
   const jwt = (req.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "");
   if (!jwt) return json({ error: "No autenticado." }, 401);
   const { data: caller, error: callerErr } = await admin.auth.getUser(jwt);
@@ -54,49 +70,50 @@ serve(async (req) => {
     );
   }
 
-  const base = `https://${STORE_DOMAIN}/admin/api/${API_VERSION}`;
-  let url: string | null = `${base}/products.json?limit=250`;
+  const endpoint = `https://${STORE_DOMAIN}/admin/api/${API_VERSION}/graphql.json`;
+  let cursor: string | null = null;
   let upserted = 0;
   const seen = new Set<string>();
 
   try {
-    while (url) {
-      const res = await fetch(url, {
+    while (true) {
+      const res = await fetch(endpoint, {
+        method: "POST",
         headers: {
           "X-Shopify-Access-Token": ADMIN_TOKEN,
           "content-type": "application/json",
         },
+        body: JSON.stringify({ query: QUERY, variables: { cursor } }),
       });
-      if (!res.ok) {
-        const txt = await res.text().catch(() => "");
-        console.error("shopify products error", res.status, txt);
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok || body?.errors) {
+        console.error("shopify graphql error", res.status, JSON.stringify(body));
         return json(
           {
             error:
-                `Shopify HTTP ${res.status} en https://${STORE_DOMAIN}/admin/api/${API_VERSION}. `
-                + `Detalle: ${txt.slice(0, 300)}`,
+                `Shopify GraphQL HTTP ${res.status} en ${endpoint}. `
+                + `Detalle: ${JSON.stringify(body?.errors ?? body).slice(0, 300)}`,
             hint: res.status === 401 || res.status === 403
-                ? 'Token inválido, app no instalada en la tienda, o falta el scope read_products.'
-                : res.status === 404
-                    ? 'Revisa SHOPIFY_STORE_DOMAIN (debe ser algo.myshopify.com) y SHOPIFY_API_VERSION.'
-                    : 'Revisa token/dominio/versión.',
+                ? 'Token inválido o app no instalada en la tienda.'
+                : 'Revisa que el scope read_products esté aprobado en la app.',
           },
           502,
         );
       }
-      const body = await res.json();
-      const products = (body?.products ?? []) as Array<Record<string, unknown>>;
+
+      const conn = body?.data?.products;
+      const edges = (conn?.edges ?? []) as Array<Record<string, unknown>>;
       const rows: Array<Record<string, unknown>> = [];
       const now = new Date().toISOString();
-      for (const p of products) {
-        const vendor = (p["vendor"] as string) ?? null;
-        const productType = (p["product_type"] as string) ?? null;
-        const images = (p["images"] as Array<Record<string, unknown>>) ?? [];
-        const image = images.length > 0 ? (images[0]["src"] as string) : null;
-        const variants = (p["variants"] as Array<Record<string, unknown>>) ?? [];
-        for (const v of variants) {
-          const pid = String(p["id"]);
-          const vid = String(v["id"] ?? "");
+      for (const e of edges) {
+        const p = (e["node"] ?? {}) as Record<string, unknown>;
+        const pid = numId(p["id"]);
+        const img = (p["featuredImage"] as Record<string, unknown> | null)?.["url"] ?? null;
+        const vEdges = ((p["variants"] as Record<string, unknown>)?.["edges"] ?? []) as
+          Array<Record<string, unknown>>;
+        for (const ve of vEdges) {
+          const v = (ve["node"] ?? {}) as Record<string, unknown>;
+          const vid = numId(v["id"]);
           seen.add(`${pid}|${vid}`);
           rows.push({
             shopify_product_id: pid,
@@ -104,11 +121,11 @@ serve(async (req) => {
             sku: (v["sku"] as string) ?? null,
             title: (p["title"] as string) ?? "Producto",
             variant_title: (v["title"] as string) ?? null,
-            vendor,
-            product_type: productType,
+            vendor: (p["vendor"] as string) ?? null,
+            product_type: (p["productType"] as string) ?? null,
             price: v["price"] != null ? Number(v["price"]) : null,
             currency: "MXN",
-            image_url: image,
+            image_url: img,
             is_active: true,
             updated_at: now,
           });
@@ -125,10 +142,8 @@ serve(async (req) => {
         upserted += rows.length;
       }
 
-      // Paginación por Link header (rel="next").
-      const link = res.headers.get("link") ?? res.headers.get("Link") ?? "";
-      const m = link.match(/<([^>]+)>;\s*rel="next"/);
-      url = m ? m[1] : null;
+      if (conn?.pageInfo?.hasNextPage !== true) break;
+      cursor = conn.pageInfo.endCursor as string;
     }
 
     return json({ ok: true, upserted, distinct: seen.size });
