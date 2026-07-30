@@ -12,6 +12,7 @@ import '../../features/patients/patients_list_screen.dart';
 import '../../features/patients/patient_detail_screen.dart';
 import '../../features/patients/patient_form_screen.dart';
 import '../../features/patients/comorbidities_screen.dart';
+import '../../features/patients/patient_labs_screen.dart';
 import '../../features/patients/diagnoses_screen.dart';
 import '../../features/risk/risk_board_screen.dart';
 import '../../features/risk/patient_risk_screen.dart';
@@ -236,6 +237,12 @@ final routerProvider = Provider<GoRouter>((ref) {
               patientId: state.pathParameters['patientId']!,
               woundId: state.pathParameters['woundId']!,
               draftConsultationId: state.pathParameters['draftId'],
+            ),
+          ),
+          GoRoute(
+            path: '/patients/:patientId/labs',
+            builder: (context, state) => PatientLabsScreen(
+              patientId: state.pathParameters['patientId']!,
             ),
           ),
           GoRoute(
