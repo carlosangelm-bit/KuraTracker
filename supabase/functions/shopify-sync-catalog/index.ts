@@ -15,6 +15,8 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const ADMIN_TOKEN = Deno.env.get("SHOPIFY_ADMIN_TOKEN") ?? "";
+const CLIENT_ID = Deno.env.get("SHOPIFY_CLIENT_ID") ?? "";
+const CLIENT_SECRET = Deno.env.get("SHOPIFY_CLIENT_SECRET") ?? "";
 const STORE_DOMAIN = Deno.env.get("SHOPIFY_STORE_DOMAIN") ?? "";
 const API_VERSION = Deno.env.get("SHOPIFY_API_VERSION") ?? "2025-01";
 
@@ -63,11 +65,52 @@ serve(async (req) => {
     return json({ error: "Solo el master puede sincronizar el catálogo." }, 403);
   }
 
-  if (!ADMIN_TOKEN || !STORE_DOMAIN) {
+  if (!STORE_DOMAIN || (!(CLIENT_ID && CLIENT_SECRET) && !ADMIN_TOKEN)) {
     return json(
-      { error: "Falta configurar SHOPIFY_ADMIN_TOKEN / SHOPIFY_STORE_DOMAIN." },
+      {
+        error:
+            "Falta configurar SHOPIFY_STORE_DOMAIN y (SHOPIFY_CLIENT_ID + "
+            + "SHOPIFY_CLIENT_SECRET) o SHOPIFY_ADMIN_TOKEN.",
+      },
       500,
     );
+  }
+
+  // Token de acceso: si hay client id/secret, se obtiene fresco vía
+  // client_credentials (expira en 24 h, por eso se pide cada vez); si no, se
+  // usa un token estático (SHOPIFY_ADMIN_TOKEN).
+  let accessToken = ADMIN_TOKEN;
+  if (CLIENT_ID && CLIENT_SECRET) {
+    try {
+      const tokRes = await fetch(
+        `https://${STORE_DOMAIN}/admin/oauth/access_token`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({
+            grant_type: "client_credentials",
+            client_id: CLIENT_ID,
+            client_secret: CLIENT_SECRET,
+          }).toString(),
+        },
+      );
+      const tokBody = await tokRes.json().catch(() => ({}));
+      if (!tokRes.ok || !tokBody?.access_token) {
+        return json(
+          {
+            error:
+                `No se pudo obtener el token (client_credentials) HTTP ${tokRes.status}. `
+                + `Detalle: ${JSON.stringify(tokBody).slice(0, 300)}`,
+            hint: 'Revisa SHOPIFY_CLIENT_ID / SHOPIFY_CLIENT_SECRET y que la app esté instalada en la tienda.',
+          },
+          502,
+        );
+      }
+      accessToken = tokBody.access_token as string;
+    } catch (e) {
+      console.error("client_credentials error", e);
+      return json({ error: "Error al obtener el token de Shopify." }, 502);
+    }
   }
 
   const endpoint = `https://${STORE_DOMAIN}/admin/api/${API_VERSION}/graphql.json`;
@@ -79,7 +122,7 @@ serve(async (req) => {
     const r = await fetch(endpoint, {
       method: "POST",
       headers: {
-        "X-Shopify-Access-Token": ADMIN_TOKEN,
+        "X-Shopify-Access-Token": accessToken,
         "content-type": "application/json",
       },
       body: JSON.stringify({ query: QUERY, variables: { cursor: c } }),
