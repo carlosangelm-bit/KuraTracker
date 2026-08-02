@@ -1,0 +1,2888 @@
+[
+  {
+    "name": "venosa_abi_1.0_compresion_fuerte",
+    "scenario": "b",
+    "input": {
+      "etiologia": "vascular",
+      "entorno": "clinica",
+      "area_cm2": 10.0,
+      "depth_cm": 0.3,
+      "necrosis_pct": 0.0,
+      "esfacelo_pct": 0.0,
+      "granulacion_pct": 80.0,
+      "epitelizacion_pct": 20.0,
+      "comorbilidades": {},
+      "abi_pie_derecho": 1.0,
+      "abi_pie_izquierdo": 1.05,
+      "es_extremidad_inferior": true,
+      "albumina_gdl": null,
+      "tunelizacion_o_socavamiento": false,
+      "exudado_cantidad": "moderado",
+      "piel_perilesional": [],
+      "infeccion_criterios": [],
+      "tiene_cuidador_identificado": false,
+      "paciente_fragil": false,
+      "wagner_grade": null,
+      "ceap_class": null,
+      "wuwhs_grade": null,
+      "agente_causal": null,
+      "subtipo_vascular": "venosa",
+      "no_revascularizable": false,
+      "braden_score": null,
+      "lpp_recurrente": false,
+      "cuidados_paliativos": false,
+      "dolor_cronico": false,
+      "tunnel_depth_cm": null,
+      "sobre_articulacion": false
+    },
+    "expected": {
+      "regimen": [
+        {
+          "metodo": "Limpieza de la herida",
+          "producto": "Solución salina / Prontosan",
+          "justificacion": "Limpieza en cada cambio de aposito (regla base)."
+        },
+        {
+          "metodo": "Apósito",
+          "producto": "Espuma con borde adhesivo / alta absorción",
+          "justificacion": "Exudado moderado: requiere aposito secundario absorbente."
+        },
+        {
+          "metodo": "Terapia compresiva",
+          "producto": "Compresión fuerte (30-40 mmHg)",
+          "justificacion": "Úlcera venosa/mixta, ITB 1.00 (0.9-1.4): compresión fuerte (Protocolo \"Úlceras MMII\")."
+        }
+      ],
+      "interconsultas": [
+        {
+          "especialidad": "Geriatria",
+          "motivo": "Valoración geriátrica integral recomendada: úlcera vascular (MMII).",
+          "esUrgente": false
+        }
+      ],
+      "alertas": []
+    }
+  },
+  {
+    "name": "venosa_abi_0.85_precaucion",
+    "scenario": "b",
+    "input": {
+      "etiologia": "vascular",
+      "entorno": "clinica",
+      "area_cm2": 10.0,
+      "depth_cm": 0.3,
+      "necrosis_pct": 0.0,
+      "esfacelo_pct": 0.0,
+      "granulacion_pct": 80.0,
+      "epitelizacion_pct": 20.0,
+      "comorbilidades": {},
+      "abi_pie_derecho": 0.85,
+      "abi_pie_izquierdo": 0.9,
+      "es_extremidad_inferior": true,
+      "albumina_gdl": null,
+      "tunelizacion_o_socavamiento": false,
+      "exudado_cantidad": "escaso",
+      "piel_perilesional": [],
+      "infeccion_criterios": [],
+      "tiene_cuidador_identificado": false,
+      "paciente_fragil": false,
+      "wagner_grade": null,
+      "ceap_class": null,
+      "wuwhs_grade": null,
+      "agente_causal": null,
+      "subtipo_vascular": "venosa",
+      "no_revascularizable": false,
+      "braden_score": null,
+      "lpp_recurrente": false,
+      "cuidados_paliativos": false,
+      "dolor_cronico": false,
+      "tunnel_depth_cm": null,
+      "sobre_articulacion": false
+    },
+    "expected": {
+      "regimen": [
+        {
+          "metodo": "Limpieza de la herida",
+          "producto": "Solución salina / Prontosan",
+          "justificacion": "Limpieza en cada cambio de aposito (regla base)."
+        },
+        {
+          "metodo": "Terapia compresiva",
+          "producto": "Compresión con precaución (multicomponente reducida)",
+          "justificacion": "Úlcera venosa/mixta, ITB 0.85 (0.8-0.89): compresión con precaución y vigilancia estrecha; derivar a angiología (Protocolo \"Úlceras MMII\")."
+        }
+      ],
+      "interconsultas": [
+        {
+          "especialidad": "Geriatria",
+          "motivo": "Valoración geriátrica integral recomendada: úlcera vascular (MMII).",
+          "esUrgente": false
+        },
+        {
+          "especialidad": "Angiologia / Cirugia vascular",
+          "motivo": "ITB anómalo (0.85): < 0.9 o > 1.4, fuera del rango seguro. Valoración angiológica (Protocolo \"Interconsultas\").",
+          "esUrgente": false
+        }
+      ],
+      "alertas": []
+    }
+  },
+  {
+    "name": "venosa_abi_0.7_reducida",
+    "scenario": "b",
+    "input": {
+      "etiologia": "vascular",
+      "entorno": "clinica",
+      "area_cm2": 10.0,
+      "depth_cm": 0.3,
+      "necrosis_pct": 0.0,
+      "esfacelo_pct": 0.0,
+      "granulacion_pct": 80.0,
+      "epitelizacion_pct": 20.0,
+      "comorbilidades": {},
+      "abi_pie_derecho": 0.7,
+      "abi_pie_izquierdo": 0.75,
+      "es_extremidad_inferior": true,
+      "albumina_gdl": null,
+      "tunelizacion_o_socavamiento": false,
+      "exudado_cantidad": "escaso",
+      "piel_perilesional": [],
+      "infeccion_criterios": [],
+      "tiene_cuidador_identificado": false,
+      "paciente_fragil": false,
+      "wagner_grade": null,
+      "ceap_class": null,
+      "wuwhs_grade": null,
+      "agente_causal": null,
+      "subtipo_vascular": "venosa",
+      "no_revascularizable": false,
+      "braden_score": null,
+      "lpp_recurrente": false,
+      "cuidados_paliativos": false,
+      "dolor_cronico": false,
+      "tunnel_depth_cm": null,
+      "sobre_articulacion": false
+    },
+    "expected": {
+      "regimen": [
+        {
+          "metodo": "Limpieza de la herida",
+          "producto": "Solución salina / Prontosan",
+          "justificacion": "Limpieza en cada cambio de aposito (regla base)."
+        },
+        {
+          "metodo": "Terapia compresiva",
+          "producto": "Compresión reducida (máx 20 mmHg)",
+          "justificacion": "Úlcera venosa/mixta, ITB 0.70 (0.6-0.8): compresión reducida a máx 20 mmHg y derivar a angiología (Protocolo \"Úlceras MMII\")."
+        }
+      ],
+      "interconsultas": [
+        {
+          "especialidad": "Geriatria",
+          "motivo": "Valoración geriátrica integral recomendada: úlcera vascular (MMII).",
+          "esUrgente": false
+        },
+        {
+          "especialidad": "Angiologia / Cirugia vascular",
+          "motivo": "ITB anómalo (0.70): < 0.9 o > 1.4, fuera del rango seguro. Valoración angiológica (Protocolo \"Interconsultas\").",
+          "esUrgente": false
+        }
+      ],
+      "alertas": []
+    }
+  },
+  {
+    "name": "venosa_abi_0.55_noaplica",
+    "scenario": "b",
+    "input": {
+      "etiologia": "vascular",
+      "entorno": "clinica",
+      "area_cm2": 10.0,
+      "depth_cm": 0.3,
+      "necrosis_pct": 0.0,
+      "esfacelo_pct": 0.0,
+      "granulacion_pct": 80.0,
+      "epitelizacion_pct": 20.0,
+      "comorbilidades": {},
+      "abi_pie_derecho": 0.55,
+      "abi_pie_izquierdo": 0.58,
+      "es_extremidad_inferior": true,
+      "albumina_gdl": null,
+      "tunelizacion_o_socavamiento": false,
+      "exudado_cantidad": "escaso",
+      "piel_perilesional": [],
+      "infeccion_criterios": [],
+      "tiene_cuidador_identificado": false,
+      "paciente_fragil": false,
+      "wagner_grade": null,
+      "ceap_class": null,
+      "wuwhs_grade": null,
+      "agente_causal": null,
+      "subtipo_vascular": "venosa",
+      "no_revascularizable": false,
+      "braden_score": null,
+      "lpp_recurrente": false,
+      "cuidados_paliativos": false,
+      "dolor_cronico": false,
+      "tunnel_depth_cm": null,
+      "sobre_articulacion": false
+    },
+    "expected": {
+      "regimen": [
+        {
+          "metodo": "Limpieza de la herida",
+          "producto": "Solución salina / Prontosan",
+          "justificacion": "Limpieza en cada cambio de aposito (regla base)."
+        }
+      ],
+      "interconsultas": [
+        {
+          "especialidad": "Geriatria",
+          "motivo": "Valoración geriátrica integral recomendada: úlcera vascular (MMII).",
+          "esUrgente": false
+        },
+        {
+          "especialidad": "Angiologia / Cirugia vascular",
+          "motivo": "ITB anómalo (0.55): < 0.9 o > 1.4, fuera del rango seguro. Valoración angiológica (Protocolo \"Interconsultas\").",
+          "esUrgente": false
+        }
+      ],
+      "alertas": [
+        "Compresión NO aplicada: ITB < 0.6 (perfusión insuficiente). Derivar a angiología (Protocolo \"Úlceras MMII\")."
+      ]
+    }
+  },
+  {
+    "name": "venosa_itb_1.5_incompresible",
+    "scenario": "b",
+    "input": {
+      "etiologia": "vascular",
+      "entorno": "clinica",
+      "area_cm2": 10.0,
+      "depth_cm": 0.3,
+      "necrosis_pct": 0.0,
+      "esfacelo_pct": 0.0,
+      "granulacion_pct": 80.0,
+      "epitelizacion_pct": 20.0,
+      "comorbilidades": {},
+      "abi_pie_derecho": 1.5,
+      "abi_pie_izquierdo": 1.5,
+      "es_extremidad_inferior": true,
+      "albumina_gdl": null,
+      "tunelizacion_o_socavamiento": false,
+      "exudado_cantidad": "escaso",
+      "piel_perilesional": [],
+      "infeccion_criterios": [],
+      "tiene_cuidador_identificado": false,
+      "paciente_fragil": false,
+      "wagner_grade": null,
+      "ceap_class": null,
+      "wuwhs_grade": null,
+      "agente_causal": null,
+      "subtipo_vascular": "venosa",
+      "no_revascularizable": false,
+      "braden_score": null,
+      "lpp_recurrente": false,
+      "cuidados_paliativos": false,
+      "dolor_cronico": false,
+      "tunnel_depth_cm": null,
+      "sobre_articulacion": false
+    },
+    "expected": {
+      "regimen": [
+        {
+          "metodo": "Limpieza de la herida",
+          "producto": "Solución salina / Prontosan",
+          "justificacion": "Limpieza en cada cambio de aposito (regla base)."
+        }
+      ],
+      "interconsultas": [
+        {
+          "especialidad": "Geriatria",
+          "motivo": "Valoración geriátrica integral recomendada: úlcera vascular (MMII).",
+          "esUrgente": false
+        },
+        {
+          "especialidad": "Angiologia / Cirugia vascular",
+          "motivo": "ITB anómalo (1.50): < 0.9 o > 1.4, fuera del rango seguro. Valoración angiológica (Protocolo \"Interconsultas\").",
+          "esUrgente": false
+        }
+      ],
+      "alertas": [
+        "Compresión NO aplicada: ITB > 1.4 (arterias incompresibles / calcificación). Derivar a angiología (Protocolo \"Úlceras MMII\")."
+      ]
+    }
+  },
+  {
+    "name": "venosa_sin_itb",
+    "scenario": "b",
+    "input": {
+      "etiologia": "vascular",
+      "entorno": "clinica",
+      "area_cm2": 10.0,
+      "depth_cm": 0.3,
+      "necrosis_pct": 0.0,
+      "esfacelo_pct": 0.0,
+      "granulacion_pct": 80.0,
+      "epitelizacion_pct": 20.0,
+      "comorbilidades": {},
+      "abi_pie_derecho": null,
+      "abi_pie_izquierdo": null,
+      "es_extremidad_inferior": true,
+      "albumina_gdl": null,
+      "tunelizacion_o_socavamiento": false,
+      "exudado_cantidad": "escaso",
+      "piel_perilesional": [],
+      "infeccion_criterios": [],
+      "tiene_cuidador_identificado": false,
+      "paciente_fragil": false,
+      "wagner_grade": null,
+      "ceap_class": null,
+      "wuwhs_grade": null,
+      "agente_causal": null,
+      "subtipo_vascular": "venosa",
+      "no_revascularizable": false,
+      "braden_score": null,
+      "lpp_recurrente": false,
+      "cuidados_paliativos": false,
+      "dolor_cronico": false,
+      "tunnel_depth_cm": null,
+      "sobre_articulacion": false
+    },
+    "expected": {
+      "regimen": [
+        {
+          "metodo": "Limpieza de la herida",
+          "producto": "Solución salina / Prontosan",
+          "justificacion": "Limpieza en cada cambio de aposito (regla base)."
+        },
+        {
+          "metodo": "Terapia compresiva",
+          "producto": "Compresión moderada (20-30 mmHg) — confirmar ITB antes de iniciar",
+          "justificacion": "Úlcera venosa sin ITB documentado: medir ITB antes de iniciar compresión (Protocolo \"Úlceras MMII\")."
+        }
+      ],
+      "interconsultas": [
+        {
+          "especialidad": "Geriatria",
+          "motivo": "Valoración geriátrica integral recomendada: úlcera vascular (MMII).",
+          "esUrgente": false
+        }
+      ],
+      "alertas": []
+    }
+  },
+  {
+    "name": "arterial_abi_0.85_terapia_seca",
+    "scenario": "b",
+    "input": {
+      "etiologia": "vascular",
+      "entorno": "clinica",
+      "area_cm2": 10.0,
+      "depth_cm": 0.3,
+      "necrosis_pct": 20.0,
+      "esfacelo_pct": 0.0,
+      "granulacion_pct": 80.0,
+      "epitelizacion_pct": 20.0,
+      "comorbilidades": {},
+      "abi_pie_derecho": 0.85,
+      "abi_pie_izquierdo": 0.9,
+      "es_extremidad_inferior": true,
+      "albumina_gdl": null,
+      "tunelizacion_o_socavamiento": false,
+      "exudado_cantidad": "escaso",
+      "piel_perilesional": [],
+      "infeccion_criterios": [],
+      "tiene_cuidador_identificado": false,
+      "paciente_fragil": false,
+      "wagner_grade": null,
+      "ceap_class": null,
+      "wuwhs_grade": null,
+      "agente_causal": null,
+      "subtipo_vascular": "arterial",
+      "no_revascularizable": false,
+      "braden_score": null,
+      "lpp_recurrente": false,
+      "cuidados_paliativos": false,
+      "dolor_cronico": false,
+      "tunnel_depth_cm": null,
+      "sobre_articulacion": false
+    },
+    "expected": {
+      "regimen": [
+        {
+          "metodo": "Terapia seca",
+          "producto": "Yodopovidona 10%, secado al aire, proteger escara estable",
+          "justificacion": "Úlcera arterial/isquémica o no revascularizable: se suprime la cura húmeda por defecto. Mantener la escara seca estable como barrera biológica (Protocolo \"Terapia seca\")."
+        }
+      ],
+      "interconsultas": [
+        {
+          "especialidad": "Angiologia / Cirugia vascular",
+          "motivo": "Úlcera arterial/isquémica o no revascularizable. Valorar revascularización y confirmar plan de terapia seca (Doppler). ITB=0.85.",
+          "esUrgente": false
+        },
+        {
+          "especialidad": "Geriatria",
+          "motivo": "Valoración geriátrica integral recomendada: úlcera vascular (MMII).",
+          "esUrgente": false
+        }
+      ],
+      "alertas": [
+        "Terapia seca: desbridamiento CORTANTE CONTRAINDICADO. No desbridar escara seca estable aunque necrosis/esfacelo >=15%. Desbridamiento únicamente autolítico/enzimático \"según Doppler/angiólogo\" si aparece esfacelo húmedo o signos de infección.",
+        "Compresión NUNCA indicada en úlcera arterial/isquémica o no revascularizable (terapia seca)."
+      ]
+    }
+  },
+  {
+    "name": "arterial_no_revascularizable",
+    "scenario": "b",
+    "input": {
+      "etiologia": "vascular",
+      "entorno": "clinica",
+      "area_cm2": 10.0,
+      "depth_cm": 0.3,
+      "necrosis_pct": 0.0,
+      "esfacelo_pct": 0.0,
+      "granulacion_pct": 80.0,
+      "epitelizacion_pct": 20.0,
+      "comorbilidades": {},
+      "abi_pie_derecho": 0.9,
+      "abi_pie_izquierdo": 0.95,
+      "es_extremidad_inferior": true,
+      "albumina_gdl": null,
+      "tunelizacion_o_socavamiento": false,
+      "exudado_cantidad": "escaso",
+      "piel_perilesional": [],
+      "infeccion_criterios": [],
+      "tiene_cuidador_identificado": false,
+      "paciente_fragil": false,
+      "wagner_grade": null,
+      "ceap_class": null,
+      "wuwhs_grade": null,
+      "agente_causal": null,
+      "subtipo_vascular": "venosa",
+      "no_revascularizable": true,
+      "braden_score": null,
+      "lpp_recurrente": false,
+      "cuidados_paliativos": false,
+      "dolor_cronico": false,
+      "tunnel_depth_cm": null,
+      "sobre_articulacion": false
+    },
+    "expected": {
+      "regimen": [
+        {
+          "metodo": "Terapia seca",
+          "producto": "Yodopovidona 10%, secado al aire, proteger escara estable",
+          "justificacion": "Úlcera arterial/isquémica o no revascularizable: se suprime la cura húmeda por defecto. Mantener la escara seca estable como barrera biológica (Protocolo \"Terapia seca\")."
+        }
+      ],
+      "interconsultas": [
+        {
+          "especialidad": "Angiologia / Cirugia vascular",
+          "motivo": "Úlcera arterial/isquémica o no revascularizable. Valorar revascularización y confirmar plan de terapia seca (Doppler). ITB=0.90.",
+          "esUrgente": false
+        },
+        {
+          "especialidad": "Geriatria",
+          "motivo": "Valoración geriátrica integral recomendada: úlcera vascular (MMII).",
+          "esUrgente": false
+        }
+      ],
+      "alertas": [
+        "Terapia seca: desbridamiento CORTANTE CONTRAINDICADO. No desbridar escara seca estable aunque necrosis/esfacelo >=15%. Desbridamiento únicamente autolítico/enzimático \"según Doppler/angiólogo\" si aparece esfacelo húmedo o signos de infección.",
+        "Compresión NUNCA indicada en úlcera arterial/isquémica o no revascularizable (terapia seca)."
+      ]
+    }
+  },
+  {
+    "name": "isquemia_critica_abi_0.35",
+    "scenario": "b",
+    "input": {
+      "etiologia": "vascular",
+      "entorno": "clinica",
+      "area_cm2": 10.0,
+      "depth_cm": 0.3,
+      "necrosis_pct": 40.0,
+      "esfacelo_pct": 20.0,
+      "granulacion_pct": 80.0,
+      "epitelizacion_pct": 20.0,
+      "comorbilidades": {},
+      "abi_pie_derecho": 0.35,
+      "abi_pie_izquierdo": 0.42,
+      "es_extremidad_inferior": true,
+      "albumina_gdl": null,
+      "tunelizacion_o_socavamiento": false,
+      "exudado_cantidad": "escaso",
+      "piel_perilesional": [],
+      "infeccion_criterios": [],
+      "tiene_cuidador_identificado": false,
+      "paciente_fragil": false,
+      "wagner_grade": null,
+      "ceap_class": null,
+      "wuwhs_grade": null,
+      "agente_causal": null,
+      "subtipo_vascular": "arterial",
+      "no_revascularizable": false,
+      "braden_score": null,
+      "lpp_recurrente": false,
+      "cuidados_paliativos": false,
+      "dolor_cronico": false,
+      "tunnel_depth_cm": null,
+      "sobre_articulacion": false
+    },
+    "expected": {
+      "regimen": [
+        {
+          "metodo": "Terapia seca",
+          "producto": "Yodopovidona 10%, secado al aire, proteger escara estable",
+          "justificacion": "Úlcera arterial/isquémica o no revascularizable: se suprime la cura húmeda por defecto. Mantener la escara seca estable como barrera biológica (Protocolo \"Terapia seca\")."
+        }
+      ],
+      "interconsultas": [
+        {
+          "especialidad": "Angiologia / Cirugia vascular",
+          "motivo": "Isquemia critica (ABI/ITB < 0.5). Evaluar revascularizacion antes de desbridar.",
+          "esUrgente": true
+        },
+        {
+          "especialidad": "Cirugia",
+          "motivo": "Necrosis extensa (>=30%).",
+          "esUrgente": false
+        },
+        {
+          "especialidad": "Geriatria",
+          "motivo": "Valoración geriátrica integral recomendada: úlcera vascular (MMII).",
+          "esUrgente": false
+        }
+      ],
+      "alertas": [
+        "ALERTA DE SEGURIDAD: ABI/ITB < 0.5 (isquemia critica). NO se recomienda desbridamiento. Referir a angiologia para revascularizacion antes de cualquier desbridamiento.",
+        "Compresion graduada CONTRAINDICADA: ABI/ITB < 0.5 (isquemia critica)."
+      ]
+    }
+  },
+  {
+    "name": "necrosis_15_desbridamiento_clinica",
+    "scenario": "b",
+    "input": {
+      "etiologia": "otra",
+      "entorno": "clinica",
+      "area_cm2": 10.0,
+      "depth_cm": 0.3,
+      "necrosis_pct": 15.0,
+      "esfacelo_pct": 0.0,
+      "granulacion_pct": 65.0,
+      "epitelizacion_pct": 20.0,
+      "comorbilidades": {},
+      "abi_pie_derecho": null,
+      "abi_pie_izquierdo": null,
+      "es_extremidad_inferior": false,
+      "albumina_gdl": null,
+      "tunelizacion_o_socavamiento": false,
+      "exudado_cantidad": "escaso",
+      "piel_perilesional": [],
+      "infeccion_criterios": [],
+      "tiene_cuidador_identificado": false,
+      "paciente_fragil": false,
+      "wagner_grade": null,
+      "ceap_class": null,
+      "wuwhs_grade": null,
+      "agente_causal": null,
+      "subtipo_vascular": null,
+      "no_revascularizable": false,
+      "braden_score": null,
+      "lpp_recurrente": false,
+      "cuidados_paliativos": false,
+      "dolor_cronico": false,
+      "tunnel_depth_cm": null,
+      "sobre_articulacion": false
+    },
+    "expected": {
+      "regimen": [
+        {
+          "metodo": "Limpieza de la herida",
+          "producto": "Solución salina / Prontosan",
+          "justificacion": "Limpieza en cada cambio de aposito (regla base)."
+        },
+        {
+          "metodo": "Desbridamiento",
+          "producto": "Cortante / combinado",
+          "justificacion": "Esfacelo + necrosis = 15% (>=15%) y sin isquemia critica. Metodo segun entorno (clinica)."
+        }
+      ],
+      "interconsultas": [],
+      "alertas": []
+    }
+  },
+  {
+    "name": "necrosis_15_desbridamiento_domicilio",
+    "scenario": "b",
+    "input": {
+      "etiologia": "otra",
+      "entorno": "domicilio",
+      "area_cm2": 10.0,
+      "depth_cm": 0.3,
+      "necrosis_pct": 15.0,
+      "esfacelo_pct": 0.0,
+      "granulacion_pct": 65.0,
+      "epitelizacion_pct": 20.0,
+      "comorbilidades": {},
+      "abi_pie_derecho": null,
+      "abi_pie_izquierdo": null,
+      "es_extremidad_inferior": false,
+      "albumina_gdl": null,
+      "tunelizacion_o_socavamiento": false,
+      "exudado_cantidad": "escaso",
+      "piel_perilesional": [],
+      "infeccion_criterios": [],
+      "tiene_cuidador_identificado": false,
+      "paciente_fragil": false,
+      "wagner_grade": null,
+      "ceap_class": null,
+      "wuwhs_grade": null,
+      "agente_causal": null,
+      "subtipo_vascular": null,
+      "no_revascularizable": false,
+      "braden_score": null,
+      "lpp_recurrente": false,
+      "cuidados_paliativos": false,
+      "dolor_cronico": false,
+      "tunnel_depth_cm": null,
+      "sobre_articulacion": false
+    },
+    "expected": {
+      "regimen": [
+        {
+          "metodo": "Limpieza de la herida",
+          "producto": "Solución salina / Prontosan",
+          "justificacion": "Limpieza en cada cambio de aposito (regla base)."
+        },
+        {
+          "metodo": "Desbridamiento",
+          "producto": "Autolítico / enzimático / mecánico",
+          "justificacion": "Esfacelo + necrosis = 15% (>=15%) y sin isquemia critica. Metodo segun entorno (domicilio)."
+        },
+        {
+          "metodo": "Educación al paciente/cuidador",
+          "producto": "Material educativo + demostración práctica",
+          "justificacion": "atencion en domicilio"
+        }
+      ],
+      "interconsultas": [],
+      "alertas": []
+    }
+  },
+  {
+    "name": "necrosis_30_extensa",
+    "scenario": "b",
+    "input": {
+      "etiologia": "otra",
+      "entorno": "clinica",
+      "area_cm2": 10.0,
+      "depth_cm": 0.3,
+      "necrosis_pct": 30.0,
+      "esfacelo_pct": 0.0,
+      "granulacion_pct": 50.0,
+      "epitelizacion_pct": 20.0,
+      "comorbilidades": {},
+      "abi_pie_derecho": null,
+      "abi_pie_izquierdo": null,
+      "es_extremidad_inferior": false,
+      "albumina_gdl": null,
+      "tunelizacion_o_socavamiento": false,
+      "exudado_cantidad": "escaso",
+      "piel_perilesional": [],
+      "infeccion_criterios": [],
+      "tiene_cuidador_identificado": false,
+      "paciente_fragil": false,
+      "wagner_grade": null,
+      "ceap_class": null,
+      "wuwhs_grade": null,
+      "agente_causal": null,
+      "subtipo_vascular": null,
+      "no_revascularizable": false,
+      "braden_score": null,
+      "lpp_recurrente": false,
+      "cuidados_paliativos": false,
+      "dolor_cronico": false,
+      "tunnel_depth_cm": null,
+      "sobre_articulacion": false
+    },
+    "expected": {
+      "regimen": [
+        {
+          "metodo": "Limpieza de la herida",
+          "producto": "Solución salina / Prontosan",
+          "justificacion": "Limpieza en cada cambio de aposito (regla base)."
+        },
+        {
+          "metodo": "Desbridamiento",
+          "producto": "Cortante / combinado",
+          "justificacion": "Esfacelo + necrosis = 30% (>=15%) y sin isquemia critica. Metodo segun entorno (clinica)."
+        }
+      ],
+      "interconsultas": [
+        {
+          "especialidad": "Cirugia",
+          "motivo": "Necrosis extensa (>=30%).",
+          "esUrgente": false
+        }
+      ],
+      "alertas": []
+    }
+  },
+  {
+    "name": "composicion_10_no_desbrida",
+    "scenario": "b",
+    "input": {
+      "etiologia": "otra",
+      "entorno": "clinica",
+      "area_cm2": 10.0,
+      "depth_cm": 0.3,
+      "necrosis_pct": 5.0,
+      "esfacelo_pct": 5.0,
+      "granulacion_pct": 70.0,
+      "epitelizacion_pct": 20.0,
+      "comorbilidades": {},
+      "abi_pie_derecho": null,
+      "abi_pie_izquierdo": null,
+      "es_extremidad_inferior": false,
+      "albumina_gdl": null,
+      "tunelizacion_o_socavamiento": false,
+      "exudado_cantidad": "escaso",
+      "piel_perilesional": [],
+      "infeccion_criterios": [],
+      "tiene_cuidador_identificado": false,
+      "paciente_fragil": false,
+      "wagner_grade": null,
+      "ceap_class": null,
+      "wuwhs_grade": null,
+      "agente_causal": null,
+      "subtipo_vascular": null,
+      "no_revascularizable": false,
+      "braden_score": null,
+      "lpp_recurrente": false,
+      "cuidados_paliativos": false,
+      "dolor_cronico": false,
+      "tunnel_depth_cm": null,
+      "sobre_articulacion": false
+    },
+    "expected": {
+      "regimen": [
+        {
+          "metodo": "Limpieza de la herida",
+          "producto": "Solución salina / Prontosan",
+          "justificacion": "Limpieza en cada cambio de aposito (regla base)."
+        }
+      ],
+      "interconsultas": [],
+      "alertas": []
+    }
+  },
+  {
+    "name": "profundidad_0.6_relleno",
+    "scenario": "b",
+    "input": {
+      "etiologia": "otra",
+      "entorno": "clinica",
+      "area_cm2": 10.0,
+      "depth_cm": 0.6,
+      "necrosis_pct": 0.0,
+      "esfacelo_pct": 0.0,
+      "granulacion_pct": 80.0,
+      "epitelizacion_pct": 20.0,
+      "comorbilidades": {},
+      "abi_pie_derecho": null,
+      "abi_pie_izquierdo": null,
+      "es_extremidad_inferior": false,
+      "albumina_gdl": null,
+      "tunelizacion_o_socavamiento": false,
+      "exudado_cantidad": "escaso",
+      "piel_perilesional": [],
+      "infeccion_criterios": [],
+      "tiene_cuidador_identificado": false,
+      "paciente_fragil": false,
+      "wagner_grade": null,
+      "ceap_class": null,
+      "wuwhs_grade": null,
+      "agente_causal": null,
+      "subtipo_vascular": null,
+      "no_revascularizable": false,
+      "braden_score": null,
+      "lpp_recurrente": false,
+      "cuidados_paliativos": false,
+      "dolor_cronico": false,
+      "tunnel_depth_cm": null,
+      "sobre_articulacion": false
+    },
+    "expected": {
+      "regimen": [
+        {
+          "metodo": "Limpieza de la herida",
+          "producto": "Solución salina / Prontosan",
+          "justificacion": "Limpieza en cada cambio de aposito (regla base)."
+        },
+        {
+          "metodo": "Relleno de cavidad",
+          "producto": "Alginato de calcio / gasa impregnada",
+          "justificacion": "Profundidad 0.6 cm (>=0.5 cm)."
+        }
+      ],
+      "interconsultas": [],
+      "alertas": []
+    }
+  },
+  {
+    "name": "tunelizacion_relleno",
+    "scenario": "b",
+    "input": {
+      "etiologia": "otra",
+      "entorno": "clinica",
+      "area_cm2": 10.0,
+      "depth_cm": 0.3,
+      "necrosis_pct": 0.0,
+      "esfacelo_pct": 0.0,
+      "granulacion_pct": 80.0,
+      "epitelizacion_pct": 20.0,
+      "comorbilidades": {},
+      "abi_pie_derecho": null,
+      "abi_pie_izquierdo": null,
+      "es_extremidad_inferior": false,
+      "albumina_gdl": null,
+      "tunelizacion_o_socavamiento": true,
+      "exudado_cantidad": "escaso",
+      "piel_perilesional": [],
+      "infeccion_criterios": [],
+      "tiene_cuidador_identificado": false,
+      "paciente_fragil": false,
+      "wagner_grade": null,
+      "ceap_class": null,
+      "wuwhs_grade": null,
+      "agente_causal": null,
+      "subtipo_vascular": null,
+      "no_revascularizable": false,
+      "braden_score": null,
+      "lpp_recurrente": false,
+      "cuidados_paliativos": false,
+      "dolor_cronico": false,
+      "tunnel_depth_cm": null,
+      "sobre_articulacion": false
+    },
+    "expected": {
+      "regimen": [
+        {
+          "metodo": "Limpieza de la herida",
+          "producto": "Solución salina / Prontosan",
+          "justificacion": "Limpieza en cada cambio de aposito (regla base)."
+        },
+        {
+          "metodo": "Relleno de cavidad",
+          "producto": "Alginato de calcio / gasa impregnada",
+          "justificacion": "Presencia de tunelizacion/socavamiento."
+        }
+      ],
+      "interconsultas": [],
+      "alertas": []
+    }
+  },
+  {
+    "name": "exudado_abundante_aposito",
+    "scenario": "b",
+    "input": {
+      "etiologia": "otra",
+      "entorno": "clinica",
+      "area_cm2": 10.0,
+      "depth_cm": 0.3,
+      "necrosis_pct": 0.0,
+      "esfacelo_pct": 0.0,
+      "granulacion_pct": 80.0,
+      "epitelizacion_pct": 20.0,
+      "comorbilidades": {},
+      "abi_pie_derecho": null,
+      "abi_pie_izquierdo": null,
+      "es_extremidad_inferior": false,
+      "albumina_gdl": null,
+      "tunelizacion_o_socavamiento": false,
+      "exudado_cantidad": "abundante",
+      "piel_perilesional": [],
+      "infeccion_criterios": [],
+      "tiene_cuidador_identificado": false,
+      "paciente_fragil": false,
+      "wagner_grade": null,
+      "ceap_class": null,
+      "wuwhs_grade": null,
+      "agente_causal": null,
+      "subtipo_vascular": null,
+      "no_revascularizable": false,
+      "braden_score": null,
+      "lpp_recurrente": false,
+      "cuidados_paliativos": false,
+      "dolor_cronico": false,
+      "tunnel_depth_cm": null,
+      "sobre_articulacion": false
+    },
+    "expected": {
+      "regimen": [
+        {
+          "metodo": "Limpieza de la herida",
+          "producto": "Solución salina / Prontosan",
+          "justificacion": "Limpieza en cada cambio de aposito (regla base)."
+        },
+        {
+          "metodo": "Apósito",
+          "producto": "Espuma con borde adhesivo / alta absorción",
+          "justificacion": "Exudado abundante: requiere aposito secundario absorbente."
+        }
+      ],
+      "interconsultas": [],
+      "alertas": []
+    }
+  },
+  {
+    "name": "piel_seca_fragil_proteccion",
+    "scenario": "b",
+    "input": {
+      "etiologia": "otra",
+      "entorno": "clinica",
+      "area_cm2": 10.0,
+      "depth_cm": 0.3,
+      "necrosis_pct": 0.0,
+      "esfacelo_pct": 0.0,
+      "granulacion_pct": 80.0,
+      "epitelizacion_pct": 20.0,
+      "comorbilidades": {},
+      "abi_pie_derecho": null,
+      "abi_pie_izquierdo": null,
+      "es_extremidad_inferior": false,
+      "albumina_gdl": null,
+      "tunelizacion_o_socavamiento": false,
+      "exudado_cantidad": "escaso",
+      "piel_perilesional": [
+        "seca",
+        "fragil"
+      ],
+      "infeccion_criterios": [],
+      "tiene_cuidador_identificado": false,
+      "paciente_fragil": false,
+      "wagner_grade": null,
+      "ceap_class": null,
+      "wuwhs_grade": null,
+      "agente_causal": null,
+      "subtipo_vascular": null,
+      "no_revascularizable": false,
+      "braden_score": null,
+      "lpp_recurrente": false,
+      "cuidados_paliativos": false,
+      "dolor_cronico": false,
+      "tunnel_depth_cm": null,
+      "sobre_articulacion": false
+    },
+    "expected": {
+      "regimen": [
+        {
+          "metodo": "Limpieza de la herida",
+          "producto": "Solución salina / Prontosan",
+          "justificacion": "Limpieza en cada cambio de aposito (regla base)."
+        },
+        {
+          "metodo": "Protección de la piel",
+          "producto": "Película barrera / óxido de zinc",
+          "justificacion": "Piel perilesional en riesgo: seca, fragil."
+        }
+      ],
+      "interconsultas": [],
+      "alertas": []
+    }
+  },
+  {
+    "name": "infeccion_local_2_factores",
+    "scenario": "b",
+    "input": {
+      "etiologia": "otra",
+      "entorno": "clinica",
+      "area_cm2": 10.0,
+      "depth_cm": 0.3,
+      "necrosis_pct": 0.0,
+      "esfacelo_pct": 0.0,
+      "granulacion_pct": 80.0,
+      "epitelizacion_pct": 20.0,
+      "comorbilidades": {},
+      "abi_pie_derecho": null,
+      "abi_pie_izquierdo": null,
+      "es_extremidad_inferior": false,
+      "albumina_gdl": null,
+      "tunelizacion_o_socavamiento": false,
+      "exudado_cantidad": "escaso",
+      "piel_perilesional": [],
+      "infeccion_criterios": [
+        "exudadoPurulento",
+        "calorLocal"
+      ],
+      "tiene_cuidador_identificado": false,
+      "paciente_fragil": false,
+      "wagner_grade": null,
+      "ceap_class": null,
+      "wuwhs_grade": null,
+      "agente_causal": null,
+      "subtipo_vascular": null,
+      "no_revascularizable": false,
+      "braden_score": null,
+      "lpp_recurrente": false,
+      "cuidados_paliativos": false,
+      "dolor_cronico": false,
+      "tunnel_depth_cm": null,
+      "sobre_articulacion": false
+    },
+    "expected": {
+      "regimen": [
+        {
+          "metodo": "Limpieza de la herida",
+          "producto": "Solución salina / Prontosan",
+          "justificacion": "Limpieza en cada cambio de aposito (regla base)."
+        },
+        {
+          "metodo": "Tratamiento para la infección",
+          "producto": "PHMB / plata (antimicrobiano tópico)",
+          "justificacion": "Sospecha de infeccion local: 2 factores locales significativos presentes (>=2)."
+        }
+      ],
+      "interconsultas": [],
+      "alertas": []
+    }
+  },
+  {
+    "name": "infeccion_propagada_eritema",
+    "scenario": "b",
+    "input": {
+      "etiologia": "otra",
+      "entorno": "clinica",
+      "area_cm2": 10.0,
+      "depth_cm": 0.3,
+      "necrosis_pct": 0.0,
+      "esfacelo_pct": 0.0,
+      "granulacion_pct": 80.0,
+      "epitelizacion_pct": 20.0,
+      "comorbilidades": {},
+      "abi_pie_derecho": null,
+      "abi_pie_izquierdo": null,
+      "es_extremidad_inferior": false,
+      "albumina_gdl": null,
+      "tunelizacion_o_socavamiento": false,
+      "exudado_cantidad": "escaso",
+      "piel_perilesional": [],
+      "infeccion_criterios": [
+        "eritemaMayor2cm"
+      ],
+      "tiene_cuidador_identificado": false,
+      "paciente_fragil": false,
+      "wagner_grade": null,
+      "ceap_class": null,
+      "wuwhs_grade": null,
+      "agente_causal": null,
+      "subtipo_vascular": null,
+      "no_revascularizable": false,
+      "braden_score": null,
+      "lpp_recurrente": false,
+      "cuidados_paliativos": false,
+      "dolor_cronico": false,
+      "tunnel_depth_cm": null,
+      "sobre_articulacion": false
+    },
+    "expected": {
+      "regimen": [
+        {
+          "metodo": "Limpieza de la herida",
+          "producto": "Solución salina / Prontosan",
+          "justificacion": "Limpieza en cada cambio de aposito (regla base)."
+        },
+        {
+          "metodo": "Tratamiento para la infección",
+          "producto": "Tratamiento sistémico / referencia hospitalaria",
+          "justificacion": "Infeccion propagada (eritema >2cm, celulitis, fiebre o malestar general). Requiere manejo sistemico; el antimicrobiano topico no resuelve infeccion propagada."
+        }
+      ],
+      "interconsultas": [
+        {
+          "especialidad": "Infectologia / Cirugia",
+          "motivo": "Infeccion propagada: eritema >2cm, celulitis, fiebre o malestar general. Se requiere tratamiento sistemico y valoracion hospitalaria.",
+          "esUrgente": true
+        },
+        {
+          "especialidad": "Cirugia",
+          "motivo": "Infeccion propagada (criterios IWII de propagacion).",
+          "esUrgente": true
+        }
+      ],
+      "alertas": []
+    }
+  },
+  {
+    "name": "infeccion_sistemica_celulitis",
+    "scenario": "b",
+    "input": {
+      "etiologia": "vascular",
+      "entorno": "clinica",
+      "area_cm2": 10.0,
+      "depth_cm": 0.3,
+      "necrosis_pct": 0.0,
+      "esfacelo_pct": 0.0,
+      "granulacion_pct": 80.0,
+      "epitelizacion_pct": 20.0,
+      "comorbilidades": {},
+      "abi_pie_derecho": 1.0,
+      "abi_pie_izquierdo": 1.0,
+      "es_extremidad_inferior": true,
+      "albumina_gdl": null,
+      "tunelizacion_o_socavamiento": false,
+      "exudado_cantidad": "escaso",
+      "piel_perilesional": [],
+      "infeccion_criterios": [
+        "celulitis",
+        "fiebre"
+      ],
+      "tiene_cuidador_identificado": false,
+      "paciente_fragil": false,
+      "wagner_grade": null,
+      "ceap_class": null,
+      "wuwhs_grade": null,
+      "agente_causal": null,
+      "subtipo_vascular": "venosa",
+      "no_revascularizable": false,
+      "braden_score": null,
+      "lpp_recurrente": false,
+      "cuidados_paliativos": false,
+      "dolor_cronico": false,
+      "tunnel_depth_cm": null,
+      "sobre_articulacion": false
+    },
+    "expected": {
+      "regimen": [
+        {
+          "metodo": "Limpieza de la herida",
+          "producto": "Solución salina / Prontosan",
+          "justificacion": "Limpieza en cada cambio de aposito (regla base)."
+        },
+        {
+          "metodo": "Tratamiento para la infección",
+          "producto": "Tratamiento sistémico / referencia hospitalaria",
+          "justificacion": "Infeccion propagada (eritema >2cm, celulitis, fiebre o malestar general). Requiere manejo sistemico; el antimicrobiano topico no resuelve infeccion propagada."
+        }
+      ],
+      "interconsultas": [
+        {
+          "especialidad": "Infectologia / Cirugia",
+          "motivo": "Infeccion propagada: eritema >2cm, celulitis, fiebre o malestar general. Se requiere tratamiento sistemico y valoracion hospitalaria.",
+          "esUrgente": true
+        },
+        {
+          "especialidad": "Cirugia",
+          "motivo": "Infeccion propagada (criterios IWII de propagacion).",
+          "esUrgente": true
+        },
+        {
+          "especialidad": "Geriatria",
+          "motivo": "Valoración geriátrica integral recomendada: úlcera vascular (MMII).",
+          "esUrgente": false
+        }
+      ],
+      "alertas": [
+        "Compresion graduada SUSPENDIDA hasta controlar la infeccion sistemica (celulitis, fiebre o malestar general)."
+      ]
+    }
+  },
+  {
+    "name": "pie_diabetico_wagner_g0",
+    "scenario": "b",
+    "input": {
+      "etiologia": "pieDiabetico",
+      "entorno": "clinica",
+      "area_cm2": 10.0,
+      "depth_cm": 0.3,
+      "necrosis_pct": 10.0,
+      "esfacelo_pct": 0.0,
+      "granulacion_pct": 80.0,
+      "epitelizacion_pct": 20.0,
+      "comorbilidades": {},
+      "abi_pie_derecho": null,
+      "abi_pie_izquierdo": null,
+      "es_extremidad_inferior": false,
+      "albumina_gdl": null,
+      "tunelizacion_o_socavamiento": false,
+      "exudado_cantidad": "escaso",
+      "piel_perilesional": [],
+      "infeccion_criterios": [],
+      "tiene_cuidador_identificado": false,
+      "paciente_fragil": false,
+      "wagner_grade": "g0",
+      "ceap_class": null,
+      "wuwhs_grade": null,
+      "agente_causal": null,
+      "subtipo_vascular": null,
+      "no_revascularizable": false,
+      "braden_score": null,
+      "lpp_recurrente": false,
+      "cuidados_paliativos": false,
+      "dolor_cronico": false,
+      "tunnel_depth_cm": null,
+      "sobre_articulacion": false
+    },
+    "expected": {
+      "regimen": [
+        {
+          "metodo": "Limpieza de la herida",
+          "producto": "Solución salina / Prontosan",
+          "justificacion": "Limpieza en cada cambio de aposito (regla base)."
+        },
+        {
+          "metodo": "Dispositivo de descarga",
+          "producto": "Calzado terapéutico / plantilla de descarga",
+          "justificacion": "Pie diabetico, grado Wagner G0."
+        },
+        {
+          "metodo": "Manejo neuropático",
+          "producto": "Evaluación de sensibilidad + control glucémico estrecho",
+          "justificacion": "Pie diabetico: manejo neuropatico integral."
+        }
+      ],
+      "interconsultas": [],
+      "alertas": []
+    }
+  },
+  {
+    "name": "pie_diabetico_wagner_g1",
+    "scenario": "b",
+    "input": {
+      "etiologia": "pieDiabetico",
+      "entorno": "clinica",
+      "area_cm2": 10.0,
+      "depth_cm": 0.3,
+      "necrosis_pct": 10.0,
+      "esfacelo_pct": 0.0,
+      "granulacion_pct": 80.0,
+      "epitelizacion_pct": 20.0,
+      "comorbilidades": {},
+      "abi_pie_derecho": null,
+      "abi_pie_izquierdo": null,
+      "es_extremidad_inferior": false,
+      "albumina_gdl": null,
+      "tunelizacion_o_socavamiento": false,
+      "exudado_cantidad": "escaso",
+      "piel_perilesional": [],
+      "infeccion_criterios": [],
+      "tiene_cuidador_identificado": false,
+      "paciente_fragil": false,
+      "wagner_grade": "g1",
+      "ceap_class": null,
+      "wuwhs_grade": null,
+      "agente_causal": null,
+      "subtipo_vascular": null,
+      "no_revascularizable": false,
+      "braden_score": null,
+      "lpp_recurrente": false,
+      "cuidados_paliativos": false,
+      "dolor_cronico": false,
+      "tunnel_depth_cm": null,
+      "sobre_articulacion": false
+    },
+    "expected": {
+      "regimen": [
+        {
+          "metodo": "Limpieza de la herida",
+          "producto": "Solución salina / Prontosan",
+          "justificacion": "Limpieza en cada cambio de aposito (regla base)."
+        },
+        {
+          "metodo": "Dispositivo de descarga",
+          "producto": "Calzado terapéutico / plantilla de descarga",
+          "justificacion": "Pie diabetico, grado Wagner G1."
+        },
+        {
+          "metodo": "Manejo neuropático",
+          "producto": "Evaluación de sensibilidad + control glucémico estrecho",
+          "justificacion": "Pie diabetico: manejo neuropatico integral."
+        }
+      ],
+      "interconsultas": [],
+      "alertas": []
+    }
+  },
+  {
+    "name": "pie_diabetico_wagner_g2",
+    "scenario": "b",
+    "input": {
+      "etiologia": "pieDiabetico",
+      "entorno": "clinica",
+      "area_cm2": 10.0,
+      "depth_cm": 0.3,
+      "necrosis_pct": 10.0,
+      "esfacelo_pct": 0.0,
+      "granulacion_pct": 80.0,
+      "epitelizacion_pct": 20.0,
+      "comorbilidades": {},
+      "abi_pie_derecho": null,
+      "abi_pie_izquierdo": null,
+      "es_extremidad_inferior": false,
+      "albumina_gdl": null,
+      "tunelizacion_o_socavamiento": false,
+      "exudado_cantidad": "escaso",
+      "piel_perilesional": [],
+      "infeccion_criterios": [],
+      "tiene_cuidador_identificado": false,
+      "paciente_fragil": false,
+      "wagner_grade": "g2",
+      "ceap_class": null,
+      "wuwhs_grade": null,
+      "agente_causal": null,
+      "subtipo_vascular": null,
+      "no_revascularizable": false,
+      "braden_score": null,
+      "lpp_recurrente": false,
+      "cuidados_paliativos": false,
+      "dolor_cronico": false,
+      "tunnel_depth_cm": null,
+      "sobre_articulacion": false
+    },
+    "expected": {
+      "regimen": [
+        {
+          "metodo": "Limpieza de la herida",
+          "producto": "Solución salina / Prontosan",
+          "justificacion": "Limpieza en cada cambio de aposito (regla base)."
+        },
+        {
+          "metodo": "Dispositivo de descarga",
+          "producto": "Bota walker removible (descarga parcial)",
+          "justificacion": "Pie diabetico, grado Wagner G2."
+        },
+        {
+          "metodo": "Manejo neuropático",
+          "producto": "Evaluación de sensibilidad + control glucémico estrecho",
+          "justificacion": "Pie diabetico: manejo neuropatico integral."
+        }
+      ],
+      "interconsultas": [],
+      "alertas": []
+    }
+  },
+  {
+    "name": "pie_diabetico_wagner_g3",
+    "scenario": "b",
+    "input": {
+      "etiologia": "pieDiabetico",
+      "entorno": "clinica",
+      "area_cm2": 10.0,
+      "depth_cm": 0.3,
+      "necrosis_pct": 10.0,
+      "esfacelo_pct": 0.0,
+      "granulacion_pct": 80.0,
+      "epitelizacion_pct": 20.0,
+      "comorbilidades": {},
+      "abi_pie_derecho": null,
+      "abi_pie_izquierdo": null,
+      "es_extremidad_inferior": false,
+      "albumina_gdl": null,
+      "tunelizacion_o_socavamiento": false,
+      "exudado_cantidad": "escaso",
+      "piel_perilesional": [],
+      "infeccion_criterios": [],
+      "tiene_cuidador_identificado": false,
+      "paciente_fragil": false,
+      "wagner_grade": "g3",
+      "ceap_class": null,
+      "wuwhs_grade": null,
+      "agente_causal": null,
+      "subtipo_vascular": null,
+      "no_revascularizable": false,
+      "braden_score": null,
+      "lpp_recurrente": false,
+      "cuidados_paliativos": false,
+      "dolor_cronico": false,
+      "tunnel_depth_cm": null,
+      "sobre_articulacion": false
+    },
+    "expected": {
+      "regimen": [
+        {
+          "metodo": "Limpieza de la herida",
+          "producto": "Solución salina / Prontosan",
+          "justificacion": "Limpieza en cada cambio de aposito (regla base)."
+        },
+        {
+          "metodo": "Dispositivo de descarga",
+          "producto": "TCC (Total Contact Cast) o bota walker con descarga total",
+          "justificacion": "Pie diabetico, grado Wagner G3."
+        },
+        {
+          "metodo": "Manejo neuropático",
+          "producto": "Evaluación de sensibilidad + control glucémico estrecho",
+          "justificacion": "Pie diabetico: manejo neuropatico integral."
+        }
+      ],
+      "interconsultas": [
+        {
+          "especialidad": "Cirugia / Ortopedia",
+          "motivo": "Pie diabetico Wagner G3.",
+          "esUrgente": false
+        }
+      ],
+      "alertas": []
+    }
+  },
+  {
+    "name": "pie_diabetico_wagner_g4",
+    "scenario": "b",
+    "input": {
+      "etiologia": "pieDiabetico",
+      "entorno": "clinica",
+      "area_cm2": 10.0,
+      "depth_cm": 0.3,
+      "necrosis_pct": 10.0,
+      "esfacelo_pct": 0.0,
+      "granulacion_pct": 80.0,
+      "epitelizacion_pct": 20.0,
+      "comorbilidades": {},
+      "abi_pie_derecho": null,
+      "abi_pie_izquierdo": null,
+      "es_extremidad_inferior": false,
+      "albumina_gdl": null,
+      "tunelizacion_o_socavamiento": false,
+      "exudado_cantidad": "escaso",
+      "piel_perilesional": [],
+      "infeccion_criterios": [],
+      "tiene_cuidador_identificado": false,
+      "paciente_fragil": false,
+      "wagner_grade": "g4",
+      "ceap_class": null,
+      "wuwhs_grade": null,
+      "agente_causal": null,
+      "subtipo_vascular": null,
+      "no_revascularizable": false,
+      "braden_score": null,
+      "lpp_recurrente": false,
+      "cuidados_paliativos": false,
+      "dolor_cronico": false,
+      "tunnel_depth_cm": null,
+      "sobre_articulacion": false
+    },
+    "expected": {
+      "regimen": [
+        {
+          "metodo": "Limpieza de la herida",
+          "producto": "Solución salina / Prontosan",
+          "justificacion": "Limpieza en cada cambio de aposito (regla base)."
+        },
+        {
+          "metodo": "Dispositivo de descarga",
+          "producto": "TCC (Total Contact Cast) o bota walker con descarga total",
+          "justificacion": "Pie diabetico, grado Wagner G4."
+        },
+        {
+          "metodo": "Manejo neuropático",
+          "producto": "Evaluación de sensibilidad + control glucémico estrecho",
+          "justificacion": "Pie diabetico: manejo neuropatico integral."
+        }
+      ],
+      "interconsultas": [
+        {
+          "especialidad": "Cirugia / Ortopedia",
+          "motivo": "Pie diabetico Wagner G4.",
+          "esUrgente": true
+        }
+      ],
+      "alertas": []
+    }
+  },
+  {
+    "name": "pie_diabetico_wagner_g5",
+    "scenario": "b",
+    "input": {
+      "etiologia": "pieDiabetico",
+      "entorno": "clinica",
+      "area_cm2": 10.0,
+      "depth_cm": 0.3,
+      "necrosis_pct": 10.0,
+      "esfacelo_pct": 0.0,
+      "granulacion_pct": 80.0,
+      "epitelizacion_pct": 20.0,
+      "comorbilidades": {},
+      "abi_pie_derecho": null,
+      "abi_pie_izquierdo": null,
+      "es_extremidad_inferior": false,
+      "albumina_gdl": null,
+      "tunelizacion_o_socavamiento": false,
+      "exudado_cantidad": "escaso",
+      "piel_perilesional": [],
+      "infeccion_criterios": [],
+      "tiene_cuidador_identificado": false,
+      "paciente_fragil": false,
+      "wagner_grade": "g5",
+      "ceap_class": null,
+      "wuwhs_grade": null,
+      "agente_causal": null,
+      "subtipo_vascular": null,
+      "no_revascularizable": false,
+      "braden_score": null,
+      "lpp_recurrente": false,
+      "cuidados_paliativos": false,
+      "dolor_cronico": false,
+      "tunnel_depth_cm": null,
+      "sobre_articulacion": false
+    },
+    "expected": {
+      "regimen": [
+        {
+          "metodo": "Limpieza de la herida",
+          "producto": "Solución salina / Prontosan",
+          "justificacion": "Limpieza en cada cambio de aposito (regla base)."
+        },
+        {
+          "metodo": "Dispositivo de descarga",
+          "producto": "Descarga total + valoración quirúrgica urgente",
+          "justificacion": "Pie diabetico, grado Wagner G5."
+        },
+        {
+          "metodo": "Manejo neuropático",
+          "producto": "Evaluación de sensibilidad + control glucémico estrecho",
+          "justificacion": "Pie diabetico: manejo neuropatico integral."
+        }
+      ],
+      "interconsultas": [
+        {
+          "especialidad": "Cirugia / Ortopedia",
+          "motivo": "Pie diabetico Wagner G5.",
+          "esUrgente": true
+        }
+      ],
+      "alertas": []
+    }
+  },
+  {
+    "name": "quirurgica_wuwhs_g1",
+    "scenario": "b",
+    "input": {
+      "etiologia": "quirurgica",
+      "entorno": "clinica",
+      "area_cm2": 10.0,
+      "depth_cm": 0.3,
+      "necrosis_pct": 0.0,
+      "esfacelo_pct": 0.0,
+      "granulacion_pct": 80.0,
+      "epitelizacion_pct": 20.0,
+      "comorbilidades": {},
+      "abi_pie_derecho": null,
+      "abi_pie_izquierdo": null,
+      "es_extremidad_inferior": false,
+      "albumina_gdl": null,
+      "tunelizacion_o_socavamiento": false,
+      "exudado_cantidad": "escaso",
+      "piel_perilesional": [],
+      "infeccion_criterios": [],
+      "tiene_cuidador_identificado": false,
+      "paciente_fragil": false,
+      "wagner_grade": null,
+      "ceap_class": null,
+      "wuwhs_grade": "g1",
+      "agente_causal": null,
+      "subtipo_vascular": null,
+      "no_revascularizable": false,
+      "braden_score": null,
+      "lpp_recurrente": false,
+      "cuidados_paliativos": false,
+      "dolor_cronico": false,
+      "tunnel_depth_cm": null,
+      "sobre_articulacion": false
+    },
+    "expected": {
+      "regimen": [
+        {
+          "metodo": "Limpieza de la herida",
+          "producto": "Solución salina / Prontosan",
+          "justificacion": "Limpieza en cada cambio de aposito (regla base)."
+        },
+        {
+          "metodo": "Manejo de herida quirúrgica",
+          "producto": "Vigilancia + cuidado de herida estándar",
+          "justificacion": "Grado WUWHS G1."
+        }
+      ],
+      "interconsultas": [],
+      "alertas": []
+    }
+  },
+  {
+    "name": "quirurgica_wuwhs_g2",
+    "scenario": "b",
+    "input": {
+      "etiologia": "quirurgica",
+      "entorno": "clinica",
+      "area_cm2": 10.0,
+      "depth_cm": 0.3,
+      "necrosis_pct": 0.0,
+      "esfacelo_pct": 0.0,
+      "granulacion_pct": 80.0,
+      "epitelizacion_pct": 20.0,
+      "comorbilidades": {},
+      "abi_pie_derecho": null,
+      "abi_pie_izquierdo": null,
+      "es_extremidad_inferior": false,
+      "albumina_gdl": null,
+      "tunelizacion_o_socavamiento": false,
+      "exudado_cantidad": "escaso",
+      "piel_perilesional": [],
+      "infeccion_criterios": [],
+      "tiene_cuidador_identificado": false,
+      "paciente_fragil": false,
+      "wagner_grade": null,
+      "ceap_class": null,
+      "wuwhs_grade": "g2",
+      "agente_causal": null,
+      "subtipo_vascular": null,
+      "no_revascularizable": false,
+      "braden_score": null,
+      "lpp_recurrente": false,
+      "cuidados_paliativos": false,
+      "dolor_cronico": false,
+      "tunnel_depth_cm": null,
+      "sobre_articulacion": false
+    },
+    "expected": {
+      "regimen": [
+        {
+          "metodo": "Limpieza de la herida",
+          "producto": "Solución salina / Prontosan",
+          "justificacion": "Limpieza en cada cambio de aposito (regla base)."
+        },
+        {
+          "metodo": "Manejo de herida quirúrgica",
+          "producto": "Manejo local intensivo + reevaluación en 48-72h",
+          "justificacion": "Grado WUWHS G2."
+        }
+      ],
+      "interconsultas": [],
+      "alertas": []
+    }
+  },
+  {
+    "name": "quirurgica_wuwhs_g3",
+    "scenario": "b",
+    "input": {
+      "etiologia": "quirurgica",
+      "entorno": "clinica",
+      "area_cm2": 10.0,
+      "depth_cm": 0.3,
+      "necrosis_pct": 0.0,
+      "esfacelo_pct": 0.0,
+      "granulacion_pct": 80.0,
+      "epitelizacion_pct": 20.0,
+      "comorbilidades": {},
+      "abi_pie_derecho": null,
+      "abi_pie_izquierdo": null,
+      "es_extremidad_inferior": false,
+      "albumina_gdl": null,
+      "tunelizacion_o_socavamiento": false,
+      "exudado_cantidad": "escaso",
+      "piel_perilesional": [],
+      "infeccion_criterios": [],
+      "tiene_cuidador_identificado": false,
+      "paciente_fragil": false,
+      "wagner_grade": null,
+      "ceap_class": null,
+      "wuwhs_grade": "g3",
+      "agente_causal": null,
+      "subtipo_vascular": null,
+      "no_revascularizable": false,
+      "braden_score": null,
+      "lpp_recurrente": false,
+      "cuidados_paliativos": false,
+      "dolor_cronico": false,
+      "tunnel_depth_cm": null,
+      "sobre_articulacion": false
+    },
+    "expected": {
+      "regimen": [
+        {
+          "metodo": "Limpieza de la herida",
+          "producto": "Solución salina / Prontosan",
+          "justificacion": "Limpieza en cada cambio de aposito (regla base)."
+        },
+        {
+          "metodo": "Manejo de herida quirúrgica",
+          "producto": "Manejo local intensivo + interconsulta a cirugía",
+          "justificacion": "Grado WUWHS G3."
+        }
+      ],
+      "interconsultas": [
+        {
+          "especialidad": "Cirugia",
+          "motivo": "Herida quirurgica WUWHS G3.",
+          "esUrgente": false
+        }
+      ],
+      "alertas": []
+    }
+  },
+  {
+    "name": "quirurgica_wuwhs_g4",
+    "scenario": "b",
+    "input": {
+      "etiologia": "quirurgica",
+      "entorno": "clinica",
+      "area_cm2": 10.0,
+      "depth_cm": 0.3,
+      "necrosis_pct": 0.0,
+      "esfacelo_pct": 0.0,
+      "granulacion_pct": 80.0,
+      "epitelizacion_pct": 20.0,
+      "comorbilidades": {},
+      "abi_pie_derecho": null,
+      "abi_pie_izquierdo": null,
+      "es_extremidad_inferior": false,
+      "albumina_gdl": null,
+      "tunelizacion_o_socavamiento": false,
+      "exudado_cantidad": "escaso",
+      "piel_perilesional": [],
+      "infeccion_criterios": [],
+      "tiene_cuidador_identificado": false,
+      "paciente_fragil": false,
+      "wagner_grade": null,
+      "ceap_class": null,
+      "wuwhs_grade": "g4",
+      "agente_causal": null,
+      "subtipo_vascular": null,
+      "no_revascularizable": false,
+      "braden_score": null,
+      "lpp_recurrente": false,
+      "cuidados_paliativos": false,
+      "dolor_cronico": false,
+      "tunnel_depth_cm": null,
+      "sobre_articulacion": false
+    },
+    "expected": {
+      "regimen": [
+        {
+          "metodo": "Limpieza de la herida",
+          "producto": "Solución salina / Prontosan",
+          "justificacion": "Limpieza en cada cambio de aposito (regla base)."
+        },
+        {
+          "metodo": "Manejo de herida quirúrgica",
+          "producto": "Manejo urgente: dehiscencia/infección grave",
+          "justificacion": "Grado WUWHS G4."
+        }
+      ],
+      "interconsultas": [
+        {
+          "especialidad": "Cirugia",
+          "motivo": "Herida quirurgica WUWHS G4.",
+          "esUrgente": true
+        }
+      ],
+      "alertas": [
+        "ALERTA: WUWHS G4 detectado. Requiere valoracion QUIRURGICA URGENTE."
+      ]
+    }
+  },
+  {
+    "name": "traumatica_mordedura",
+    "scenario": "b",
+    "input": {
+      "etiologia": "traumatica",
+      "entorno": "clinica",
+      "area_cm2": 10.0,
+      "depth_cm": 0.3,
+      "necrosis_pct": 0.0,
+      "esfacelo_pct": 0.0,
+      "granulacion_pct": 80.0,
+      "epitelizacion_pct": 20.0,
+      "comorbilidades": {},
+      "abi_pie_derecho": null,
+      "abi_pie_izquierdo": null,
+      "es_extremidad_inferior": false,
+      "albumina_gdl": null,
+      "tunelizacion_o_socavamiento": false,
+      "exudado_cantidad": "escaso",
+      "piel_perilesional": [],
+      "infeccion_criterios": [],
+      "tiene_cuidador_identificado": false,
+      "paciente_fragil": false,
+      "wagner_grade": null,
+      "ceap_class": null,
+      "wuwhs_grade": null,
+      "agente_causal": "mordedura",
+      "subtipo_vascular": null,
+      "no_revascularizable": false,
+      "braden_score": null,
+      "lpp_recurrente": false,
+      "cuidados_paliativos": false,
+      "dolor_cronico": false,
+      "tunnel_depth_cm": null,
+      "sobre_articulacion": false
+    },
+    "expected": {
+      "regimen": [
+        {
+          "metodo": "Limpieza de la herida",
+          "producto": "Solución salina / Prontosan",
+          "justificacion": "Limpieza en cada cambio de aposito (regla base)."
+        },
+        {
+          "metodo": "Manejo de herida por mordedura",
+          "producto": "Profilaxis antibiótica + lavado abundante",
+          "justificacion": "Agente causal: mordedura (alto riesgo de infeccion)."
+        }
+      ],
+      "interconsultas": [
+        {
+          "especialidad": "Infectologia",
+          "motivo": "Herida por mordedura: valorar profilaxis antirrabica/antibiotica.",
+          "esUrgente": false
+        }
+      ],
+      "alertas": []
+    }
+  },
+  {
+    "name": "traumatica_armaFuego",
+    "scenario": "b",
+    "input": {
+      "etiologia": "traumatica",
+      "entorno": "clinica",
+      "area_cm2": 10.0,
+      "depth_cm": 0.3,
+      "necrosis_pct": 0.0,
+      "esfacelo_pct": 0.0,
+      "granulacion_pct": 80.0,
+      "epitelizacion_pct": 20.0,
+      "comorbilidades": {},
+      "abi_pie_derecho": null,
+      "abi_pie_izquierdo": null,
+      "es_extremidad_inferior": false,
+      "albumina_gdl": null,
+      "tunelizacion_o_socavamiento": false,
+      "exudado_cantidad": "escaso",
+      "piel_perilesional": [],
+      "infeccion_criterios": [],
+      "tiene_cuidador_identificado": false,
+      "paciente_fragil": false,
+      "wagner_grade": null,
+      "ceap_class": null,
+      "wuwhs_grade": null,
+      "agente_causal": "armaFuego",
+      "subtipo_vascular": null,
+      "no_revascularizable": false,
+      "braden_score": null,
+      "lpp_recurrente": false,
+      "cuidados_paliativos": false,
+      "dolor_cronico": false,
+      "tunnel_depth_cm": null,
+      "sobre_articulacion": false
+    },
+    "expected": {
+      "regimen": [
+        {
+          "metodo": "Limpieza de la herida",
+          "producto": "Solución salina / Prontosan",
+          "justificacion": "Limpieza en cada cambio de aposito (regla base)."
+        },
+        {
+          "metodo": "Manejo de herida por arma de fuego",
+          "producto": "Exploración quirúrgica + descarte de lesión profunda",
+          "justificacion": "Agente causal: arma de fuego."
+        }
+      ],
+      "interconsultas": [
+        {
+          "especialidad": "Cirugia de trauma",
+          "motivo": "Herida por arma de fuego: exploracion quirurgica.",
+          "esUrgente": true
+        }
+      ],
+      "alertas": []
+    }
+  },
+  {
+    "name": "traumatica_aplastamiento",
+    "scenario": "b",
+    "input": {
+      "etiologia": "traumatica",
+      "entorno": "clinica",
+      "area_cm2": 10.0,
+      "depth_cm": 0.3,
+      "necrosis_pct": 0.0,
+      "esfacelo_pct": 0.0,
+      "granulacion_pct": 80.0,
+      "epitelizacion_pct": 20.0,
+      "comorbilidades": {},
+      "abi_pie_derecho": null,
+      "abi_pie_izquierdo": null,
+      "es_extremidad_inferior": false,
+      "albumina_gdl": null,
+      "tunelizacion_o_socavamiento": false,
+      "exudado_cantidad": "escaso",
+      "piel_perilesional": [],
+      "infeccion_criterios": [],
+      "tiene_cuidador_identificado": false,
+      "paciente_fragil": false,
+      "wagner_grade": null,
+      "ceap_class": null,
+      "wuwhs_grade": null,
+      "agente_causal": "aplastamiento",
+      "subtipo_vascular": null,
+      "no_revascularizable": false,
+      "braden_score": null,
+      "lpp_recurrente": false,
+      "cuidados_paliativos": false,
+      "dolor_cronico": false,
+      "tunnel_depth_cm": null,
+      "sobre_articulacion": false
+    },
+    "expected": {
+      "regimen": [
+        {
+          "metodo": "Limpieza de la herida",
+          "producto": "Solución salina / Prontosan",
+          "justificacion": "Limpieza en cada cambio de aposito (regla base)."
+        },
+        {
+          "metodo": "Manejo de herida por aplastamiento",
+          "producto": "Vigilancia de síndrome compartimental + manejo de tejidos",
+          "justificacion": "Agente causal: aplastamiento."
+        }
+      ],
+      "interconsultas": [
+        {
+          "especialidad": "Cirugia / Ortopedia",
+          "motivo": "Herida por aplastamiento: descartar sindrome compartimental.",
+          "esUrgente": true
+        }
+      ],
+      "alertas": []
+    }
+  },
+  {
+    "name": "traumatica_punzocortante",
+    "scenario": "b",
+    "input": {
+      "etiologia": "traumatica",
+      "entorno": "clinica",
+      "area_cm2": 10.0,
+      "depth_cm": 0.3,
+      "necrosis_pct": 0.0,
+      "esfacelo_pct": 0.0,
+      "granulacion_pct": 80.0,
+      "epitelizacion_pct": 20.0,
+      "comorbilidades": {},
+      "abi_pie_derecho": null,
+      "abi_pie_izquierdo": null,
+      "es_extremidad_inferior": false,
+      "albumina_gdl": null,
+      "tunelizacion_o_socavamiento": false,
+      "exudado_cantidad": "escaso",
+      "piel_perilesional": [],
+      "infeccion_criterios": [],
+      "tiene_cuidador_identificado": false,
+      "paciente_fragil": false,
+      "wagner_grade": null,
+      "ceap_class": null,
+      "wuwhs_grade": null,
+      "agente_causal": "punzocortante",
+      "subtipo_vascular": null,
+      "no_revascularizable": false,
+      "braden_score": null,
+      "lpp_recurrente": false,
+      "cuidados_paliativos": false,
+      "dolor_cronico": false,
+      "tunnel_depth_cm": null,
+      "sobre_articulacion": false
+    },
+    "expected": {
+      "regimen": [
+        {
+          "metodo": "Limpieza de la herida",
+          "producto": "Solución salina / Prontosan",
+          "justificacion": "Limpieza en cada cambio de aposito (regla base)."
+        },
+        {
+          "metodo": "Manejo de herida punzocortante",
+          "producto": "Exploración de estructuras profundas + cierre según caso",
+          "justificacion": "Agente causal: punzocortante."
+        }
+      ],
+      "interconsultas": [],
+      "alertas": []
+    }
+  },
+  {
+    "name": "traumatica_otro",
+    "scenario": "b",
+    "input": {
+      "etiologia": "traumatica",
+      "entorno": "clinica",
+      "area_cm2": 10.0,
+      "depth_cm": 0.3,
+      "necrosis_pct": 0.0,
+      "esfacelo_pct": 0.0,
+      "granulacion_pct": 80.0,
+      "epitelizacion_pct": 20.0,
+      "comorbilidades": {},
+      "abi_pie_derecho": null,
+      "abi_pie_izquierdo": null,
+      "es_extremidad_inferior": false,
+      "albumina_gdl": null,
+      "tunelizacion_o_socavamiento": false,
+      "exudado_cantidad": "escaso",
+      "piel_perilesional": [],
+      "infeccion_criterios": [],
+      "tiene_cuidador_identificado": false,
+      "paciente_fragil": false,
+      "wagner_grade": null,
+      "ceap_class": null,
+      "wuwhs_grade": null,
+      "agente_causal": "otro",
+      "subtipo_vascular": null,
+      "no_revascularizable": false,
+      "braden_score": null,
+      "lpp_recurrente": false,
+      "cuidados_paliativos": false,
+      "dolor_cronico": false,
+      "tunnel_depth_cm": null,
+      "sobre_articulacion": false
+    },
+    "expected": {
+      "regimen": [
+        {
+          "metodo": "Limpieza de la herida",
+          "producto": "Solución salina / Prontosan",
+          "justificacion": "Limpieza en cada cambio de aposito (regla base)."
+        },
+        {
+          "metodo": "Manejo de herida traumática",
+          "producto": "Según evaluación clínica del mecanismo de lesión",
+          "justificacion": "Agente causal no especificado o categoria otro."
+        }
+      ],
+      "interconsultas": [],
+      "alertas": []
+    }
+  },
+  {
+    "name": "lpp_braden_9_muy_alto",
+    "scenario": "b",
+    "input": {
+      "etiologia": "lpp",
+      "entorno": "clinica",
+      "area_cm2": 10.0,
+      "depth_cm": 0.3,
+      "necrosis_pct": 0.0,
+      "esfacelo_pct": 0.0,
+      "granulacion_pct": 80.0,
+      "epitelizacion_pct": 20.0,
+      "comorbilidades": {},
+      "abi_pie_derecho": null,
+      "abi_pie_izquierdo": null,
+      "es_extremidad_inferior": false,
+      "albumina_gdl": null,
+      "tunelizacion_o_socavamiento": false,
+      "exudado_cantidad": "escaso",
+      "piel_perilesional": [],
+      "infeccion_criterios": [],
+      "tiene_cuidador_identificado": false,
+      "paciente_fragil": false,
+      "wagner_grade": null,
+      "ceap_class": null,
+      "wuwhs_grade": null,
+      "agente_causal": null,
+      "subtipo_vascular": null,
+      "no_revascularizable": false,
+      "braden_score": 9,
+      "lpp_recurrente": false,
+      "cuidados_paliativos": false,
+      "dolor_cronico": false,
+      "tunnel_depth_cm": null,
+      "sobre_articulacion": false
+    },
+    "expected": {
+      "regimen": [
+        {
+          "metodo": "Limpieza de la herida",
+          "producto": "Solución salina / Prontosan",
+          "justificacion": "Limpieza en cada cambio de aposito (regla base)."
+        },
+        {
+          "metodo": "Educación al paciente/cuidador",
+          "producto": "Material educativo + demostración práctica",
+          "justificacion": "etiologia LPP"
+        },
+        {
+          "metodo": "Modalidad de tratamiento (LPP)",
+          "producto": "Tratamiento a cargo de la clínica",
+          "justificacion": "LPP con Braden 9 (riesgo alto/muy alto): modalidad a cargo de la clínica (Protocolo LPP)."
+        }
+      ],
+      "interconsultas": [],
+      "alertas": []
+    }
+  },
+  {
+    "name": "lpp_braden_11_alto",
+    "scenario": "b",
+    "input": {
+      "etiologia": "lpp",
+      "entorno": "clinica",
+      "area_cm2": 10.0,
+      "depth_cm": 0.3,
+      "necrosis_pct": 0.0,
+      "esfacelo_pct": 0.0,
+      "granulacion_pct": 80.0,
+      "epitelizacion_pct": 20.0,
+      "comorbilidades": {},
+      "abi_pie_derecho": null,
+      "abi_pie_izquierdo": null,
+      "es_extremidad_inferior": false,
+      "albumina_gdl": null,
+      "tunelizacion_o_socavamiento": false,
+      "exudado_cantidad": "escaso",
+      "piel_perilesional": [],
+      "infeccion_criterios": [],
+      "tiene_cuidador_identificado": false,
+      "paciente_fragil": false,
+      "wagner_grade": null,
+      "ceap_class": null,
+      "wuwhs_grade": null,
+      "agente_causal": null,
+      "subtipo_vascular": null,
+      "no_revascularizable": false,
+      "braden_score": 11,
+      "lpp_recurrente": false,
+      "cuidados_paliativos": false,
+      "dolor_cronico": false,
+      "tunnel_depth_cm": null,
+      "sobre_articulacion": false
+    },
+    "expected": {
+      "regimen": [
+        {
+          "metodo": "Limpieza de la herida",
+          "producto": "Solución salina / Prontosan",
+          "justificacion": "Limpieza en cada cambio de aposito (regla base)."
+        },
+        {
+          "metodo": "Educación al paciente/cuidador",
+          "producto": "Material educativo + demostración práctica",
+          "justificacion": "etiologia LPP"
+        },
+        {
+          "metodo": "Modalidad de tratamiento (LPP)",
+          "producto": "Tratamiento a cargo de la clínica",
+          "justificacion": "LPP con Braden 11 (riesgo alto/muy alto): modalidad a cargo de la clínica (Protocolo LPP)."
+        }
+      ],
+      "interconsultas": [],
+      "alertas": []
+    }
+  },
+  {
+    "name": "lpp_braden_15_medio",
+    "scenario": "b",
+    "input": {
+      "etiologia": "lpp",
+      "entorno": "clinica",
+      "area_cm2": 10.0,
+      "depth_cm": 0.3,
+      "necrosis_pct": 0.0,
+      "esfacelo_pct": 0.0,
+      "granulacion_pct": 80.0,
+      "epitelizacion_pct": 20.0,
+      "comorbilidades": {},
+      "abi_pie_derecho": null,
+      "abi_pie_izquierdo": null,
+      "es_extremidad_inferior": false,
+      "albumina_gdl": null,
+      "tunelizacion_o_socavamiento": false,
+      "exudado_cantidad": "escaso",
+      "piel_perilesional": [],
+      "infeccion_criterios": [],
+      "tiene_cuidador_identificado": false,
+      "paciente_fragil": false,
+      "wagner_grade": null,
+      "ceap_class": null,
+      "wuwhs_grade": null,
+      "agente_causal": null,
+      "subtipo_vascular": null,
+      "no_revascularizable": false,
+      "braden_score": 15,
+      "lpp_recurrente": false,
+      "cuidados_paliativos": false,
+      "dolor_cronico": false,
+      "tunnel_depth_cm": null,
+      "sobre_articulacion": false
+    },
+    "expected": {
+      "regimen": [
+        {
+          "metodo": "Limpieza de la herida",
+          "producto": "Solución salina / Prontosan",
+          "justificacion": "Limpieza en cada cambio de aposito (regla base)."
+        },
+        {
+          "metodo": "Educación al paciente/cuidador",
+          "producto": "Material educativo + demostración práctica",
+          "justificacion": "etiologia LPP"
+        },
+        {
+          "metodo": "Modalidad de tratamiento (LPP)",
+          "producto": "Tratamiento a cargo de la clínica",
+          "justificacion": "LPP con Braden 15 (riesgo moderado/bajo): modalidad a cargo de la clínica (Protocolo LPP)."
+        }
+      ],
+      "interconsultas": [],
+      "alertas": []
+    }
+  },
+  {
+    "name": "lpp_braden_20_bajo",
+    "scenario": "b",
+    "input": {
+      "etiologia": "lpp",
+      "entorno": "clinica",
+      "area_cm2": 10.0,
+      "depth_cm": 0.3,
+      "necrosis_pct": 0.0,
+      "esfacelo_pct": 0.0,
+      "granulacion_pct": 80.0,
+      "epitelizacion_pct": 20.0,
+      "comorbilidades": {},
+      "abi_pie_derecho": null,
+      "abi_pie_izquierdo": null,
+      "es_extremidad_inferior": false,
+      "albumina_gdl": null,
+      "tunelizacion_o_socavamiento": false,
+      "exudado_cantidad": "escaso",
+      "piel_perilesional": [],
+      "infeccion_criterios": [],
+      "tiene_cuidador_identificado": false,
+      "paciente_fragil": false,
+      "wagner_grade": null,
+      "ceap_class": null,
+      "wuwhs_grade": null,
+      "agente_causal": null,
+      "subtipo_vascular": null,
+      "no_revascularizable": false,
+      "braden_score": 20,
+      "lpp_recurrente": false,
+      "cuidados_paliativos": false,
+      "dolor_cronico": false,
+      "tunnel_depth_cm": null,
+      "sobre_articulacion": false
+    },
+    "expected": {
+      "regimen": [
+        {
+          "metodo": "Limpieza de la herida",
+          "producto": "Solución salina / Prontosan",
+          "justificacion": "Limpieza en cada cambio de aposito (regla base)."
+        },
+        {
+          "metodo": "Educación al paciente/cuidador",
+          "producto": "Material educativo + demostración práctica",
+          "justificacion": "etiologia LPP"
+        },
+        {
+          "metodo": "Modalidad de tratamiento (LPP)",
+          "producto": "Tratamiento compartido (clínica + cuidador)",
+          "justificacion": "LPP con Braden 20 (riesgo moderado/bajo): modalidad compartida (Protocolo LPP)."
+        }
+      ],
+      "interconsultas": [],
+      "alertas": []
+    }
+  },
+  {
+    "name": "lpp_sin_braden",
+    "scenario": "b",
+    "input": {
+      "etiologia": "lpp",
+      "entorno": "clinica",
+      "area_cm2": 10.0,
+      "depth_cm": 0.3,
+      "necrosis_pct": 0.0,
+      "esfacelo_pct": 0.0,
+      "granulacion_pct": 80.0,
+      "epitelizacion_pct": 20.0,
+      "comorbilidades": {},
+      "abi_pie_derecho": null,
+      "abi_pie_izquierdo": null,
+      "es_extremidad_inferior": false,
+      "albumina_gdl": null,
+      "tunelizacion_o_socavamiento": false,
+      "exudado_cantidad": "escaso",
+      "piel_perilesional": [],
+      "infeccion_criterios": [],
+      "tiene_cuidador_identificado": false,
+      "paciente_fragil": false,
+      "wagner_grade": null,
+      "ceap_class": null,
+      "wuwhs_grade": null,
+      "agente_causal": null,
+      "subtipo_vascular": null,
+      "no_revascularizable": false,
+      "braden_score": null,
+      "lpp_recurrente": false,
+      "cuidados_paliativos": false,
+      "dolor_cronico": false,
+      "tunnel_depth_cm": null,
+      "sobre_articulacion": false
+    },
+    "expected": {
+      "regimen": [
+        {
+          "metodo": "Limpieza de la herida",
+          "producto": "Solución salina / Prontosan",
+          "justificacion": "Limpieza en cada cambio de aposito (regla base)."
+        },
+        {
+          "metodo": "Educación al paciente/cuidador",
+          "producto": "Material educativo + demostración práctica",
+          "justificacion": "etiologia LPP"
+        }
+      ],
+      "interconsultas": [],
+      "alertas": []
+    }
+  },
+  {
+    "name": "lpp_recurrente_geriatria",
+    "scenario": "b",
+    "input": {
+      "etiologia": "lpp",
+      "entorno": "clinica",
+      "area_cm2": 10.0,
+      "depth_cm": 0.3,
+      "necrosis_pct": 0.0,
+      "esfacelo_pct": 0.0,
+      "granulacion_pct": 80.0,
+      "epitelizacion_pct": 20.0,
+      "comorbilidades": {},
+      "abi_pie_derecho": null,
+      "abi_pie_izquierdo": null,
+      "es_extremidad_inferior": false,
+      "albumina_gdl": null,
+      "tunelizacion_o_socavamiento": false,
+      "exudado_cantidad": "escaso",
+      "piel_perilesional": [],
+      "infeccion_criterios": [],
+      "tiene_cuidador_identificado": false,
+      "paciente_fragil": false,
+      "wagner_grade": null,
+      "ceap_class": null,
+      "wuwhs_grade": null,
+      "agente_causal": null,
+      "subtipo_vascular": null,
+      "no_revascularizable": false,
+      "braden_score": 10,
+      "lpp_recurrente": true,
+      "cuidados_paliativos": false,
+      "dolor_cronico": false,
+      "tunnel_depth_cm": null,
+      "sobre_articulacion": false
+    },
+    "expected": {
+      "regimen": [
+        {
+          "metodo": "Limpieza de la herida",
+          "producto": "Solución salina / Prontosan",
+          "justificacion": "Limpieza en cada cambio de aposito (regla base)."
+        },
+        {
+          "metodo": "Educación al paciente/cuidador",
+          "producto": "Material educativo + demostración práctica",
+          "justificacion": "etiologia LPP"
+        },
+        {
+          "metodo": "Modalidad de tratamiento (LPP)",
+          "producto": "Tratamiento a cargo de la clínica",
+          "justificacion": "LPP con Braden 10 (riesgo alto/muy alto): modalidad a cargo de la clínica (Protocolo LPP)."
+        }
+      ],
+      "interconsultas": [
+        {
+          "especialidad": "Geriatria",
+          "motivo": "Valoración geriátrica integral recomendada: LPP recurrente.",
+          "esUrgente": false
+        }
+      ],
+      "alertas": []
+    }
+  },
+  {
+    "name": "tunel_8cm_referencia",
+    "scenario": "b",
+    "input": {
+      "etiologia": "otra",
+      "entorno": "clinica",
+      "area_cm2": 10.0,
+      "depth_cm": 0.3,
+      "necrosis_pct": 0.0,
+      "esfacelo_pct": 0.0,
+      "granulacion_pct": 80.0,
+      "epitelizacion_pct": 20.0,
+      "comorbilidades": {},
+      "abi_pie_derecho": null,
+      "abi_pie_izquierdo": null,
+      "es_extremidad_inferior": false,
+      "albumina_gdl": null,
+      "tunelizacion_o_socavamiento": false,
+      "exudado_cantidad": "escaso",
+      "piel_perilesional": [],
+      "infeccion_criterios": [],
+      "tiene_cuidador_identificado": false,
+      "paciente_fragil": false,
+      "wagner_grade": null,
+      "ceap_class": null,
+      "wuwhs_grade": null,
+      "agente_causal": null,
+      "subtipo_vascular": null,
+      "no_revascularizable": false,
+      "braden_score": null,
+      "lpp_recurrente": false,
+      "cuidados_paliativos": false,
+      "dolor_cronico": false,
+      "tunnel_depth_cm": 8.0,
+      "sobre_articulacion": false
+    },
+    "expected": {
+      "regimen": [
+        {
+          "metodo": "Limpieza de la herida",
+          "producto": "Solución salina / Prontosan",
+          "justificacion": "Limpieza en cada cambio de aposito (regla base)."
+        }
+      ],
+      "interconsultas": [
+        {
+          "especialidad": "Estudios de imagen / valorar IC (Cirugía general u Ortopedia)",
+          "motivo": "Túnel profundo (8.0 cm > 7 cm): descartar trayecto fistuloso/absceso. Sugerido: USG de tejidos blandos, fistulografía o RMN; valorar interconsulta (Cirugía general/Ortopedia) según hallazgos, sitio anatómico y etiología.",
+          "esUrgente": false
+        }
+      ],
+      "alertas": []
+    }
+  },
+  {
+    "name": "tunel_5cm_sin_referencia",
+    "scenario": "b",
+    "input": {
+      "etiologia": "otra",
+      "entorno": "clinica",
+      "area_cm2": 10.0,
+      "depth_cm": 0.3,
+      "necrosis_pct": 0.0,
+      "esfacelo_pct": 0.0,
+      "granulacion_pct": 80.0,
+      "epitelizacion_pct": 20.0,
+      "comorbilidades": {},
+      "abi_pie_derecho": null,
+      "abi_pie_izquierdo": null,
+      "es_extremidad_inferior": false,
+      "albumina_gdl": null,
+      "tunelizacion_o_socavamiento": false,
+      "exudado_cantidad": "escaso",
+      "piel_perilesional": [],
+      "infeccion_criterios": [],
+      "tiene_cuidador_identificado": false,
+      "paciente_fragil": false,
+      "wagner_grade": null,
+      "ceap_class": null,
+      "wuwhs_grade": null,
+      "agente_causal": null,
+      "subtipo_vascular": null,
+      "no_revascularizable": false,
+      "braden_score": null,
+      "lpp_recurrente": false,
+      "cuidados_paliativos": false,
+      "dolor_cronico": false,
+      "tunnel_depth_cm": 5.0,
+      "sobre_articulacion": false
+    },
+    "expected": {
+      "regimen": [
+        {
+          "metodo": "Limpieza de la herida",
+          "producto": "Solución salina / Prontosan",
+          "justificacion": "Limpieza en cada cambio de aposito (regla base)."
+        }
+      ],
+      "interconsultas": [],
+      "alertas": []
+    }
+  },
+  {
+    "name": "articulacion_referencia",
+    "scenario": "b",
+    "input": {
+      "etiologia": "otra",
+      "entorno": "clinica",
+      "area_cm2": 10.0,
+      "depth_cm": 0.3,
+      "necrosis_pct": 0.0,
+      "esfacelo_pct": 0.0,
+      "granulacion_pct": 80.0,
+      "epitelizacion_pct": 20.0,
+      "comorbilidades": {},
+      "abi_pie_derecho": null,
+      "abi_pie_izquierdo": null,
+      "es_extremidad_inferior": false,
+      "albumina_gdl": null,
+      "tunelizacion_o_socavamiento": false,
+      "exudado_cantidad": "escaso",
+      "piel_perilesional": [],
+      "infeccion_criterios": [],
+      "tiene_cuidador_identificado": false,
+      "paciente_fragil": false,
+      "wagner_grade": null,
+      "ceap_class": null,
+      "wuwhs_grade": null,
+      "agente_causal": null,
+      "subtipo_vascular": null,
+      "no_revascularizable": false,
+      "braden_score": null,
+      "lpp_recurrente": false,
+      "cuidados_paliativos": false,
+      "dolor_cronico": false,
+      "tunnel_depth_cm": null,
+      "sobre_articulacion": true
+    },
+    "expected": {
+      "regimen": [
+        {
+          "metodo": "Limpieza de la herida",
+          "producto": "Solución salina / Prontosan",
+          "justificacion": "Limpieza en cada cambio de aposito (regla base)."
+        }
+      ],
+      "interconsultas": [
+        {
+          "especialidad": "Estudios de imagen / valorar IC (Cirugía general u Ortopedia)",
+          "motivo": "Compromiso articular: descartar artritis séptica / exposición articular. Sugerido: USG de tejidos blandos o RMN; valorar interconsulta (Cirugía general/Ortopedia) según sitio y etiología.",
+          "esUrgente": false
+        }
+      ],
+      "alertas": []
+    }
+  },
+  {
+    "name": "paciente_fragil_geriatria",
+    "scenario": "b",
+    "input": {
+      "etiologia": "otra",
+      "entorno": "clinica",
+      "area_cm2": 10.0,
+      "depth_cm": 0.3,
+      "necrosis_pct": 0.0,
+      "esfacelo_pct": 0.0,
+      "granulacion_pct": 80.0,
+      "epitelizacion_pct": 20.0,
+      "comorbilidades": {},
+      "abi_pie_derecho": null,
+      "abi_pie_izquierdo": null,
+      "es_extremidad_inferior": false,
+      "albumina_gdl": null,
+      "tunelizacion_o_socavamiento": false,
+      "exudado_cantidad": "escaso",
+      "piel_perilesional": [],
+      "infeccion_criterios": [],
+      "tiene_cuidador_identificado": false,
+      "paciente_fragil": true,
+      "wagner_grade": null,
+      "ceap_class": null,
+      "wuwhs_grade": null,
+      "agente_causal": null,
+      "subtipo_vascular": null,
+      "no_revascularizable": false,
+      "braden_score": null,
+      "lpp_recurrente": false,
+      "cuidados_paliativos": false,
+      "dolor_cronico": false,
+      "tunnel_depth_cm": null,
+      "sobre_articulacion": false
+    },
+    "expected": {
+      "regimen": [
+        {
+          "metodo": "Limpieza de la herida",
+          "producto": "Solución salina / Prontosan",
+          "justificacion": "Limpieza en cada cambio de aposito (regla base)."
+        }
+      ],
+      "interconsultas": [
+        {
+          "especialidad": "Geriatria",
+          "motivo": "Valoración geriátrica integral recomendada: paciente frágil.",
+          "esUrgente": false
+        }
+      ],
+      "alertas": []
+    }
+  },
+  {
+    "name": "cuidados_paliativos_geriatria",
+    "scenario": "b",
+    "input": {
+      "etiologia": "otra",
+      "entorno": "clinica",
+      "area_cm2": 10.0,
+      "depth_cm": 0.3,
+      "necrosis_pct": 0.0,
+      "esfacelo_pct": 0.0,
+      "granulacion_pct": 80.0,
+      "epitelizacion_pct": 20.0,
+      "comorbilidades": {},
+      "abi_pie_derecho": null,
+      "abi_pie_izquierdo": null,
+      "es_extremidad_inferior": false,
+      "albumina_gdl": null,
+      "tunelizacion_o_socavamiento": false,
+      "exudado_cantidad": "escaso",
+      "piel_perilesional": [],
+      "infeccion_criterios": [],
+      "tiene_cuidador_identificado": false,
+      "paciente_fragil": false,
+      "wagner_grade": null,
+      "ceap_class": null,
+      "wuwhs_grade": null,
+      "agente_causal": null,
+      "subtipo_vascular": null,
+      "no_revascularizable": false,
+      "braden_score": null,
+      "lpp_recurrente": false,
+      "cuidados_paliativos": true,
+      "dolor_cronico": false,
+      "tunnel_depth_cm": null,
+      "sobre_articulacion": false
+    },
+    "expected": {
+      "regimen": [
+        {
+          "metodo": "Limpieza de la herida",
+          "producto": "Solución salina / Prontosan",
+          "justificacion": "Limpieza en cada cambio de aposito (regla base)."
+        }
+      ],
+      "interconsultas": [
+        {
+          "especialidad": "Geriatria",
+          "motivo": "Valoración geriátrica integral recomendada: cuidados paliativos.",
+          "esUrgente": false
+        }
+      ],
+      "alertas": []
+    }
+  },
+  {
+    "name": "dolor_cronico_geriatria",
+    "scenario": "b",
+    "input": {
+      "etiologia": "otra",
+      "entorno": "clinica",
+      "area_cm2": 10.0,
+      "depth_cm": 0.3,
+      "necrosis_pct": 0.0,
+      "esfacelo_pct": 0.0,
+      "granulacion_pct": 80.0,
+      "epitelizacion_pct": 20.0,
+      "comorbilidades": {},
+      "abi_pie_derecho": null,
+      "abi_pie_izquierdo": null,
+      "es_extremidad_inferior": false,
+      "albumina_gdl": null,
+      "tunelizacion_o_socavamiento": false,
+      "exudado_cantidad": "escaso",
+      "piel_perilesional": [],
+      "infeccion_criterios": [],
+      "tiene_cuidador_identificado": false,
+      "paciente_fragil": false,
+      "wagner_grade": null,
+      "ceap_class": null,
+      "wuwhs_grade": null,
+      "agente_causal": null,
+      "subtipo_vascular": null,
+      "no_revascularizable": false,
+      "braden_score": null,
+      "lpp_recurrente": false,
+      "cuidados_paliativos": false,
+      "dolor_cronico": true,
+      "tunnel_depth_cm": null,
+      "sobre_articulacion": false
+    },
+    "expected": {
+      "regimen": [
+        {
+          "metodo": "Limpieza de la herida",
+          "producto": "Solución salina / Prontosan",
+          "justificacion": "Limpieza en cada cambio de aposito (regla base)."
+        }
+      ],
+      "interconsultas": [
+        {
+          "especialidad": "Geriatria",
+          "motivo": "Valoración geriátrica integral recomendada: dolor crónico.",
+          "esUrgente": false
+        }
+      ],
+      "alertas": []
+    }
+  },
+  {
+    "name": "domicilio_cuidador_educacion",
+    "scenario": "b",
+    "input": {
+      "etiologia": "otra",
+      "entorno": "domicilio",
+      "area_cm2": 10.0,
+      "depth_cm": 0.3,
+      "necrosis_pct": 0.0,
+      "esfacelo_pct": 0.0,
+      "granulacion_pct": 80.0,
+      "epitelizacion_pct": 20.0,
+      "comorbilidades": {},
+      "abi_pie_derecho": null,
+      "abi_pie_izquierdo": null,
+      "es_extremidad_inferior": false,
+      "albumina_gdl": null,
+      "tunelizacion_o_socavamiento": false,
+      "exudado_cantidad": "escaso",
+      "piel_perilesional": [],
+      "infeccion_criterios": [],
+      "tiene_cuidador_identificado": true,
+      "paciente_fragil": false,
+      "wagner_grade": null,
+      "ceap_class": null,
+      "wuwhs_grade": null,
+      "agente_causal": null,
+      "subtipo_vascular": null,
+      "no_revascularizable": false,
+      "braden_score": null,
+      "lpp_recurrente": false,
+      "cuidados_paliativos": false,
+      "dolor_cronico": false,
+      "tunnel_depth_cm": null,
+      "sobre_articulacion": false
+    },
+    "expected": {
+      "regimen": [
+        {
+          "metodo": "Limpieza de la herida",
+          "producto": "Solución salina / Prontosan",
+          "justificacion": "Limpieza en cada cambio de aposito (regla base)."
+        },
+        {
+          "metodo": "Educación al paciente/cuidador",
+          "producto": "Material educativo + demostración práctica",
+          "justificacion": "atencion en domicilio, cuidador identificado"
+        }
+      ],
+      "interconsultas": [],
+      "alertas": []
+    }
+  },
+  {
+    "name": "escenario_c_contencion",
+    "scenario": "c",
+    "input": {
+      "etiologia": "otra",
+      "entorno": "clinica",
+      "area_cm2": 10.0,
+      "depth_cm": 0.3,
+      "necrosis_pct": 0.0,
+      "esfacelo_pct": 0.0,
+      "granulacion_pct": 80.0,
+      "epitelizacion_pct": 20.0,
+      "comorbilidades": {},
+      "abi_pie_derecho": null,
+      "abi_pie_izquierdo": null,
+      "es_extremidad_inferior": false,
+      "albumina_gdl": null,
+      "tunelizacion_o_socavamiento": false,
+      "exudado_cantidad": "escaso",
+      "piel_perilesional": [],
+      "infeccion_criterios": [],
+      "tiene_cuidador_identificado": false,
+      "paciente_fragil": false,
+      "wagner_grade": null,
+      "ceap_class": null,
+      "wuwhs_grade": null,
+      "agente_causal": null,
+      "subtipo_vascular": null,
+      "no_revascularizable": false,
+      "braden_score": null,
+      "lpp_recurrente": false,
+      "cuidados_paliativos": false,
+      "dolor_cronico": false,
+      "tunnel_depth_cm": null,
+      "sobre_articulacion": false
+    },
+    "expected": {
+      "regimen": [
+        {
+          "metodo": "Limpieza de la herida",
+          "producto": "Solución salina / Prontosan",
+          "justificacion": "Limpieza en cada cambio de aposito (regla base)."
+        }
+      ],
+      "interconsultas": [],
+      "alertas": [
+        "Escenario C: cierre no esperado en el horizonte evaluado. Enfoque de confort, prevencion de complicaciones y control de sintomas (dolor, exudado, olor)."
+      ]
+    }
+  },
+  {
+    "name": "escenario_a_baseline",
+    "scenario": "a",
+    "input": {
+      "etiologia": "otra",
+      "entorno": "clinica",
+      "area_cm2": 10.0,
+      "depth_cm": 0.3,
+      "necrosis_pct": 0.0,
+      "esfacelo_pct": 0.0,
+      "granulacion_pct": 80.0,
+      "epitelizacion_pct": 20.0,
+      "comorbilidades": {},
+      "abi_pie_derecho": null,
+      "abi_pie_izquierdo": null,
+      "es_extremidad_inferior": false,
+      "albumina_gdl": null,
+      "tunelizacion_o_socavamiento": false,
+      "exudado_cantidad": "escaso",
+      "piel_perilesional": [],
+      "infeccion_criterios": [],
+      "tiene_cuidador_identificado": false,
+      "paciente_fragil": false,
+      "wagner_grade": null,
+      "ceap_class": null,
+      "wuwhs_grade": null,
+      "agente_causal": null,
+      "subtipo_vascular": null,
+      "no_revascularizable": false,
+      "braden_score": null,
+      "lpp_recurrente": false,
+      "cuidados_paliativos": false,
+      "dolor_cronico": false,
+      "tunnel_depth_cm": null,
+      "sobre_articulacion": false
+    },
+    "expected": {
+      "regimen": [
+        {
+          "metodo": "Limpieza de la herida",
+          "producto": "Solución salina / Prontosan",
+          "justificacion": "Limpieza en cada cambio de aposito (regla base)."
+        }
+      ],
+      "interconsultas": [],
+      "alertas": []
+    }
+  }
+]

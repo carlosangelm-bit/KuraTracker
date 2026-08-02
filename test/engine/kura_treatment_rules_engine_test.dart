@@ -1044,14 +1044,27 @@ void main() {
       expect(comp!.producto.toLowerCase(), contains('clínica'));
     });
 
-    test('Braden >=13 (riesgo moderado/bajo) -> tratamiento compartido', () {
+    // Bandas validadas por María (2026-07): riesgo bajo (Braden 18–23) ->
+    // tratamiento COMPARTIDO; riesgo medio (13–17), alto (10–12) y muy alto
+    // (<=9) -> A CARGO DE LA CLÍNICA.
+    test('Braden 18-23 (riesgo bajo) -> tratamiento compartido', () {
       final r = KuraTreatmentRulesEngine.generate(
-        input: base(etiologia: Etiologia.lpp, bradenScore: 16),
+        input: base(etiologia: Etiologia.lpp, bradenScore: 20),
         scenario: KuraScenario.b,
       );
       final comp = modalidad(r);
       expect(comp, isNotNull);
       expect(comp!.producto.toLowerCase(), contains('compartido'));
+    });
+
+    test('Braden 13-17 (riesgo medio) -> a cargo de la clínica', () {
+      final r = KuraTreatmentRulesEngine.generate(
+        input: base(etiologia: Etiologia.lpp, bradenScore: 15),
+        scenario: KuraScenario.b,
+      );
+      final comp = modalidad(r);
+      expect(comp, isNotNull);
+      expect(comp!.producto.toLowerCase(), contains('clínica'));
     });
 
     test('sin Braden no se agrega la modalidad', () {
@@ -1072,15 +1085,20 @@ void main() {
   });
 
   group('Referencia por túnel > 7 cm o articulación', () {
-    test('túnel 8 cm genera referencia a cirugía', () {
+    // Feedback de María: el túnel profundo NO es interconsulta directa; primero
+    // estudios de imagen y valorar IC (Cirugía general / Ortopedia). La
+    // especialidad quedó como "Estudios de imagen / valorar IC (Cirugía general
+    // u Ortopedia)" — nótese "Cirugía" con acento.
+    test('túnel 8 cm genera referencia (estudios de imagen / IC)', () {
       final r = KuraTreatmentRulesEngine.generate(
         input: base(tunnelDepthCm: 8),
         scenario: KuraScenario.b,
       );
       expect(
         r.interconsultas.any((i) =>
-            i.especialidad.toLowerCase().contains('cirugia') &&
-            i.motivo.toLowerCase().contains('túnel')),
+            i.motivo.toLowerCase().contains('túnel') &&
+            (i.especialidad.toLowerCase().contains('estudios de imagen') ||
+                i.especialidad.toLowerCase().contains('cirugía'))),
         isTrue,
       );
     });
