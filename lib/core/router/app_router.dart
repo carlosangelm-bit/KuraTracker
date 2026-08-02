@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../providers/session_provider.dart';
 import '../../models/app_user.dart';
 import '../../models/module_key.dart';
+import '../../features/auth/demo_persona_screen.dart';
 import '../../features/auth/login_screen.dart';
 import '../../features/comercial/payment_result_screen.dart';
 import '../../features/dashboard/dashboard_screen.dart';
@@ -65,16 +66,21 @@ final routerProvider = Provider<GoRouter>((ref) {
   });
 
   return GoRouter(
-    initialLocation: '/login',
+    initialLocation: isDemoMode ? '/demo' : '/login',
     refreshListenable: refreshNotifier,
     redirect: (context, state) {
       final session = ref.read(sessionProvider);
       final loggedIn = session.isAuthenticated;
       final goingToLogin = state.matchedLocation == '/login';
+      // Capa previa al login SOLO en demo: elegir perfil (usuario demo).
+      final goingToDemo = state.matchedLocation == '/demo';
       // Rutas PÚBLICAS (sin sesión): páginas de resultado de pago a las que
       // Stripe redirige al PACIENTE. No deben pasar por el login ni la app.
       if (state.matchedLocation.startsWith('/pago-')) return null;
-      if (!loggedIn && !goingToLogin) return '/login';
+      if (!loggedIn && !goingToLogin && !goingToDemo) {
+        // En demo, la landing es la selección de perfil; en prod, el login.
+        return isDemoMode ? '/demo' : '/login';
+      }
 
       // El master (administrador de plataforma) no tiene datos clinicos
       // propios (dashboard/pacientes/reportes quedarian vacios para el,
@@ -89,7 +95,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       // ejecuta, pero NO diagnostica ni cambia protocolo. Se le bloquean las
       // rutas de escritura de diagnóstico/protocolo (abajo).
       final isNurse = session.user?.role == AppRole.enfermeria;
-      if (loggedIn && goingToLogin) {
+      if (loggedIn && (goingToLogin || goingToDemo)) {
         if (isMaster) return '/platform';
         if (isCaregiver) return '/caregiver';
         return '/';
@@ -163,6 +169,7 @@ final routerProvider = Provider<GoRouter>((ref) {
     },
     routes: [
       GoRoute(path: '/login', builder: (context, state) => const LoginScreen()),
+      GoRoute(path: '/demo', builder: (context, state) => const DemoPersonaScreen()),
       // Resultado de pago (público, fuera del shell): Stripe redirige aquí.
       GoRoute(
           path: '/pago-recibido',
