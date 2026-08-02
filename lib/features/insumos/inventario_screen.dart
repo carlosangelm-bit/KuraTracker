@@ -1,3 +1,5 @@
+import 'package:csv/csv.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
@@ -7,6 +9,7 @@ import '../../core/providers/session_provider.dart';
 import '../../core/router/app_shell.dart' show UserMenuButton;
 import '../../models/app_user.dart';
 import '../../models/inventory.dart';
+import '../../services/csv_download.dart';
 import '../../services/data_repository.dart';
 import 'product_picker.dart';
 
@@ -23,6 +26,213 @@ class InventarioScreen extends ConsumerStatefulWidget {
 
 class _InventarioScreenState extends ConsumerState<InventarioScreen> {
   String? _siteId;
+  bool _importing = false;
+  bool _syncing = false;
+
+  /// Bajada del espejo: trae existencias de Shopify y ajusta el inventario del
+  /// sitio (solo centro Kura+ marcado como espejo).
+  Future<void> _syncShopify(DataRepository repo, String? orgId) async {
+    final siteId = _siteId;
+    if (orgId == null || siteId == null) return;
+    setState(() => _syncing = true);
+    try {
+      final n = await repo.syncShopifyInventory(orgId, siteId);
+      if (mounted) {
+        setState(() {});
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('Existencias sincronizadas: $n ajuste(s).')));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('$e'.replaceFirst('Exception: ', ''))));
+      }
+    } finally {
+      if (mounted) setState(() => _syncing = false);
+    }
+  }
+
+  // Encabezado del CSV de carga masiva de inventario.
+  static const _csvHeader = [
+    'sku',
+    'nombre',
+    'proveedor',
+    'costo',
+    'precio',
+    'moneda',
+    'cantidad',
+    'shopify_product_id',
+    'shopify_variant_id',
+  ];
+
+  /// Descarga un CSV con el catálogo global completo (para que el centro ajuste
+  /// costo/cantidad) + una fila guía. Se puede agregar productos nuevos con
+  /// filas cuyo shopify_product_id quede vacío.
+  Future<void> _downloadCsv(DataRepository repo, String? orgId) async {
+    final catalog = repo.listProductCatalog();
+    final rows = <List<dynamic>>[_csvHeader];
+    for (final p in catalog) {
+      rows.add([
+        p.sku ?? '',
+        p.displayName,
+        p.vendor ?? '',
+        '', // costo (lo llena el centro)
+        p.price?.toStringAsFixed(2) ?? '',
+        p.currency ?? 'MXN',
+        '', // cantidad inicial (lo llena el centro)
+        p.shopifyProductId,
+        p.shopifyVariantId ?? '',
+      ]);
+    }
+    // Fila-ejemplo de producto NUEVO (sin ids de Shopify = externo).
+    rows.add([
+      'SKU-EJEMPLO',
+      'Producto propio del centro (ejemplo)',
+      'Proveedor',
+      '0.00',
+      '0.00',
+      'MXN',
+      '0',
+      '',
+      '',
+    ]);
+    final content = const ListToCsvConverter().convert(rows);
+    try {
+      await downloadCsv('inventario_catalogo.csv', content);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('No se pudo descargar: $e')));
+      }
+    }
+  }
+
+  /// Carga un CSV y crea/repone artículos de inventario en el sitio actual.
+  /// Con shopify_product_id → artículo ligado al catálogo; sin él → externo.
+  Future<void> _uploadCsv(DataRepository repo, String? orgId) async {
+    final siteId = _siteId;
+    if (orgId == null || siteId == null) return;
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['csv'],
+      withData: true,
+    );
+    if (result == null || result.files.isEmpty) return;
+    final bytes = result.files.first.bytes;
+    if (bytes == null) return;
+
+    setState(() => _importing = true);
+    try {
+      final content = String.fromCharCodes(bytes);
+      final raw = const CsvToListConverter(eol: '\n', shouldParseNumbers: false)
+          .convert(content);
+      if (raw.isEmpty) throw 'CSV vacío.';
+
+      // Índice de columnas por encabezado (tolerante al orden).
+      final header =
+          raw.first.map((e) => e.toString().trim().toLowerCase()).toList();
+      int col(String name) => header.indexOf(name);
+      final iSku = col('sku'),
+          iName = col('nombre'),
+          iProv = col('proveedor'),
+          iCost = col('costo'),
+          iPrice = col('precio'),
+          iCur = col('moneda'),
+          iQty = col('cantidad'),
+          iPid = col('shopify_product_id'),
+          iVid = col('shopify_variant_id');
+      if (iName < 0) throw 'Falta la columna "nombre".';
+
+      final existing =
+          repo.listInventoryItems(organizationId: orgId, siteId: siteId);
+      final uid = ref.read(sessionProvider).user?.id;
+      String? cell(List<dynamic> r, int i) =>
+          i >= 0 && i < r.length ? r[i].toString().trim() : null;
+      double? toNum(String? s) =>
+          (s == null || s.isEmpty) ? null : double.tryParse(s.replaceAll(',', '.'));
+
+      var created = 0, restocked = 0, skipped = 0;
+      for (var k = 1; k < raw.length; k++) {
+        final r = raw[k];
+        final name = cell(r, iName) ?? '';
+        if (name.isEmpty) continue;
+        final pid = cell(r, iPid);
+        final vid = cell(r, iVid);
+        final qty = (toNum(cell(r, iQty)) ?? 0).round();
+        final cost = toNum(cell(r, iCost));
+        final price = toNum(cell(r, iPrice));
+        final cur = cell(r, iCur);
+        final sku = cell(r, iSku);
+        final prov = cell(r, iProv);
+
+        // ¿Ya existe? (por producto de Shopify si hay id; si no, por nombre.)
+        InventoryItem? match;
+        for (final it in existing) {
+          final same = (pid != null && pid.isNotEmpty)
+              ? it.shopifyProductId == pid
+              : it.name.toLowerCase() == name.toLowerCase();
+          if (same) {
+            match = it;
+            break;
+          }
+        }
+
+        if (match == null) {
+          final item = await repo.addInventoryItem(
+            organizationId: orgId,
+            siteId: siteId,
+            name: name,
+            isExternal: pid == null || pid.isEmpty,
+            shopifyProductId: (pid != null && pid.isNotEmpty) ? pid : null,
+            shopifyVariantId: (vid != null && vid.isNotEmpty) ? vid : null,
+            unitCost: cost,
+            unitPrice: price,
+            currency: cur,
+            supplier: (prov != null && prov.isNotEmpty) ? prov : null,
+            notes: (sku != null && sku.isNotEmpty) ? 'SKU: $sku' : null,
+            createdBy: uid,
+          );
+          created++;
+          if (qty > 0) {
+            await repo.addInventoryMovement(
+              item: item,
+              delta: qty,
+              reason: InventoryReason.compra,
+              unitCost: cost,
+              note: 'Carga inicial (CSV)',
+              createdBy: uid,
+            );
+          }
+        } else if (qty > 0) {
+          await repo.addInventoryMovement(
+            item: match,
+            delta: qty,
+            reason: InventoryReason.compra,
+            unitCost: cost,
+            note: 'Reabasto (CSV)',
+            createdBy: uid,
+          );
+          restocked++;
+        } else {
+          skipped++;
+        }
+      }
+      if (mounted) {
+        setState(() {});
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(
+                'CSV: $created creados, $restocked reabastecidos'
+                '${skipped > 0 ? ', $skipped sin cambios' : ''}.')));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('No se pudo cargar el CSV: $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _importing = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -32,7 +242,46 @@ class _InventarioScreenState extends ConsumerState<InventarioScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Inventario'),
-        actions: const [UserMenuButton()],
+        actions: [
+          if (repoAsync.valueOrNull
+                  ?.premiumInsumosFor(user?.organizationId) ??
+              false) ...[
+            if (repoAsync.valueOrNull
+                    ?.shopifyMirrorFor(user?.organizationId) ??
+                false)
+              IconButton(
+                tooltip: 'Sincronizar existencias con Shopify',
+                icon: _syncing
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Icon(Icons.sync),
+                onPressed: _syncing
+                    ? null
+                    : () => _syncShopify(repoAsync.value!, user?.organizationId),
+              ),
+            IconButton(
+              tooltip: 'Descargar CSV (catálogo)',
+              icon: const Icon(Icons.download_outlined),
+              onPressed: () =>
+                  _downloadCsv(repoAsync.value!, user?.organizationId),
+            ),
+            IconButton(
+              tooltip: 'Cargar CSV',
+              icon: _importing
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Icon(Icons.upload_outlined),
+              onPressed: _importing
+                  ? null
+                  : () => _uploadCsv(repoAsync.value!, user?.organizationId),
+            ),
+          ],
+          const UserMenuButton(),
+        ],
       ),
       body: repoAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),

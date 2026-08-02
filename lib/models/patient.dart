@@ -14,6 +14,8 @@ class Patient {
   final String? caregiverPhone;
   final bool fragilePatient;
   final String? backgroundNotes;
+  final String? activeMedications; // medicamentos que toma actualmente
+  final String? allergies; // alergias
   final String? ekareExternalId;
   // Identificación NOM-004 (Fase 2, migración 0031).
   final String? curp;
@@ -51,6 +53,8 @@ class Patient {
     this.caregiverPhone,
     this.fragilePatient = false,
     this.backgroundNotes,
+    this.activeMedications,
+    this.allergies,
     this.ekareExternalId,
     this.curp,
     this.address,
@@ -105,6 +109,8 @@ class Patient {
         caregiverPhone: json['caregiver_phone'] as String?,
         fragilePatient: json['fragile_patient'] as bool? ?? false,
         backgroundNotes: json['background_notes'] as String?,
+        activeMedications: json['active_medications'] as String?,
+        allergies: json['allergies'] as String?,
         ekareExternalId: json['ekare_external_id'] as String?,
         curp: json['curp'] as String?,
         address: json['address'] as String?,
@@ -142,6 +148,8 @@ class Patient {
         'caregiver_phone': caregiverPhone,
         'fragile_patient': fragilePatient,
         'background_notes': backgroundNotes,
+        'active_medications': activeMedications,
+        'allergies': allergies,
         'ekare_external_id': ekareExternalId,
         'curp': curp,
         'address': address,

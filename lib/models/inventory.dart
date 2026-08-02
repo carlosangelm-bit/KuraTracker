@@ -9,6 +9,7 @@ class InventoryItem {
   final bool isExternal;
   final String? shopifyProductId;
   final String? shopifyVariantId;
+  final String? shopifyInventoryItemId; // gid de inventoryItem (espejo Shopify)
   final String? imageUrl;
   final double? unitCost; // costo del centro
   final double? unitPrice; // precio de venta al paciente (default costo +30%)
@@ -26,6 +27,7 @@ class InventoryItem {
     this.isExternal = false,
     this.shopifyProductId,
     this.shopifyVariantId,
+    this.shopifyInventoryItemId,
     this.imageUrl,
     this.unitCost,
     this.unitPrice,
@@ -44,6 +46,7 @@ class InventoryItem {
         isExternal: j['is_external'] as bool? ?? false,
         shopifyProductId: j['shopify_product_id'] as String?,
         shopifyVariantId: j['shopify_variant_id'] as String?,
+        shopifyInventoryItemId: j['shopify_inventory_item_id'] as String?,
         imageUrl: j['image_url'] as String?,
         unitCost: (j['unit_cost'] as num?)?.toDouble(),
         unitPrice: (j['unit_price'] as num?)?.toDouble(),

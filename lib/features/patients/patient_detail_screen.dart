@@ -5,6 +5,10 @@ import 'package:intl/intl.dart';
 
 import '../../core/theme/kura_theme.dart';
 import '../../core/providers/session_provider.dart';
+import '../../models/center_type.dart';
+import '../../models/module_key.dart';
+import '../../models/vac_therapy.dart';
+import '../vac/vac_therapy_form.dart';
 import '../../engine/models/kura_engine_enums.dart';
 import '../../engine/risk/prevention_risk_engine.dart';
 import '../../models/app_user.dart';
@@ -117,6 +121,264 @@ class _PatientDetailScreenState extends ConsumerState<PatientDetailScreen> {
           final screenW = MediaQuery.of(context).size.width;
           final contentSidePad = screenW > 1040 ? (screenW - 1000) / 2 : 20.0;
 
+          // Hospital: la herramienta es apoyo al MANEJO PREVENTIVO, no un
+          // expediente de heridas. Se prioriza Prevención/Riesgo y el resto del
+          // expediente queda bajo "Avanzado" (por si el profesional lo usa).
+          final isHospital =
+              ref.watch(sessionProvider).activeCenterType == CenterType.hospital;
+
+          // Tarjetas de sección (se instancian una vez; solo una rama del árbol
+          // las monta, así que reutilizarlas entre ramas es seguro).
+          final comorbidityCard = _ComorbidityCard(
+              patientId: patient.id,
+              comorbidities: comorbidities,
+              canWrite: canWrite);
+          final diagnosesCard = _DiagnosesCard(
+              patientId: patient.id, diagnoses: diagnoses, canWrite: canWrite);
+          // Laboratorios (0070): los más recientes alimentan el motor.
+          final latestLab = repo.latestPatientLab(patient.id);
+          final labsCard = Card(
+            margin: EdgeInsets.zero,
+            child: ListTile(
+              leading: const Icon(Icons.biotech_outlined,
+                  color: KuraColors.primary),
+              title: const Text('Laboratorios'),
+              subtitle: Text(latestLab == null
+                  ? 'Registrar glucosa, albúmina, HbA1c, SatO₂…'
+                  : 'Último: ${_dateFmt.format(latestLab.takenAt)}'
+                      '${latestLab.glucoseMgDl != null ? ' · Glu ${latestLab.glucoseMgDl!.toStringAsFixed(0)}' : ''}'
+                      '${latestLab.albuminGdl != null ? ' · Alb ${latestLab.albuminGdl}' : ''}'),
+              trailing: const Icon(Icons.chevron_right, size: 18),
+              onTap: () => context.go('/patients/${patient.id}/labs'),
+            ),
+          );
+          final riskCard = _RiskCard(patientId: patient.id);
+          // Terapia VAC (módulo transversal): entrada desde el paciente. Se
+          // muestra solo si el módulo está habilitado para el centro.
+          final vacEnabled =
+              ref.watch(enabledModulesProvider).contains(ModuleKey.vac);
+          final activeVac = repo.activeVacTherapy(patient.id);
+          final vacOrg = patient.organizationId;
+          final vacCard = Card(
+            margin: EdgeInsets.zero,
+            child: ListTile(
+              leading:
+                  const Icon(Icons.healing_outlined, color: KuraColors.primary),
+              title: const Text('Terapia VAC'),
+              subtitle: Text(activeVac == null
+                  ? 'Sin terapia activa · registrar'
+                  : '${activeVac.equipment.label}'
+                      '${activeVac.settingsLabel.isNotEmpty ? ' · ${activeVac.settingsLabel}' : ''}'),
+              trailing: const Icon(Icons.chevron_right, size: 18),
+              onTap: () async {
+                if (activeVac != null) {
+                  context.push('/vac/${activeVac.id}');
+                } else if (vacOrg != null) {
+                  final ok = await showVacTherapyForm(context, ref,
+                      orgId: vacOrg, patientId: patient.id);
+                  if (ok == true && mounted) setState(() {});
+                }
+              },
+            ),
+          );
+          final caregiversCard = _CaregiversCard(
+              patientId: patient.id, organizationId: patient.organizationId);
+          final consentsCard =
+              _ConsentsSummaryCard(patientId: patient.id, repo: repo);
+          final cobrosCard = _CobrosCard(
+              patientId: patient.id,
+              organizationId: patient.organizationId,
+              repo: repo);
+          final adverseSection =
+              _AdverseEventsSection(patientId: patient.id, repo: repo);
+          final referralsCard = Card(
+            margin: EdgeInsets.zero,
+            child: ListTile(
+              onTap: () => context.go('/patients/${patient.id}/referrals'),
+              leading: const Icon(Icons.forward_to_inbox_outlined,
+                  color: KuraColors.primary),
+              title: const Text('Referencias / interconsultas'),
+              subtitle: Text(
+                () {
+                  final refs = repo.listReferralsForPatient(patient.id);
+                  final pend = refs.where((r) => !r.isRespondida).length;
+                  if (refs.isEmpty) return 'Generar formato de referencia';
+                  return '${refs.length} referencia(s)'
+                      '${pend > 0 ? ' · $pend pendiente(s) de respuesta' : ''}';
+                }(),
+              ),
+              trailing: const Icon(Icons.chevron_right, size: 18),
+            ),
+          );
+
+          // Bloque de heridas (título + registrar + tarjetas + seguimiento
+          // embebido de la herida única activa).
+          final woundsBlock = <Widget>[
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Flexible(
+                  child: Text('Heridas',
+                      style: Theme.of(context)
+                          .textTheme
+                          .titleLarge
+                          ?.copyWith(fontWeight: FontWeight.w700)),
+                ),
+                if (canWrite)
+                  FilledButton.tonalIcon(
+                    icon: const Icon(Icons.add, size: 18),
+                    label: const Text('Registrar herida'),
+                    onPressed: () => context
+                        .go('/patients/${patient.id}/consultation/new'),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            if (wounds.isEmpty)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 20),
+                child: Text('Sin heridas registradas.'),
+              )
+            else
+              ...wounds.map((w) => _WoundCard(
+                    patientId: patient.id,
+                    wound: w,
+                    repo: repo,
+                    canWrite: canWrite,
+                    showFollowUpButton: singleActiveWound == null ||
+                        w.id != singleActiveWound.id,
+                    onDischarge: () => _openDischargePlan(context, repo, w),
+                  )),
+            if (singleActiveWound != null) ...[
+              const SizedBox(height: 20),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text('Seguimiento de la herida',
+                        style: Theme.of(context)
+                            .textTheme
+                            .titleLarge
+                            ?.copyWith(fontWeight: FontWeight.w700)),
+                  ),
+                  if (canWrite)
+                    FilledButton.tonalIcon(
+                      icon: const Icon(Icons.add_circle_outline, size: 18),
+                      label: const Text('Registrar seguimiento'),
+                      onPressed: () => context.go(
+                          '/patients/${patient.id}/wound/${singleActiveWound.id}/follow-up/new'),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              FollowUpBody(
+                patientId: patient.id,
+                woundId: singleActiveWound.id,
+                embedded: true,
+              ),
+            ],
+          ];
+
+          // Historial de consultas.
+          final consultationsBlock = <Widget>[
+            Text('Historial de consultas',
+                style: Theme.of(context)
+                    .textTheme
+                    .titleLarge
+                    ?.copyWith(fontWeight: FontWeight.w700)),
+            const SizedBox(height: 12),
+            if (consultations.isEmpty)
+              const Text('Sin consultas registradas.')
+            else
+              ...consultations.map((c) => Card(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    child: ListTile(
+                      // El borrador abre el detalle: ahí se cobra y hay botón
+                      // para completar la consulta clínica.
+                      onTap: () => context.go(
+                          '/patients/${widget.patientId}/consultation/${c.id}'),
+                      leading: Icon(
+                        c.visitType == VisitType.valoracion
+                            ? Icons.assignment_outlined
+                            : Icons.update,
+                        color: KuraColors.primary,
+                      ),
+                      title: Text(c.visitType.label),
+                      subtitle: Text(_dateFmt.format(c.visitDate)),
+                      trailing: c.isDraft
+                          ? const Chip(
+                              label: Text('Borrador'),
+                              backgroundColor: KuraColors.chipBg,
+                            )
+                          : const Icon(Icons.chevron_right, size: 18),
+                    ),
+                  )),
+          ];
+
+          // Todo lo que NO es prevención/riesgo (el expediente de heridas).
+          final advancedSections = <Widget>[
+            comorbidityCard,
+            const SizedBox(height: 16),
+            diagnosesCard,
+            const SizedBox(height: 16),
+            labsCard,
+            const SizedBox(height: 16),
+            caregiversCard,
+            const SizedBox(height: 16),
+            consentsCard,
+            const SizedBox(height: 16),
+            cobrosCard,
+            const SizedBox(height: 16),
+            ...woundsBlock,
+            const SizedBox(height: 24),
+            ...consultationsBlock,
+            const SizedBox(height: 24),
+            adverseSection,
+            const SizedBox(height: 16),
+            referralsCard,
+          ];
+
+          final bodyChildren = <Widget>[
+            _PatientHeaderCard(patient: patient, dateFmt: _dateFmt),
+            const SizedBox(height: 16),
+            if (isHospital) ...[
+              // Prevención/Riesgo primero (lo que se usa en hospital).
+              riskCard,
+              const SizedBox(height: 16),
+              if (vacEnabled) ...[
+                vacCard,
+                const SizedBox(height: 16),
+              ],
+              _AdvancedSection(children: advancedSections),
+              const SizedBox(height: 40),
+            ] else ...[
+              comorbidityCard,
+              const SizedBox(height: 16),
+              diagnosesCard,
+              const SizedBox(height: 16),
+              labsCard,
+              const SizedBox(height: 16),
+              riskCard,
+              const SizedBox(height: 16),
+              if (vacEnabled) ...[
+                vacCard,
+                const SizedBox(height: 16),
+              ],
+              caregiversCard,
+              const SizedBox(height: 16),
+              consentsCard,
+              const SizedBox(height: 16),
+              cobrosCard,
+              ...woundsBlock,
+              const SizedBox(height: 24),
+              ...consultationsBlock,
+              const SizedBox(height: 24),
+              adverseSection,
+              const SizedBox(height: 16),
+              referralsCard,
+              const SizedBox(height: 40),
+            ],
+          ];
+
           return CustomScrollView(
             slivers: [
               SliverAppBar(
@@ -152,160 +414,43 @@ class _PatientDetailScreenState extends ConsumerState<PatientDetailScreen> {
                 padding:
                     EdgeInsets.fromLTRB(contentSidePad, 20, contentSidePad, 20),
                 sliver: SliverList(
-                  delegate: SliverChildListDelegate([
-                    _PatientHeaderCard(patient: patient, dateFmt: _dateFmt),
-                    const SizedBox(height: 16),
-                    _ComorbidityCard(
-                        patientId: patient.id,
-                        comorbidities: comorbidities,
-                        canWrite: canWrite),
-                    const SizedBox(height: 16),
-                    _DiagnosesCard(
-                        patientId: patient.id,
-                        diagnoses: diagnoses,
-                        canWrite: canWrite),
-                    const SizedBox(height: 16),
-                    _RiskCard(patientId: patient.id),
-                    const SizedBox(height: 16),
-                    _CaregiversCard(
-                        patientId: patient.id,
-                        organizationId: patient.organizationId),
-                    const SizedBox(height: 16),
-                    _ConsentsSummaryCard(patientId: patient.id, repo: repo),
-                    const SizedBox(height: 16),
-                    _CobrosCard(
-                        patientId: patient.id,
-                        organizationId: patient.organizationId,
-                        repo: repo),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Flexible(
-                          child: Text('Heridas',
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .titleLarge
-                                  ?.copyWith(fontWeight: FontWeight.w700)),
-                        ),
-                        if (canWrite)
-                          FilledButton.tonalIcon(
-                            icon: const Icon(Icons.add, size: 18),
-                            label: const Text('Registrar herida'),
-                            onPressed: () =>
-                                context.go('/patients/${patient.id}/consultation/new'),
-                          ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    if (wounds.isEmpty)
-                      const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 20),
-                        child: Text('Sin heridas registradas.'),
-                      )
-                    else
-                      ...wounds.map((w) => _WoundCard(
-                            patientId: patient.id,
-                            wound: w,
-                            repo: repo,
-                            canWrite: canWrite,
-                            // Oculta el botón "Seguimiento" de la herida única
-                            // activa: su seguimiento se muestra embebido abajo.
-                            showFollowUpButton:
-                                singleActiveWound == null || w.id != singleActiveWound.id,
-                            onDischarge: () => _openDischargePlan(context, repo, w),
-                          )),
-                    // Seguimiento EMBEBIDO cuando hay una sola herida activa.
-                    if (singleActiveWound != null) ...[
-                      const SizedBox(height: 20),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text('Seguimiento de la herida',
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .titleLarge
-                                    ?.copyWith(fontWeight: FontWeight.w700)),
-                          ),
-                          if (canWrite)
-                            FilledButton.tonalIcon(
-                              icon: const Icon(Icons.add_circle_outline, size: 18),
-                              label: const Text('Registrar seguimiento'),
-                              onPressed: () => context.go(
-                                  '/patients/${patient.id}/wound/${singleActiveWound.id}/follow-up/new'),
-                            ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-                      FollowUpBody(
-                        patientId: patient.id,
-                        woundId: singleActiveWound.id,
-                        embedded: true,
-                      ),
-                    ],
-                    const SizedBox(height: 24),
-                    Text('Historial de consultas',
-                        style: Theme.of(context)
-                            .textTheme
-                            .titleLarge
-                            ?.copyWith(fontWeight: FontWeight.w700)),
-                    const SizedBox(height: 12),
-                    if (consultations.isEmpty)
-                      const Text('Sin consultas registradas.')
-                    else
-                      ...consultations.map((c) => Card(
-                            margin: const EdgeInsets.only(bottom: 8),
-                            child: ListTile(
-                              onTap: () => context
-                                  .go('/patients/${widget.patientId}/consultation/${c.id}'),
-                              leading: Icon(
-                                c.visitType == VisitType.valoracion
-                                    ? Icons.assignment_outlined
-                                    : Icons.update,
-                                color: KuraColors.primary,
-                              ),
-                              title: Text(c.visitType.label),
-                              subtitle: Text(_dateFmt.format(c.visitDate)),
-                              trailing: c.isDraft
-                                  ? const Chip(
-                                      label: Text('Borrador'),
-                                      backgroundColor: KuraColors.chipBg,
-                                    )
-                                  : const Icon(Icons.chevron_right, size: 18),
-                            ),
-                          )),
-                    const SizedBox(height: 24),
-                    _AdverseEventsSection(patientId: patient.id, repo: repo),
-                    const SizedBox(height: 16),
-                    Card(
-                      margin: EdgeInsets.zero,
-                      child: ListTile(
-                        onTap: () =>
-                            context.go('/patients/${patient.id}/referrals'),
-                        leading: const Icon(Icons.forward_to_inbox_outlined,
-                            color: KuraColors.primary),
-                        title: const Text('Referencias / interconsultas'),
-                        subtitle: Text(
-                          () {
-                            final refs =
-                                repo.listReferralsForPatient(patient.id);
-                            final pend = refs
-                                .where((r) => !r.isRespondida)
-                                .length;
-                            if (refs.isEmpty) return 'Generar formato de referencia';
-                            return '${refs.length} referencia(s)'
-                                '${pend > 0 ? ' · $pend pendiente(s) de respuesta' : ''}';
-                          }(),
-                        ),
-                        trailing: const Icon(Icons.chevron_right, size: 18),
-                      ),
-                    ),
-                    const SizedBox(height: 40),
-                  ]),
+                  delegate: SliverChildListDelegate(bodyChildren),
                 ),
               ),
             ],
           );
         },
+      ),
+    );
+  }
+}
+
+/// Sección "Avanzado" (hospital): agrupa colapsado el resto del expediente
+/// (heridas, consultas, cobros, referencias…) para priorizar Prevención/Riesgo.
+class _AdvancedSection extends StatelessWidget {
+  final List<Widget> children;
+  const _AdvancedSection({required this.children});
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      margin: EdgeInsets.zero,
+      child: Theme(
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          leading: const Icon(Icons.tune, color: KuraColors.primary),
+          title: const Text('Avanzado',
+              style: TextStyle(fontWeight: FontWeight.w700)),
+          subtitle: const Text(
+              'Expediente completo: heridas, consultas, cobros, referencias…'),
+          childrenPadding: const EdgeInsets.fromLTRB(4, 4, 4, 12),
+          children: [
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: children,
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -396,6 +541,26 @@ class _PatientHeaderCard extends StatelessWidget {
                       color: KuraColors.darkText.withOpacity(0.6))),
               const SizedBox(height: 4),
               Text(patient.backgroundNotes!),
+            ],
+            if ((patient.allergies ?? '').trim().isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Text('Alergias',
+                  style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: KuraColors.danger)),
+              const SizedBox(height: 4),
+              Text(patient.allergies!),
+            ],
+            if ((patient.activeMedications ?? '').trim().isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Text('Medicamentos activos',
+                  style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: KuraColors.darkText.withOpacity(0.6))),
+              const SizedBox(height: 4),
+              Text(patient.activeMedications!),
             ],
             if (patient.familyHistory.isNotEmpty) ...[
               const SizedBox(height: 12),

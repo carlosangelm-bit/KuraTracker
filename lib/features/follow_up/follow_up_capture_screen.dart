@@ -90,10 +90,13 @@ const Map<String, KuraTag?> kKuraMethodToTag = {
 class FollowUpCaptureScreen extends ConsumerStatefulWidget {
   final String patientId;
   final String woundId;
+  /// Si se abre para RETOMAR un borrador, su id. Al finalizar se reemplaza.
+  final String? draftConsultationId;
   const FollowUpCaptureScreen({
     super.key,
     required this.patientId,
     required this.woundId,
+    this.draftConsultationId,
   });
 
   @override
@@ -102,6 +105,7 @@ class FollowUpCaptureScreen extends ConsumerStatefulWidget {
 
 class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
   DateTime _visitDate = DateTime.now();
+  bool _draftLoaded = false;
   final _lengthCtrl = TextEditingController(text: '0');
   final _widthCtrl = TextEditingController(text: '0');
   final _depthCtrl = TextEditingController(text: '0');
@@ -115,6 +119,8 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
   bool _volumeAutoFollowing = true;
   final _manualMeasurementCtrl = TextEditingController();
   final _clinicalNotesCtrl = TextEditingController();
+  final _specialistNotesCtrl = TextEditingController(); // notas del especialista (0069)
+  final _visitSummaryCtrl = TextEditingController(); // resumen de la consulta
   bool _tunneling = false;
   bool _undermining = false;
 
@@ -131,7 +137,7 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
   String _painDuration = 'agudo';
   int _painVas = 0;
   ExudadoCantidad _exudadoCantidad = ExudadoCantidad.escaso;
-  ExudadoTipo _exudadoTipo = ExudadoTipo.seroso;
+  ExudadoTipo _exudadoTipo = ExudadoTipo.serohematico;
   final Set<InfeccionCriterioIwii> _infeccionCriterios = {};
   String _odor = 'ninguno';
   String _woundEdge = 'definido';
@@ -318,6 +324,8 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
     _volumeCtrl.dispose();
     _manualMeasurementCtrl.dispose();
     _clinicalNotesCtrl.dispose();
+    _specialistNotesCtrl.dispose();
+    _visitSummaryCtrl.dispose();
     _careTypeOtherCtrl.dispose();
     _procedureDescOtherCtrl.dispose();
     _materialsUsedOtherCtrl.dispose();
@@ -360,12 +368,12 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
     final repoAsync = ref.watch(dataRepositoryProvider);
     final repo = repoAsync.asData?.value;
     _resolveSignatureIfNeeded(session, repo);
+    if (repo != null) _loadDraftIfNeeded(repo, session);
 
     final canSave = !_saving &&
         _lengthCm > 0 &&
         _widthCm > 0 &&
         _photoAfterCleaningBytes != null &&
-        _photoWithMeasurementBytes != null &&
         _followUpNoteComplete &&
         _signedByReadOnly != null &&
         _signedByReadOnly!.isNotEmpty &&
@@ -571,7 +579,8 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
                 ],
 
                 const SizedBox(height: 24),
-                Text('Fotografía 2: con medición', style: _sectionStyle(context)),
+                Text('Fotografía 2: con medición (opcional)',
+                    style: _sectionStyle(context)),
                 const SizedBox(height: 4),
                 const Text(
                   'Protocolo de Fotografías §1.2: se toma justo después de registrar '
@@ -660,7 +669,7 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
                         value: _exudadoTipo,
                         decoration: const InputDecoration(labelText: 'Exudado (tipo)'),
                         items: ExudadoTipo.values
-                            .map((e) => DropdownMenuItem(value: e, child: Text(e.name)))
+                            .map((e) => DropdownMenuItem(value: e, child: Text(e.label)))
                             .toList(),
                         onChanged: (v) => setState(() => _exudadoTipo = v ?? _exudadoTipo),
                       ),
@@ -851,10 +860,46 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
                     onSelected: (v) => setState(() => _evolutionSelected = v),
                   ),
                 ],
+                const SizedBox(height: 20),
+                Text('Notas y resumen', style: _sectionStyle(context)),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: _specialistNotesCtrl,
+                  maxLines: 3,
+                  decoration: const InputDecoration(
+                    labelText: 'Notas del especialista',
+                    hintText: 'Observaciones libres de la consulta.',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _visitSummaryCtrl,
+                  maxLines: 3,
+                  decoration: const InputDecoration(
+                    labelText: 'Resumen de la consulta',
+                    hintText: 'Se autollenará con Plaud AI; editable.',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
                 const SizedBox(height: 16),
                 _signatureReadOnlyCard(),
 
                 const SizedBox(height: 28),
+                // Guardar BORRADOR: solo requiere la medición (largo/ancho);
+                // permite terminar la consulta después. No cobra hasta finalizar.
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.save_outlined),
+                  label: Text(widget.draftConsultationId != null
+                      ? 'Guardar cambios del borrador'
+                      : 'Guardar como borrador'),
+                  style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 14)),
+                  onPressed: (_lengthCm > 0 && _widthCm > 0 && !_saving)
+                      ? () => _saveDraft(context, session)
+                      : null,
+                ),
+                const SizedBox(height: 10),
                 FilledButton.icon(
                   icon: _saving
                       ? const SizedBox(
@@ -889,10 +934,7 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
   String _saveBlockedReason() {
     if (_lengthCm <= 0 || _widthCm <= 0) return 'Completa al menos largo y ancho para guardar.';
     if (_photoAfterCleaningBytes == null) {
-      return 'Falta la fotografía 1 (después de limpiar, sin medición).';
-    }
-    if (_photoWithMeasurementBytes == null) {
-      return 'Falta la fotografía 2 (con medición).';
+      return 'Falta la fotografía de la herida.';
     }
     if (!_followUpNoteComplete) {
       return 'Completa todos los conceptos de la nota de seguimiento (sin campos vacíos).';
@@ -1026,6 +1068,26 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
     final options = repo.listNoteOptions(field);
     final isAdmin = session.user?.role == AppRole.admin;
     final otherSelected = selected.contains(kOtherOptionValue);
+
+    // Nombres comerciales mapeados (Insumos → "Material del centro") de los
+    // materiales seleccionados/sugeridos: le dicen al profesional qué producto
+    // CONCRETO aplicar, con terminología consistente en todo el flujo.
+    final commercialRows = <Widget>[];
+    if (field == NoteOptionField.materialsUsed &&
+        repo.premiumInsumosFor(session.user?.organizationId)) {
+      final orgId = session.user?.organizationId;
+      for (final label in selected) {
+        if (label == kOtherOptionValue) continue;
+        final names = repo.commercialNamesForCenterMaterial(orgId, label);
+        if (names.isEmpty) continue;
+        commercialRows.add(Padding(
+          padding: const EdgeInsets.only(top: 3),
+          child: Text('• $label → ${names.join(', ')}',
+              style: const TextStyle(fontSize: 12, color: KuraColors.primary)),
+        ));
+      }
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1063,6 +1125,26 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
                 style: TextStyle(fontSize: 11, fontStyle: FontStyle.italic, color: KuraColors.primary),
               ),
             ],
+          ),
+        ],
+        if (commercialRows.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: KuraColors.primary.withOpacity(0.06),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Producto a aplicar (mapeado por el centro):',
+                    style: TextStyle(
+                        fontSize: 12, fontWeight: FontWeight.w700)),
+                ...commercialRows,
+              ],
+            ),
           ),
         ],
         if (otherSelected) ...[
@@ -1233,7 +1315,11 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
         abiPieDerecho: perfusion?.abiRight,
         abiPieIzquierdo: perfusion?.abiLeft,
         esExtremidadInferior: perfusion?.isLowerExtremity ?? false,
-        albuminaGdl: perfusion?.albuminGdl,
+        // Nutrición: prioriza la albúmina de LABORATORIOS del paciente (0070);
+        // si no hay, usa la de perfusión/valoración. Así los labs alimentan el
+        // motor por la regla de albúmina ya validada.
+        albuminaGdl: repo.latestPatientLab(widget.patientId)?.albuminGdl ??
+            perfusion?.albuminGdl,
         tunelizacionOSocavamiento: _tunneling || _undermining,
         exudadoCantidad: _exudadoCantidad,
         pielPerilesional: _perilesionalSkin,
@@ -1451,6 +1537,186 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
       .titleMedium
       ?.copyWith(fontWeight: FontWeight.w700);
 
+  /// Precarga los datos de un borrador al reabrirlo (una sola vez).
+  void _loadDraftIfNeeded(DataRepository repo, SessionState session) {
+    if (_draftLoaded) return;
+    _draftLoaded = true;
+    final id = widget.draftConsultationId;
+    if (id == null) return;
+    final c = repo.getConsultation(id);
+    if (c == null) return;
+    final org = session.user?.organizationId;
+    _prefillSingle(NoteOptionField.careType, c.followUpCareType, repo, org,
+        (v) => _careTypeSelected = v, _careTypeOtherCtrl);
+    _prefillSingle(NoteOptionField.evolution, c.followUpEvolution, repo, org,
+        (v) => _evolutionSelected = v, _evolutionOtherCtrl);
+    _prefillMulti(NoteOptionField.procedureDesc, c.followUpProcedureDesc, repo,
+        org, _procedureDescSelected, _procedureDescOtherCtrl);
+    _prefillMulti(NoteOptionField.materialsUsed, c.followUpMaterialsUsed, repo,
+        org, _materialsUsedSelected, _materialsUsedOtherCtrl);
+    _specialistNotesCtrl.text = c.specialistNotes ?? '';
+    _visitSummaryCtrl.text = c.visitSummary ?? '';
+    final ms = repo
+        .listMeasurementsForWound(widget.woundId)
+        .where((m) => m.consultationId == id)
+        .toList();
+    if (ms.isNotEmpty) {
+      final m = ms.first;
+      String f(double v) =>
+          v == v.roundToDouble() ? v.toInt().toString() : v.toString();
+      _lengthCtrl.text = f(m.lengthCm);
+      _widthCtrl.text = f(m.widthCm);
+      _depthCtrl.text = f(m.depthCm);
+    }
+  }
+
+  void _prefillSingle(NoteOptionField field, String? saved, DataRepository repo,
+      String? org, void Function(String?) setSel, TextEditingController otherCtrl) {
+    final v = (saved ?? '').trim();
+    if (v.isEmpty) return;
+    final labels =
+        repo.listNoteOptions(field, organizationId: org).map((o) => o.label).toSet();
+    if (labels.contains(v)) {
+      setSel(v);
+    } else {
+      setSel(kOtherOptionValue);
+      otherCtrl.text = v;
+    }
+  }
+
+  void _prefillMulti(NoteOptionField field, String? saved, DataRepository repo,
+      String? org, Set<String> selected, TextEditingController otherCtrl) {
+    final v = (saved ?? '').trim();
+    if (v.isEmpty) return;
+    final labels =
+        repo.listNoteOptions(field, organizationId: org).map((o) => o.label).toSet();
+    final unmatched = <String>[];
+    for (final part
+        in v.split('; ').map((s) => s.trim()).where((s) => s.isNotEmpty)) {
+      if (labels.contains(part)) {
+        selected.add(part);
+      } else {
+        unmatched.add(part);
+      }
+    }
+    if (unmatched.isNotEmpty) {
+      selected.add(kOtherOptionValue);
+      otherCtrl.text = unmatched.join('; ');
+    }
+  }
+
+  /// Patch de columnas de la consulta desde el formulario, para actualizar un
+  /// borrador en su lugar (conserva id → no huérfana cobros/insumos).
+  Map<String, dynamic> _consultationPatch(
+      {required bool draft, required bool withSignature}) {
+    final patch = <String, dynamic>{
+      'is_draft': draft,
+      'visit_date': _visitDate.toIso8601String().substring(0, 10),
+      'follow_up_care_type': _careTypeFinal,
+      'follow_up_procedure_desc': _procedureDescFinal,
+      'follow_up_materials_used': _materialsUsedFinal,
+      'follow_up_evolution': _evolutionFinal,
+      'specialist_notes': _specialistNotesCtrl.text.trim().isEmpty
+          ? null
+          : _specialistNotesCtrl.text.trim(),
+      'visit_summary': _visitSummaryCtrl.text.trim().isEmpty
+          ? null
+          : _visitSummaryCtrl.text.trim(),
+    };
+    if (withSignature) {
+      patch['follow_up_signed_by'] = _signedByReadOnly;
+      patch['follow_up_signed_license'] = _signedLicenseReadOnly;
+      patch['follow_up_signed_specialty'] = _signedSpecialtyReadOnly;
+      patch['follow_up_signature'] = _signatureController.toJsonString();
+      patch['follow_up_signed_at'] = DateTime.now().toIso8601String();
+    }
+    return patch;
+  }
+
+  /// Guarda un BORRADOR ligero (consulta is_draft + medición) para terminar
+  /// después. Solo requiere la medición (largo/ancho, que liga la herida); no
+  /// exige foto/firma/nota completa. Si ya venía de un borrador, lo reemplaza.
+  Future<void> _saveDraft(BuildContext context, SessionState session) async {
+    setState(() => _saving = true);
+    final repo = await DataRepository.instance();
+    var staffId = session.user?.staffId;
+    if (staffId == null && session.user?.role == AppRole.admin) {
+      staffId = await repo.ensureAdminStaffId(session.user!);
+    }
+    if (staffId == null) {
+      setState(() => _saving = false);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content:
+                Text('No se encontró personal sanitario vinculado a tu cuenta.')));
+      }
+      return;
+    }
+    try {
+      final patient = repo.getPatient(widget.patientId);
+      final sites = repo.listSites();
+      final siteId =
+          patient?.primarySiteId ?? (sites.isNotEmpty ? sites.first.id : null);
+      if (siteId == null) throw StateError('No hay sitios configurados.');
+
+      // Si ya venía de un borrador, se ACTUALIZA en su lugar (conserva el id
+      // para no huérfanar el cobro/insumos que se hayan hecho sobre él).
+      String consultationId;
+      if (widget.draftConsultationId != null) {
+        consultationId = widget.draftConsultationId!;
+        await repo.updateConsultationFields(
+            consultationId, _consultationPatch(draft: true, withSignature: false));
+        await repo.deleteWoundDataForConsultation(consultationId);
+      } else {
+        final consultation = await repo.createConsultation(
+          patientId: widget.patientId,
+          staffId: staffId,
+          siteId: siteId,
+          visitType: VisitType.seguimiento,
+          visitDate: _visitDate,
+          isDraft: true,
+          followUpCareType: _careTypeFinal,
+          followUpProcedureDesc: _procedureDescFinal,
+          followUpMaterialsUsed: _materialsUsedFinal,
+          followUpEvolution: _evolutionFinal,
+          followUpSignedBy: _signedByReadOnly,
+          followUpSignedLicense: _signedLicenseReadOnly,
+          followUpSignedSpecialty: _signedSpecialtyReadOnly,
+          specialistNotes: _specialistNotesCtrl.text.trim().isEmpty
+              ? null
+              : _specialistNotesCtrl.text.trim(),
+          visitSummary: _visitSummaryCtrl.text.trim().isEmpty
+              ? null
+              : _visitSummaryCtrl.text.trim(),
+        );
+        consultationId = consultation.id;
+      }
+      // Medición: liga la herida (permite reabrir el borrador).
+      await repo.createMeasurement({
+        'wound_id': widget.woundId,
+        'consultation_id': consultationId,
+        'measured_at': _visitDate.toIso8601String().substring(0, 10),
+        'length_cm': _lengthCm,
+        'width_cm': _widthCm,
+        'area_cm2': _areaCm2,
+        'depth_cm': _depthCm,
+      });
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Borrador guardado. Puedes cobrar y completar la '
+                'consulta después.')));
+        // Avanza al detalle de la consulta: ahí se seleccionan insumos y se cobra.
+        context.go('/patients/${widget.patientId}/consultation/$consultationId');
+      }
+    } catch (e) {
+      if (context.mounted) {
+        setState(() => _saving = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('No se pudo guardar el borrador: $e')));
+      }
+    }
+  }
+
   Future<void> _save(BuildContext context, SessionState session) async {
     setState(() => _saving = true);
     final repo = await DataRepository.instance();
@@ -1473,6 +1739,7 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
     }
 
     String? photoWarning;
+    String? newConsultationId;
     try {
       final wound = repo.getWound(widget.woundId);
       if (wound == null) {
@@ -1488,27 +1755,45 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
         throw StateError('No hay sitios configurados.');
       }
 
-      final consultation = await repo.createConsultation(
-        patientId: widget.patientId,
-        staffId: staffId,
-        siteId: siteId,
-        visitType: VisitType.seguimiento,
-        visitDate: _visitDate,
-        isDraft: false,
-        followUpCareType: _careTypeFinal,
-        followUpProcedureDesc: _procedureDescFinal,
-        followUpMaterialsUsed: _materialsUsedFinal,
-        followUpEvolution: _evolutionFinal,
-        followUpSignedBy: _signedByReadOnly!,
-        followUpSignedLicense: _signedLicenseReadOnly!,
-        followUpSignedSpecialty: _signedSpecialtyReadOnly,
-        followUpSignature: _signatureController.toJsonString(),
-        followUpSignedAt: DateTime.now(),
-      );
+      // Si venimos de un BORRADOR, se ACTUALIZA en su lugar (conserva el id, así
+      // el cobro/insumos hechos sobre el borrador siguen ligados); si no, se crea.
+      final String consultationId;
+      if (widget.draftConsultationId != null) {
+        consultationId = widget.draftConsultationId!;
+        await repo.updateConsultationFields(consultationId,
+            _consultationPatch(draft: false, withSignature: true));
+        await repo.deleteWoundDataForConsultation(consultationId);
+      } else {
+        final consultation = await repo.createConsultation(
+          patientId: widget.patientId,
+          staffId: staffId,
+          siteId: siteId,
+          visitType: VisitType.seguimiento,
+          visitDate: _visitDate,
+          isDraft: false,
+          followUpCareType: _careTypeFinal,
+          followUpProcedureDesc: _procedureDescFinal,
+          followUpMaterialsUsed: _materialsUsedFinal,
+          followUpEvolution: _evolutionFinal,
+          followUpSignedBy: _signedByReadOnly!,
+          followUpSignedLicense: _signedLicenseReadOnly!,
+          followUpSignedSpecialty: _signedSpecialtyReadOnly,
+          followUpSignature: _signatureController.toJsonString(),
+          followUpSignedAt: DateTime.now(),
+          specialistNotes: _specialistNotesCtrl.text.trim().isEmpty
+              ? null
+              : _specialistNotesCtrl.text.trim(),
+          visitSummary: _visitSummaryCtrl.text.trim().isEmpty
+              ? null
+              : _visitSummaryCtrl.text.trim(),
+        );
+        consultationId = consultation.id;
+      }
+      newConsultationId = consultationId;
 
       final measurement = await repo.createMeasurement({
         'wound_id': widget.woundId,
-        'consultation_id': consultation.id,
+        'consultation_id': consultationId,
         'measured_at': _visitDate.toIso8601String().substring(0, 10),
         'length_cm': _lengthCm,
         'width_cm': _widthCm,
@@ -1529,7 +1814,7 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
       });
 
       await repo.createAssessment({
-        'consultation_id': consultation.id,
+        'consultation_id': consultationId,
         'wound_id': widget.woundId,
         'edema': _edema,
         'pain': _pain,
@@ -1556,33 +1841,37 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
       try {
         final afterCleaningPath = await PhotoUploadService.uploadWoundPhoto(
           woundId: widget.woundId,
-          consultationId: consultation.id,
+          consultationId: consultationId,
           bytes: _photoAfterCleaningBytes!,
           fileName: _photoAfterCleaning?.name ?? 'seguimiento_despues_limpiar.jpg',
         );
         await repo.createPhoto({
           'wound_id': widget.woundId,
-          'consultation_id': consultation.id,
+          'consultation_id': consultationId,
           'measurement_id': measurement.id,
           'storage_path': afterCleaningPath,
           'taken_at': _visitDate.toIso8601String(),
           'photo_stage': PhotoStage.despuesLimpiar.dbValue,
         });
 
-        final withMeasurementPath = await PhotoUploadService.uploadWoundPhoto(
-          woundId: widget.woundId,
-          consultationId: consultation.id,
-          bytes: _photoWithMeasurementBytes!,
-          fileName: _photoWithMeasurement?.name ?? 'seguimiento_con_medicion.jpg',
-        );
-        await repo.createPhoto({
-          'wound_id': widget.woundId,
-          'consultation_id': consultation.id,
-          'measurement_id': measurement.id,
-          'storage_path': withMeasurementPath,
-          'taken_at': _visitDate.toIso8601String(),
-          'photo_stage': PhotoStage.conMedicion.dbValue,
-        });
+        // Foto 2 (con medición) ya es OPCIONAL: solo se sube si se capturó.
+        if (_photoWithMeasurementBytes != null) {
+          final withMeasurementPath = await PhotoUploadService.uploadWoundPhoto(
+            woundId: widget.woundId,
+            consultationId: consultationId,
+            bytes: _photoWithMeasurementBytes!,
+            fileName:
+                _photoWithMeasurement?.name ?? 'seguimiento_con_medicion.jpg',
+          );
+          await repo.createPhoto({
+            'wound_id': widget.woundId,
+            'consultation_id': consultationId,
+            'measurement_id': measurement.id,
+            'storage_path': withMeasurementPath,
+            'taken_at': _visitDate.toIso8601String(),
+            'photo_stage': PhotoStage.conMedicion.dbValue,
+          });
+        }
       } catch (e) {
         debugPrint('Fotos de seguimiento no guardadas: $e');
         photoWarning = e.toString().contains('Quota')
@@ -1606,17 +1895,44 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
     }
 
     if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(photoWarning ?? 'Seguimiento registrado correctamente.'),
-          backgroundColor: photoWarning != null ? KuraColors.warning : null,
+      if (photoWarning != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(photoWarning),
+            backgroundColor: KuraColors.warning,
+          ),
+        );
+      }
+      // Tras el seguimiento, ofrece continuar al detalle de la consulta, que es
+      // donde se registran los INSUMOS utilizados y se genera el COBRO. Si no,
+      // regresa a la lista de seguimiento. (GoRouter declarativo: se usa
+      // context.go, no Navigator.pop; el diálogo hace pop con su propio ctx.)
+      final continuar = await showDialog<bool>(
+        context: context,
+        builder: (dctx) => AlertDialog(
+          title: const Text('Seguimiento registrado'),
+          content: const Text(
+              '¿Registrar los insumos utilizados y el cobro de esta consulta?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dctx).pop(false),
+              child: const Text('Ahora no'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dctx).pop(true),
+              child: const Text('Sí, continuar'),
+            ),
+          ],
         ),
       );
-      // Esta pantalla se navega declarativamente via GoRouter (no
-      // Navigator.push), por lo que el regreso tambien debe ser un
-      // context.go explicito a la pantalla de seguimiento (no
-      // Navigator.pop, que no aplica a rutas declarativas de GoRouter).
-      context.go('/patients/${widget.patientId}/wound/${widget.woundId}/follow-up');
+      if (!context.mounted) return;
+      if (continuar == true) {
+        context.go(
+            '/patients/${widget.patientId}/consultation/$newConsultationId');
+      } else {
+        context.go(
+            '/patients/${widget.patientId}/wound/${widget.woundId}/follow-up');
+      }
     }
   }
 }

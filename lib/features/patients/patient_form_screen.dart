@@ -36,6 +36,8 @@ class _PatientFormScreenState extends ConsumerState<PatientFormScreen> {
   final _responsiblePhoneCtrl = TextEditingController();
   final _weightCtrl = TextEditingController();
   final _heightCtrl = TextEditingController();
+  final _medsCtrl = TextEditingController(); // medicamentos activos
+  final _allergiesCtrl = TextEditingController(); // alergias
   // Antecedentes (Fase 3).
   final Set<AntecedenteHeredoFamiliar> _familyHistory = {};
   final _familyHistoryNotesCtrl = TextEditingController();
@@ -58,6 +60,8 @@ class _PatientFormScreenState extends ConsumerState<PatientFormScreen> {
     _responsiblePhoneCtrl.dispose();
     _weightCtrl.dispose();
     _heightCtrl.dispose();
+    _medsCtrl.dispose();
+    _allergiesCtrl.dispose();
     _familyHistoryNotesCtrl.dispose();
     _apnpNotesCtrl.dispose();
     super.dispose();
@@ -127,6 +131,8 @@ class _PatientFormScreenState extends ConsumerState<PatientFormScreen> {
     _caregiverPhoneCtrl.text = p.caregiverPhone ?? '';
     _fragile = p.fragilePatient;
     _notesCtrl.text = p.backgroundNotes ?? '';
+    _medsCtrl.text = p.activeMedications ?? '';
+    _allergiesCtrl.text = p.allergies ?? '';
     _curpCtrl.text = p.curp ?? '';
     _addressCtrl.text = p.address ?? '';
     _occupationCtrl.text = p.occupation ?? '';
@@ -365,6 +371,24 @@ class _PatientFormScreenState extends ConsumerState<PatientFormScreen> {
                         maxLines: 3,
                         decoration: const InputDecoration(labelText: 'Antecedentes'),
                       ),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: _medsCtrl,
+                        maxLines: 2,
+                        decoration: const InputDecoration(
+                          labelText: 'Medicamentos activos',
+                          hintText: 'Medicamentos que toma actualmente',
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: _allergiesCtrl,
+                        maxLines: 2,
+                        decoration: const InputDecoration(
+                          labelText: 'Alergias',
+                          hintText: 'Alergias conocidas (medicamentos, materiales…)',
+                        ),
+                      ),
                       const SizedBox(height: 20),
                       Text('Comorbilidades (antecedentes personales patológicos)',
                           style: Theme.of(context)
@@ -505,6 +529,14 @@ class _PatientFormScreenState extends ConsumerState<PatientFormScreen> {
                                           : null,
                                       fragilePatient: _fragile,
                                       backgroundNotes: _notesCtrl.text.trim(),
+                                      activeMedications:
+                                          _medsCtrl.text.trim().isEmpty
+                                              ? null
+                                              : _medsCtrl.text.trim(),
+                                      allergies:
+                                          _allergiesCtrl.text.trim().isEmpty
+                                              ? null
+                                              : _allergiesCtrl.text.trim(),
                                       curp: _curpCtrl.text.trim().isEmpty
                                           ? null
                                           : _curpCtrl.text.trim().toUpperCase(),
@@ -578,6 +610,14 @@ class _PatientFormScreenState extends ConsumerState<PatientFormScreen> {
                                         : null,
                                     fragilePatient: _fragile,
                                     backgroundNotes: _notesCtrl.text.trim(),
+                                    activeMedications:
+                                        _medsCtrl.text.trim().isEmpty
+                                            ? null
+                                            : _medsCtrl.text.trim(),
+                                    allergies:
+                                        _allergiesCtrl.text.trim().isEmpty
+                                            ? null
+                                            : _allergiesCtrl.text.trim(),
                                     curp: _curpCtrl.text.trim().isEmpty
                                         ? null
                                         : _curpCtrl.text.trim().toUpperCase(),

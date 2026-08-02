@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 
@@ -16,6 +17,9 @@ import '../models/consultation.dart';
 import '../models/manual_appointment.dart';
 import '../models/organization.dart';
 import '../models/supply_product_mapping.dart';
+import '../models/vac_therapy.dart';
+import '../models/product_catalog_item.dart';
+import '../models/patient_lab.dart';
 import '../models/inventory.dart';
 import '../models/consultation_supply_usage.dart';
 import '../models/commercial.dart';
@@ -41,6 +45,11 @@ import 'remote/data_store.dart';
 import 'remote/supabase_data_store.dart';
 
 const _uuid = Uuid();
+
+/// "Método" sintético bajo el cual el mapeo de insumos agrupa los materiales
+/// del catálogo del centro (Configuración → Material utilizado). Fuente única
+/// de verdad para que el mapeo y la nota de seguimiento apunten a lo mismo.
+const kCenterMaterialsMethod = 'Material del centro';
 
 /// Repositorio unico de datos para toda la app.
 ///
@@ -395,6 +404,10 @@ class DataRepository {
     if (organizationId == null) {
       return module.defaultFor(CenterType.clinicaHeridas);
     }
+    final centerType = centerTypeFor(organizationId);
+    // Módulo no disponible para este tipo de centro: apagado siempre, sin
+    // importar ajustes previos (p.ej. eKare en hospital).
+    if (!module.availableFor(centerType)) return false;
     final settings = listModuleSettings(organizationId: organizationId)
         .where((m) => m.moduleKey == module.dbValue)
         .toList();
@@ -415,7 +428,7 @@ class DataRepository {
         matchWhere((m) => m.siteId == null && m.profileId == null);
     if (centerOverride != null) return centerOverride.enabled;
 
-    return module.defaultFor(centerTypeFor(organizationId));
+    return module.defaultFor(centerType);
   }
 
   /// Sitio primario del usuario (vía su fila de staff), para resolver overrides
@@ -602,12 +615,80 @@ class DataRepository {
       .where((m) => organizationId == null || m.organizationId == organizationId)
       .toList();
 
-  /// Mapa clave(`método::producto`) → mapeo, para resolver rápido en la UI.
-  Map<String, SupplyProductMapping> supplyMappingIndex(String? organizationId) =>
-      {for (final m in listSupplyMappings(organizationId)) m.key: m};
+  /// Mapa clave(`método::producto`) → LISTA de productos ligados. Un insumo
+  /// genérico puede tener varios productos (distintas medidas/marcas/SKU); el
+  /// especialista elige el específico al usarlo.
+  Map<String, List<SupplyProductMapping>> supplyMappingGroups(
+      String? organizationId) {
+    final groups = <String, List<SupplyProductMapping>>{};
+    for (final m in listSupplyMappings(organizationId)) {
+      (groups[m.key] ??= []).add(m);
+    }
+    return groups;
+  }
 
-  /// Crea o actualiza (upsert por centro+método+producto) el mapeo de un insumo
-  /// genérico a un producto de la tienda.
+  /// Productos ligados a un insumo genérico concreto (método + genérico).
+  List<SupplyProductMapping> supplyMappingsFor(
+          String? organizationId, String method, String genericProduct) =>
+      listSupplyMappings(organizationId)
+          .where((m) => m.method == method && m.genericProduct == genericProduct)
+          .toList();
+
+  /// Nombres comerciales (producto de la tienda) que el centro mapeó a un
+  /// material de su catálogo ([materialLabel], de Configuración → Material
+  /// utilizado). Se usa en la nota de seguimiento para que el profesional vea
+  /// qué producto CONCRETO corresponde al material sugerido/seleccionado, con
+  /// terminología consistente en todo el flujo. Vacío si no hay mapeo.
+  List<String> commercialNamesForCenterMaterial(
+      String? organizationId, String materialLabel) {
+    return supplyMappingsFor(organizationId, kCenterMaterialsMethod, materialLabel)
+        .map((m) => m.shopifyVariantTitle == null || m.shopifyVariantTitle!.isEmpty
+            ? m.shopifyTitle
+            : '${m.shopifyTitle} · ${m.shopifyVariantTitle}')
+        .toList();
+  }
+
+  // ---------------- Catálogo global de productos (0067) --------------------
+
+  /// Catálogo global de productos (sembrado desde Shopify). Compartido entre
+  /// centros: cualquiera lo lee para la carga masiva de inventario.
+  List<ProductCatalogItem> listProductCatalog({bool activeOnly = true}) =>
+      _store
+          .getAll(Collections.productCatalog)
+          .map(ProductCatalogItem.fromJson)
+          .where((p) => !activeOnly || p.isActive)
+          .toList()
+        ..sort((a, b) =>
+            a.displayName.toLowerCase().compareTo(b.displayName.toLowerCase()));
+
+  /// Dispara la sincronización del catálogo global desde Shopify (Admin API).
+  /// Solo master, solo producción. Devuelve cuántos productos quedaron.
+  Future<int> syncShopifyCatalog() async {
+    final store = _store;
+    if (store is! SupabaseDataStore) {
+      throw Exception('La sincronización requiere el entorno de producción.');
+    }
+    Map<String, dynamic> data;
+    try {
+      data = await store.invokeFunction('shopify-sync-catalog', {});
+    } on FunctionException catch (e) {
+      throw Exception(_edgeErrorMessage(e));
+    }
+    if (data['error'] != null) {
+      final hint = data['hint'];
+      throw Exception(
+          '${data['error']}${hint != null ? '\n$hint' : ''}');
+    }
+    await store.refreshCollection(Collections.productCatalog);
+    return (data['distinct'] as num?)?.toInt() ??
+        (data['upserted'] as num?)?.toInt() ??
+        0;
+  }
+
+  /// Crea o actualiza el mapeo de un insumo genérico a un producto CONCRETO de
+  /// la tienda. El upsert es por (centro, método, genérico, producto, variante):
+  /// re-ligar el mismo producto/presentación actualiza su foto/precio; ligar uno
+  /// distinto AGREGA otro producto al mismo insumo genérico (1→varios).
   Future<void> setSupplyMapping({
     required String organizationId,
     required String method,
@@ -622,8 +703,11 @@ class DataRepository {
     String? priceCurrency,
     String? updatedBy,
   }) async {
-    final existing = listSupplyMappings(organizationId).where(
-        (m) => m.method == method && m.genericProduct == genericProduct);
+    final existing = listSupplyMappings(organizationId).where((m) =>
+        m.method == method &&
+        m.genericProduct == genericProduct &&
+        m.shopifyProductId == shopifyProductId &&
+        m.shopifyVariantId == shopifyVariantId);
     final now = DateTime.now().toIso8601String();
     final data = {
       'organization_id': organizationId,
@@ -652,7 +736,14 @@ class DataRepository {
     }
   }
 
-  /// Elimina el mapeo de un insumo genérico (deja el insumo sin producto).
+  /// Elimina UN producto ligado (por id de mapeo). Los demás productos del mismo
+  /// insumo genérico se conservan.
+  Future<void> deleteSupplyMappingById(String mappingId) async {
+    await _store.deleteRow(Collections.supplyProductMappings, mappingId);
+  }
+
+  /// Elimina TODOS los productos ligados a un insumo genérico (deja el insumo
+  /// sin producto).
   Future<void> deleteSupplyMapping({
     required String organizationId,
     required String method,
@@ -753,6 +844,7 @@ class DataRepository {
     bool isExternal = false,
     String? shopifyProductId,
     String? shopifyVariantId,
+    String? shopifyInventoryItemId,
     String? imageUrl,
     double? unitCost,
     double? unitPrice,
@@ -774,6 +866,7 @@ class DataRepository {
       'is_external': isExternal,
       'shopify_product_id': shopifyProductId,
       'shopify_variant_id': shopifyVariantId,
+      'shopify_inventory_item_id': shopifyInventoryItemId,
       'image_url': imageUrl,
       'unit_cost': unitCost,
       'unit_price': price,
@@ -837,7 +930,125 @@ class DataRepository {
       'created_at': DateTime.now().toIso8601String(),
     };
     final saved = await _store.insertRow(Collections.inventoryMovements, data);
+    // Espejo Shopify (Kura+): cualquier movimiento local (salvo 'ajuste', que es
+    // la propia bajada desde Shopify) se refleja en la tienda. Best-effort: si
+    // falla, la próxima sincronización reconcilia.
+    if (reason != InventoryReason.ajuste) {
+      await _maybePushShopifyAdjust(item, delta);
+    }
     return InventoryMovement.fromJson(saved);
+  }
+
+  /// Ajusta la existencia en Shopify (espejo Kura+) si el artículo está ligado
+  /// y el centro es espejo. Solo producción; nunca rompe el flujo local.
+  Future<void> _maybePushShopifyAdjust(InventoryItem item, int delta) async {
+    final store = _store;
+    if (store is! SupabaseDataStore) return;
+    if (item.shopifyInventoryItemId == null) return;
+    if (!shopifyMirrorFor(item.organizationId)) return;
+    try {
+      await store.invokeFunction('shopify-inventory', {
+        'action': 'adjust',
+        'inventoryItemId': item.shopifyInventoryItemId,
+        'delta': delta,
+      });
+    } catch (e) {
+      debugPrint('Ajuste a Shopify falló (se reconciliará en la próxima sync): $e');
+    }
+  }
+
+  /// ¿El centro mantiene su inventario como espejo de Shopify? (Kura+.)
+  bool shopifyMirrorFor(String? organizationId) =>
+      organizationById(organizationId)?.shopifyMirror ?? false;
+
+  /// Marca/desmarca un centro como espejo de Shopify (solo master).
+  Future<void> setOrgShopifyMirror(String organizationId, bool value) async {
+    final store = _store;
+    await store.updateRow(
+        Collections.organizations, organizationId, {'shopify_mirror': value});
+    if (store is SupabaseDataStore) {
+      await store.refreshCollection(Collections.organizations);
+    }
+  }
+
+  /// Bajada del espejo: trae las existencias de Shopify y ajusta el inventario
+  /// del sitio del centro Kura+ para que coincidan. Crea los artículos ligados
+  /// que falten (con su inventory_item_id de Shopify para el push posterior).
+  /// Devuelve cuántos artículos se ajustaron.
+  Future<int> syncShopifyInventory(String? organizationId, String siteId) async {
+    final store = _store;
+    if (store is! SupabaseDataStore) {
+      throw Exception('El espejo requiere el entorno de producción.');
+    }
+    if (organizationId == null) throw Exception('Centro no resuelto.');
+    Map<String, dynamic> data;
+    try {
+      data = await store.invokeFunction('shopify-inventory', {'action': 'levels'});
+    } on FunctionException catch (e) {
+      throw Exception(_edgeErrorMessage(e));
+    }
+    if (data['error'] != null) throw Exception(data['error'].toString());
+    final levels = (data['levels'] as List?) ?? const [];
+
+    final catalog = <String, ProductCatalogItem>{
+      for (final c in listProductCatalog())
+        '${c.shopifyProductId}|${c.shopifyVariantId ?? ''}': c,
+    };
+    final existing = listInventoryItems(
+        organizationId: organizationId, siteId: siteId, activeOnly: false);
+    final onHand = inventoryOnHand(siteId);
+
+    var adjusted = 0;
+    for (final lv in levels) {
+      final m = lv as Map;
+      final pid = m['productId']?.toString();
+      final vid = m['variantId']?.toString() ?? '';
+      final invItemId = m['inventoryItemId']?.toString();
+      final available = (m['available'] as num?)?.toInt() ?? 0;
+      if (pid == null || pid.isEmpty) continue;
+
+      InventoryItem? item;
+      for (final it in existing) {
+        if (it.shopifyProductId == pid && (it.shopifyVariantId ?? '') == vid) {
+          item = it;
+          break;
+        }
+      }
+      if (item == null) {
+        final cat = catalog['$pid|$vid'] ?? catalog['$pid|'];
+        item = await addInventoryItem(
+          organizationId: organizationId,
+          siteId: siteId,
+          name: cat?.displayName ?? 'Producto',
+          isExternal: false,
+          shopifyProductId: pid,
+          shopifyVariantId: vid.isEmpty ? null : vid,
+          shopifyInventoryItemId: invItemId,
+          unitPrice: cat?.price,
+          currency: cat?.currency,
+        );
+      } else if (item.shopifyInventoryItemId == null && invItemId != null) {
+        // Backfill del inventory_item_id de Shopify (para el push posterior).
+        await store.updateRow(Collections.inventoryItems, item.id,
+            {'shopify_inventory_item_id': invItemId});
+      }
+
+      final current = onHand[item.id] ?? 0;
+      final delta = available - current;
+      if (delta != 0) {
+        // reason 'ajuste' NO hace push (evita el bucle con Shopify).
+        await addInventoryMovement(
+          item: item,
+          delta: delta,
+          reason: InventoryReason.ajuste,
+          note: 'Sincronización Shopify',
+        );
+        adjusted++;
+      }
+    }
+    await store.refreshCollection(Collections.inventoryItems);
+    await store.refreshCollection(Collections.inventoryMovements);
+    return adjusted;
   }
 
   // ------------- Consumo por paciente + costeo (Insumos Fase 4) -------------
@@ -1239,6 +1450,106 @@ class DataRepository {
     await store.refreshCollection(Collections.charges);
     await store.refreshCollection(Collections.pointPayments);
     return (data['status'] ?? 'desconocido').toString();
+  }
+
+  /// Crea un link de pago (Stripe Checkout) para un cobro vía Edge Function y
+  /// devuelve la URL para ENVIAR al paciente. El pago se concilia por webhook.
+  /// Solo en producción (Supabase).
+  Future<String> createStripeCheckout(String chargeId, {String? title}) async {
+    final store = _store;
+    if (store is! SupabaseDataStore) {
+      throw Exception('El link de pago requiere el entorno de producción.');
+    }
+    Map<String, dynamic> data;
+    try {
+      data = await store.invokeFunction('stripe-create-checkout', {
+        'chargeId': chargeId,
+        if (title != null) 'title': title,
+      });
+    } on FunctionException catch (e) {
+      throw Exception(_edgeErrorMessage(e));
+    }
+    if (data['error'] != null) throw Exception(data['error'].toString());
+    final url = data['url'] as String?;
+    if (url == null || url.isEmpty) {
+      throw Exception('Stripe no devolvió el link de pago.');
+    }
+    return url;
+  }
+
+  /// Inicia una conversación con el asistente VAC (CustomGPT vía Edge Function)
+  /// y devuelve el sessionId. Solo en producción.
+  Future<String> vacBotStart() async {
+    final store = _store;
+    if (store is! SupabaseDataStore) {
+      throw Exception('El asistente requiere el entorno de producción.');
+    }
+    Map<String, dynamic> data;
+    try {
+      data = await store.invokeFunction('vac-bot', {'action': 'create'});
+    } on FunctionException catch (e) {
+      throw Exception(_edgeErrorMessage(e));
+    }
+    if (data['error'] != null) throw Exception(data['error'].toString());
+    final id = data['sessionId'] as String?;
+    if (id == null || id.isEmpty) {
+      throw Exception('El asistente no devolvió una sesión.');
+    }
+    return id;
+  }
+
+  /// Envía un mensaje al asistente VAC y devuelve la respuesta.
+  Future<String> vacBotSend(String sessionId, String prompt) async {
+    final store = _store;
+    if (store is! SupabaseDataStore) {
+      throw Exception('El asistente requiere el entorno de producción.');
+    }
+    Map<String, dynamic> data;
+    try {
+      data = await store.invokeFunction('vac-bot', {
+        'action': 'message',
+        'sessionId': sessionId,
+        'prompt': prompt,
+      });
+    } on FunctionException catch (e) {
+      throw Exception(_edgeErrorMessage(e));
+    }
+    if (data['error'] != null) throw Exception(data['error'].toString());
+    return (data['reply'] as String?) ?? '';
+  }
+
+  /// Realtime: se suscribe a cambios en una tabla ([collection]) y, cada vez que
+  /// llega un evento (INSERT/UPDATE/DELETE), refresca la caché de esa tabla y
+  /// llama [onChange]. Sirve para que Cobros/Conciliación reflejen un pago en
+  /// cuanto el webhook lo registra, sin refrescar la página a mano.
+  ///
+  /// Solo aplica en producción (Supabase); en demo devuelve `null` (sin
+  /// realtime). Devuelve el canal como [Object] opaco para que la UI no dependa
+  /// del tipo de Supabase; se cancela con [unwatch] en `dispose()`.
+  Object? watchCollection(String collection, void Function() onChange) {
+    final store = _store;
+    if (store is! SupabaseDataStore) return null;
+    final channel = store.client.channel('rt-$collection-${_uuid.v4()}');
+    channel
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: collection,
+          callback: (_) async {
+            await store.refreshCollection(collection);
+            onChange();
+          },
+        )
+        .subscribe();
+    return channel;
+  }
+
+  /// Cancela una suscripción Realtime abierta con [watchCollection].
+  Future<void> unwatch(Object? channel) async {
+    final store = _store;
+    if (store is SupabaseDataStore && channel is RealtimeChannel) {
+      await store.client.removeChannel(channel);
+    }
   }
 
   /// Deshace el vínculo de un pago con su cobro (el cobro vuelve a pendiente).
@@ -1862,6 +2173,8 @@ class DataRepository {
     (NoteOptionField.careType, 'Curación en hospitalización', null),
     (NoteOptionField.careType, 'Interconsulta', null),
     (NoteOptionField.careType, 'Desbridamiento programado', KuraTag.desbridamiento),
+    (NoteOptionField.procedureDesc, 'Higiene de manos', null),
+    (NoteOptionField.procedureDesc, 'Colocación de guantes', null),
     (NoteOptionField.procedureDesc, 'Limpieza con solución salina y cambio de apósito', KuraTag.limpieza),
     (NoteOptionField.procedureDesc, 'Desbridamiento cortante parcial', KuraTag.desbridamiento),
     (NoteOptionField.procedureDesc, 'Desbridamiento autolítico/enzimático', KuraTag.desbridamiento),
@@ -1964,6 +2277,8 @@ class DataRepository {
     String? caregiverPhone,
     bool fragilePatient = false,
     String? backgroundNotes,
+    String? activeMedications,
+    String? allergies,
     String? curp,
     String? address,
     String? occupation,
@@ -2000,6 +2315,8 @@ class DataRepository {
       'caregiver_phone': caregiverPhone,
       'fragile_patient': fragilePatient,
       'background_notes': backgroundNotes,
+      'active_medications': activeMedications,
+      'allergies': allergies,
       'ekare_external_id': null,
       'curp': curp,
       'address': address,
@@ -2046,6 +2363,8 @@ class DataRepository {
     String? caregiverPhone,
     bool fragilePatient = false,
     String? backgroundNotes,
+    String? activeMedications,
+    String? allergies,
     String? curp,
     String? address,
     String? occupation,
@@ -2072,6 +2391,8 @@ class DataRepository {
       'caregiver_phone': caregiverPhone,
       'fragile_patient': fragilePatient,
       'background_notes': backgroundNotes,
+      'active_medications': activeMedications,
+      'allergies': allergies,
       'curp': curp,
       'address': address,
       'occupation': occupation,
@@ -2108,6 +2429,55 @@ class DataRepository {
       .where((c) => c['patient_id'] == patientId)
       .map(PatientComorbidity.fromJson)
       .toList();
+
+  // ---------------- Laboratorios del paciente (0070) ------------------------
+
+  /// Laboratorios del paciente, del más reciente al más antiguo.
+  List<PatientLab> listPatientLabs(String patientId) => _store
+      .getAll(Collections.patientLabs)
+      .map(PatientLab.fromJson)
+      .where((l) => l.patientId == patientId)
+      .toList()
+    ..sort((a, b) => b.takenAt.compareTo(a.takenAt));
+
+  /// Laboratorio más reciente del paciente (el que usa el motor), o null.
+  PatientLab? latestPatientLab(String patientId) {
+    final list = listPatientLabs(patientId);
+    return list.isEmpty ? null : list.first;
+  }
+
+  Future<PatientLab> addPatientLab({
+    required String organizationId,
+    required String patientId,
+    required DateTime takenAt,
+    double? glucoseMgDl,
+    double? hba1cPct,
+    double? albuminGdl,
+    double? hemoglobinGdl,
+    double? o2SaturationPct,
+    String? notes,
+    String? createdBy,
+  }) async {
+    final saved = await _store.insertRow(Collections.patientLabs, {
+      'id': _uuid.v4(),
+      'organization_id': organizationId,
+      'patient_id': patientId,
+      'taken_at': takenAt.toIso8601String().substring(0, 10),
+      'glucose_mg_dl': glucoseMgDl,
+      'hba1c_pct': hba1cPct,
+      'albumin_g_dl': albuminGdl,
+      'hemoglobin_g_dl': hemoglobinGdl,
+      'o2_saturation_pct': o2SaturationPct,
+      'notes': notes,
+      'created_by': createdBy,
+      'created_at': DateTime.now().toIso8601String(),
+    });
+    return PatientLab.fromJson(saved);
+  }
+
+  Future<void> deletePatientLab(String id) async {
+    await _store.deleteRow(Collections.patientLabs, id);
+  }
 
   Future<void> upsertComorbidity(PatientComorbidity comorbidity) async {
     await _store.upsertRow(Collections.patientComorbidities, comorbidity.toJson());
@@ -2300,6 +2670,218 @@ class DataRepository {
     ..sort((a, b) => b.admittedAt.compareTo(a.admittedAt));
 
   /// Internamiento ACTIVO del paciente (o null si no está internado).
+  // ---------------- Terapia VAC (NPWT, módulo transversal, 0064) ------------
+
+  /// Terapias VAC del centro (o de un paciente), opcionalmente solo activas.
+  List<VacTherapy> listVacTherapies({
+    String? organizationId,
+    String? patientId,
+    bool activeOnly = false,
+  }) =>
+      _store
+          .getAll(Collections.vacTherapies)
+          .map(VacTherapy.fromJson)
+          .where((t) =>
+              (organizationId == null || t.organizationId == organizationId) &&
+              (patientId == null || t.patientId == patientId) &&
+              (!activeOnly || t.isActive))
+          .toList()
+        ..sort((a, b) => b.startedAt.compareTo(a.startedAt));
+
+  VacTherapy? getVacTherapy(String id) {
+    final match =
+        _store.getAll(Collections.vacTherapies).where((t) => t['id'] == id);
+    return match.isEmpty ? null : VacTherapy.fromJson(match.first);
+  }
+
+  /// Terapia VAC activa de un paciente (la más reciente), o null.
+  VacTherapy? activeVacTherapy(String patientId) {
+    final list = listVacTherapies(patientId: patientId, activeOnly: true);
+    return list.isEmpty ? null : list.first;
+  }
+
+  /// Crea una terapia VAC y registra el evento de colocación en la bitácora.
+  Future<VacTherapy> createVacTherapy({
+    required String organizationId,
+    required String patientId,
+    String? woundId,
+    required VacEquipment equipment,
+    String? deviceSerial,
+    VacMode? mode,
+    int? targetPressureMmhg,
+    bool instillation = false,
+    String? instillSolution,
+    int? instillDwellMin,
+    VacDressing? dressing,
+    int? changeIntervalHours,
+    DateTime? placedAt,
+    VacLocation? placedLocation,
+    String? caregiverInstructions,
+    String? notes,
+    String? createdBy,
+  }) async {
+    final now = DateTime.now();
+    final id = _uuid.v4();
+    final data = {
+      'id': id,
+      'organization_id': organizationId,
+      'patient_id': patientId,
+      'wound_id': woundId,
+      'equipment_type': equipment.dbValue,
+      'device_serial': deviceSerial,
+      'mode': mode?.dbValue,
+      'target_pressure_mmhg': targetPressureMmhg,
+      'instillation': instillation,
+      'instill_solution': instillSolution,
+      'instill_dwell_min': instillDwellMin,
+      'dressing_type': dressing?.dbValue,
+      'change_interval_hours': changeIntervalHours,
+      'placed_at': (placedAt ?? now).toIso8601String(),
+      'placed_by': createdBy,
+      'placed_location': placedLocation?.dbValue,
+      'current_location': placedLocation?.dbValue,
+      'status': VacTherapyStatus.activa.dbValue,
+      'caregiver_instructions': caregiverInstructions,
+      'notes': notes,
+      'started_at': now.toIso8601String(),
+      'created_by': createdBy,
+      'created_at': now.toIso8601String(),
+      'updated_at': now.toIso8601String(),
+    };
+    final saved = await _store.insertRow(Collections.vacTherapies, data);
+    await addVacEvent(
+      organizationId: organizationId,
+      therapyId: id,
+      patientId: patientId,
+      type: VacEventType.colocacion,
+      location: placedLocation,
+      byProfile: createdBy,
+      note: 'Colocación de terapia (${equipment.label})',
+    );
+    return VacTherapy.fromJson(saved);
+  }
+
+  /// Actualiza campos de una terapia (parámetros, ubicación, estado,
+  /// indicaciones). Solo se envían los campos provistos.
+  Future<void> updateVacTherapy(
+    String therapyId, {
+    VacEquipment? equipment,
+    String? deviceSerial,
+    VacMode? mode,
+    int? targetPressureMmhg,
+    bool? instillation,
+    String? instillSolution,
+    int? instillDwellMin,
+    VacDressing? dressing,
+    int? changeIntervalHours,
+    VacLocation? currentLocation,
+    VacTherapyStatus? status,
+    String? caregiverInstructions,
+    String? notes,
+    DateTime? endedAt,
+  }) async {
+    final patch = <String, dynamic>{
+      'updated_at': DateTime.now().toIso8601String(),
+    };
+    if (equipment != null) patch['equipment_type'] = equipment.dbValue;
+    if (deviceSerial != null) patch['device_serial'] = deviceSerial;
+    if (mode != null) patch['mode'] = mode.dbValue;
+    if (targetPressureMmhg != null) {
+      patch['target_pressure_mmhg'] = targetPressureMmhg;
+    }
+    if (instillation != null) patch['instillation'] = instillation;
+    if (instillSolution != null) patch['instill_solution'] = instillSolution;
+    if (instillDwellMin != null) patch['instill_dwell_min'] = instillDwellMin;
+    if (dressing != null) patch['dressing_type'] = dressing.dbValue;
+    if (changeIntervalHours != null) {
+      patch['change_interval_hours'] = changeIntervalHours;
+    }
+    if (currentLocation != null) {
+      patch['current_location'] = currentLocation.dbValue;
+    }
+    if (status != null) patch['status'] = status.dbValue;
+    if (caregiverInstructions != null) {
+      patch['caregiver_instructions'] = caregiverInstructions;
+    }
+    if (notes != null) patch['notes'] = notes;
+    if (endedAt != null) patch['ended_at'] = endedAt.toIso8601String();
+    await _store.updateRow(Collections.vacTherapies, therapyId, patch);
+  }
+
+  /// Bitácora de una terapia (más reciente primero).
+  List<VacEvent> listVacEvents(String therapyId) => _store
+      .getAll(Collections.vacEvents)
+      .map(VacEvent.fromJson)
+      .where((e) => e.therapyId == therapyId)
+      .toList()
+    ..sort((a, b) => b.at.compareTo(a.at));
+
+  /// Agrega un evento a la bitácora de la terapia (append-only).
+  Future<void> addVacEvent({
+    required String organizationId,
+    required String therapyId,
+    required String patientId,
+    required VacEventType type,
+    VacLocation? location,
+    String? byProfile,
+    String? note,
+    DateTime? at,
+  }) async {
+    final now = DateTime.now();
+    await _store.insertRow(Collections.vacEvents, {
+      'id': _uuid.v4(),
+      'organization_id': organizationId,
+      'therapy_id': therapyId,
+      'patient_id': patientId,
+      'event_type': type.dbValue,
+      'at': (at ?? now).toIso8601String(),
+      'by_profile': byProfile,
+      'location': location?.dbValue,
+      'detail': <String, dynamic>{},
+      'note': note,
+      'created_at': now.toIso8601String(),
+    });
+  }
+
+  /// Número de guardia VAC del centro (para escalar alarmas por WhatsApp), o
+  /// null si no se ha configurado.
+  String? vacOncallPhone(String? organizationId) {
+    if (organizationId == null) return null;
+    final match = _store.getAll(Collections.vacSettings).where(
+        (s) => s['organization_id'] == organizationId);
+    if (match.isEmpty) return null;
+    final phone = match.first['oncall_phone'] as String?;
+    return (phone == null || phone.trim().isEmpty) ? null : phone.trim();
+  }
+
+  /// Fija el número de guardia VAC del centro (upsert por organización).
+  Future<void> setVacOncallPhone({
+    required String organizationId,
+    required String phone,
+    String? updatedBy,
+  }) async {
+    final existing = _store
+        .getAll(Collections.vacSettings)
+        .where((s) => s['organization_id'] == organizationId);
+    final now = DateTime.now().toIso8601String();
+    final data = {
+      'organization_id': organizationId,
+      'oncall_phone': phone.trim(),
+      'updated_by': updatedBy,
+      'updated_at': now,
+    };
+    if (existing.isNotEmpty) {
+      await _store.updateRow(
+          Collections.vacSettings, existing.first['id'] as String, data);
+    } else {
+      await _store.insertRow(Collections.vacSettings, {
+        'id': _uuid.v4(),
+        'created_at': now,
+        ...data,
+      });
+    }
+  }
+
   PatientAdmission? activeAdmission(String patientId) {
     final match = _store.getAll(Collections.patientAdmissions).where((a) =>
         a['patient_id'] == patientId && (a['status'] as String?) == 'activo');
@@ -2869,6 +3451,41 @@ class DataRepository {
     return match.isEmpty ? null : Consultation.fromJson(match.first);
   }
 
+  /// Herida asociada a una consulta (vía su medición). Sirve para reabrir un
+  /// borrador de seguimiento en el formulario correcto.
+  String? woundIdForConsultation(String consultationId) {
+    final m = _store
+        .getAll(Collections.woundMeasurements)
+        .where((x) => x['consultation_id'] == consultationId);
+    return m.isEmpty ? null : m.first['wound_id'] as String?;
+  }
+
+  /// Borra los datos de HERIDA de una consulta (fotos, evaluaciones,
+  /// mediciones) SIN borrar la consulta ni sus cobros/insumos. Se usa al
+  /// finalizar un borrador (se re-crean con los datos definitivos).
+  Future<void> deleteWoundDataForConsultation(String consultationId) async {
+    for (final coll in [
+      Collections.woundPhotos,
+      Collections.woundAssessments,
+      Collections.woundMeasurements,
+    ]) {
+      final rows = _store
+          .getAll(coll)
+          .where((r) => r['consultation_id'] == consultationId)
+          .toList();
+      for (final r in rows) {
+        await _store.deleteRow(coll, r['id'] as String);
+      }
+    }
+  }
+
+  /// Actualiza campos de una consulta en su lugar (finalizar borrador: conserva
+  /// el id para no huerfanar cobros/insumos ya ligados).
+  Future<void> updateConsultationFields(
+      String consultationId, Map<String, dynamic> patch) async {
+    await _store.updateRow(Collections.consultations, consultationId, patch);
+  }
+
   /// Consulta ligada a una cita de la agenda, por su referencia
   /// ("acuity:<id>" | "manual:<uuid>"), o null si aún no se ha realizado.
   /// Usado por la agenda para el botón inteligente "Iniciar / Ir a la consulta".
@@ -2902,6 +3519,9 @@ class DataRepository {
     // "acuity:<id>" | "manual:<uuid>". La pasa el hub de consulta cuando se
     // entra desde la agenda ("Iniciar consulta").
     String? scheduledAppointmentRef,
+    String? specialistNotes,
+    String? visitSummary,
+    String? transcript,
   }) async {
     final data = {
       'id': _uuid.v4(),
@@ -2923,6 +3543,9 @@ class DataRepository {
       'follow_up_signature': followUpSignature,
       'follow_up_signed_at': followUpSignedAt?.toIso8601String(),
       'scheduled_appointment_ref': scheduledAppointmentRef,
+      'specialist_notes': specialistNotes,
+      'visit_summary': visitSummary,
+      'transcript': transcript,
     };
     final saved = await _store.insertRow(Collections.consultations, data);
     return Consultation.fromJson(saved);

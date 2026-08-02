@@ -327,7 +327,12 @@ class _OrganizationsTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: organizations.isEmpty
+      body: Column(
+        children: [
+          // Catálogo global de productos (Shopify) — acción del master.
+          _ShopifyCatalogSyncCard(repo: repo),
+          Expanded(
+            child: organizations.isEmpty
           ? const _NoOrganizationsState()
           : ListView.separated(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 88),
@@ -403,6 +408,9 @@ class _OrganizationsTab extends StatelessWidget {
                 );
               },
             ),
+          ),
+        ],
+      ),
       floatingActionButton: KuraPrimaryFab(
         onPressed: onCreate,
         icon: Icons.add_business_outlined,
@@ -513,10 +521,37 @@ class _ModulesTabState extends State<_ModulesTab> {
                         }
                       },
               ),
+              SwitchListTile(
+                title: const Text('Espejo de inventario con Shopify'),
+                subtitle: const Text(
+                    'Solo el centro dueño de la tienda (Kura+): el inventario se '
+                    'refleja desde Shopify y el consumo lo descuenta allá.'),
+                value: org.shopifyMirror,
+                onChanged: _busy
+                    ? null
+                    : (v) async {
+                        setState(() => _busy = true);
+                        try {
+                          await widget.repo.setOrgShopifyMirror(org.id, v);
+                        } finally {
+                          if (mounted) setState(() => _busy = false);
+                        }
+                      },
+              ),
             ],
           ),
         ),
         const SizedBox(height: 12),
+        // Guardia VAC: número de WhatsApp al que escalan las alarmas del módulo
+        // de Terapia VAC. Se muestra solo si el módulo está activo en el centro.
+        if (widget.repo.isModuleEnabled(ModuleKey.vac, organizationId: orgId)) ...[
+          _VacGuardiaCard(
+            repo: widget.repo,
+            orgId: orgId,
+            initial: widget.repo.vacOncallPhone(orgId) ?? '',
+          ),
+          const SizedBox(height: 12),
+        ],
         SegmentedButton<_ModuleScope>(
           segments: const [
             ButtonSegment(value: _ModuleScope.centro, label: Text('Centro')),
@@ -552,12 +587,16 @@ class _ModulesTabState extends State<_ModulesTab> {
             child: Center(child: Text('Elige un sitio o usuario para configurar.')),
           )
         else
-          ...ModuleKey.values.map((m) => _moduleRow(
-                m,
-                orgId: orgId,
-                siteId: scopeSiteId,
-                profileId: scopeProfileId,
-              )),
+          // Solo módulos que aplican al tipo de centro (p.ej. eKare no en
+          // hospital); los no disponibles ni se ofrecen para configurar.
+          ...ModuleKey.values
+              .where((m) => _org == null || m.availableFor(_org!.centerType))
+              .map((m) => _moduleRow(
+                    m,
+                    orgId: orgId,
+                    siteId: scopeSiteId,
+                    profileId: scopeProfileId,
+                  )),
       ],
     );
   }
@@ -826,6 +865,176 @@ class _OrganizationFormDialogState extends State<_OrganizationFormDialog> {
               : const Text('Crear'),
         ),
       ],
+    );
+  }
+}
+
+/// Configuración de la GUARDIA VAC del centro: número de WhatsApp al que se
+/// escalan las alarmas del módulo de Terapia VAC. Vive en vac_settings.
+class _VacGuardiaCard extends StatefulWidget {
+  final DataRepository repo;
+  final String orgId;
+  final String initial;
+  const _VacGuardiaCard({
+    required this.repo,
+    required this.orgId,
+    required this.initial,
+  });
+  @override
+  State<_VacGuardiaCard> createState() => _VacGuardiaCardState();
+}
+
+class _VacGuardiaCardState extends State<_VacGuardiaCard> {
+  late final TextEditingController _ctrl =
+      TextEditingController(text: widget.initial);
+  bool _busy = false;
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    setState(() => _busy = true);
+    try {
+      await widget.repo.setVacOncallPhone(
+          organizationId: widget.orgId, phone: _ctrl.text.trim());
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Número de guardia VAC guardado.')));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('No se pudo guardar: $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Row(
+              children: [
+                Icon(Icons.healing_outlined),
+                SizedBox(width: 8),
+                Expanded(
+                  child: Text('Guardia VAC',
+                      style: TextStyle(fontWeight: FontWeight.w700)),
+                ),
+              ],
+            ),
+            const SizedBox(height: 2),
+            const Text(
+                'WhatsApp al que se escalan las alarmas de terapia VAC.',
+                style: TextStyle(fontSize: 12, color: Colors.black54)),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _ctrl,
+                    keyboardType: TextInputType.phone,
+                    decoration: const InputDecoration(
+                      isDense: true,
+                      labelText: 'Número con lada',
+                      hintText: '52 55 1234 5678',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                FilledButton(
+                  onPressed: _busy ? null : _save,
+                  child: Text(_busy ? 'Guardando…' : 'Guardar'),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Tarjeta (master) para sincronizar el catálogo GLOBAL de productos desde
+/// Shopify (Admin API). Muestra cuántos productos hay y dispara la Edge
+/// Function shopify-sync-catalog.
+class _ShopifyCatalogSyncCard extends StatefulWidget {
+  final DataRepository repo;
+  const _ShopifyCatalogSyncCard({required this.repo});
+  @override
+  State<_ShopifyCatalogSyncCard> createState() =>
+      _ShopifyCatalogSyncCardState();
+}
+
+class _ShopifyCatalogSyncCardState extends State<_ShopifyCatalogSyncCard> {
+  bool _busy = false;
+
+  Future<void> _sync() async {
+    setState(() => _busy = true);
+    try {
+      final n = await widget.repo.syncShopifyCatalog();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Catálogo sincronizado: $n productos.')));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('$e'.replaceFirst('Exception: ', ''))));
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final count = widget.repo.listProductCatalog().length;
+    return Card(
+      margin: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
+        child: Row(
+          children: [
+            const Icon(Icons.inventory_2_outlined, color: KuraColors.primary),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Catálogo global (Shopify)',
+                      style: TextStyle(fontWeight: FontWeight.w700)),
+                  Text(
+                      count == 0
+                          ? 'Sin productos. Sincroniza desde tu tienda.'
+                          : '$count productos en el catálogo.',
+                      style: const TextStyle(fontSize: 12, color: Colors.black54)),
+                ],
+              ),
+            ),
+            FilledButton.tonalIcon(
+              onPressed: _busy ? null : _sync,
+              icon: _busy
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Icon(Icons.sync, size: 18),
+              label: Text(_busy ? 'Sincronizando…' : 'Sincronizar'),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

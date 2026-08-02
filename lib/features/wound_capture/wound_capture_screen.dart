@@ -703,10 +703,10 @@ class _WoundCaptureScreenState extends ConsumerState<WoundCaptureScreen> {
                       value: formState.exudadoTipo,
                       decoration: const InputDecoration(labelText: 'Exudado (tipo)'),
                       items: ExudadoTipo.values
-                          .map((e) => DropdownMenuItem(value: e, child: Text(e.name)))
+                          .map((e) => DropdownMenuItem(value: e, child: Text(e.label)))
                           .toList(),
                       onChanged: (v) =>
-                          update(() => formState.exudadoTipo = v ?? ExudadoTipo.seroso),
+                          update(() => formState.exudadoTipo = v ?? ExudadoTipo.serohematico),
                     ),
                   ),
                   const SizedBox(width: 12),

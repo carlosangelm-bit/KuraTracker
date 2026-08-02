@@ -6,11 +6,13 @@ import '../providers/session_provider.dart';
 import '../../models/app_user.dart';
 import '../../models/module_key.dart';
 import '../../features/auth/login_screen.dart';
+import '../../features/comercial/payment_result_screen.dart';
 import '../../features/dashboard/dashboard_screen.dart';
 import '../../features/patients/patients_list_screen.dart';
 import '../../features/patients/patient_detail_screen.dart';
 import '../../features/patients/patient_form_screen.dart';
 import '../../features/patients/comorbidities_screen.dart';
+import '../../features/patients/patient_labs_screen.dart';
 import '../../features/patients/diagnoses_screen.dart';
 import '../../features/risk/risk_board_screen.dart';
 import '../../features/risk/patient_risk_screen.dart';
@@ -32,6 +34,10 @@ import '../../features/import_export/import_export_screen.dart';
 import '../../features/platform/platform_home_screen.dart';
 import '../../features/prevention_agenda/prevention_agenda_screen.dart';
 import '../../features/hospital_dashboard/hospital_dashboard_screen.dart';
+import '../../features/vac/vac_therapies_screen.dart';
+import '../../features/vac/vac_therapy_detail_screen.dart';
+import '../../features/vac/vac_alarm_screen.dart';
+import '../../features/vac/vac_bot_screen.dart';
 import '../../features/insumos/insumos_home_screen.dart';
 import '../../features/insumos/tienda_screen.dart';
 import '../../features/insumos/mapeo_screen.dart';
@@ -65,6 +71,9 @@ final routerProvider = Provider<GoRouter>((ref) {
       final session = ref.read(sessionProvider);
       final loggedIn = session.isAuthenticated;
       final goingToLogin = state.matchedLocation == '/login';
+      // Rutas PÚBLICAS (sin sesión): páginas de resultado de pago a las que
+      // Stripe redirige al PACIENTE. No deben pasar por el login ni la app.
+      if (state.matchedLocation.startsWith('/pago-')) return null;
       if (!loggedIn && !goingToLogin) return '/login';
 
       // El master (administrador de plataforma) no tiene datos clinicos
@@ -120,6 +129,7 @@ final routerProvider = Provider<GoRouter>((ref) {
             location.contains('/consultation/new') ||
             (location.contains('/wound/') && location.endsWith('/capture')) ||
             location.endsWith('/follow-up/new') ||
+            location.contains('/follow-up/draft/') ||
             location.endsWith('/comorbidities') ||
             location.endsWith('/diagnoses') ||
             location.endsWith('/referrals/new');
@@ -153,6 +163,13 @@ final routerProvider = Provider<GoRouter>((ref) {
     },
     routes: [
       GoRoute(path: '/login', builder: (context, state) => const LoginScreen()),
+      // Resultado de pago (público, fuera del shell): Stripe redirige aquí.
+      GoRoute(
+          path: '/pago-recibido',
+          builder: (context, state) => const PaymentResultScreen(success: true)),
+      GoRoute(
+          path: '/pago-cancelado',
+          builder: (context, state) => const PaymentResultScreen(success: false)),
       ShellRoute(
         builder: (context, state, child) =>
             AppShell(currentPath: state.matchedLocation, child: child),
@@ -212,6 +229,20 @@ final routerProvider = Provider<GoRouter>((ref) {
             builder: (context, state) => FollowUpCaptureScreen(
               patientId: state.pathParameters['patientId']!,
               woundId: state.pathParameters['woundId']!,
+            ),
+          ),
+          GoRoute(
+            path: '/patients/:patientId/wound/:woundId/follow-up/draft/:draftId',
+            builder: (context, state) => FollowUpCaptureScreen(
+              patientId: state.pathParameters['patientId']!,
+              woundId: state.pathParameters['woundId']!,
+              draftConsultationId: state.pathParameters['draftId'],
+            ),
+          ),
+          GoRoute(
+            path: '/patients/:patientId/labs',
+            builder: (context, state) => PatientLabsScreen(
+              patientId: state.pathParameters['patientId']!,
             ),
           ),
           GoRoute(
@@ -293,6 +324,27 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
               path: '/hospital',
               builder: (context, state) => const HospitalDashboardScreen()),
+          GoRoute(
+              path: '/vac',
+              builder: (context, state) => const VacTherapiesScreen()),
+          GoRoute(
+            path: '/vac/:therapyId',
+            builder: (context, state) => VacTherapyDetailScreen(
+              therapyId: state.pathParameters['therapyId']!,
+            ),
+          ),
+          GoRoute(
+            path: '/vac/:therapyId/alarm',
+            builder: (context, state) => VacAlarmScreen(
+              therapyId: state.pathParameters['therapyId']!,
+            ),
+          ),
+          GoRoute(
+            path: '/vac/:therapyId/bot',
+            builder: (context, state) => VacBotScreen(
+              therapyId: state.pathParameters['therapyId']!,
+            ),
+          ),
           GoRoute(
               path: '/caregiver',
               builder: (context, state) => const CaregiverHomeScreen()),

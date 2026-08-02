@@ -104,6 +104,28 @@ class ConsultationDetailScreen extends ConsumerWidget {
                   dateFmt: dateFmt,
                 ),
                 const SizedBox(height: 16),
+                // Borrador de seguimiento: se puede cobrar aquí y completar la
+                // parte clínica cuando se pueda (retoma el formulario).
+                if (consultation.isDraft &&
+                    consultation.visitType == VisitType.seguimiento) ...[
+                  Builder(builder: (ctx) {
+                    final woundId =
+                        repo.woundIdForConsultation(consultationId);
+                    return SizedBox(
+                      width: double.infinity,
+                      child: FilledButton.tonalIcon(
+                        icon: const Icon(Icons.edit_note),
+                        label:
+                            const Text('Completar consulta clínica (borrador)'),
+                        onPressed: woundId == null
+                            ? null
+                            : () => context.go(
+                                '/patients/$patientId/wound/$woundId/follow-up/draft/$consultationId'),
+                      ),
+                    );
+                  }),
+                  const SizedBox(height: 16),
+                ],
                 if (woundsInConsultation.isEmpty)
                   const Card(
                     child: Padding(
@@ -131,6 +153,13 @@ class ConsultationDetailScreen extends ConsumerWidget {
                   siteId: consultation.siteId,
                 ),
                 const SizedBox(height: 16),
+                _NotesSummaryCard(
+                  consultation: consultation,
+                  isAdmin: ref.watch(sessionProvider).user?.role ==
+                          AppRole.admin ||
+                      ref.watch(sessionProvider).user?.role == AppRole.master,
+                ),
+                const SizedBox(height: 16),
                 _AmendmentsSection(
                   patientId: patientId,
                   consultationId: consultationId,
@@ -140,6 +169,62 @@ class ConsultationDetailScreen extends ConsumerWidget {
             ),
           );
         },
+      ),
+    );
+  }
+}
+
+/// Notas del especialista + resumen (Plaud) + transcripción. La transcripción
+/// solo la ve el admin/master del centro (privacidad, 0069).
+class _NotesSummaryCard extends StatelessWidget {
+  final Consultation consultation;
+  final bool isAdmin;
+  const _NotesSummaryCard({required this.consultation, required this.isAdmin});
+
+  @override
+  Widget build(BuildContext context) {
+    final notes = (consultation.specialistNotes ?? '').trim();
+    final summary = (consultation.visitSummary ?? '').trim();
+    final transcript = (consultation.transcript ?? '').trim();
+    final showTranscript = isAdmin && transcript.isNotEmpty;
+    if (notes.isEmpty && summary.isEmpty && !showTranscript) {
+      return const SizedBox.shrink();
+    }
+    Widget block(String title, String body, {IconData? icon}) => Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(children: [
+              if (icon != null) ...[
+                Icon(icon, size: 16, color: KuraColors.primary),
+                const SizedBox(width: 6),
+              ],
+              Text(title,
+                  style: const TextStyle(
+                      fontSize: 12, fontWeight: FontWeight.w700)),
+            ]),
+            const SizedBox(height: 4),
+            Text(body),
+            const SizedBox(height: 12),
+          ],
+        );
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Notas y resumen',
+                style: TextStyle(fontWeight: FontWeight.w700)),
+            const SizedBox(height: 10),
+            if (notes.isNotEmpty) block('Notas del especialista', notes),
+            if (summary.isNotEmpty)
+              block('Resumen de la consulta', summary,
+                  icon: Icons.auto_awesome),
+            if (showTranscript)
+              block('Transcripción completa (solo admin)', transcript,
+                  icon: Icons.lock_outline),
+          ],
+        ),
       ),
     );
   }
@@ -884,6 +969,8 @@ class _SuppliesUsedSectionState extends ConsumerState<_SuppliesUsedSection> {
   }
 
   Widget _chargeArea(DataRepository repo) {
+    // Un BORRADOR SÍ se puede cobrar: el kurador avanza al cobro aunque la
+    // consulta no esté finalizada; completa lo clínico después.
     final existing = repo.chargeForConsultation(widget.consultationId);
     if (existing != null) {
       final paid = existing.status == ChargeStatus.pagado;
@@ -1087,7 +1174,7 @@ class _SuppliesUsedSectionState extends ConsumerState<_SuppliesUsedSection> {
     if (orgId == null) return;
     final siteId = _effectiveSite(repo, orgId);
     if (siteId == null) return;
-    final mapIndex = repo.supplyMappingIndex(orgId);
+    final mapGroups = repo.supplyMappingGroups(orgId);
     final inventory = repo.listInventoryItems(organizationId: orgId, siteId: siteId);
     final byProduct = <String, InventoryItem>{
       for (final it in inventory)
@@ -1098,31 +1185,78 @@ class _SuppliesUsedSectionState extends ConsumerState<_SuppliesUsedSection> {
             .map((u) => u.inventoryItemId)
             .whereType<String>()
             .toSet();
+
+    // Un insumo genérico puede tener VARIOS productos (medidas/marcas/SKU): se
+    // arman candidatos por insumo genérico y el especialista elige el producto.
+    final candidates = <_PlanCandidate>[];
+    for (final comp
+        in repo.treatmentComponentsForConsultation(widget.consultationId)) {
+      final ms =
+          mapGroups[SupplyProductMapping.keyFor(comp.method, comp.product)] ??
+              const [];
+      final items = <InventoryItem>[];
+      final localSeen = <String>{};
+      for (final m in ms) {
+        final item = byProduct[m.shopifyProductId];
+        if (item == null || existing.contains(item.id)) continue;
+        if (localSeen.add(item.id)) items.add(item);
+      }
+      if (items.isNotEmpty) {
+        candidates.add(_PlanCandidate(comp.method, comp.product, items));
+      }
+    }
+
+    if (candidates.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text(
+                'No hay insumos del plan mapeados en el inventario de este sitio.')));
+      }
+      return;
+    }
+
+    // El especialista elige. Pre-marcados los insumos con una sola opción
+    // (inequívocos); los que tienen varias presentaciones se eligen a mano.
+    final preselected = <String>{
+      for (final c in candidates)
+        if (c.items.length == 1) c.items.first.id
+    };
+    final chosen = await showModalBottomSheet<Set<String>>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (_) => _PlanSupplyChooser(
+        candidates: candidates,
+        preselected: preselected,
+        money: _money,
+      ),
+    );
+    if (chosen == null || chosen.isEmpty) return;
+
     var added = 0;
-    for (final comp in repo.treatmentComponentsForConsultation(widget.consultationId)) {
-      final m = mapIndex[SupplyProductMapping.keyFor(comp.method, comp.product)];
-      if (m == null) continue;
-      final item = byProduct[m.shopifyProductId];
-      if (item == null || existing.contains(item.id)) continue;
-      existing.add(item.id);
-      await repo.addSupplyUsage(
-        organizationId: orgId,
-        consultationId: widget.consultationId,
-        patientId: widget.patientId,
-        name: item.name,
-        inventoryItemId: item.id,
-        unitCost: item.unitCost,
-        unitPrice: item.unitPrice,
-        currency: item.currency,
-        createdBy: ref.read(sessionProvider).user?.id,
-      );
-      added++;
+    for (final c in candidates) {
+      for (final item in c.items) {
+        if (!chosen.contains(item.id) || existing.contains(item.id)) continue;
+        existing.add(item.id);
+        await repo.addSupplyUsage(
+          organizationId: orgId,
+          consultationId: widget.consultationId,
+          patientId: widget.patientId,
+          name: item.name,
+          inventoryItemId: item.id,
+          unitCost: item.unitCost,
+          unitPrice: item.unitPrice,
+          currency: item.currency,
+          createdBy: ref.read(sessionProvider).user?.id,
+        );
+        added++;
+      }
     }
     if (mounted) {
       setState(() {});
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text(added == 0
-              ? 'No hay insumos del plan mapeados en el inventario de este sitio.'
+              ? 'No se agregó ningún insumo.'
               : 'Se agregaron $added insumo(s) del plan.')));
     }
   }
@@ -1255,6 +1389,121 @@ class _UsageRow extends StatelessWidget {
             ],
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Candidato de insumo del plan: un insumo genérico y los productos de
+/// inventario que lo cubren (uno o varios, distintas medidas/marcas/SKU).
+class _PlanCandidate {
+  final String method;
+  final String genericProduct;
+  final List<InventoryItem> items;
+  const _PlanCandidate(this.method, this.genericProduct, this.items);
+}
+
+/// Selector para que el especialista elija qué producto(s) del plan agregar a
+/// la consulta cuando un insumo genérico tiene varias presentaciones.
+class _PlanSupplyChooser extends StatefulWidget {
+  final List<_PlanCandidate> candidates;
+  final Set<String> preselected;
+  final String Function(double) money;
+  const _PlanSupplyChooser({
+    required this.candidates,
+    required this.preselected,
+    required this.money,
+  });
+  @override
+  State<_PlanSupplyChooser> createState() => _PlanSupplyChooserState();
+}
+
+class _PlanSupplyChooserState extends State<_PlanSupplyChooser> {
+  late final Set<String> _selected = {...widget.preselected};
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: ConstrainedBox(
+        constraints:
+            BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.8),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(20, 4, 20, 2),
+              child: Text('Insumos del plan',
+                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+            ),
+            const Padding(
+              padding: EdgeInsets.fromLTRB(20, 0, 20, 8),
+              child: Text(
+                  'Elige el producto a usar. Los insumos con varias '
+                  'presentaciones no vienen premarcados.',
+                  style: TextStyle(fontSize: 12, color: KuraColors.darkText)),
+            ),
+            Flexible(
+              child: ListView(
+                shrinkWrap: true,
+                padding: const EdgeInsets.only(bottom: 8),
+                children: [
+                  for (final c in widget.candidates) ...[
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
+                      child: Text(
+                        '${c.genericProduct}  ·  ${c.method}',
+                        style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: KuraColors.primary),
+                      ),
+                    ),
+                    for (final item in c.items)
+                      CheckboxListTile(
+                        value: _selected.contains(item.id),
+                        dense: true,
+                        controlAffinity: ListTileControlAffinity.leading,
+                        title: Text(item.name,
+                            style: const TextStyle(fontSize: 13)),
+                        subtitle: item.unitCost == null
+                            ? null
+                            : Text(widget.money(item.unitCost!),
+                                style: const TextStyle(fontSize: 11)),
+                        onChanged: (v) => setState(() {
+                          if (v == true) {
+                            _selected.add(item.id);
+                          } else {
+                            _selected.remove(item.id);
+                          }
+                        }),
+                      ),
+                  ],
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      child: const Text('Cancelar'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: FilledButton(
+                      onPressed: () => Navigator.of(context).pop(_selected),
+                      child: Text('Agregar (${_selected.length})'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -35,6 +35,10 @@ class SupabaseDataStore implements DataStore {
 
   SupabaseDataStore(this._client);
 
+  /// Cliente Supabase subyacente. Expuesto para suscripciones Realtime
+  /// (canales de `postgres_changes`) que viven fuera de la caché de tablas.
+  SupabaseClient get client => _client;
+
   @override
   List<Map<String, dynamic>> getAll(String collection) {
     return _cache[collection] ?? const [];

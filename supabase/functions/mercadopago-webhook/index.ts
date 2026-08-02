@@ -91,83 +91,105 @@ serve(async (req) => {
       ((body["data"] as Record<string, unknown> | undefined)?.["id"] as string | undefined) ??
       "";
 
-    // Solo interesan las notificaciones de pago.
-    if (type !== "payment" || !dataId) {
-      return new Response("ignored", { status: 200 });
-    }
+    // Procesamos pagos (Checkout) y órdenes (Point / Orders API). El resto se
+    // ignora respondiendo 200.
+    if (type !== "payment" && type !== "order") return ok200("ignored");
 
-    const ok = await validSignature(
-      dataId,
+    const valid = await validSignature(
+      String(dataId),
       req.headers.get("x-signature") ?? "",
       req.headers.get("x-request-id") ?? "",
     );
-    if (!ok) return new Response("invalid signature", { status: 401 });
+    if (!valid) return new Response("invalid signature", { status: 401 });
 
-    // Detalle del pago.
-    const payRes = await fetch(`https://api.mercadopago.com/v1/payments/${dataId}`, {
-      headers: { Authorization: `Bearer ${MP_ACCESS_TOKEN}` },
-    });
-    if (!payRes.ok) return new Response("mp fetch error", { status: 502 });
-    const pay = await payRes.json();
+    // Normaliza los datos del pago según el tipo de notificación.
+    let externalRef: string | null = null;
+    let amount = 0;
+    let status = "pending";
+    let methodType: string | null = null;
+    let dateApproved: string | null = null;
+    let mpPaymentId = String(dataId);
+    let description = "Pago Mercado Pago";
+    let rawPayload: unknown = body;
 
-    const externalRef: string | null = pay["external_reference"] ?? null;
-    const amount = Number(pay["transaction_amount"] ?? 0);
-    const status: string = pay["status"] ?? "pending";
-    const methodType: string | null = pay["payment_type_id"] ?? null;
-    const dateApproved: string | null = pay["date_approved"] ?? null;
-    const mpPaymentId = String(pay["id"] ?? dataId);
-
-    // El external_reference es el id del cobro; de ahí sacamos el centro.
-    let charge: Record<string, unknown> | null = null;
-    if (externalRef) {
-      const { data } = await supabase
-        .from("charges")
-        .select("*")
-        .eq("id", externalRef)
-        .maybeSingle();
-      charge = data;
+    if (type === "order") {
+      // Orders API (Point / nuevo modelo): el pago viene EMBEBIDO en el body,
+      // sin necesidad de consultar /v1/payments.
+      const d = (body["data"] as Record<string, unknown> | undefined) ?? {};
+      externalRef = (d["external_reference"] as string | undefined) ?? null;
+      const txs = d["transactions"] as Record<string, unknown> | undefined;
+      const payments =
+        (txs?.["payments"] as Array<Record<string, unknown>> | undefined) ?? [];
+      const p0 = payments[0] ?? {};
+      const st = (p0["status"] ?? d["status"] ?? "") as string;
+      const detail = (p0["status_detail"] ?? d["status_detail"] ?? "") as string;
+      status = (st === "approved" || st === "processed" || detail === "accredited")
+        ? "approved"
+        : (st || "pending");
+      methodType = ((p0["payment_method"] as Record<string, unknown> | undefined)?.["type"] as
+        string | undefined) ?? null;
+      mpPaymentId = String(p0["id"] ?? d["id"] ?? dataId);
+      description = "Pago Mercado Pago (Point)";
+    } else {
+      // type === "payment": consultar el pago en MP.
+      const payRes = await fetch(`https://api.mercadopago.com/v1/payments/${dataId}`, {
+        headers: { Authorization: `Bearer ${MP_ACCESS_TOKEN}` },
+      });
+      if (!payRes.ok) {
+        // id inexistente (p.ej. simulación) o error transitorio: 200 para no
+        // marcar el endpoint como caído; "Verificar pago" (pull) cubre gaps.
+        console.error("MP fetch payment no-ok", payRes.status, dataId);
+        return ok200("payment fetch failed");
+      }
+      const pay = await payRes.json();
+      externalRef = (pay["external_reference"] as string | undefined) ?? null;
+      amount = Number(pay["transaction_amount"] ?? 0);
+      status = (pay["status"] as string | undefined) ?? "pending";
+      methodType = (pay["payment_type_id"] as string | undefined) ?? null;
+      dateApproved = (pay["date_approved"] as string | undefined) ?? null;
+      mpPaymentId = String(pay["id"] ?? dataId);
+      description = (pay["description"] as string | undefined) ?? description;
+      rawPayload = pay;
     }
-    if (!charge) {
-      // Sin cobro asociado no podemos atribuir el centro; se acepta (200) para
-      // que MP no reintente indefinidamente, pero no se ingiere.
-      return new Response("no matching charge", { status: 200 });
-    }
+
+    if (!externalRef) return ok200("no external_reference");
+
+    const { data: charge } = await supabase
+      .from("charges").select("*").eq("id", externalRef).maybeSingle();
+    if (!charge) return ok200("no matching charge");
+
     const orgId = charge["organization_id"] as string;
     const approved = status === "approved";
+    // Para órdenes (Point) usamos el total del cobro como monto autoritativo.
+    if (amount <= 0) amount = Number(charge["total"] ?? 0);
 
-    // Idempotencia: no dupliques el mismo pago.
     const { data: existing } = await supabase
-      .from("point_payments")
-      .select("id")
-      .eq("mp_payment_id", mpPaymentId)
-      .maybeSingle();
+      .from("point_payments").select("id").eq("mp_payment_id", mpPaymentId).maybeSingle();
 
     const nowIso = new Date().toISOString();
-    const row = {
+    const rowData = {
       organization_id: orgId,
       provider: "mercadopago",
       mp_payment_id: mpPaymentId,
       amount,
-      currency: pay["currency_id"] ?? "MXN",
+      currency: "MXN",
       status,
       method: methodType,
       external_reference: externalRef,
-      description: pay["description"] ?? "Pago Mercado Pago",
+      description,
       captured_at: dateApproved ?? nowIso,
       charge_id: approved ? (charge["id"] as string) : null,
       linked_at: approved ? nowIso : null,
       source: "webhook",
-      raw: pay,
+      raw: rawPayload,
       updated_at: nowIso,
     };
-
     if (existing) {
-      await supabase.from("point_payments").update(row).eq("id", existing.id);
+      await supabase.from("point_payments").update(rowData).eq("id", existing.id);
     } else {
-      await supabase.from("point_payments").insert({ ...row, created_at: nowIso });
+      await supabase.from("point_payments").insert({ ...rowData, created_at: nowIso });
     }
 
-    // Si el pago está aprobado, marca el cobro como pagado por MP.
     if (approved && charge["status"] !== "pagado") {
       await supabase.from("charges").update({
         status: "pagado",
@@ -181,9 +203,13 @@ serve(async (req) => {
       }).eq("id", charge["id"] as string);
     }
 
-    return new Response("ok", { status: 200 });
+    return ok200("ok");
   } catch (e) {
     console.error("mercadopago-webhook error", e);
-    return new Response("error", { status: 500 });
+    return ok200("error"); // 200 para no marcar el endpoint como caído.
   }
 });
+
+function ok200(msg: string) {
+  return new Response(msg, { status: 200 });
+}

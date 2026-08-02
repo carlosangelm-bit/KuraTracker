@@ -27,6 +27,7 @@ class ComorbiditiesScreen extends ConsumerStatefulWidget {
 class _ComorbiditiesScreenState extends ConsumerState<ComorbiditiesScreen> {
   Map<Comorbilidad, ComorbilidadEstado> _values = {};
   bool _loaded = false;
+  bool _saving = false;
 
   void _loadIfNeeded(DataRepository repo) {
     if (_loaded) return;
@@ -36,20 +37,36 @@ class _ComorbiditiesScreenState extends ConsumerState<ComorbiditiesScreen> {
     };
   }
 
-  Future<void> _setStatus(Comorbilidad code, ComorbilidadEstado status) async {
+  /// Guarda TODAS las comorbilidades capturadas de una sola vez y regresa al
+  /// paciente. (Antes se guardaba callado por cada toque, sin confirmación.)
+  Future<void> _saveAll() async {
+    setState(() => _saving = true);
     final session = ref.read(sessionProvider);
     final repo = await DataRepository.instance();
     var staffId = session.user?.staffId;
     if (staffId == null && session.user?.role == AppRole.admin) {
       staffId = await repo.ensureAdminStaffId(session.user!);
     }
-    await repo.setComorbidity(
-      patientId: widget.patientId,
-      code: code,
-      status: status,
-      staffId: staffId,
-    );
-    if (mounted) setState(() => _values[code] = status);
+    try {
+      for (final entry in _values.entries) {
+        await repo.setComorbidity(
+          patientId: widget.patientId,
+          code: entry.key,
+          status: entry.value,
+          staffId: staffId,
+        );
+      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Comorbilidades guardadas.')));
+      context.go('/patients/${widget.patientId}');
+    } catch (e) {
+      if (mounted) {
+        setState(() => _saving = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('No se pudo guardar: $e')));
+      }
+    }
   }
 
   @override
@@ -91,7 +108,23 @@ class _ComorbiditiesScreenState extends ConsumerState<ComorbiditiesScreen> {
               const SizedBox(height: 16),
               ComorbidityStatusSelector(
                 values: _values,
-                onChanged: _setStatus,
+                onChanged: (code, status) =>
+                    setState(() => _values[code] = status),
+              ),
+              const SizedBox(height: 20),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  icon: _saving
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2, color: Colors.white))
+                      : const Icon(Icons.check_circle_outline),
+                  label: Text(_saving ? 'Guardando…' : 'Guardar comorbilidades'),
+                  onPressed: _saving ? null : _saveAll,
+                ),
               ),
               const SizedBox(height: 40),
             ],

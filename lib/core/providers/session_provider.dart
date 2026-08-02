@@ -229,7 +229,9 @@ final enabledModulesProvider = Provider<Set<ModuleKey>>((ref) {
   final repo = ref.watch(dataRepositoryProvider).valueOrNull;
   if (repo == null) {
     return ModuleKey.values
-        .where((m) => m.defaultFor(session.activeCenterType))
+        .where((m) =>
+            m.availableFor(session.activeCenterType) &&
+            m.defaultFor(session.activeCenterType))
         .toSet();
   }
   return repo.enabledModules(

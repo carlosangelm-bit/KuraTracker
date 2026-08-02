@@ -162,6 +162,7 @@ class Collections {
   static const patients = 'patients';
   static const patientComorbidities = 'patient_comorbidities';
   static const patientDiagnoses = 'patient_diagnoses';
+  static const patientLabs = 'patient_labs';
   static const patientAdmissions = 'patient_admissions';
   static const riskAssessments = 'risk_assessments';
   static const preventiveActionLog = 'preventive_action_log';
@@ -196,6 +197,10 @@ class Collections {
   static const charges = 'charges';
   static const chargeItems = 'charge_items';
   static const pointPayments = 'point_payments';
+  static const vacTherapies = 'vac_therapies';
+  static const vacEvents = 'vac_events';
+  static const vacSettings = 'vac_settings';
+  static const productCatalog = 'product_catalog';
 
   /// Todas las colecciones/tablas, en un orden razonable para hidratar la
   /// cache de [SupabaseDataStore] tras el login (catalogos primero, luego
@@ -210,6 +215,7 @@ class Collections {
     patients,
     patientComorbidities,
     patientDiagnoses,
+    patientLabs,
     patientAdmissions,
     riskAssessments,
     preventiveActionLog,
@@ -244,5 +250,9 @@ class Collections {
     charges,
     chargeItems,
     pointPayments,
+    vacTherapies,
+    vacEvents,
+    vacSettings,
+    productCatalog,
   ];
 }
