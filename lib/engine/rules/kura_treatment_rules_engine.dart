@@ -1,6 +1,7 @@
 import '../models/kura_engine_enums.dart';
 import '../models/kura_engine_input.dart';
 import '../models/kura_engine_output.dart';
+import '../params/clinical_params.dart';
 
 /// Motor de reglas de tratamiento determinístico — sección 8.4.
 ///
@@ -30,6 +31,7 @@ class KuraTreatmentRulesEngine {
     final interconsultas = <Interconsulta>[];
     final alertas = <String>[];
 
+    final params = ClinicalParams.I;
     final isquemiaCritica = input.isquemiaCritica;
     // kura_rules_v2: la infeccion se escalona en dos niveles.
     // - sospechaInfeccionLocal: >=2 factores locales significativos.
@@ -89,7 +91,7 @@ class KuraTreatmentRulesEngine {
         'únicamente autolítico/enzimático "según Doppler/angiólogo" si '
         'aparece esfacelo húmedo o signos de infección.',
       );
-    } else if (composicionDesbridable >= 15) {
+    } else if (composicionDesbridable >= params.debridementCompositionMinPct) {
       final metodo = input.entorno == Entorno.clinica
           ? 'Cortante / combinado'
           : 'Autolítico / enzimático / mecánico';
@@ -107,7 +109,8 @@ class KuraTreatmentRulesEngine {
     // No aplica en terapia seca: el relleno húmedo (alginato) contradice el
     // secado al aire y la conservación de la escara seca estable.
     if (!terapiaSeca &&
-        (input.depthCm >= 0.5 || input.tunelizacionOSocavamiento)) {
+        (input.depthCm >= params.depthRellenoMinCm ||
+            input.tunelizacionOSocavamiento)) {
       regimen.add(RegimenComponente(
         metodo: 'Relleno de cavidad',
         producto: 'Alginato de calcio / gasa impregnada',
@@ -246,7 +249,7 @@ class KuraTreatmentRulesEngine {
     // adicional a Cirugia por necrosis extensa y/o propagacion, ya que ambos
     // escenarios pueden requerir valoracion quirurgica independiente de la
     // infectologica.
-    final necrosisExtensa = input.necrosisPct >= 30;
+    final necrosisExtensa = input.necrosisPct >= params.necrosisExtensaMinPct;
     if (necrosisExtensa || infeccionPropagada) {
       interconsultas.add(Interconsulta(
         especialidad: 'Cirugia',
@@ -335,26 +338,9 @@ class KuraTreatmentRulesEngine {
     required List<String> alertas,
   }) {
     final wagner = input.wagnerGrade ?? WagnerGrade.g0;
-    String descarga;
-    switch (wagner) {
-      case WagnerGrade.g0:
-      case WagnerGrade.g1:
-        descarga = 'Calzado terapéutico / plantilla de descarga';
-        break;
-      case WagnerGrade.g2:
-        descarga = 'Bota walker removible (descarga parcial)';
-        break;
-      case WagnerGrade.g3:
-      case WagnerGrade.g4:
-        descarga = 'TCC (Total Contact Cast) o bota walker con descarga total';
-        break;
-      case WagnerGrade.g5:
-        descarga = 'Descarga total + valoración quirúrgica urgente';
-        break;
-    }
     regimen.add(RegimenComponente(
       metodo: 'Dispositivo de descarga',
-      producto: descarga,
+      producto: ClinicalParams.I.descargaFor(wagner),
       justificacion: 'Pie diabetico, grado Wagner ${wagner.name.toUpperCase()}.',
     ));
     regimen.add(const RegimenComponente(
@@ -383,11 +369,13 @@ class KuraTreatmentRulesEngine {
     // cuidador. Ver KuraEngineInput.bradenModalidad para las bandas.
     final modalidad = input.bradenModalidad;
     if (modalidad != null) {
+      final esAltoMuyAlto =
+          input.bradenScore! <= ClinicalParams.I.bradenAltoMuyAltoMax;
       regimen.add(RegimenComponente(
         metodo: 'Modalidad de tratamiento (LPP)',
         producto: modalidad.label,
         justificacion:
-            'LPP con Braden ${input.bradenScore} (${input.bradenScore! <= 12 ? 'riesgo alto/muy alto' : 'riesgo moderado/bajo'}): '
+            'LPP con Braden ${input.bradenScore} (${esAltoMuyAlto ? 'riesgo alto/muy alto' : 'riesgo moderado/bajo'}): '
             'modalidad ${modalidad == ModalidadTratamiento.aCargoClinica ? 'a cargo de la clínica' : 'compartida'} '
             '(Protocolo LPP).',
       ));
@@ -478,7 +466,7 @@ class KuraTreatmentRulesEngine {
       case ItbCompresionBand.fuerte:
         regimen.add(RegimenComponente(
           metodo: 'Terapia compresiva',
-          producto: 'Compresión fuerte (30-40 mmHg)',
+          producto: ClinicalParams.I.compresionProductoFor(band),
           justificacion:
               'Úlcera venosa/mixta, ITB ${_itbLabel(input)} (0.9-1.4): '
               'compresión fuerte (Protocolo "Úlceras MMII").',
@@ -487,7 +475,7 @@ class KuraTreatmentRulesEngine {
       case ItbCompresionBand.precaucion:
         regimen.add(RegimenComponente(
           metodo: 'Terapia compresiva',
-          producto: 'Compresión con precaución (multicomponente reducida)',
+          producto: ClinicalParams.I.compresionProductoFor(band),
           justificacion:
               'Úlcera venosa/mixta, ITB ${_itbLabel(input)} (0.8-0.89): '
               'compresión con precaución y vigilancia estrecha; derivar a '
@@ -497,7 +485,7 @@ class KuraTreatmentRulesEngine {
       case ItbCompresionBand.reducida:
         regimen.add(RegimenComponente(
           metodo: 'Terapia compresiva',
-          producto: 'Compresión reducida (máx 20 mmHg)',
+          producto: ClinicalParams.I.compresionProductoFor(band),
           justificacion:
               'Úlcera venosa/mixta, ITB ${_itbLabel(input)} (0.6-0.8): '
               'compresión reducida a máx 20 mmHg y derivar a angiología '
@@ -505,10 +493,9 @@ class KuraTreatmentRulesEngine {
         ));
         break;
       case ItbCompresionBand.na:
-        regimen.add(const RegimenComponente(
+        regimen.add(RegimenComponente(
           metodo: 'Terapia compresiva',
-          producto:
-              'Compresión moderada (20-30 mmHg) — confirmar ITB antes de iniciar',
+          producto: ClinicalParams.I.compresionProductoFor(band),
           justificacion:
               'Úlcera venosa sin ITB documentado: medir ITB antes de iniciar '
               'compresión (Protocolo "Úlceras MMII").',
@@ -530,24 +517,9 @@ class KuraTreatmentRulesEngine {
     required List<String> alertas,
   }) {
     final grade = input.wuwhsGrade ?? WuwhsGrade.g1;
-    String manejo;
-    switch (grade) {
-      case WuwhsGrade.g1:
-        manejo = 'Vigilancia + cuidado de herida estándar';
-        break;
-      case WuwhsGrade.g2:
-        manejo = 'Manejo local intensivo + reevaluación en 48-72h';
-        break;
-      case WuwhsGrade.g3:
-        manejo = 'Manejo local intensivo + interconsulta a cirugía';
-        break;
-      case WuwhsGrade.g4:
-        manejo = 'Manejo urgente: dehiscencia/infección grave';
-        break;
-    }
     regimen.add(RegimenComponente(
       metodo: 'Manejo de herida quirúrgica',
-      producto: manejo,
+      producto: ClinicalParams.I.manejoFor(grade),
       justificacion: 'Grado WUWHS ${grade.name.toUpperCase()}.',
     ));
     if (grade == WuwhsGrade.g3 || grade == WuwhsGrade.g4) {

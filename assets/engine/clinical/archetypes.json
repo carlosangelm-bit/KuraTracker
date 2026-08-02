@@ -1,0 +1,53 @@
+{
+  "version": "clinical_params_v1",
+  "description": "Mapeos clínicos (arquetipos) del motor de reglas: grado -> producto/manejo, y banda de compresión -> producto (mmHg). Cada mapa lleva procedencia. Las claves deben cubrir TODOS los grados/bandas que el motor consulta (sin refs colgantes).",
+  "maps": {
+    "wagner_descarga": {
+      "description": "Dispositivo de descarga por grado Wagner (pie diabético).",
+      "source": {
+        "protocolo": "Protocolo Pie Diabético",
+        "rationale": "Descarga escalonada según el grado Wagner de la úlcera.",
+        "reviewed_by": "María",
+        "reviewed_date": "2026-07-20"
+      },
+      "map": {
+        "g0": "Calzado terapéutico / plantilla de descarga",
+        "g1": "Calzado terapéutico / plantilla de descarga",
+        "g2": "Bota walker removible (descarga parcial)",
+        "g3": "TCC (Total Contact Cast) o bota walker con descarga total",
+        "g4": "TCC (Total Contact Cast) o bota walker con descarga total",
+        "g5": "Descarga total + valoración quirúrgica urgente"
+      }
+    },
+    "wuwhs_manejo": {
+      "description": "Manejo de la herida quirúrgica por grado WUWHS.",
+      "source": {
+        "protocolo": "Clasificación WUWHS de herida quirúrgica",
+        "rationale": "Intensidad del manejo local + interconsulta escalonada por grado WUWHS.",
+        "reviewed_by": "María",
+        "reviewed_date": "2026-07-20"
+      },
+      "map": {
+        "g1": "Vigilancia + cuidado de herida estándar",
+        "g2": "Manejo local intensivo + reevaluación en 48-72h",
+        "g3": "Manejo local intensivo + interconsulta a cirugía",
+        "g4": "Manejo urgente: dehiscencia/infección grave"
+      }
+    },
+    "compresion_producto": {
+      "description": "Producto de terapia compresiva (mmHg) por banda de compresión con perfusión suficiente.",
+      "source": {
+        "protocolo": "Protocolo Úlceras MMII",
+        "rationale": "Presión de compresión (mmHg) calibrada a la banda de ITB.",
+        "reviewed_by": "María",
+        "reviewed_date": "2026-07-20"
+      },
+      "map": {
+        "fuerte": "Compresión fuerte (30-40 mmHg)",
+        "precaucion": "Compresión con precaución (multicomponente reducida)",
+        "reducida": "Compresión reducida (máx 20 mmHg)",
+        "na": "Compresión moderada (20-30 mmHg) — confirmar ITB antes de iniciar"
+      }
+    }
+  }
+}

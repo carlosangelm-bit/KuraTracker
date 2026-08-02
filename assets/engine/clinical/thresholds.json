@@ -1,0 +1,142 @@
+{
+  "version": "clinical_params_v1",
+  "description": "Umbrales clínicos del motor de reglas de tratamiento (8.4). Cada entrada lleva procedencia (source). NO editar sin revisión clínica: cambiar un valor cambia la conducta del motor (los golden lo detectan).",
+  "thresholds": {
+    "debridement_composition_min_pct": {
+      "value": 15,
+      "unit": "%",
+      "source": {
+        "protocolo": "Protocolo de desbridamiento",
+        "rationale": "Esfacelo + necrosis >= 15% del lecho justifica desbridamiento cuando NO hay isquemia crítica ni terapia seca.",
+        "reviewed_by": "María",
+        "reviewed_date": "2026-07-20"
+      }
+    },
+    "necrosis_extensa_min_pct": {
+      "value": 30,
+      "unit": "%",
+      "source": {
+        "protocolo": "Protocolo de interconsultas",
+        "rationale": "Necrosis >= 30% se considera extensa y motiva valoración por cirugía.",
+        "reviewed_by": "María",
+        "reviewed_date": "2026-07-20"
+      }
+    },
+    "depth_relleno_min_cm": {
+      "value": 0.5,
+      "unit": "cm",
+      "source": {
+        "protocolo": "Protocolo de curación húmeda",
+        "rationale": "Profundidad >= 0.5 cm (o tunelización/socavamiento) requiere relleno de cavidad.",
+        "reviewed_by": "María",
+        "reviewed_date": "2026-07-20"
+      }
+    },
+    "infeccion_local_min_factores": {
+      "value": 2,
+      "unit": "factores",
+      "source": {
+        "protocolo": "Criterios IWII (kura_rules_v2)",
+        "rationale": ">= 2 factores locales significativos = sospecha de infección local (antimicrobiano tópico).",
+        "reviewed_by": "María",
+        "reviewed_date": "2026-07-20"
+      }
+    },
+    "tunel_referencia_min_cm": {
+      "value": 7.0,
+      "unit": "cm",
+      "source": {
+        "protocolo": "Protocolo de interconsultas",
+        "rationale": "Túnel > 7 cm exige estudios de imagen y valorar interconsulta (trayecto fistuloso/absceso).",
+        "reviewed_by": "María",
+        "reviewed_date": "2026-07-20"
+      }
+    },
+    "braden_a_cargo_clinica_max": {
+      "value": 17,
+      "unit": "puntos Braden",
+      "source": {
+        "protocolo": "Protocolo LPP",
+        "rationale": "Braden <= 17 (riesgo medio/alto/muy alto) => tratamiento a cargo de la clínica; 18-23 (bajo) => compartido. Bandas validadas por María (2026-07).",
+        "reviewed_by": "María",
+        "reviewed_date": "2026-07-20"
+      }
+    },
+    "braden_alto_muy_alto_max": {
+      "value": 12,
+      "unit": "puntos Braden",
+      "source": {
+        "protocolo": "Protocolo LPP",
+        "rationale": "Braden <= 12 = riesgo alto/muy alto; 13-23 = riesgo moderado/bajo. Solo etiqueta descriptiva de la justificación (la conducta la fija braden_a_cargo_clinica_max).",
+        "reviewed_by": "María",
+        "reviewed_date": "2026-07-20"
+      }
+    },
+    "abi_incompresible_above": {
+      "value": 1.4,
+      "unit": "ITB",
+      "source": {
+        "protocolo": "Protocolo Úlceras MMII",
+        "rationale": "ITB > 1.4 = arterias incompresibles / calcificación (NO buena perfusión).",
+        "reviewed_by": "María",
+        "reviewed_date": "2026-07-20"
+      }
+    },
+    "abi_high_min": {
+      "value": 0.80,
+      "unit": "ITB",
+      "source": {
+        "protocolo": "Protocolo Úlceras MMII",
+        "rationale": "ITB >= 0.80 (y <= 1.4) = perfusión adecuada (categoría alta para el pronóstico).",
+        "reviewed_by": "María",
+        "reviewed_date": "2026-07-20"
+      }
+    },
+    "abi_mod_min": {
+      "value": 0.50,
+      "unit": "ITB",
+      "source": {
+        "protocolo": "Protocolo Úlceras MMII",
+        "rationale": "ITB >= 0.50 y < 0.80 = perfusión moderada; ITB < 0.50 = isquemia crítica (NO desbridar).",
+        "reviewed_by": "María",
+        "reviewed_date": "2026-07-20"
+      }
+    },
+    "albumina_normal_min": {
+      "value": 3.5,
+      "unit": "g/dL",
+      "source": {
+        "protocolo": "Valoración nutricional",
+        "rationale": "Albúmina >= 3.5 g/dL = normal.",
+        "reviewed_by": "María",
+        "reviewed_date": "2026-07-20"
+      }
+    },
+    "albumina_mild_min": {
+      "value": 3.0,
+      "unit": "g/dL",
+      "source": {
+        "protocolo": "Valoración nutricional",
+        "rationale": "Albúmina 3.0-3.49 g/dL = déficit leve; < 3.0 = déficit.",
+        "reviewed_by": "María",
+        "reviewed_date": "2026-07-20"
+      }
+    }
+  },
+  "compression_bands": {
+    "domain": "ITB",
+    "source": {
+      "protocolo": "Protocolo Úlceras MMII",
+      "rationale": "Calibración de la terapia compresiva por ITB. Bandas contiguas, sin huecos ni traslapes, cubren todo el rango de ITB medido.",
+      "reviewed_by": "María",
+      "reviewed_date": "2026-07-20"
+    },
+    "bands": [
+      { "band": "noAplica", "from": null, "from_inclusive": false, "to": 0.6, "to_inclusive": false },
+      { "band": "reducida", "from": 0.6, "from_inclusive": true, "to": 0.8, "to_inclusive": false },
+      { "band": "precaucion", "from": 0.8, "from_inclusive": true, "to": 0.9, "to_inclusive": false },
+      { "band": "fuerte", "from": 0.9, "from_inclusive": true, "to": 1.4, "to_inclusive": true },
+      { "band": "incompresible", "from": 1.4, "from_inclusive": false, "to": null, "to_inclusive": false }
+    ]
+  }
+}

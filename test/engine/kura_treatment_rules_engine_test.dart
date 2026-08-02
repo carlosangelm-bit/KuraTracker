@@ -5,7 +5,11 @@ import 'package:kuratracker/engine/models/kura_engine_input.dart';
 import 'package:kuratracker/engine/models/kura_engine_output.dart';
 import 'package:kuratracker/engine/rules/kura_treatment_rules_engine.dart';
 
+import 'clinical_params_fixture.dart';
+
 void main() {
+  setUpAll(loadClinicalParamsForTest);
+
   group('REGLA DE SEGURIDAD: no desbridar con isquemia critica (ABI<0.5)', () {
     test('ABI < 0.5 => NUNCA sugiere desbridamiento, siempre alerta + interconsulta urgente a angiologia', () {
       final input = KuraEngineInput(

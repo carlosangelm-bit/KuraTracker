@@ -10,8 +10,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:kuratracker/engine/kura_clinical_adjustments.dart';
 import 'package:kuratracker/engine/kura_prognosis_model.dart';
 import 'package:kuratracker/engine/models/kura_engine_enums.dart';
+import 'clinical_params_fixture.dart';
 import 'package:kuratracker/engine/models/kura_engine_input.dart';
-import 'dart:convert';
 import 'dart:io';
 
 KuraPrognosisModel _loadModelFromFile() {
@@ -76,6 +76,7 @@ void main() {
   late KuraClinicalAdjustments adjustments;
 
   setUpAll(() {
+    loadClinicalParamsForTest();
     model = _loadModelFromFile();
     adjustments = _loadAdjustmentsFromFile();
   });

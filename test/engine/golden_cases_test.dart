@@ -17,6 +17,8 @@ import 'package:kuratracker/engine/models/kura_engine_input.dart';
 import 'package:kuratracker/engine/models/kura_engine_output.dart';
 import 'package:kuratracker/engine/rules/kura_treatment_rules_engine.dart';
 
+import 'clinical_params_fixture.dart';
+
 const _goldenPath = 'test/engine/golden_cases.json';
 
 /// Input base (herida benigna) con overrides por caso.
@@ -186,6 +188,8 @@ Map<String, dynamic> _outToJson(
     };
 
 void main() {
+  setUpAll(loadClinicalParamsForTest);
+
   final cases = _cases();
   final file = File(_goldenPath);
 

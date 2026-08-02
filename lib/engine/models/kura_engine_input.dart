@@ -1,3 +1,4 @@
+import '../params/clinical_params.dart';
 import 'kura_engine_enums.dart';
 
 /// Entrada consolidada para el motor "Protocolo Kura+".
@@ -131,36 +132,34 @@ class KuraEngineInput {
   AbiCategory get abiCategory {
     final v = abiMinimo;
     if (v == null) return AbiCategory.na;
-    // Techo superior (Protocolo MMII): ITB > 1.4 = arterias incompresibles /
-    // calcificación, NO buena perfusión. Antes caía en `high` (>=0.80 sin
-    // techo) y recibía el bono pronóstico de buena perfusión, algo
-    // clínicamente incorrecto.
-    if (v > 1.4) return AbiCategory.incompresible;
-    if (v >= 0.80) return AbiCategory.high;
-    if (v >= 0.50) return AbiCategory.mod;
+    // Techo superior (Protocolo MMII): ITB > abi_incompresible_above = arterias
+    // incompresibles / calcificación, NO buena perfusión. Antes caía en `high`
+    // (sin techo) y recibía el bono pronóstico de buena perfusión, algo
+    // clínicamente incorrecto. Cortes en assets/engine/clinical/thresholds.json.
+    final p = ClinicalParams.I;
+    if (v > p.abiIncompresibleAbove) return AbiCategory.incompresible;
+    if (v >= p.abiHighMin) return AbiCategory.high;
+    if (v >= p.abiModMin) return AbiCategory.mod;
     return AbiCategory.low;
   }
 
   /// Banda de compresión según ITB, calibrada a la tabla del protocolo
   /// "Úlceras MMII". Independiente de `abiCategory` (que sirve al modelo
-  /// pronóstico). Ver `ItbCompresionBand` para los cortes exactos.
+  /// pronóstico). Cortes/bandas en assets/engine/clinical/thresholds.json.
   ItbCompresionBand get itbCompresionBand {
     final v = abiMinimo;
     if (v == null) return ItbCompresionBand.na;
-    if (v > 1.4) return ItbCompresionBand.incompresible;
-    if (v >= 0.9) return ItbCompresionBand.fuerte;
-    if (v >= 0.8) return ItbCompresionBand.precaucion;
-    if (v >= 0.6) return ItbCompresionBand.reducida;
-    return ItbCompresionBand.noAplica;
+    return ClinicalParams.I.itbBandFor(v);
   }
 
-  /// Derivación a angiología por perfusión anómala (Protocolo MMII):
-  /// ITB > 1.4 (incompresible) o ITB < 0.9. `na` (sin medición) y la banda
-  /// `fuerte` (0.9–1.4) no requieren derivación por este criterio.
+  /// Derivación a angiología por perfusión anómala (Protocolo MMII): todo ITB
+  /// medido fuera de la banda `fuerte` (incompresible, precaución, reducida o
+  /// perfusión insuficiente). `na` (sin medición) no requiere derivación por
+  /// este criterio.
   bool get requiereDerivacionAngiologiaPorItb {
     final v = abiMinimo;
     if (v == null) return false;
-    return v > 1.4 || v < 0.9;
+    return itbCompresionBand != ItbCompresionBand.fuerte;
   }
 
   /// Úlcera de manejo con TERAPIA SECA (Protocolo "Terapia seca"): úlcera
@@ -176,8 +175,9 @@ class KuraEngineInput {
   AlbCategory get albCategory {
     final v = albuminaGdl;
     if (v == null) return AlbCategory.na;
-    if (v >= 3.5) return AlbCategory.normal;
-    if (v >= 3.0) return AlbCategory.mild;
+    final p = ClinicalParams.I;
+    if (v >= p.albuminaNormalMin) return AlbCategory.normal;
+    if (v >= p.albuminaMildMin) return AlbCategory.mild;
     return AlbCategory.low;
   }
 
@@ -201,7 +201,8 @@ class KuraEngineInput {
   /// Sospecha de infeccion LOCAL (kura_rules_v2): dos o mas factores locales
   /// significativos presentes. Reemplaza al antiguo
   /// `hayInfeccion = infeccionCriterios.isNotEmpty`.
-  bool get sospechaInfeccionLocal => nFactoresLocalesInfeccion >= 2;
+  bool get sospechaInfeccionLocal =>
+      nFactoresLocalesInfeccion >= ClinicalParams.I.infeccionLocalMinFactores;
 
   /// Infeccion PROPAGADA (kura_rules_v2): cualquier signo sistemico o de
   /// extension mas alla del lecho/borde local.
@@ -231,14 +232,15 @@ class KuraEngineInput {
   ModalidadTratamiento? get bradenModalidad {
     final b = bradenScore;
     if (b == null) return null;
-    return b <= 17
+    return b <= ClinicalParams.I.bradenACargoClinicaMax
         ? ModalidadTratamiento.aCargoClinica
         : ModalidadTratamiento.compartido;
   }
 
-  /// Referencia obligatoria por túnel profundo (> 7 cm) — Protocolo
-  /// "Interconsultas".
-  bool get requiereReferenciaPorTunel => (tunnelDepthCm ?? 0) > 7.0;
+  /// Referencia obligatoria por túnel profundo (> tunel_referencia_min_cm) —
+  /// Protocolo "Interconsultas".
+  bool get requiereReferenciaPorTunel =>
+      (tunnelDepthCm ?? 0) > ClinicalParams.I.tunelReferenciaMinCm;
 
   /// Referencia obligatoria por compromiso articular — Protocolo
   /// "Interconsultas".
@@ -279,16 +281,16 @@ class KuraEngineInput {
       };
 
   factory KuraEngineInput.fromJson(Map<String, dynamic> json) {
-    Comorbilidad? _com(String s) =>
+    Comorbilidad? com(String s) =>
         Comorbilidad.values.where((e) => e.name == s).firstOrNull;
-    ComorbilidadEstado? _est(String s) =>
+    ComorbilidadEstado? est(String s) =>
         ComorbilidadEstado.values.where((e) => e.name == s).firstOrNull;
 
     final comorbMap = <Comorbilidad, ComorbilidadEstado>{};
     final rawComorb = (json['comorbilidades'] as Map?) ?? {};
     rawComorb.forEach((k, v) {
-      final c = _com(k as String);
-      final e = _est(v as String);
+      final c = com(k as String);
+      final e = est(v as String);
       if (c != null && e != null) comorbMap[c] = e;
     });
 

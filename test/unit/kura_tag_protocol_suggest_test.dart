@@ -9,6 +9,8 @@ import 'package:kuratracker/models/consultation.dart';
 import 'package:kuratracker/models/note_option_catalog.dart';
 import 'package:kuratracker/services/data_repository.dart';
 
+import '../engine/clinical_params_fixture.dart';
+
 /// Cobertura de rama feat/followup-protocol-suggest:
 ///   Parte A (multi-seleccion): no hay UI aqui (ver widget_test.dart para
 ///   eso si se agrega), pero se cubre el modelo/serializacion de kura_tag
@@ -16,6 +18,8 @@ import 'package:kuratracker/services/data_repository.dart';
 ///   pieza no trivial y testeable sin necesidad de montar la pantalla.
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  setUpAll(loadClinicalParamsForTest);
 
   setUp(() {
     SharedPreferences.setMockInitialValues({});

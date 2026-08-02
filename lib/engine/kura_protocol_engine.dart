@@ -3,6 +3,7 @@ import 'kura_prognosis_model.dart';
 import 'models/kura_engine_enums.dart';
 import 'models/kura_engine_input.dart';
 import 'models/kura_engine_output.dart';
+import 'params/clinical_params.dart';
 import 'rules/kura_treatment_rules_engine.dart';
 
 /// Orquestador principal del motor "Protocolo Kura+" (seccion 8 completa).
@@ -33,6 +34,11 @@ class KuraProtocolEngine {
   /// Carga (y cachea) el motor completo desde los assets empaquetados.
   static Future<KuraProtocolEngine> load() async {
     if (_cached != null) return _cached!;
+    // Parámetros clínicos (umbrales/mapeos/bandas) del motor de reglas: se
+    // cargan aquí, en el mismo punto de carga de assets que el modelo y los
+    // ajustes, para que el motor y los getters de KuraEngineInput los tengan
+    // disponibles antes de cualquier cálculo.
+    await ClinicalParams.loadFromAssets();
     final model = await KuraPrognosisModel.loadFromAssets();
     final adjustments = await KuraClinicalAdjustments.loadFromAssets();
     final engine = KuraProtocolEngine(model: model, adjustments: adjustments);
