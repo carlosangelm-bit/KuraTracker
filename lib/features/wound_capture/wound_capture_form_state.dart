@@ -34,6 +34,10 @@ class WoundCaptureFormState {
   // Braden (riesgo de LPP), score total 6-23. Obligatorio en UI si la
   // etiologia de la herida es LPP.
   int? bradenScore;
+  // Subescalas de Braden elegidas con la escala completa (id -> puntaje). Null
+  // si el total se fijó "a ojo" con el slider. Se persiste en el perfil del
+  // paciente (risk_assessments.braden_subscores).
+  Map<String, int>? bradenSubscores;
 
   // ---- Clasificaciones/campos por etiología (Prompt 5) ----
   // UPD (pie diabético)
