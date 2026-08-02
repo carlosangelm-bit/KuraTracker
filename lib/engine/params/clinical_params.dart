@@ -187,6 +187,31 @@ class ClinicalParams {
     return s;
   }
 
+  /// Diferencias legibles (valor anterior → nuevo) entre estos parámetros y
+  /// [next]. Se usa en la vista previa de una carga antes de aplicarla.
+  List<String> diffTo(ClinicalParams next) {
+    final out = <String>[];
+    for (final k in {...thresholds.keys, ...next.thresholds.keys}) {
+      final a = thresholds[k];
+      final b = next.thresholds[k];
+      if (a != b) out.add('umbral $k: ${a ?? '—'} → ${b ?? '—'}');
+    }
+    final aB = {for (final x in compressionBands) x.band.name: x.rangeLabel};
+    final nB = {for (final x in next.compressionBands) x.band.name: x.rangeLabel};
+    for (final k in {...aB.keys, ...nB.keys}) {
+      if (aB[k] != nB[k]) out.add('banda $k: ${aB[k] ?? '—'} → ${nB[k] ?? '—'}');
+    }
+    void diffMap(String label, Map<String, String> a, Map<String, String> b) {
+      for (final k in {...a.keys, ...b.keys}) {
+        if (a[k] != b[k]) out.add('$label[$k]: ${a[k] ?? '—'} → ${b[k] ?? '—'}');
+      }
+    }
+    diffMap('wagner', wagnerDescarga, next.wagnerDescarga);
+    diffMap('wuwhs', wuwhsManejo, next.wuwhsManejo);
+    diffMap('compresión', compresionProducto, next.compresionProducto);
+    return out;
+  }
+
   /// Producto de compresión (mmHg) para una banda. Lanza si la banda no
   /// produce un componente de régimen (incompresible/noAplica).
   String compresionProductoFor(ItbCompresionBand band) {
@@ -421,6 +446,15 @@ class CompressionBand {
       if (toInclusive ? v > to! : v >= to!) return false;
     }
     return true;
+  }
+
+  /// Rango legible, mismo formato que el CSV (ej. `[0.9, 1.4]`, `(-inf, 0.6)`).
+  String get rangeLabel {
+    final lo = from == null ? '-inf' : '$from';
+    final hi = to == null ? '+inf' : '$to';
+    final lb = from == null ? '(' : (fromInclusive ? '[' : '(');
+    final rb = to == null ? ')' : (toInclusive ? ']' : ')');
+    return '$lb$lo, $hi$rb';
   }
 
   factory CompressionBand.fromJson(Map<String, dynamic> json) {

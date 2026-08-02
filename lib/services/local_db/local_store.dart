@@ -201,6 +201,7 @@ class Collections {
   static const vacEvents = 'vac_events';
   static const vacSettings = 'vac_settings';
   static const productCatalog = 'product_catalog';
+  static const clinicalParams = 'clinical_params';
 
   /// Todas las colecciones/tablas, en un orden razonable para hidratar la
   /// cache de [SupabaseDataStore] tras el login (catalogos primero, luego
@@ -254,5 +255,6 @@ class Collections {
     vacEvents,
     vacSettings,
     productCatalog,
+    clinicalParams,
   ];
 }
