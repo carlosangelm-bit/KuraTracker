@@ -10,9 +10,12 @@ import '../../core/providers/session_provider.dart';
 import '../../core/theme/kura_theme.dart';
 import '../../core/utils/wound_volume.dart';
 import '../../engine/kura_protocol_engine.dart';
+import '../../engine/kura_sheehan_checkpoint.dart';
 import '../../engine/models/kura_engine_enums.dart';
 import '../../engine/models/kura_engine_input.dart';
+import '../../engine/models/kura_engine_output.dart';
 import '../../models/app_user.dart';
+import '../../models/wound.dart';
 import '../../models/consultation.dart';
 import '../../models/note_option_catalog.dart';
 import '../../models/site.dart';
@@ -180,8 +183,19 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
   // Se limpia tan pronto el clinico toca manualmente un chip (todo sigue
   // siendo editable/quitable, esto es solo informativo).
   bool _kuraProtocolSuggestionActive = false;
-  bool _useKuraProtocol = false;
   bool _kuraProtocolLoading = false;
+
+  // ---- Fase 0: perfil heredado (overrides editables que ALIMENTAN el motor) ----
+  // Se premarcan desde la herida la primera vez; el especialista puede
+  // ajustar el subtipo vascular / no-revascularizable en la tarjeta de perfil
+  // (drivers de terapia seca) sin cambiar la herida persistida.
+  bool _profileInit = false;
+  SubtipoVascular? _subtipoOverride;
+  bool _noRevascOverride = false;
+
+  // ---- Fase 3: régimen del motor (paso VISIBLE, ya no enterrado en un toggle) ----
+  KuraEngineOutput? _engineOutput;
+  bool _regimenAccepted = false;
 
   // Firma/cedula: solo lectura, resueltas desde el staff de la sesion (no
   // se piden como campos editables en cada nota).
@@ -369,6 +383,11 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
     final repo = repoAsync.asData?.value;
     _resolveSignatureIfNeeded(session, repo);
     if (repo != null) _loadDraftIfNeeded(repo, session);
+    // Fase 0: perfil heredado de la herida (premarcado + editable). Solo lectura
+    // de datos; no cambia la persistencia.
+    final wound = repo?.getWound(widget.woundId);
+    if (wound != null) _initProfileIfNeeded(wound);
+    final kuraEnabled = ref.watch(kuraProtocolEnabledProvider);
 
     final canSave = !_saving &&
         _lengthCm > 0 &&
@@ -427,7 +446,10 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
                 // sin medir -> evaluar el lecho -> medir -> fotografiar con
                 // medicion.
                 // -----------------------------------------------------------------
-                const SizedBox(height: 24),
+                const SizedBox(height: 20),
+                if (repo != null && wound != null) _phase0Profile(repo, wound),
+                _phaseHeader(1, 'Procedimiento físico',
+                    'Limpiar → foto después de limpiar → medir (+ foto con medición)'),
                 Text('Fotografía 1: después de limpiar', style: _sectionStyle(context)),
                 const SizedBox(height: 4),
                 const Text(
@@ -443,27 +465,9 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
                   onPick: () => _pickPhoto(withMeasurement: false),
                 ),
 
-                const SizedBox(height: 24),
-                Text('Composición del lecho', style: _sectionStyle(context)),
-                const SizedBox(height: 8),
-                BedCompositionSliders(
-                  granulacion: _granulacion,
-                  esfacelo: _esfacelo,
-                  necrosis: _necrosis,
-                  epitelizacion: _epitelizacion,
-                  onGranulacionChanged: (v) => setState(() => _granulacion = v),
-                  onEsfaceloChanged: (v) => setState(() => _esfacelo = v),
-                  onNecrosisChanged: (v) => setState(() => _necrosis = v),
-                  onEpitelizacionChanged: (v) => setState(() => _epitelizacion = v),
-                  capturedBeforeDebridement: _capturedBeforeDebridement,
-                  onCapturedBeforeDebridementChanged: (v) =>
-                      setState(() => _capturedBeforeDebridement = v),
-                ),
-
-                // -----------------------------------------------------------------
-                // PASO 2: Medicion 2D/3D/manual -> inmediatamente despues, se
-                // pide la 2a foto (con medicion), tal como indica el protocolo.
-                // -----------------------------------------------------------------
+                // Medición 2D/3D/manual → inmediatamente después, la 2ª foto
+                // (con medición). La composición del lecho se evalúa en la
+                // Fase 2 (después de medir), por el protocolo de fotografía.
                 const SizedBox(height: 24),
                 Text('Medición', style: _sectionStyle(context)),
                 const SizedBox(height: 12),
@@ -596,6 +600,24 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
                 ),
 
                 const SizedBox(height: 24),
+                _phaseHeader(2, 'Estado actual',
+                    'Composición del lecho, exudado, infección, dolor, borde, piel perilesional'),
+                Text('Composición del lecho', style: _sectionStyle(context)),
+                const SizedBox(height: 8),
+                BedCompositionSliders(
+                  granulacion: _granulacion,
+                  esfacelo: _esfacelo,
+                  necrosis: _necrosis,
+                  epitelizacion: _epitelizacion,
+                  onGranulacionChanged: (v) => setState(() => _granulacion = v),
+                  onEsfaceloChanged: (v) => setState(() => _esfacelo = v),
+                  onNecrosisChanged: (v) => setState(() => _necrosis = v),
+                  onEpitelizacionChanged: (v) => setState(() => _epitelizacion = v),
+                  capturedBeforeDebridement: _capturedBeforeDebridement,
+                  onCapturedBeforeDebridementChanged: (v) =>
+                      setState(() => _capturedBeforeDebridement = v),
+                ),
+                const SizedBox(height: 20),
                 Text('Estado clínico', style: _sectionStyle(context)),
                 const SizedBox(height: 12),
                 DropdownButtonFormField<String>(
@@ -689,27 +711,51 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
                   ],
                 ),
                 const SizedBox(height: 12),
-                Text('Criterios de infección (IWII)',
-                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: InfeccionCriterioIwii.values.map((c) {
-                    final selected = _infeccionCriterios.contains(c);
-                    return FilterChip(
-                      label: Text(c.label, style: const TextStyle(fontSize: 12)),
-                      selected: selected,
-                      selectedColor: KuraColors.danger.withOpacity(0.15),
-                      onSelected: (v) => setState(() {
-                        if (v) {
-                          _infeccionCriterios.add(c);
-                        } else {
-                          _infeccionCriterios.remove(c);
-                        }
-                      }),
-                    );
-                  }).toList(),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: KuraColors.danger.withOpacity(0.06),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: KuraColors.danger.withOpacity(0.3)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(Icons.coronavirus_outlined,
+                              size: 18, color: KuraColors.danger),
+                          const SizedBox(width: 6),
+                          Text('Criterios de infección (IWII)',
+                              style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w700,
+                                  color: KuraColors.danger)),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: InfeccionCriterioIwii.values.map((c) {
+                          final selected = _infeccionCriterios.contains(c);
+                          return FilterChip(
+                            label:
+                                Text(c.label, style: const TextStyle(fontSize: 12)),
+                            selected: selected,
+                            selectedColor: KuraColors.danger.withOpacity(0.15),
+                            onSelected: (v) => setState(() {
+                              if (v) {
+                                _infeccionCriterios.add(c);
+                              } else {
+                                _infeccionCriterios.remove(c);
+                              }
+                            }),
+                          );
+                        }).toList(),
+                      ),
+                    ],
+                  ),
                 ),
                 const SizedBox(height: 12),
                 Row(
@@ -791,6 +837,10 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
                 ),
 
                 const SizedBox(height: 24),
+                if (kuraEnabled && repo != null) _phase3Regimen(repo),
+                if (repo != null && wound != null) _phase4Sheehan(repo, wound),
+                _phaseHeader(5, 'Nota + firma (obligatoria)',
+                    'Evolución, materiales, firma y cédula'),
                 Text('Nota de seguimiento (obligatoria)', style: _sectionStyle(context)),
                 const SizedBox(height: 4),
                 const Text(
@@ -809,16 +859,9 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
                     onSelected: (v) => setState(() => _careTypeSelected = v),
                   ),
                   const SizedBox(height: 16),
-                  // Toggle premium "Utilizar protocolo Kura+" (Parte D): visible
-                  // si el usuario tiene Kura+ (premium_enabled por usuario O el
-                  // add-on "Protocolo Kura+" del centro, 0049). Se muestra justo
-                  // antes de los 2 campos multi-seleccion que pre-selecciona
-                  // (procedimiento/material), para que la relacion causa->efecto
-                  // sea obvia en la UI.
-                  if (ref.watch(kuraProtocolEnabledProvider)) ...[
-                    _kuraProtocolToggle(repo: repo, session: session),
-                    const SizedBox(height: 16),
-                  ],
+                  // El régimen Kura+ y su "aceptar" (que pre-selecciona
+                  // procedimiento/material) ahora viven en la Fase 3, visible,
+                  // no en un toggle enterrado dentro de la nota.
                   _noteFieldChipsMulti(
                     repo: repo,
                     session: session,
@@ -1225,186 +1268,577 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
   ///      sin etiqueta NUNCA se auto-seleccionan.
   /// Desactivar el toggle NO quita las pre-selecciones ya hechas (son
   /// editables como cualquier otro chip); solo detiene nuevas corridas.
-  Widget _kuraProtocolToggle({required DataRepository repo, required SessionState session}) {
+  // ======================= Rediseño en fases (solo UI) =======================
+
+  /// Tarjeta contenedora de una fase, con número y título.
+  Widget _phaseCard({
+    required int n,
+    required String title,
+    String? subtitle,
+    required Widget child,
+  }) {
     return Container(
-      padding: const EdgeInsets.all(12),
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: KuraColors.primary.withOpacity(0.06),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: KuraColors.primary.withOpacity(0.25)),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: KuraColors.primary.withOpacity(0.12)),
       ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Row(
             children: [
-              const Icon(Icons.auto_awesome, size: 18, color: KuraColors.primary),
-              const SizedBox(width: 8),
-              const Expanded(
-                child: Text(
-                  'Utilizar protocolo Kura+',
-                  style: TextStyle(fontWeight: FontWeight.w700),
+              CircleAvatar(
+                radius: 14,
+                backgroundColor: KuraColors.primary,
+                child: Text('$n',
+                    style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 13)),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Fase $n · $title',
+                        style: const TextStyle(
+                            fontWeight: FontWeight.w700, fontSize: 15)),
+                    if (subtitle != null)
+                      Text(subtitle,
+                          style: TextStyle(
+                              fontSize: 12,
+                              color: KuraColors.darkText.withOpacity(0.7))),
+                  ],
                 ),
               ),
-              if (_kuraProtocolLoading)
-                const SizedBox(
-                  height: 18,
-                  width: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              else
-                Switch(
-                  value: _useKuraProtocol,
-                  activeColor: KuraColors.primary,
-                  onChanged: (v) => _onKuraProtocolToggleChanged(v, repo, session),
-                ),
             ],
           ),
-          const SizedBox(height: 4),
-          const Text(
-            'Sugiere procedimiento/material segun el regimen del motor clinico '
-            'para la valoracion de esta visita. Todo queda editable.',
-            style: TextStyle(fontSize: 11, color: KuraColors.darkText),
-          ),
+          const SizedBox(height: 12),
+          child,
         ],
       ),
     );
   }
 
-  Future<void> _onKuraProtocolToggleChanged(
-    bool value,
-    DataRepository repo,
-    SessionState session,
-  ) async {
-    setState(() => _useKuraProtocol = value);
-    if (!value) return;
-
-    setState(() => _kuraProtocolLoading = true);
-    try {
-      final wound = repo.getWound(widget.woundId);
-      if (wound == null) {
-        throw StateError('Herida no encontrada.');
-      }
-      final comorbMap = <Comorbilidad, ComorbilidadEstado>{
-        for (final c in repo.listComorbidities(widget.patientId)) c.code: c.status,
-      };
-      final perfusion = repo.getPerfusionForWound(widget.woundId);
-      final patient = repo.getPatient(widget.patientId);
-      final sites = repo.listSites();
-      Site? primarySite;
-      if (patient?.primarySiteId != null) {
-        for (final s in sites) {
-          if (s.id == patient!.primarySiteId) {
-            primarySite = s;
-            break;
-          }
-        }
-      }
-      final entorno = primarySite?.kind == 'domicilio' ? Entorno.domicilio : Entorno.clinica;
-
-      final input = KuraEngineInput(
-        etiologia: wound.etiology,
-        entorno: entorno,
-        areaCm2: _areaCm2,
-        depthCm: _depthCm,
-        necrosisPct: _necrosis,
-        esfaceloPct: _esfacelo,
-        granulacionPct: _granulacion,
-        epitelizacionPct: _epitelizacion,
-        comorbilidades: comorbMap,
-        abiPieDerecho: perfusion?.abiRight,
-        abiPieIzquierdo: perfusion?.abiLeft,
-        esExtremidadInferior: perfusion?.isLowerExtremity ?? false,
-        // Nutrición: prioriza la albúmina de LABORATORIOS del paciente (0070);
-        // si no hay, usa la de perfusión/valoración. Así los labs alimentan el
-        // motor por la regla de albúmina ya validada.
-        albuminaGdl: repo.latestPatientLab(widget.patientId)?.albuminGdl ??
-            perfusion?.albuminGdl,
-        tunelizacionOSocavamiento: _tunneling || _undermining,
-        exudadoCantidad: _exudadoCantidad,
-        pielPerilesional: _perilesionalSkin,
-        infeccionCriterios: _infeccionCriterios,
-        tieneCuidadorIdentificado: patient?.hasIdentifiedCaregiver ?? false,
-        pacienteFragil: patient?.fragilePatient ?? false,
-        wagnerGrade: wound.wagnerGrade,
-        ceapClass: wound.ceapClass,
-        wuwhsGrade: wound.wuwhsGrade,
-        agenteCausal: wound.agenteCausal,
-        // Perfil diagnóstico persistente de la herida (0072): el seguimiento lo
-        // HEREDA para no perder la conducta. Sin esto, una úlcera arterial se
-        // trataba como venosa (compresión/cura húmeda en vez de terapia seca) y
-        // la LPP perdía su modalidad por Braden.
-        subtipoVascular: wound.subtipoVascular,
-        noRevascularizable: wound.noRevascularizable,
-        // Braden es del PACIENTE (riesgo de LPP), no de la visita: vive en su
-        // perfil (risk_assessments, módulo de prevención) y es re-evaluable por
-        // el especialista. El seguimiento NO lo vuelve a capturar; usa el más
-        // reciente del perfil.
-        bradenScore: repo.latestRiskAssessment(widget.patientId)?.bradenScore,
-      );
-
-      final engine = await KuraProtocolEngine.load();
-      final output = engine.run(input);
-
-      // Mapea cada metodo del regimen a su KuraTag y pre-selecciona los
-      // conceptos activos del catalogo cuyo kuraTag coincida. Metodos sin
-      // tag (kKuraMethodToTag[metodo] == null, incluyendo metodos
-      // desconocidos ausentes del mapa) nunca aportan pre-seleccion.
-      final tagsSugeridos = output.regimen
-          .map((r) => kKuraMethodToTag[r.metodo])
-          .whereType<KuraTag>()
-          .toSet();
-
-      if (tagsSugeridos.isEmpty) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(
-                'Protocolo Kura+ no encontró conceptos etiquetados para esta valoración; '
-                'selecciona manualmente.',
+  /// Encabezado de fase (número + título) para las fases que agrupan la captura
+  /// existente (1/2/5); las fases 0/3/4 usan la tarjeta [_phaseCard].
+  Widget _phaseHeader(int n, String title, String? subtitle) => Padding(
+        padding: const EdgeInsets.only(top: 8, bottom: 12),
+        child: Row(
+          children: [
+            CircleAvatar(
+              radius: 14,
+              backgroundColor: KuraColors.primary,
+              child: Text('$n',
+                  style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 13)),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Fase $n · $title',
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w700, fontSize: 15)),
+                  if (subtitle != null)
+                    Text(subtitle,
+                        style: TextStyle(
+                            fontSize: 12,
+                            color: KuraColors.darkText.withOpacity(0.7))),
+                ],
               ),
             ),
-          );
-        }
-        return;
-      }
+          ],
+        ),
+      );
 
-      final procedureOptions = repo.listNoteOptions(NoteOptionField.procedureDesc);
-      final materialsOptions = repo.listNoteOptions(NoteOptionField.materialsUsed);
+  // -------------------------- Fase 0: perfil heredado --------------------------
 
-      var addedAny = false;
-      setState(() {
-        for (final o in procedureOptions) {
-          if (o.kuraTag != null && tagsSugeridos.contains(o.kuraTag)) {
-            if (_procedureDescSelected.add(o.label)) addedAny = true;
-          }
-        }
-        for (final o in materialsOptions) {
-          if (o.kuraTag != null && tagsSugeridos.contains(o.kuraTag)) {
-            if (_materialsUsedSelected.add(o.label)) addedAny = true;
-          }
-        }
-        if (addedAny) _kuraProtocolSuggestionActive = true;
-      });
+  void _initProfileIfNeeded(Wound wound) {
+    if (_profileInit) return;
+    _profileInit = true;
+    _subtipoOverride = wound.subtipoVascular;
+    _noRevascOverride = wound.noRevascularizable;
+  }
 
-      if (mounted && !addedAny) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'El régimen sugerido no tiene conceptos etiquetados en el catálogo del '
-              'centro; pídele al administrador que asigne etiquetas kura_tag.',
+  SubtipoVascular? _effectiveSubtipo(Wound wound) =>
+      _profileInit ? _subtipoOverride : wound.subtipoVascular;
+  bool _effectiveNoRevasc(Wound wound) =>
+      _profileInit ? _noRevascOverride : wound.noRevascularizable;
+
+  Widget _profileRow(String label, String value) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 3),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(
+                width: 130,
+                child: Text(label,
+                    style: const TextStyle(
+                        fontSize: 12,
+                        color: KuraColors.darkText,
+                        fontWeight: FontWeight.w600))),
+            Expanded(child: Text(value, style: const TextStyle(fontSize: 12))),
+          ],
+        ),
+      );
+
+  Widget _phase0Profile(DataRepository repo, Wound wound) {
+    final perfusion = repo.getPerfusionForWound(widget.woundId);
+    final abis = [perfusion?.abiRight, perfusion?.abiLeft]
+        .whereType<double>()
+        .toList();
+    final abiMin = abis.isEmpty ? null : abis.reduce((a, b) => a < b ? a : b);
+    final comorbs = repo
+        .listComorbidities(widget.patientId)
+        .where((c) => c.status == ComorbilidadEstado.presente)
+        .toList();
+    final hito = KuraSheehanCheckpoint.hitoParaEtiologia(wound.etiology);
+    final semana = _treatmentWeeks(repo);
+    final clasificaciones = <String>[
+      if (wound.wagnerGrade != null)
+        'Wagner ${wound.wagnerGrade!.name.toUpperCase()}',
+      if (wound.ceapClass != null) 'CEAP ${wound.ceapClass!.name.toUpperCase()}',
+      if (wound.wuwhsGrade != null)
+        'WUWHS ${wound.wuwhsGrade!.name.toUpperCase()}',
+      if (wound.agenteCausal != null) wound.agenteCausal!.name,
+      if (wound.texasGrade != null) 'Texas ${wound.texasGrade!.name}',
+      if (wound.rutherford != null) 'Rutherford ${wound.rutherford!.name}',
+      if (wound.npuapEstadio != null) 'NPUAP ${wound.npuapEstadio!.name}',
+    ];
+
+    return _phaseCard(
+      n: 0,
+      title: 'Perfil heredado',
+      subtitle:
+          'Premarcado desde la valoración; ajusta lo que cambió. Alimenta el motor.',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+                color: KuraColors.chipBg,
+                borderRadius: BorderRadius.circular(10)),
+            child: Text(
+              hito != null
+                  ? 'Semana $semana de tratamiento · meta: ${hito.pctCierre.toStringAsFixed(0)}% de reducción para la semana ${hito.semanaHito} (${wound.etiology.label}).'
+                  : 'Semana $semana de tratamiento.',
+              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
             ),
           ),
-        );
+          const SizedBox(height: 12),
+          _profileRow('Etiología', wound.etiology.label),
+          if (abiMin != null)
+            _profileRow('ABI/ITB (mín.)', abiMin.toStringAsFixed(2)),
+          if (comorbs.isNotEmpty)
+            _profileRow(
+                'Comorbilidades', comorbs.map((c) => c.code.name).join(', ')),
+          if (clasificaciones.isNotEmpty)
+            _profileRow('Clasificaciones', clasificaciones.join(' · ')),
+          if (wound.etiology == Etiologia.vascular) ...[
+            const SizedBox(height: 12),
+            const Text('Subtipo vascular (editable)',
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 6),
+            Wrap(
+              spacing: 6,
+              children: [
+                for (final s in SubtipoVascular.values)
+                  ChoiceChip(
+                    label: Text(s.name, style: const TextStyle(fontSize: 12)),
+                    selected: _effectiveSubtipo(wound) == s,
+                    onSelected: (_) => setState(() {
+                      _subtipoOverride = s;
+                      _engineOutput = null;
+                      _regimenAccepted = false;
+                    }),
+                  ),
+              ],
+            ),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('No revascularizable (Doppler/angiólogo)',
+                  style: TextStyle(fontSize: 13)),
+              value: _effectiveNoRevasc(wound),
+              activeColor: KuraColors.primary,
+              onChanged: (v) => setState(() {
+                _noRevascOverride = v;
+                _engineOutput = null;
+                _regimenAccepted = false;
+              }),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  // ------------------- Fase 3: régimen sugerido por Kura+ (visible) ------------
+
+  Widget _regimenBox({
+    required IconData icon,
+    required Color color,
+    required String title,
+    required String body,
+  }) =>
+      Container(
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.06),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: color.withOpacity(0.25)),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(icon, size: 18, color: color),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title,
+                      style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: color)),
+                  if (body.isNotEmpty)
+                    Text(body, style: const TextStyle(fontSize: 12)),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+
+  Widget _phase3Regimen(DataRepository repo) {
+    final out = _engineOutput;
+    return _phaseCard(
+      n: 3,
+      title: 'Régimen sugerido por Kura+',
+      subtitle: 'Corre el motor con el perfil (Fase 0) + el estado (Fase 2).',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                    out == null
+                        ? 'Aún no calculado para esta visita.'
+                        : 'Régimen calculado.',
+                    style: const TextStyle(fontSize: 12)),
+              ),
+              if (_kuraProtocolLoading)
+                const SizedBox(
+                    height: 18,
+                    width: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2))
+              else
+                FilledButton.tonalIcon(
+                  icon: const Icon(Icons.auto_awesome, size: 18),
+                  label: Text(out == null ? 'Calcular régimen' : 'Recalcular'),
+                  onPressed: () => _runRegimen(repo),
+                ),
+            ],
+          ),
+          if (out != null) ...[
+            const SizedBox(height: 12),
+            for (final a in out.alertas)
+              _regimenBox(
+                  icon: Icons.warning_amber_rounded,
+                  color: KuraColors.danger,
+                  title: 'Alerta de seguridad',
+                  body: a),
+            for (final c in out.regimen)
+              _regimenBox(
+                  icon: c.esAlerta
+                      ? Icons.warning_amber_rounded
+                      : Icons.check_circle_outline,
+                  color: c.esAlerta ? KuraColors.danger : KuraColors.primary,
+                  title: '${c.metodo} — ${c.producto}',
+                  body: c.justificacion),
+            for (final ic in out.interconsultas)
+              _regimenBox(
+                  icon: Icons.medical_services_outlined,
+                  color: ic.esUrgente ? KuraColors.danger : KuraColors.infoBlue,
+                  title:
+                      'Interconsulta: ${ic.especialidad}${ic.esUrgente ? ' (urgente)' : ''}',
+                  body: ic.motivo),
+            const SizedBox(height: 4),
+            FilledButton.icon(
+              icon: Icon(
+                  _regimenAccepted ? Icons.check : Icons.playlist_add_check),
+              label: Text(_regimenAccepted
+                  ? 'Aceptado — aplicado a la nota (Fase 5)'
+                  : 'Aceptar y aplicar a la nota'),
+              style: FilledButton.styleFrom(backgroundColor: KuraColors.primary),
+              onPressed:
+                  _regimenAccepted ? null : () => _applyRegimenToNote(repo),
+            ),
+            const SizedBox(height: 4),
+            const Text(
+                'El procedimiento/material queda editable en la nota (Fase 5).',
+                style: TextStyle(fontSize: 11, color: KuraColors.darkText)),
+          ],
+        ],
+      ),
+    );
+  }
+
+  // ------------------- Fase 4: trayectoria / checkpoint Sheehan ---------------
+
+  int _treatmentWeeks(DataRepository repo) {
+    final ms = repo.listMeasurementsForWound(widget.woundId);
+    final wound = repo.getWound(widget.woundId);
+    final base = ms.isNotEmpty
+        ? ms.first.measuredAt
+        : (wound?.onsetDate ?? wound?.createdAt ?? _visitDate);
+    final days = _visitDate.difference(base).inDays;
+    return days < 0 ? 0 : days ~/ 7;
+  }
+
+  SheehanCheckpointResult? _sheehanResult(DataRepository repo, Wound wound) {
+    final ms = repo.listMeasurementsForWound(widget.woundId);
+    if (ms.isEmpty) return null;
+    final basal = ms.first.areaCm2;
+    if (basal <= 0) return null;
+    return KuraSheehanCheckpoint.evaluate(
+      semana: _treatmentWeeks(repo),
+      areaBasalCm2: basal,
+      areaActualCm2: _areaCm2,
+      etiologia: wound.etiology,
+      infeccionActiva: _infeccionCriterios.isNotEmpty,
+      bajaAdherencia: _lowAdherence,
+    );
+  }
+
+  Widget _phase4Sheehan(DataRepository repo, Wound wound) {
+    final res = _sheehanResult(repo, wound);
+    final hito = KuraSheehanCheckpoint.hitoParaEtiologia(wound.etiology);
+    final semana = _treatmentWeeks(repo);
+    final enVentana = hito != null && semana >= hito.semanaHito;
+    Widget body;
+    if (res == null) {
+      body = const Text(
+        'Sin medición basal para comparar (primera visita o área basal 0). El '
+        'checkpoint se activa cuando hay una valoración previa con área.',
+        style: TextStyle(fontSize: 12),
+      );
+    } else {
+      Color color;
+      String signal;
+      switch (res.decision) {
+        case SheehanDecision.confirmarCierre:
+          color = KuraColors.success;
+          signal = 'En trayectoria: la reducción cumple la meta. Continuar el plan.';
+          break;
+        case SheehanDecision.extenderObservacion:
+          color = KuraColors.warning;
+          signal =
+              'Avance por debajo de la meta: revalidar plan y vigilar de cerca.';
+          break;
+        case SheehanDecision.reclasificarC:
+          color = KuraColors.danger;
+          signal =
+              'No avanza: escalar / considerar interconsulta y reclasificar (contención).';
+          break;
       }
+      body = Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+              'Reducción de área: ${res.pctReduccionAjustada.toStringAsFixed(0)}% '
+              '(bruta ${res.pctReduccionBruta.toStringAsFixed(0)}%) · meta cierre '
+              '${res.umbralCierre.toStringAsFixed(0)}% / alerta '
+              '${res.umbralAlerta.toStringAsFixed(0)}%',
+              style: const TextStyle(fontSize: 12)),
+          const SizedBox(height: 6),
+          LinearProgressIndicator(
+            value: (res.pctReduccionAjustada / 100).clamp(0.0, 1.0),
+            color: color,
+            backgroundColor: color.withOpacity(0.15),
+            minHeight: 8,
+          ),
+          const SizedBox(height: 10),
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.10),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: color.withOpacity(0.4)),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.timeline, size: 18, color: color),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text('${res.decision.label}. $signal',
+                      style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: color)),
+                ),
+              ],
+            ),
+          ),
+          if (res.penalizacionesAplicadas.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Text('Penalizaciones: ${res.penalizacionesAplicadas.join(', ')}.',
+                style: TextStyle(
+                    fontSize: 11, color: KuraColors.darkText.withOpacity(0.7))),
+          ],
+        ],
+      );
+    }
+    return _phaseCard(
+      n: 4,
+      title: 'Trayectoria / checkpoint',
+      subtitle: enVentana
+          ? 'Visita de la ventana (semana ${hito.semanaHito}): punto de decisión.'
+          : 'Medidor de Sheehan (regla de decisión).',
+      child: body,
+    );
+  }
+
+  /// Construye el input del motor desde el perfil heredado (con overrides de
+  /// Fase 0) + el estado capturado en esta visita. NO cambia la lógica del
+  /// motor; solo consolida de dónde salen sus entradas.
+  KuraEngineInput? _buildEngineInput(DataRepository repo) {
+    final wound = repo.getWound(widget.woundId);
+    if (wound == null) return null;
+    final comorbMap = <Comorbilidad, ComorbilidadEstado>{
+      for (final c in repo.listComorbidities(widget.patientId)) c.code: c.status,
+    };
+    final perfusion = repo.getPerfusionForWound(widget.woundId);
+    final patient = repo.getPatient(widget.patientId);
+    final sites = repo.listSites();
+    Site? primarySite;
+    if (patient?.primarySiteId != null) {
+      for (final s in sites) {
+        if (s.id == patient!.primarySiteId) {
+          primarySite = s;
+          break;
+        }
+      }
+    }
+    final entorno =
+        primarySite?.kind == 'domicilio' ? Entorno.domicilio : Entorno.clinica;
+
+    return KuraEngineInput(
+      etiologia: wound.etiology,
+      entorno: entorno,
+      areaCm2: _areaCm2,
+      depthCm: _depthCm,
+      necrosisPct: _necrosis,
+      esfaceloPct: _esfacelo,
+      granulacionPct: _granulacion,
+      epitelizacionPct: _epitelizacion,
+      comorbilidades: comorbMap,
+      abiPieDerecho: perfusion?.abiRight,
+      abiPieIzquierdo: perfusion?.abiLeft,
+      esExtremidadInferior: perfusion?.isLowerExtremity ?? false,
+      // Nutrición: prioriza la albúmina de LABORATORIOS del paciente (0070).
+      albuminaGdl: repo.latestPatientLab(widget.patientId)?.albuminGdl ??
+          perfusion?.albuminGdl,
+      tunelizacionOSocavamiento: _tunneling || _undermining,
+      exudadoCantidad: _exudadoCantidad,
+      pielPerilesional: _perilesionalSkin,
+      infeccionCriterios: _infeccionCriterios,
+      tieneCuidadorIdentificado: patient?.hasIdentifiedCaregiver ?? false,
+      pacienteFragil: patient?.fragilePatient ?? false,
+      wagnerGrade: wound.wagnerGrade,
+      ceapClass: wound.ceapClass,
+      wuwhsGrade: wound.wuwhsGrade,
+      agenteCausal: wound.agenteCausal,
+      // Perfil diagnóstico heredado (Fase 0), editable por el especialista.
+      subtipoVascular: _effectiveSubtipo(wound),
+      noRevascularizable: _effectiveNoRevasc(wound),
+      // Braden del PERFIL del paciente (risk_assessments), re-evaluable.
+      bradenScore: repo.latestRiskAssessment(widget.patientId)?.bradenScore,
+    );
+  }
+
+  /// Fase 3: corre el motor y guarda el resultado para MOSTRARLO (visible).
+  Future<void> _runRegimen(DataRepository repo) async {
+    setState(() => _kuraProtocolLoading = true);
+    try {
+      final input = _buildEngineInput(repo);
+      if (input == null) throw StateError('Herida no encontrada.');
+      final engine = await KuraProtocolEngine.load();
+      final output = engine.run(input);
+      if (!mounted) return;
+      setState(() {
+        _engineOutput = output;
+        _regimenAccepted = false;
+      });
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('No se pudo calcular el protocolo Kura+: $e')),
+          SnackBar(content: Text('No se pudo calcular el régimen Kura+: $e')),
         );
       }
     } finally {
       if (mounted) setState(() => _kuraProtocolLoading = false);
+    }
+  }
+
+  /// Fase 3 (aceptar): pre-selecciona en la nota (procedimiento/material) los
+  /// conceptos del catálogo cuyo kura_tag coincide con el régimen. Editable.
+  void _applyRegimenToNote(DataRepository repo) {
+    final output = _engineOutput;
+    if (output == null) return;
+    final tagsSugeridos = output.regimen
+        .map((r) => kKuraMethodToTag[r.metodo])
+        .whereType<KuraTag>()
+        .toSet();
+    if (tagsSugeridos.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'El régimen no tiene conceptos etiquetados; selecciona manualmente '
+            'en la nota (Fase 5).',
+          ),
+        ),
+      );
+      setState(() => _regimenAccepted = true);
+      return;
+    }
+    final procedureOptions = repo.listNoteOptions(NoteOptionField.procedureDesc);
+    final materialsOptions = repo.listNoteOptions(NoteOptionField.materialsUsed);
+    var addedAny = false;
+    setState(() {
+      for (final o in procedureOptions) {
+        if (o.kuraTag != null && tagsSugeridos.contains(o.kuraTag)) {
+          if (_procedureDescSelected.add(o.label)) addedAny = true;
+        }
+      }
+      for (final o in materialsOptions) {
+        if (o.kuraTag != null && tagsSugeridos.contains(o.kuraTag)) {
+          if (_materialsUsedSelected.add(o.label)) addedAny = true;
+        }
+      }
+      if (addedAny) _kuraProtocolSuggestionActive = true;
+      _regimenAccepted = true;
+    });
+    if (!addedAny) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'El régimen sugerido no tiene conceptos etiquetados en el catálogo '
+            'del centro; pídele al administrador que asigne etiquetas kura_tag.',
+          ),
+        ),
+      );
     }
   }
 
