@@ -293,11 +293,23 @@ class _WoundCaptureScreenState extends ConsumerState<WoundCaptureScreen> {
       // Crea o reutiliza la herida.
       if (widget.woundId != null && widget.woundId != 'new') {
         wound = repo.getWound(widget.woundId!)!;
+        // Actualizar: si en esta re-valoración se fijó el subtipo vascular,
+        // persistir el perfil diagnóstico en la herida (el formulario no se
+        // precarga, así que solo se toca cuando el clínico lo definió ahora,
+        // para no borrar lo ya guardado).
+        if (formState.subtipoVascular != null) {
+          wound = await repo.updateWound(wound.id, {
+            'subtipo_vascular': formState.subtipoVascular!.name,
+            'no_revascularizable': formState.noRevascularizable,
+          });
+        }
       } else {
         wound = await repo.createWound({
           'patient_id': widget.patientId,
           'etiology': formState.etiologia.dbValue,
           'subtype': formState.subtype,
+          'subtipo_vascular': formState.subtipoVascular?.name,
+          'no_revascularizable': formState.noRevascularizable,
           'body_location_primary': formState.bodyLocationPrimary ?? 'no_especificado',
           'body_location_secondary': formState.bodyLocationSecondary,
           'onset_date': formState.onsetDate?.toIso8601String().substring(0, 10),
@@ -349,6 +361,20 @@ class _WoundCaptureScreenState extends ConsumerState<WoundCaptureScreen> {
               ? null
               : formState.clinicalNotes!.trim(),
         });
+
+        // Braden es del PACIENTE (riesgo de LPP), no de la visita: si se
+        // capturó en esta valoración, se registra también en su PERFIL
+        // (risk_assessments) para que viva ahí, lo use el motor en el
+        // seguimiento y sea re-evaluable desde el módulo de prevención.
+        if (formState.bradenScore != null) {
+          final session = ref.read(sessionProvider);
+          await repo.addRiskAssessment(
+            patientId: widget.patientId,
+            organizationId: session.user?.organizationId,
+            bradenScore: formState.bradenScore,
+            staffId: session.user?.staffId,
+          );
+        }
 
         final measurement = await repo.createMeasurement({
           'wound_id': wound.id,

@@ -63,6 +63,14 @@ class Wound {
   final CeapClass? ceapClass;
   final WuwhsGrade? wuwhsGrade;
   final AgenteCausal? agenteCausal;
+  // Perfil diagnóstico vascular persistente (0072). Estable entre visitas: lo
+  // hereda el seguimiento para no perder la conducta arterial/isquémica.
+  // Subtipo de úlcera vascular (venosa/arterial/mixta): separa el manejo
+  // venoso (compresión) del arterial/isquémico (terapia seca).
+  final SubtipoVascular? subtipoVascular;
+  // Determinación (Doppler/angiólogo) de lesión no revascularizable: gatilla
+  // terapia seca aunque el ITB no sea crítico.
+  final bool noRevascularizable;
   // ---- Clasificaciones/campos por etiología (Prompt 5, migración 0028) ----
   // UPD (pie diabético)
   final UpdSubtipo? updSubtipo;
@@ -104,6 +112,8 @@ class Wound {
     this.ceapClass,
     this.wuwhsGrade,
     this.agenteCausal,
+    this.subtipoVascular,
+    this.noRevascularizable = false,
     this.updSubtipo,
     this.texasGrade,
     this.texasStage,
@@ -149,6 +159,9 @@ class Wound {
         agenteCausal: json['agente_causal'] == null
             ? null
             : AgenteCausal.values.firstWhere((e) => e.name == json['agente_causal']),
+        subtipoVascular:
+            enumByName(SubtipoVascular.values, json['subtipo_vascular']),
+        noRevascularizable: json['no_revascularizable'] as bool? ?? false,
         updSubtipo: enumByName(UpdSubtipo.values, json['upd_subtipo']),
         texasGrade: enumByName(TexasGrade.values, json['texas_grade']),
         texasStage: enumByName(TexasStage.values, json['texas_stage']),
@@ -188,6 +201,8 @@ class Wound {
         'ceap_class': ceapClass?.name,
         'wuwhs_grade': wuwhsGrade?.name,
         'agente_causal': agenteCausal?.name,
+        'subtipo_vascular': subtipoVascular?.name,
+        'no_revascularizable': noRevascularizable,
         'upd_subtipo': updSubtipo?.name,
         'texas_grade': texasGrade?.name,
         'texas_stage': texasStage?.name,

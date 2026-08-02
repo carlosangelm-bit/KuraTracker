@@ -3890,6 +3890,14 @@ class DataRepository {
     return Wound.fromJson(saved);
   }
 
+  /// Actualiza campos de una herida existente (patch parcial). Usado para
+  /// persistir el perfil diagnóstico (subtipo vascular / no revascularizable)
+  /// cuando se re-valora una herida ya creada.
+  Future<Wound> updateWound(String woundId, Map<String, dynamic> patch) async {
+    final saved = await _store.updateRow(Collections.wounds, woundId, patch);
+    return Wound.fromJson(saved);
+  }
+
   /// Egreso del episodio de una herida (Prompt 5): cierra la herida con un
   /// motivo estructurado (cierre/alta voluntaria/abandono/defunción) y marca
   /// closed_at. `motivoEgreso` es el `name` del enum MotivoEgreso.
