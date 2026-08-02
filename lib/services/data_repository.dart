@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
@@ -38,6 +40,7 @@ import '../models/wound.dart';
 import '../engine/models/kura_engine_output.dart';
 import '../engine/models/kura_engine_enums.dart';
 import '../engine/cie10_catalog.dart';
+import '../engine/params/clinical_params.dart';
 import '../engine/risk/prevention_risk_engine.dart';
 import 'local_db/demo_seed.dart';
 import 'local_db/local_store.dart';
@@ -84,12 +87,14 @@ class DataRepository {
         await store.hydrate();
       }
       _instance = DataRepository._(store);
+      await _instance!.loadClinicalParams();
       return _instance!;
     }
 
     final localStore = await LocalStore.instance();
     await DemoSeed.ensureSeeded(localStore);
     _instance = DataRepository._(LocalStoreDataStore(localStore));
+    await _instance!.loadClinicalParams();
     return _instance!;
   }
 
@@ -99,6 +104,9 @@ class DataRepository {
     final store = _store;
     if (store is SupabaseDataStore) {
       await store.hydrate();
+      // Con la cache ya poblada, registra en el motor los parámetros clínicos
+      // guardados (o el asset si no hay ninguno).
+      await loadClinicalParams();
     }
   }
 
@@ -561,6 +569,76 @@ class DataRepository {
     } else {
       await _store.updateRow(
           Collections.organizations, organizationId, {'shift_config': value});
+    }
+  }
+
+  // ---- Parámetros clínicos del motor (data-driven, 0071) ----
+
+  /// Parámetros clínicos guardados (la fila más reciente) como strings JSON,
+  /// o null si no hay ninguno (se usa el asset horneado por defecto).
+  ({String thresholds, String archetypes, String version})?
+      getStoredClinicalParams() {
+    final rows = _store.getAll(Collections.clinicalParams);
+    if (rows.isEmpty) return null;
+    final latest = rows.reduce((a, b) =>
+        (a['uploaded_at'] ?? '').toString().compareTo(
+                    (b['uploaded_at'] ?? '').toString()) >=
+                0
+            ? a
+            : b);
+    return (
+      thresholds: jsonEncode(latest['thresholds']),
+      archetypes: jsonEncode(latest['archetypes']),
+      version: (latest['version'] ?? '').toString(),
+    );
+  }
+
+  /// Guarda parámetros clínicos nuevos (solo master). Supabase: RPC
+  /// set_clinical_params (SECURITY DEFINER, 0071); demo: inserta fila local.
+  /// El llamador YA debe haber validado el contenido (ver ClinicalParams).
+  Future<void> setClinicalParams({
+    required Map<String, dynamic> thresholds,
+    required Map<String, dynamic> archetypes,
+    required String version,
+  }) async {
+    final store = _store;
+    if (store is SupabaseDataStore) {
+      await store.callRpc('set_clinical_params', {
+        'p_thresholds': thresholds,
+        'p_archetypes': archetypes,
+        'p_version': version,
+      });
+      await store.refreshCollection(Collections.clinicalParams);
+    } else {
+      await _store.insertRow(Collections.clinicalParams, {
+        'id': _uuid.v4(),
+        'thresholds': thresholds,
+        'archetypes': archetypes,
+        'version': version,
+        'uploaded_at': DateTime.now().toUtc().toIso8601String(),
+      });
+    }
+  }
+
+  /// Registra en el motor los parámetros clínicos: usa los guardados
+  /// (Supabase/local) si existen; si no, cae al asset horneado. Idempotente y
+  /// seguro: si el guardado está corrupto, cae al asset. Se llama tras cada
+  /// hidratación y al aplicar una carga nueva.
+  Future<void> loadClinicalParams() async {
+    try {
+      final stored = getStoredClinicalParams();
+      if (stored != null) {
+        ClinicalParams.register(ClinicalParams.fromJsonStrings(
+          thresholdsJson: stored.thresholds,
+          archetypesJson: stored.archetypes,
+        ));
+        return;
+      }
+    } catch (e) {
+      debugPrint('ClinicalParams guardados inválidos, uso el asset: $e');
+    }
+    if (!ClinicalParams.isLoaded) {
+      await ClinicalParams.loadFromAssets();
     }
   }
 

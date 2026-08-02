@@ -1,3 +1,6 @@
+import 'dart:convert';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -12,6 +15,7 @@ import '../../models/module_key.dart';
 import '../../models/organization.dart';
 import '../../models/site.dart';
 import '../../models/user_center_membership.dart';
+import '../../engine/params/clinical_params.dart';
 import '../../services/data_repository.dart';
 import '../../services/clinical_params_csv.dart';
 import '../../services/csv_download.dart';
@@ -103,6 +107,117 @@ class _PlatformHomeScreenState extends ConsumerState<PlatformHomeScreen>
     }
   }
 
+  /// Carga un CSV de parámetros clínicos (editado por María), lo valida, y tras
+  /// una vista previa de los cambios (valor anterior → nuevo) lo guarda en
+  /// Supabase (global, todos los centros) y lo aplica de inmediato al motor.
+  /// Solo master (esta pantalla ya es exclusiva del master + RLS del RPC).
+  Future<void> _uploadClinicalParams() async {
+    final messenger = ScaffoldMessenger.of(context);
+
+    final picked = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['csv'],
+      withData: true,
+    );
+    if (picked == null || picked.files.isEmpty) return;
+    final bytes = picked.files.first.bytes;
+    if (bytes == null) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('No se pudo leer el archivo.')),
+      );
+      return;
+    }
+
+    // Parsear + validar (procedencia, bandas contiguas, cortes ordenados,
+    // sin refs colgantes). Cualquier fallo aborta antes de tocar el motor.
+    final ({Map<String, dynamic> thresholds, Map<String, dynamic> archetypes, String version}) parsed;
+    final ClinicalParams next;
+    try {
+      parsed = ClinicalParamsCsv.parse(utf8.decode(bytes));
+      next = ClinicalParams.fromJsonStrings(
+        thresholdsJson: jsonEncode(parsed.thresholds),
+        archetypesJson: jsonEncode(parsed.archetypes),
+      );
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(content: Text('CSV inválido, no se aplicó ningún cambio: $e')),
+      );
+      return;
+    }
+
+    final changes =
+        ClinicalParams.isLoaded ? ClinicalParams.instance.diffTo(next) : <String>[];
+    if (!mounted) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dctx) => AlertDialog(
+        title: const Text('Aplicar parámetros clínicos'),
+        content: SizedBox(
+          width: 480,
+          child: changes.isEmpty
+              ? const Text(
+                  'El CSV es válido, pero no cambia ningún valor respecto a los '
+                  'parámetros actuales.')
+              : Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('${changes.length} cambio(s). Se aplicarán a TODOS los '
+                        'centros de inmediato:'),
+                    const SizedBox(height: 12),
+                    Flexible(
+                      child: SingleChildScrollView(
+                        child: Text(
+                          changes.join('\n'),
+                          style: const TextStyle(
+                              fontFamily: 'monospace', fontSize: 13),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dctx, false),
+            child: const Text('Cancelar'),
+          ),
+          if (changes.isNotEmpty)
+            FilledButton(
+              onPressed: () => Navigator.pop(dctx, true),
+              child: const Text('Aplicar'),
+            ),
+        ],
+      ),
+    );
+    if (confirmed != true || changes.isEmpty) return;
+
+    try {
+      final repo = await ref.read(dataRepositoryProvider.future);
+      await repo.setClinicalParams(
+        thresholds: parsed.thresholds,
+        archetypes: parsed.archetypes,
+        version: parsed.version,
+      );
+      // Aplicar de inmediato en esta sesión (el resto de usuarios lo toman al
+      // rehidratar/reiniciar). El motor lee ClinicalParams.instance en cada
+      // cálculo, así que el cambio surte efecto sin recargar el motor.
+      ClinicalParams.register(next);
+      if (!mounted) return;
+      messenger.showSnackBar(
+        SnackBar(
+            content: Text(
+                'Parámetros clínicos actualizados (${changes.length} cambios).')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      messenger.showSnackBar(
+        SnackBar(content: Text('No se pudo guardar: $e')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final repoAsync = ref.watch(dataRepositoryProvider);
@@ -118,6 +233,11 @@ class _PlatformHomeScreenState extends ConsumerState<PlatformHomeScreen>
             icon: const Icon(Icons.download_outlined),
             tooltip: 'Descargar parámetros clínicos (CSV)',
             onPressed: _downloadClinicalParams,
+          ),
+          IconButton(
+            icon: const Icon(Icons.upload_outlined),
+            tooltip: 'Cargar parámetros clínicos (CSV)',
+            onPressed: _uploadClinicalParams,
           ),
           const UserMenuButton(),
         ],
