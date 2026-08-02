@@ -1330,6 +1330,17 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
         ceapClass: wound.ceapClass,
         wuwhsGrade: wound.wuwhsGrade,
         agenteCausal: wound.agenteCausal,
+        // Perfil diagnóstico persistente de la herida (0072): el seguimiento lo
+        // HEREDA para no perder la conducta. Sin esto, una úlcera arterial se
+        // trataba como venosa (compresión/cura húmeda en vez de terapia seca) y
+        // la LPP perdía su modalidad por Braden.
+        subtipoVascular: wound.subtipoVascular,
+        noRevascularizable: wound.noRevascularizable,
+        // Braden es del PACIENTE (riesgo de LPP), no de la visita: vive en su
+        // perfil (risk_assessments, módulo de prevención) y es re-evaluable por
+        // el especialista. El seguimiento NO lo vuelve a capturar; usa el más
+        // reciente del perfil.
+        bradenScore: repo.latestRiskAssessment(widget.patientId)?.bradenScore,
       );
 
       final engine = await KuraProtocolEngine.load();

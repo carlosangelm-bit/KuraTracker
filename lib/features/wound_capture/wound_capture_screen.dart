@@ -7,6 +7,7 @@ import 'package:intl/intl.dart';
 
 import '../../core/theme/kura_theme.dart';
 import '../../core/providers/session_provider.dart';
+import '../risk/braden_scale_sheet.dart';
 import '../../engine/models/kura_engine_enums.dart';
 import '../../models/patient.dart';
 import '../../models/wound.dart' as wmodel;
@@ -293,11 +294,23 @@ class _WoundCaptureScreenState extends ConsumerState<WoundCaptureScreen> {
       // Crea o reutiliza la herida.
       if (widget.woundId != null && widget.woundId != 'new') {
         wound = repo.getWound(widget.woundId!)!;
+        // Actualizar: si en esta re-valoración se fijó el subtipo vascular,
+        // persistir el perfil diagnóstico en la herida (el formulario no se
+        // precarga, así que solo se toca cuando el clínico lo definió ahora,
+        // para no borrar lo ya guardado).
+        if (formState.subtipoVascular != null) {
+          wound = await repo.updateWound(wound.id, {
+            'subtipo_vascular': formState.subtipoVascular!.name,
+            'no_revascularizable': formState.noRevascularizable,
+          });
+        }
       } else {
         wound = await repo.createWound({
           'patient_id': widget.patientId,
           'etiology': formState.etiologia.dbValue,
           'subtype': formState.subtype,
+          'subtipo_vascular': formState.subtipoVascular?.name,
+          'no_revascularizable': formState.noRevascularizable,
           'body_location_primary': formState.bodyLocationPrimary ?? 'no_especificado',
           'body_location_secondary': formState.bodyLocationSecondary,
           'onset_date': formState.onsetDate?.toIso8601String().substring(0, 10),
@@ -349,6 +362,21 @@ class _WoundCaptureScreenState extends ConsumerState<WoundCaptureScreen> {
               ? null
               : formState.clinicalNotes!.trim(),
         });
+
+        // Braden es del PACIENTE (riesgo de LPP), no de la visita: si se
+        // capturó en esta valoración, se registra también en su PERFIL
+        // (risk_assessments) para que viva ahí, lo use el motor en el
+        // seguimiento y sea re-evaluable desde el módulo de prevención.
+        if (formState.bradenScore != null) {
+          final session = ref.read(sessionProvider);
+          await repo.addRiskAssessment(
+            patientId: widget.patientId,
+            organizationId: session.user?.organizationId,
+            bradenScore: formState.bradenScore,
+            bradenSubscores: formState.bradenSubscores,
+            staffId: session.user?.staffId,
+          );
+        }
 
         final measurement = await repo.createMeasurement({
           'wound_id': wound.id,
@@ -1318,58 +1346,96 @@ class _WoundCaptureScreenState extends ConsumerState<WoundCaptureScreen> {
           ),
         );
       case Etiologia.lpp:
-        return _SectionCard(
-          icon: Icons.airline_seat_flat_outlined,
-          title: 'Lesión por presión — Escala de Braden *',
-          subtitle: 'Riesgo de LPP: a menor puntaje, mayor riesgo (obligatorio)',
-          initiallyExpanded: true,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              _enumChips<NpuapEstadio>(
-                title: 'Estadio NPUAP/EPUAP',
-                values: NpuapEstadio.values,
-                selected: formState.npuapEstadio,
-                label: (v) => v.label,
-                onSelected: (v) => update(() => formState.npuapEstadio = v),
-              ),
-              const SizedBox(height: 16),
-              const Divider(),
-              const SizedBox(height: 8),
-              Text(
-                'Puntaje total: ${formState.bradenScore ?? '—'} / 23',
-                style: const TextStyle(fontWeight: FontWeight.w700),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                'Suma de las 6 subescalas (percepción sensorial, humedad, actividad, '
-                'movilidad, nutrición, fricción/cizallamiento), cada una de 1 a 4 '
-                '(fricción/cizallamiento de 1 a 3). Rango total: 6-23.',
-                style: TextStyle(fontSize: 12, color: KuraColors.darkText.withOpacity(0.6)),
-              ),
-              const SizedBox(height: 8),
-              Slider(
-                value: (formState.bradenScore ?? 23).toDouble(),
-                min: 6,
-                max: 23,
-                divisions: 17,
-                activeColor: KuraColors.primary,
-                label: '${formState.bradenScore ?? 23}',
-                onChanged: (v) => update(() => formState.bradenScore = v.round()),
-              ),
-              Wrap(
-                spacing: 8,
-                children: const [
-                  Text('≤9: Riesgo muy alto', style: TextStyle(fontSize: 11)),
-                  Text('10-12: Alto', style: TextStyle(fontSize: 11)),
-                  Text('13-14: Moderado', style: TextStyle(fontSize: 11)),
-                  Text('15-18: Bajo', style: TextStyle(fontSize: 11)),
-                  Text('19-23: Sin riesgo', style: TextStyle(fontSize: 11)),
-                ],
-              ),
-            ],
-          ),
-        );
+        {
+          final bradenScale = ref.watch(bradenScaleProvider).valueOrNull;
+          final band = (bradenScale != null && formState.bradenScore != null)
+              ? bradenScale.riskLabelFor(formState.bradenScore!)
+              : null;
+          return _SectionCard(
+            icon: Icons.airline_seat_flat_outlined,
+            title: 'Lesión por presión — Escala de Braden *',
+            subtitle:
+                'Riesgo de LPP: a menor puntaje, mayor riesgo (obligatorio)',
+            initiallyExpanded: true,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _enumChips<NpuapEstadio>(
+                  title: 'Estadio NPUAP/EPUAP',
+                  values: NpuapEstadio.values,
+                  selected: formState.npuapEstadio,
+                  label: (v) => v.label,
+                  onSelected: (v) => update(() => formState.npuapEstadio = v),
+                ),
+                const SizedBox(height: 16),
+                const Divider(),
+                const SizedBox(height: 8),
+                // Escala COMPLETA (6 subescalas) — vía principal, la misma que
+                // el módulo de prevención/hospital: calcula el total y guarda
+                // las subescalas en el perfil del paciente.
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: FilledButton.tonalIcon(
+                    icon: const Icon(Icons.checklist_rtl),
+                    label: Text(formState.bradenSubscores == null
+                        ? 'Valorar Braden (escala completa)'
+                        : 'Re-valorar Braden (escala completa)'),
+                    onPressed: bradenScale == null
+                        ? null
+                        : () async {
+                            final res = await showBradenScaleSheet(
+                                context, bradenScale);
+                            if (res == null) return;
+                            update(() {
+                              formState.bradenScore = res.total;
+                              formState.bradenSubscores = res.subscores;
+                            });
+                          },
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  'Puntaje total: ${formState.bradenScore ?? '—'} / 23'
+                  '${band != null ? ' · $band' : ''}'
+                  '${formState.bradenSubscores == null && formState.bradenScore != null ? ' (manual)' : ''}',
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Recomendado: usa la escala completa. El slider es un ajuste '
+                  'manual del total (6-23) si necesitas sobrescribirlo.',
+                  style: TextStyle(
+                      fontSize: 12,
+                      color: KuraColors.darkText.withOpacity(0.6)),
+                ),
+                const SizedBox(height: 8),
+                Slider(
+                  value: (formState.bradenScore ?? 23).toDouble(),
+                  min: 6,
+                  max: 23,
+                  divisions: 17,
+                  activeColor: KuraColors.primary,
+                  label: '${formState.bradenScore ?? 23}',
+                  onChanged: (v) => update(() {
+                    formState.bradenScore = v.round();
+                    // Override manual: las subescalas ya no corresponden al total.
+                    formState.bradenSubscores = null;
+                  }),
+                ),
+                Wrap(
+                  spacing: 8,
+                  children: const [
+                    Text('≤9: Riesgo muy alto', style: TextStyle(fontSize: 11)),
+                    Text('10-12: Alto', style: TextStyle(fontSize: 11)),
+                    Text('13-14: Moderado', style: TextStyle(fontSize: 11)),
+                    Text('15-18: Bajo', style: TextStyle(fontSize: 11)),
+                    Text('19-23: Sin riesgo', style: TextStyle(fontSize: 11)),
+                  ],
+                ),
+              ],
+            ),
+          );
+        }
       case Etiologia.otra:
         return const SizedBox.shrink();
     }
