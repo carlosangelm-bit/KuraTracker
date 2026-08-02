@@ -13,6 +13,8 @@ import '../../models/organization.dart';
 import '../../models/site.dart';
 import '../../models/user_center_membership.dart';
 import '../../services/data_repository.dart';
+import '../../services/clinical_params_csv.dart';
+import '../../services/csv_download.dart';
 import '../admin/admin_home_screen.dart'
     show UsersTab, StaffTab, SitesTab, NoteCatalogTab, BrandingTab;
 
@@ -80,6 +82,27 @@ class _PlatformHomeScreenState extends ConsumerState<PlatformHomeScreen>
     }
   }
 
+  /// Descarga el CSV con TODOS los parámetros clínicos del motor (umbrales,
+  /// bandas de compresión y mapeos por grado) con su procedencia. Solo
+  /// accesible desde la Plataforma (rol master). Lee los mismos assets que
+  /// consume el motor, así que refleja la conducta clínica vigente.
+  Future<void> _downloadClinicalParams() async {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final csv = await ClinicalParamsCsv.build();
+      await downloadCsv(csv.filename, csv.content);
+      if (!mounted) return;
+      messenger.showSnackBar(
+        SnackBar(content: Text('Parámetros clínicos descargados: ${csv.filename}')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      messenger.showSnackBar(
+        SnackBar(content: Text('No se pudo generar el CSV de parámetros: $e')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final repoAsync = ref.watch(dataRepositoryProvider);
@@ -90,7 +113,14 @@ class _PlatformHomeScreenState extends ConsumerState<PlatformHomeScreen>
     return Scaffold(
       appBar: AppBar(
         title: const Text('Plataforma'),
-        actions: const [UserMenuButton()],
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.download_outlined),
+            tooltip: 'Descargar parámetros clínicos (CSV)',
+            onPressed: _downloadClinicalParams,
+          ),
+          const UserMenuButton(),
+        ],
         bottom: wide
             ? null
             : TabBar(
