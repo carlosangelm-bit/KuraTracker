@@ -1,6 +1,7 @@
+import 'dart:async';
 import 'dart:convert';
 
-import 'package:flutter/foundation.dart' show debugPrint;
+import 'package:flutter/foundation.dart' show ValueNotifier, debugPrint;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 
@@ -42,8 +43,11 @@ import '../engine/models/kura_engine_enums.dart';
 import '../engine/cie10_catalog.dart';
 import '../engine/params/clinical_params.dart';
 import '../engine/risk/prevention_risk_engine.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
+
 import 'local_db/demo_seed.dart';
 import 'local_db/local_store.dart';
+import 'offline/offline_outbox.dart';
 import 'remote/data_store.dart';
 import 'remote/supabase_data_store.dart';
 
@@ -77,7 +81,10 @@ class DataRepository {
     if (_instance != null) return _instance!;
 
     if (AppConfig.isSupabaseConfigured) {
-      final store = SupabaseDataStore(Supabase.instance.client);
+      // Offline-first (Fase 1): la cola persistente de escrituras se pasa al
+      // store para que una falla por red encole en vez de perder la captura.
+      final outbox = await OfflineOutbox.load();
+      final store = SupabaseDataStore(Supabase.instance.client, outbox: outbox);
       // Si hay sesion activa (usuario ya logueado en un run anterior de la
       // app / refresh de pagina), hidrata la cache de una vez. Si no hay
       // sesion aun, hydrate() se llama explicitamente desde el login
@@ -88,6 +95,7 @@ class DataRepository {
       }
       _instance = DataRepository._(store);
       await _instance!.loadClinicalParams();
+      _instance!._startOfflineSync();
       return _instance!;
     }
 
@@ -107,7 +115,36 @@ class DataRepository {
       // Con la cache ya poblada, registra en el motor los parámetros clínicos
       // guardados (o el asset si no hay ninguno).
       await loadClinicalParams();
+      // Drena cualquier escritura offline de una sesión anterior.
+      unawaited(syncOfflineOutbox());
     }
+  }
+
+  // ---------------- Offline-first (Fase 1) ----------------
+
+  /// Número de escrituras pendientes de sincronizar (para el indicador de UI).
+  /// Null en modo demo/local (todo es local, no hay cola).
+  ValueNotifier<int>? get pendingSyncCount {
+    final store = _store;
+    return store is SupabaseDataStore ? store.outbox?.pendingCount : null;
+  }
+
+  /// Aplica a Supabase las escrituras encoladas offline. Devuelve cuántas se
+  /// sincronizaron. No-op (0) en modo local o sin cola.
+  Future<int> syncOfflineOutbox() async {
+    final store = _store;
+    if (store is! SupabaseDataStore) return 0;
+    return store.syncOutbox();
+  }
+
+  /// Escucha la conectividad y drena la cola al recuperar la red. Se llama una
+  /// vez al construir el repositorio (prod). El singleton vive toda la app, así
+  /// que la suscripción no necesita cancelarse.
+  void _startOfflineSync() {
+    Connectivity().onConnectivityChanged.listen((results) {
+      final online = results.any((r) => r != ConnectivityResult.none);
+      if (online) unawaited(syncOfflineOutbox());
+    });
   }
 
   /// Limpia la cache en memoria (backend Supabase) tras logout, para que
