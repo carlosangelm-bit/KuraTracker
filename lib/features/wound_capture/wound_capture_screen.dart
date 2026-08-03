@@ -415,29 +415,36 @@ class _WoundCaptureScreenState extends ConsumerState<WoundCaptureScreen> {
         for (var i = 0; i < photoPaths.length; i++) {
           final bytes = formState.photoBytesByPath[photoPaths[i]];
           if (bytes == null) continue;
+          final fileName = 'valoracion_${i + 1}.jpg';
+          final meta = <String, dynamic>{
+            'wound_id': wound.id,
+            'consultation_id': consultationId,
+            'measurement_id': measurement.id,
+            'taken_at': DateTime.now().toIso8601String(),
+            'is_baseline': i == 0,
+            'photo_stage': PhotoStage.conMedicion.dbValue,
+          };
           try {
             final storagePath = await PhotoUploadService.uploadWoundPhoto(
               woundId: wound.id,
               consultationId: consultationId,
               bytes: bytes,
-              fileName: 'valoracion_${i + 1}.jpg',
+              fileName: fileName,
             );
-            await repo.createPhoto({
-              'wound_id': wound.id,
-              'consultation_id': consultationId,
-              'measurement_id': measurement.id,
-              'storage_path': storagePath,
-              'taken_at': DateTime.now().toIso8601String(),
-              'is_baseline': i == 0,
-              'photo_stage': PhotoStage.conMedicion.dbValue,
-            });
+            await repo.createPhoto({...meta, 'storage_path': storagePath});
           } catch (e) {
-            debugPrint('Foto de valoración no guardada: $e');
+            // Offline-first Fase 2: si falla por RED, la foto se guarda
+            // localmente (IndexedDB) y se sube al reconectar, en vez de perderse.
+            final queued = await repo.enqueuePhotoIfOffline(
+                bytes: bytes, fileName: fileName, meta: meta, error: e);
+            debugPrint('Foto de valoración ${queued ? "encolada" : "no guardada"}: $e');
             if (context.mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                    content: Text(
-                        'La valoración se guardó, pero una foto no se pudo subir.')),
+                SnackBar(
+                    content: Text(queued
+                        ? 'Sin conexión: la foto quedó guardada en este '
+                            'dispositivo y se subirá al reconectar.'
+                        : 'La valoración se guardó, pero una foto no se pudo subir.')),
               );
             }
           }

@@ -27,6 +27,14 @@ dependencies:
   # Conectividad
   connectivity_plus: ^6.1.0
 
+  # Offline-first Fase 2: cola de FOTOS pendientes en IndexedDB (Web) — blobs
+  # que no caben en localStorage. sembast expone una API de documentos sobre
+  # IndexedDB (web) y memoria (tests).
+  # Acotado a las últimas versiones compatibles con Dart 3.6 (Flutter 3.27.1
+  # del CI): sembast >=3.8.4 y sembast_web >=2.4.1 exigen Dart >=3.7.
+  sembast: ">=3.7.4 <3.8.4"
+  sembast_web: ">=2.4.0 <2.4.1"
+
   # UI / gráficas / fuentes
   google_fonts: ^6.2.1
   fl_chart: ^0.69.2

@@ -45,9 +45,13 @@ import '../engine/params/clinical_params.dart';
 import '../engine/risk/prevention_risk_engine.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 
+import 'dart:typed_data';
+
 import 'local_db/demo_seed.dart';
 import 'local_db/local_store.dart';
 import 'offline/offline_outbox.dart';
+import 'offline/photo_outbox.dart';
+import 'photo_upload_service.dart';
 import 'remote/data_store.dart';
 import 'remote/supabase_data_store.dart';
 
@@ -73,6 +77,9 @@ const kCenterMaterialsMethod = 'Material del centro';
 class DataRepository {
   final DataStore _store;
 
+  /// Cola de fotos offline (Fase 2). Solo en prod; null en demo/local.
+  PhotoOutbox? _photoOutbox;
+
   DataRepository._(this._store);
 
   static DataRepository? _instance;
@@ -94,6 +101,7 @@ class DataRepository {
         await store.hydrate();
       }
       _instance = DataRepository._(store);
+      _instance!._photoOutbox = await PhotoOutbox.open();
       await _instance!.loadClinicalParams();
       _instance!._startOfflineSync();
       return _instance!;
@@ -115,8 +123,8 @@ class DataRepository {
       // Con la cache ya poblada, registra en el motor los parámetros clínicos
       // guardados (o el asset si no hay ninguno).
       await loadClinicalParams();
-      // Drena cualquier escritura offline de una sesión anterior.
-      unawaited(syncOfflineOutbox());
+      // Drena cualquier escritura/foto offline de una sesión anterior.
+      unawaited(_syncAllOffline());
     }
   }
 
@@ -137,13 +145,102 @@ class DataRepository {
     return store.syncOutbox();
   }
 
-  /// Escucha la conectividad y drena la cola al recuperar la red. Se llama una
+  /// Fotos pendientes de subir (Fase 2), para el indicador de UI.
+  ValueNotifier<int>? get photoPendingCount => _photoOutbox?.pendingCount;
+
+  /// Encola una foto capturada sin red: guarda los bytes localmente (IndexedDB)
+  /// + los metadatos para crear la fila `wound_photos` al subirla. `meta` debe
+  /// traer wound_id, consultation_id, measurement_id, is_baseline, photo_stage,
+  /// taken_at.
+  Future<void> enqueuePhoto({
+    required Uint8List bytes,
+    required String fileName,
+    required Map<String, dynamic> meta,
+    String contentType = 'image/jpeg',
+  }) async {
+    final box = _photoOutbox;
+    if (box == null) return;
+    await box.enqueue(
+      PendingPhoto(
+        localId: _uuid.v4(),
+        fileName: fileName,
+        contentType: contentType,
+        bytes: bytes,
+        meta: meta,
+      ),
+      createdAt: DateTime.now().toUtc().toIso8601String(),
+    );
+  }
+
+  /// Tras fallar la subida de una foto durante la captura: si el error parece
+  /// de RED, la encola (queda pendiente) y devuelve true; si no (rechazo real o
+  /// cuota del modo demo), devuelve false para que el llamador avise.
+  Future<bool> enqueuePhotoIfOffline({
+    required Uint8List bytes,
+    required String fileName,
+    required Map<String, dynamic> meta,
+    required Object error,
+  }) async {
+    if (_photoOutbox == null || !_looksNetworkError(error)) return false;
+    await enqueuePhoto(bytes: bytes, fileName: fileName, meta: meta);
+    return true;
+  }
+
+  /// Sube las fotos encoladas (cuando vuelve la red) y crea su fila
+  /// `wound_photos`. En orden; se detiene si vuelve a fallar la red. Devuelve
+  /// cuántas se subieron.
+  Future<int> syncPhotoOutbox() async {
+    final box = _photoOutbox;
+    if (box == null || box.isEmpty) return 0;
+    var applied = 0;
+    for (final p in await box.all()) {
+      try {
+        final path = await PhotoUploadService.uploadWoundPhoto(
+          woundId: p.meta['wound_id'] as String,
+          consultationId: p.meta['consultation_id'] as String,
+          bytes: p.bytes,
+          fileName: p.fileName,
+        );
+        await createPhoto({
+          'wound_id': p.meta['wound_id'],
+          'consultation_id': p.meta['consultation_id'],
+          'measurement_id': p.meta['measurement_id'],
+          'storage_path': path,
+          'taken_at': p.meta['taken_at'],
+          'is_baseline': p.meta['is_baseline'] ?? false,
+          'photo_stage': p.meta['photo_stage'],
+        });
+        await box.remove(p.localId);
+        applied++;
+      } catch (e) {
+        if (_looksNetworkError(e)) break; // sigue sin red: reintentar luego
+        await box.markFailed(p.localId, '$e'); // rechazo real: parkear
+      }
+    }
+    return applied;
+  }
+
+  bool _looksNetworkError(Object e) => !(e is StorageException ||
+      e is PostgrestException ||
+      e is AuthException ||
+      e is FunctionException);
+
+  /// Drena ambas colas en orden (primero escrituras, luego fotos que dependen
+  /// de esas filas). Público para el botón "Sincronizar" del indicador.
+  Future<void> syncOfflineNow() => _syncAllOffline();
+
+  Future<void> _syncAllOffline() async {
+    await syncOfflineOutbox();
+    await syncPhotoOutbox();
+  }
+
+  /// Escucha la conectividad y drena las colas al recuperar la red. Se llama una
   /// vez al construir el repositorio (prod). El singleton vive toda la app, así
   /// que la suscripción no necesita cancelarse.
   void _startOfflineSync() {
     Connectivity().onConnectivityChanged.listen((results) {
       final online = results.any((r) => r != ConnectivityResult.none);
-      if (online) unawaited(syncOfflineOutbox());
+      if (online) unawaited(_syncAllOffline());
     });
   }
 
