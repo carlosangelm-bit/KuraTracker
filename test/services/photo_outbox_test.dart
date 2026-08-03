@@ -36,7 +36,7 @@ void main() {
 
     // "Reabrir" la app: misma cola persistida en IndexedDB/memoria.
     final reopened = await PhotoOutbox.open();
-    final all = await reopened.all();
+    final all = await reopened.pending();
     expect(all.map((p) => p.localId), ['p1', 'p2']); // orden por created_at
     expect(all.first.bytes, [1, 2, 3, 4, 5]);
     expect(all.first.fileName, 'p1.jpg');
@@ -53,7 +53,7 @@ void main() {
     expect(box.pendingCount.value, 1);
 
     final reopened = await PhotoOutbox.open();
-    final all = await reopened.all();
+    final all = await reopened.pending();
     expect(all.single.localId, 'p2');
   });
 }

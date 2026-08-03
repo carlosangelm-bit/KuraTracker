@@ -67,4 +67,46 @@ void main() {
     final box = await OfflineOutbox.load();
     expect(box.length, 0);
   });
+
+  test('se PARKEA tras agotar los reintentos (maxAttempts)', () async {
+    final box = await OfflineOutbox.load();
+    await box.enqueue(_op('w1'));
+    expect(box.pendingCount.value, 1);
+    expect(box.failedCount.value, 0);
+
+    // Rechazos sucesivos: sigue pendiente hasta maxAttempts, luego se parkea.
+    for (var i = 1; i < OfflineOutbox.maxAttempts; i++) {
+      await box.markFailed('op-w1', 'RLS');
+      expect(box.pendingCount.value, 1, reason: 'aún pending en intento $i');
+    }
+    await box.markFailed('op-w1', 'RLS'); // intento maxAttempts
+    expect(box.pendingCount.value, 0);
+    expect(box.failedCount.value, 1);
+    expect(box.pending(), isEmpty);
+    expect(box.failed().single.status, OutboxStatus.failed);
+  });
+
+  test('un CONFLICTO se parkea de inmediato', () async {
+    final box = await OfflineOutbox.load();
+    await box.enqueue(_op('w1', type: 'update'));
+    await box.markFailed('op-w1', 'cambió en el servidor', conflict: true);
+    expect(box.pendingCount.value, 0);
+    expect(box.failedCount.value, 1);
+    expect(box.failed().single.status, OutboxStatus.conflict);
+  });
+
+  test('retryFailed vuelve a pending; discardFailed las borra', () async {
+    final box = await OfflineOutbox.load();
+    await box.enqueue(_op('w1'));
+    await box.markFailed('op-w1', 'x', conflict: true);
+    expect(box.failedCount.value, 1);
+
+    await box.retryFailed();
+    expect(box.pendingCount.value, 1);
+    expect(box.failedCount.value, 0);
+
+    await box.markFailed('op-w1', 'x', conflict: true);
+    await box.discardFailed();
+    expect(box.length, 0);
+  });
 }

@@ -206,6 +206,15 @@ class SupabaseDataStore implements DataStore {
     }
     final rowId = row['id'] as String?;
 
+    // Para UPDATE: captura el `updated_at` de la fila en caché para detectar
+    // conflictos al sincronizar (compare-and-set). Null si la tabla no lo tiene.
+    String? baseUpdatedAt;
+    if (type == 'update') {
+      final existing = _cache[collection]
+          ?.firstWhere((e) => e['id'] == rowId, orElse: () => const {});
+      baseUpdatedAt = existing?['updated_at'] as String?;
+    }
+
     await outbox!.enqueue(OutboxOp(
       opId: _uuid.v4(),
       collection: collection,
@@ -213,6 +222,7 @@ class SupabaseDataStore implements DataStore {
       rowId: rowId,
       payload: row,
       createdAt: DateTime.now().toUtc().toIso8601String(),
+      baseUpdatedAt: baseUpdatedAt,
     ));
 
     if (type == 'delete') {
@@ -246,29 +256,57 @@ class SupabaseDataStore implements DataStore {
   /// aplicaron. Si vuelve a fallar la red, se detiene y reintenta luego.
   Future<int> syncOutbox() async {
     final box = outbox;
-    if (box == null || box.isEmpty) return 0;
+    if (box == null) return 0;
     var applied = 0;
-    for (final op in box.all()) {
+    // Solo las PENDIENTES (las parkeadas failed/conflict esperan al usuario).
+    for (final op in box.pending()) {
       try {
         switch (op.type) {
           case 'insert':
           case 'upsert':
             final payload = Map<String, dynamic>.from(op.payload);
-            final refreshed =
-                await _client.from(op.collection).upsert(payload).select().single();
-            _upsertIntoCache(op.collection, Map<String, dynamic>.from(refreshed));
+            final refreshed = await _client
+                .from(op.collection)
+                .upsert(payload)
+                .select()
+                .single();
+            _upsertIntoCache(
+                op.collection, Map<String, dynamic>.from(refreshed));
             break;
           case 'update':
             final patch = Map<String, dynamic>.from(op.payload)..remove('id');
-            final updated = await _client
+            // Compare-and-set: si tenemos el updated_at base, exige que no haya
+            // cambiado (detección de conflicto). Si la tabla no lo tiene, cae a
+            // last-write-wins.
+            final base = _client
                 .from(op.collection)
                 .update(patch)
-                .eq('id', op.rowId as Object)
-                .select()
-                .maybeSingle();
+                .eq('id', op.rowId as Object);
+            final filtered = op.baseUpdatedAt != null
+                ? base.eq('updated_at', op.baseUpdatedAt as Object)
+                : base;
+            final updated = await filtered.select().maybeSingle();
             if (updated != null) {
               _upsertIntoCache(
                   op.collection, Map<String, dynamic>.from(updated));
+            } else if (op.baseUpdatedAt != null) {
+              // 0 filas con el updated_at base: o la fila cambió (conflicto) o
+              // ya no existe.
+              final current = await _client
+                  .from(op.collection)
+                  .select('updated_at')
+                  .eq('id', op.rowId as Object)
+                  .maybeSingle();
+              if (current != null) {
+                await box.markFailed(
+                    op.opId,
+                    'La fila cambió en el servidor desde la edición offline.',
+                    conflict: true);
+              } else {
+                await box.markFailed(
+                    op.opId, 'La fila ya no existe en el servidor.');
+              }
+              continue;
             }
             break;
           case 'delete':
@@ -287,11 +325,13 @@ class SupabaseDataStore implements DataStore {
           applied++;
           continue;
         }
-        // Rechazo real (RLS/validación): parkear para no bloquear la cola.
+        // Rechazo real (RLS/validación): cuenta un intento; se parkea al agotar
+        // reintentos (maxAttempts) para no bloquear la cola ni reintentar
+        // indefinidamente.
         await box.markFailed(op.opId, e.message);
         continue;
       } catch (e) {
-        // Sigue sin red: detener y reintentar en el próximo ciclo.
+        // Sigue sin red: detener y reintentar en el próximo ciclo (con backoff).
         break;
       }
     }

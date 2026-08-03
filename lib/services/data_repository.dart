@@ -81,6 +81,10 @@ class DataRepository {
   /// Cola de fotos offline (Fase 2). Solo en prod; null en demo/local.
   PhotoOutbox? _photoOutbox;
 
+  // Reintento con backoff exponencial (Fase 4) mientras queden pendientes.
+  Timer? _backoffTimer;
+  int _backoffSeconds = 0;
+
   DataRepository._(this._store);
 
   static DataRepository? _instance;
@@ -156,6 +160,55 @@ class DataRepository {
   /// Fotos pendientes de subir (Fase 2), para el indicador de UI.
   ValueNotifier<int>? get photoPendingCount => _photoOutbox?.pendingCount;
 
+  // ---- Fase 4: robustez (parking visible + reintentar/descartar) ----
+
+  /// Escrituras parkeadas (fallo persistente / conflicto) que requieren atención.
+  ValueNotifier<int>? get writeFailedCount {
+    final store = _store;
+    return store is SupabaseDataStore ? store.outbox?.failedCount : null;
+  }
+
+  /// Fotos parkeadas (fallo persistente) que requieren atención.
+  ValueNotifier<int>? get photoFailedCount => _photoOutbox?.failedCount;
+
+  List<OutboxOp> failedWriteOps() {
+    final store = _store;
+    return store is SupabaseDataStore
+        ? (store.outbox?.failed() ?? const [])
+        : const [];
+  }
+
+  Future<List<PendingPhoto>> failedPhotoOps() async =>
+      (await _photoOutbox?.failed()) ?? const [];
+
+  /// Descripciones legibles de lo parkeado, para la hoja de sincronización.
+  List<String> failedDescriptions() {
+    final out = failedWriteOps()
+        .map((o) => '${o.status == 'conflict' ? 'Conflicto' : 'Rechazado'} · '
+            '${o.type} en ${o.collection}'
+            '${o.lastError != null ? ' — ${o.lastError}' : ''}')
+        .toList();
+    return out;
+  }
+
+  Future<List<String>> failedPhotoDescriptions() async =>
+      (await failedPhotoOps()).map((p) => 'Foto pendiente: ${p.fileName}').toList();
+
+  /// Reintenta las parkeadas (vuelven a pendientes) y sincroniza.
+  Future<void> retryFailedOffline() async {
+    final store = _store;
+    if (store is SupabaseDataStore) await store.outbox?.retryFailed();
+    await _photoOutbox?.retryFailed();
+    await _syncAllOffline();
+  }
+
+  /// Descarta definitivamente las parkeadas.
+  Future<void> discardFailedOffline() async {
+    final store = _store;
+    if (store is SupabaseDataStore) await store.outbox?.discardFailed();
+    await _photoOutbox?.discardFailed();
+  }
+
   /// Encola una foto capturada sin red: guarda los bytes localmente (IndexedDB)
   /// + los metadatos para crear la fila `wound_photos` al subirla. `meta` debe
   /// traer wound_id, consultation_id, measurement_id, is_baseline, photo_stage,
@@ -199,9 +252,9 @@ class DataRepository {
   /// cuántas se subieron.
   Future<int> syncPhotoOutbox() async {
     final box = _photoOutbox;
-    if (box == null || box.isEmpty) return 0;
+    if (box == null) return 0;
     var applied = 0;
-    for (final p in await box.all()) {
+    for (final p in await box.pending()) {
       try {
         final path = await PhotoUploadService.uploadWoundPhoto(
           woundId: p.meta['wound_id'] as String,
@@ -240,6 +293,26 @@ class DataRepository {
   Future<void> _syncAllOffline() async {
     await syncOfflineOutbox();
     await syncPhotoOutbox();
+    _scheduleBackoffIfPending();
+  }
+
+  /// Si quedan operaciones PENDIENTES (típicamente porque sigue sin red),
+  /// reintenta con backoff exponencial (5s → … → máx 5 min). Si ya se drenó
+  /// todo, resetea el backoff. Las parkeadas (failed/conflict) no cuentan.
+  void _scheduleBackoffIfPending() {
+    final store = _store;
+    final writesPending =
+        store is SupabaseDataStore ? (store.outbox?.pendingCount.value ?? 0) : 0;
+    final photosPending = _photoOutbox?.pendingCount.value ?? 0;
+    _backoffTimer?.cancel();
+    if (writesPending + photosPending > 0) {
+      _backoffSeconds =
+          _backoffSeconds == 0 ? 5 : (_backoffSeconds * 2).clamp(5, 300);
+      _backoffTimer = Timer(
+          Duration(seconds: _backoffSeconds), () => unawaited(_syncAllOffline()));
+    } else {
+      _backoffSeconds = 0;
+    }
   }
 
   /// Escucha la conectividad y drena las colas al recuperar la red. Se llama una
@@ -248,7 +321,10 @@ class DataRepository {
   void _startOfflineSync() {
     Connectivity().onConnectivityChanged.listen((results) {
       final online = results.any((r) => r != ConnectivityResult.none);
-      if (online) unawaited(_syncAllOffline());
+      if (online) {
+        _backoffSeconds = 0; // reconectó: reintenta ya, sin esperar backoff
+        unawaited(_syncAllOffline());
+      }
     });
   }
 
