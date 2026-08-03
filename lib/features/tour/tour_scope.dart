@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/config/app_config.dart';
 import '../../core/providers/session_provider.dart';
 import '../../core/router/app_router.dart';
+import '../../core/router/app_shell.dart' show kFloatingNavBarHeight;
 import '../../core/theme/kura_theme.dart';
 import '../../models/app_user.dart';
 import 'tour_controller.dart';
@@ -99,11 +100,14 @@ class _TourScopeState extends ConsumerState<TourScope> {
           ),
         if (showLauncher)
           Positioned(
-            right: 16,
-            bottom: 96,
-            child: SafeArea(
-              child: _TourLauncher(onTap: _startForRole),
-            ),
+            // Bottom-LEFT y elevado sobre la barra flotante, para no empalmarse
+            // con el FAB "Nuevo paciente" (bottom-right). En escritorio se
+            // desplaza para librar el NavigationRail.
+            left: MediaQuery.of(context).size.width >= 900 ? 88 : 16,
+            bottom: MediaQuery.of(context).viewPadding.bottom +
+                kFloatingNavBarHeight +
+                12,
+            child: _TourLauncher(onTap: _startForRole),
           ),
       ],
     );
