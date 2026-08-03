@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/theme/kura_theme.dart';
 import '../../core/layout/responsive.dart';
 import '../../core/providers/session_provider.dart';
-import '../../core/router/app_shell.dart' show UserMenuButton;
+import '../../core/router/app_shell.dart'
+    show UserMenuButton, kFloatingNavBarHeight;
 import '../../models/commercial.dart';
 import '../../services/acuity_service.dart';
 import '../../services/data_repository.dart';
@@ -124,6 +127,23 @@ class _CobrosTab extends ConsumerStatefulWidget {
 
 class _CobrosTabState extends ConsumerState<_CobrosTab> {
   ChargeStatus? _filter;
+  Object? _sub;
+
+  @override
+  void initState() {
+    super.initState();
+    // Realtime: refresca la lista en cuanto un cobro cambia (p. ej. el webhook
+    // de Stripe lo marca Pagado), sin tener que recargar la página.
+    _sub = widget.repo.watchCollection('charges', () {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    widget.repo.unwatch(_sub);
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -251,9 +271,18 @@ class _ChargeDetailSheetState extends State<_ChargeDetailSheet> {
           ]),
           const SizedBox(height: 12),
           if (charge.status == ChargeStatus.pendiente) ...[
-            // Mercado Pago aquí es SOLO terminal Point (presencial). El cobro
-            // en línea (tarjeta a distancia) lo hará Stripe, no MP. El botón de
+            // Pago en línea (a distancia) = Stripe: genera un link para enviar
+            // al paciente. Mercado Pago aquí es SOLO terminal Point (presencial);
             // "Cobrar con terminal (Point)" se agrega con la integración Point.
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                icon: const Icon(Icons.link),
+                label: const Text('Generar link de pago (Stripe)'),
+                onPressed: _busy ? null : _generarLinkStripe,
+              ),
+            ),
+            const SizedBox(height: 8),
             if (showVerify) ...[
               SizedBox(
                 width: double.infinity,
@@ -327,6 +356,71 @@ class _ChargeDetailSheetState extends State<_ChargeDetailSheet> {
   void _snack(String msg) => ScaffoldMessenger.of(context)
       .showSnackBar(SnackBar(content: Text(msg)));
 
+  /// Genera un link de pago de Stripe para el cobro y lo muestra para
+  /// compartir con el paciente (copiar / WhatsApp). El pago se concilia solo.
+  Future<void> _generarLinkStripe() async {
+    final repo = widget.repo;
+    final charge = widget.charge;
+    final patient =
+        charge.patientId == null ? null : repo.getPatient(charge.patientId!);
+    setState(() => _busy = true);
+    String? url;
+    try {
+      url = await repo.createStripeCheckout(
+        charge.id,
+        title: patient != null ? 'Cobro · ${patient.fullName}' : 'Cobro de consulta',
+      );
+    } catch (e) {
+      if (mounted) _snack('$e'.replaceFirst('Exception: ', ''));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+    if (url == null || !mounted) return;
+    final link = url;
+    final saludo = patient != null ? ' ${patient.fullName.split(' ').first}' : '';
+    final msg = 'Hola$saludo, aquí está tu link de pago: $link';
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Link de pago (Stripe)'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+                'Comparte este link con el paciente. Al pagar, el cobro se marca '
+                'como pagado automáticamente.',
+                style: TextStyle(fontSize: 13)),
+            const SizedBox(height: 10),
+            SelectableText(link, style: const TextStyle(fontSize: 12)),
+          ],
+        ),
+        actions: [
+          TextButton.icon(
+            icon: const Icon(Icons.copy, size: 18),
+            label: const Text('Copiar'),
+            onPressed: () {
+              Clipboard.setData(ClipboardData(text: link));
+              _snack('Link copiado.');
+            },
+          ),
+          TextButton.icon(
+            icon: const Icon(Icons.chat_outlined, size: 18),
+            label: const Text('WhatsApp'),
+            onPressed: () => launchUrl(
+              Uri.parse('https://wa.me/?text=${Uri.encodeComponent(msg)}'),
+              mode: LaunchMode.externalApplication,
+              webOnlyWindowName: '_blank',
+            ),
+          ),
+          TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Cerrar')),
+        ],
+      ),
+    );
+  }
+
   Future<String?> _pickMethod(BuildContext context) => showModalBottomSheet<String>(
         context: context,
         showDragHandle: true,
@@ -381,7 +475,12 @@ class _ServiciosTabState extends ConsumerState<_ServiciosTab> {
                       '(Valoración, Seguimiento, Curación…).',
                       textAlign: TextAlign.center)))
           : ListView.separated(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 88),
+              // Clearance de la barra flotante del shell + el FAB de esta
+              // pestaña, para que el último servicio no quede tapado en móvil.
+              padding: EdgeInsets.fromLTRB(16, 12, 16,
+                  MediaQuery.of(context).viewPadding.bottom +
+                      kFloatingNavBarHeight +
+                      80),
               itemCount: services.length,
               separatorBuilder: (_, __) => const Divider(height: 1),
               itemBuilder: (_, i) {
@@ -680,6 +779,28 @@ class _ConciliacionTab extends ConsumerStatefulWidget {
 
 class _ConciliacionTabState extends ConsumerState<_ConciliacionTab> {
   final _fmt = DateFormat('dd/MM/yyyy HH:mm');
+  Object? _subPayments;
+  Object? _subCharges;
+
+  @override
+  void initState() {
+    super.initState();
+    // Realtime: un pago nuevo (point_payments) o un cambio de vínculo/estado en
+    // el cobro (charges) se refleja al instante en la bandeja de conciliación.
+    void refresh() {
+      if (mounted) setState(() {});
+    }
+
+    _subPayments = widget.repo.watchCollection('point_payments', refresh);
+    _subCharges = widget.repo.watchCollection('charges', refresh);
+  }
+
+  @override
+  void dispose() {
+    widget.repo.unwatch(_subPayments);
+    widget.repo.unwatch(_subCharges);
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -847,7 +968,7 @@ class _ConciliacionTabState extends ConsumerState<_ConciliacionTab> {
               ),
               const SizedBox(height: 8),
               DropdownButtonFormField<String>(
-                initialValue: method,
+                value: method,
                 decoration: const InputDecoration(labelText: 'Método'),
                 items: const [
                   DropdownMenuItem(
