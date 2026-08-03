@@ -2283,46 +2283,58 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
       // guardan en un try aparte: la consulta y la medicion YA se guardaron, asi
       // que si una foto falla (p.ej. en modo demo la cuota de localStorage se
       // llena con base64), el SEGUIMIENTO CLINICO no se pierde -- solo se avisa.
-      try {
-        final afterCleaningPath = await PhotoUploadService.uploadWoundPhoto(
-          woundId: widget.woundId,
-          consultationId: consultationId,
-          bytes: _photoAfterCleaningBytes!,
-          fileName: _photoAfterCleaning?.name ?? 'seguimiento_despues_limpiar.jpg',
-        );
-        await repo.createPhoto({
+      // Offline-first Fase 2: si la subida falla por RED, la foto se guarda
+      // localmente (IndexedDB) y se sube al reconectar, en vez de perderse.
+      var anyPhotoQueued = false;
+      Future<void> savePhoto(
+          Uint8List bytes, String fileName, String stage) async {
+        final meta = <String, dynamic>{
           'wound_id': widget.woundId,
           'consultation_id': consultationId,
           'measurement_id': measurement.id,
-          'storage_path': afterCleaningPath,
           'taken_at': _visitDate.toIso8601String(),
-          'photo_stage': PhotoStage.despuesLimpiar.dbValue,
-        });
-
-        // Foto 2 (con medición) ya es OPCIONAL: solo se sube si se capturó.
-        if (_photoWithMeasurementBytes != null) {
-          final withMeasurementPath = await PhotoUploadService.uploadWoundPhoto(
+          'photo_stage': stage,
+        };
+        try {
+          final path = await PhotoUploadService.uploadWoundPhoto(
             woundId: widget.woundId,
             consultationId: consultationId,
-            bytes: _photoWithMeasurementBytes!,
-            fileName:
-                _photoWithMeasurement?.name ?? 'seguimiento_con_medicion.jpg',
+            bytes: bytes,
+            fileName: fileName,
           );
-          await repo.createPhoto({
-            'wound_id': widget.woundId,
-            'consultation_id': consultationId,
-            'measurement_id': measurement.id,
-            'storage_path': withMeasurementPath,
-            'taken_at': _visitDate.toIso8601String(),
-            'photo_stage': PhotoStage.conMedicion.dbValue,
-          });
+          await repo.createPhoto({...meta, 'storage_path': path});
+        } catch (e) {
+          final queued = await repo.enqueuePhotoIfOffline(
+              bytes: bytes, fileName: fileName, meta: meta, error: e);
+          if (queued) {
+            anyPhotoQueued = true;
+          } else {
+            debugPrint('Foto de seguimiento no guardada: $e');
+            photoWarning = e.toString().contains('Quota')
+                ? 'El seguimiento se registró, pero las fotos no se pudieron '
+                    'guardar (memoria del modo demo llena). En producción se '
+                    'guardan en la nube.'
+                : 'El seguimiento se registró, pero hubo un problema al guardar '
+                    'las fotos.';
+          }
         }
-      } catch (e) {
-        debugPrint('Fotos de seguimiento no guardadas: $e');
-        photoWarning = e.toString().contains('Quota')
-            ? 'El seguimiento se registró, pero las fotos no se pudieron guardar '
-                '(memoria del modo demo llena). En producción se guardan en la nube.'
-            : 'El seguimiento se registró, pero hubo un problema al guardar las fotos.';
+      }
+
+      await savePhoto(
+        _photoAfterCleaningBytes!,
+        _photoAfterCleaning?.name ?? 'seguimiento_despues_limpiar.jpg',
+        PhotoStage.despuesLimpiar.dbValue,
+      );
+      if (_photoWithMeasurementBytes != null) {
+        await savePhoto(
+          _photoWithMeasurementBytes!,
+          _photoWithMeasurement?.name ?? 'seguimiento_con_medicion.jpg',
+          PhotoStage.conMedicion.dbValue,
+        );
+      }
+      if (anyPhotoQueued && photoWarning == null) {
+        photoWarning = 'Sin conexión: el seguimiento y la(s) foto(s) quedaron '
+            'guardados en este dispositivo y se subirán al reconectar.';
       }
       // No se hace ningun INSERT manual a audit_log: la bitacora de
       // consultations/wound_measurements la genera el trigger AFTER INSERT
@@ -2343,7 +2355,7 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
       if (photoWarning != null) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(photoWarning),
+            content: Text(photoWarning!),
             backgroundColor: KuraColors.warning,
           ),
         );

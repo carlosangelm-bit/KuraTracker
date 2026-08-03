@@ -390,45 +390,53 @@ class _SyncBanner extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final repo = ref.watch(dataRepositoryProvider).valueOrNull;
-    final notifier = repo?.pendingSyncCount;
-    if (repo == null || notifier == null) return child;
+    final writes = repo?.pendingSyncCount;
+    final photos = repo?.photoPendingCount;
+    if (repo == null || writes == null || photos == null) return child;
     return Column(
       children: [
         ValueListenableBuilder<int>(
-          valueListenable: notifier,
-          builder: (context, count, _) {
-            if (count <= 0) return const SizedBox.shrink();
-            return Material(
-              color: Colors.orange.shade100,
-              child: SafeArea(
-                bottom: false,
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 6, 8, 6),
-                  child: Row(
-                    children: [
-                      Icon(Icons.cloud_off_outlined,
-                          size: 16, color: Colors.orange.shade800),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          '$count cambio(s) guardado(s) sin conexión, '
-                          'pendiente(s) de sincronizar',
-                          style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              color: Colors.orange.shade900),
+          valueListenable: writes,
+          builder: (context, w, _) => ValueListenableBuilder<int>(
+            valueListenable: photos,
+            builder: (context, p, __) {
+              if (w + p <= 0) return const SizedBox.shrink();
+              final parts = <String>[
+                if (w > 0) '$w cambio(s)',
+                if (p > 0) '$p foto(s)',
+              ];
+              return Material(
+                color: Colors.orange.shade100,
+                child: SafeArea(
+                  bottom: false,
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 6, 8, 6),
+                    child: Row(
+                      children: [
+                        Icon(Icons.cloud_off_outlined,
+                            size: 16, color: Colors.orange.shade800),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            '${parts.join(' y ')} sin conexión, pendiente(s) '
+                            'de sincronizar',
+                            style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.orange.shade900),
+                          ),
                         ),
-                      ),
-                      TextButton(
-                        onPressed: () => repo.syncOfflineOutbox(),
-                        child: const Text('Sincronizar'),
-                      ),
-                    ],
+                        TextButton(
+                          onPressed: () => repo.syncOfflineNow(),
+                          child: const Text('Sincronizar'),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
-              ),
-            );
-          },
+              );
+            },
+          ),
         ),
         Expanded(child: child),
       ],
