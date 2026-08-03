@@ -98,12 +98,44 @@ class AppShell extends ConsumerWidget {
   }
 
   int _indexFor(String path, List<_NavItem> items) {
+    return _indexForOrNull(path, items) ?? 0;
+  }
+
+  /// Como [_indexFor] pero devuelve null si la ruta no corresponde a ningún
+  /// item (para poder resaltar "Más" en la barra móvil).
+  int? _indexForOrNull(String path, List<_NavItem> items) {
     for (var i = 0; i < items.length; i++) {
-      if (path == items[i].path || (items[i].path != '/' && path.startsWith(items[i].path))) {
+      if (path == items[i].path ||
+          (items[i].path != '/' && path.startsWith(items[i].path))) {
         return i;
       }
     }
-    return 0;
+    return null;
+  }
+
+  /// Menú "Más" (móvil): el resto de las secciones que no caben abajo.
+  void _showMoreMenu(BuildContext context, List<_NavItem> overflow) {
+    final t = BrandTokens.of(context);
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (final i in overflow)
+              ListTile(
+                leading: Icon(i.selectedIcon, color: t.brandPrimary),
+                title: Text(i.label),
+                onTap: () {
+                  Navigator.of(ctx).pop();
+                  context.go(i.path);
+                },
+              ),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
@@ -129,15 +161,42 @@ class AppShell extends ConsumerWidget {
             ))
         .toList();
 
-    final destinationsBottom = items
-        .map((i) => NavigationDestination(
-              icon: Icon(i.icon),
-              selectedIcon: Icon(i.selectedIcon),
-              label: i.label,
-            ))
-        .toList();
-
     void onSelect(int index) => context.go(items[index].path);
+
+    // --- Barra inferior (MÓVIL): solo los indispensables + "Más" ---
+    // Se dejan abajo Inicio, Pacientes y Agenda/Rondas; el resto de los módulos
+    // (Prevención, VAC, Reportes, Insumos, Comercial, Administración, eKare) va
+    // a un menú "Más". Solo se usa el menú si hay primarios que anclar y ≥2 en
+    // el resto (roles con pocos items —master/cuidador— muestran todo directo).
+    const primaryPaths = ['/', '/patients', '/agenda', '/prevention-agenda'];
+    final primary =
+        items.where((i) => primaryPaths.contains(i.path)).toList();
+    final overflow =
+        items.where((i) => !primaryPaths.contains(i.path)).toList();
+    final useMore = primary.isNotEmpty && overflow.length >= 2;
+    final mobileItems = useMore ? primary : items;
+    final mobileDestinations = <NavigationDestination>[
+      for (final i in mobileItems)
+        NavigationDestination(
+            icon: Icon(i.icon),
+            selectedIcon: Icon(i.selectedIcon),
+            label: i.label),
+      if (useMore)
+        const NavigationDestination(
+            icon: Icon(Icons.menu),
+            selectedIcon: Icon(Icons.menu),
+            label: 'Más'),
+    ];
+    final mobileIdx = _indexForOrNull(currentPath, mobileItems);
+    final mobileSelectedIndex =
+        mobileIdx ?? (useMore ? mobileItems.length : 0);
+    void mobileOnSelect(int index) {
+      if (useMore && index == mobileItems.length) {
+        _showMoreMenu(context, overflow);
+      } else {
+        context.go(mobileItems[index].path);
+      }
+    }
 
     return Scaffold(
       // El contenido pasa por DEBAJO de la barra flotante (para que el vidrio
@@ -216,9 +275,9 @@ class AppShell extends ConsumerWidget {
                       }),
                     ),
                     child: NavigationBar(
-                      selectedIndex: selectedIndex,
-                      onDestinationSelected: onSelect,
-                      destinations: destinationsBottom,
+                      selectedIndex: mobileSelectedIndex,
+                      onDestinationSelected: mobileOnSelect,
+                      destinations: mobileDestinations,
                       backgroundColor: Colors.transparent,
                       elevation: 0,
                       height: kFloatingNavBarHeight,
