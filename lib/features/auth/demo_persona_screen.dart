@@ -79,16 +79,8 @@ const _personas = <_Persona>[
         'pacientes asignados, las instrucciones del centro y su agenda de '
         'tareas.',
   ),
-  _Persona(
-    title: 'Master (plataforma)',
-    email: 'master@kuratracker.mx',
-    icon: Icons.hub_outlined,
-    centerType: null,
-    description:
-        'Administrador de la plataforma. Da de alta y gestiona centros '
-        '(organizaciones), usuarios y módulos. No accede a datos clínicos de '
-        'pacientes.',
-  ),
+  // El perfil Master (plataforma) NO se expone en la demo: es de acceso interno
+  // y solo se entra por el login real de producción con credenciales.
 ];
 
 class _DemoPersonaScreenState extends ConsumerState<DemoPersonaScreen> {

@@ -31,7 +31,7 @@ class DemoSeed {
   // una sola vez en instalaciones demo previas (wipeAll + _seed), evitando
   // duplicados y datos viejos. Cada rediseño del roster sube este número.
   // v12: roster curado por escenario (clínica 7 / hospital 5 / cuidadores 3).
-  static const String _seedFlag = 'seeded_v22';
+  static const String _seedFlag = 'seeded_v23';
 
   static Future<void> ensureSeeded(LocalStore store) async {
     if (store.getBool(_seedFlag)) return;
@@ -167,9 +167,8 @@ class DemoSeed {
     final adminProfileId = _uuid.v4();
     final clinico1ProfileId = _uuid.v4();
     final clinico2ProfileId = _uuid.v4();
-    // Master (administrador de plataforma): no pertenece a ninguna organización;
-    // administra estructura de TODOS los centros vía el área "Plataforma".
-    final masterProfileId = _uuid.v4();
+    // El perfil Master (plataforma) es de acceso interno y no se siembra en la
+    // demo (ver más abajo): no se declara su id.
     final adminVitalisProfileId = _uuid.v4();
     // Cuidador demo: login por teléfono (5512345678 + clave). El correo es
     // sintético derivado del teléfono, igual que en producción.
@@ -206,15 +205,9 @@ class DemoSeed {
         'is_active': true,
         'premium_enabled': false,
       },
-      {
-        'id': masterProfileId,
-        'organization_id': null,
-        'role': 'master',
-        'full_name': 'Master KuraTracker',
-        'email': 'master@kuratracker.mx',
-        'is_active': true,
-        'premium_enabled': false,
-      },
+      // El perfil Master (plataforma) NO se siembra en la demo: es de acceso
+      // interno. Se omite a propósito para que no pueda entrarse como master
+      // ni desde el selector de perfiles ni tecleando su correo en el login.
       {
         'id': adminVitalisProfileId,
         'organization_id': organizationId2,
