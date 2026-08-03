@@ -449,6 +449,10 @@ class _WoundCaptureScreenState extends ConsumerState<WoundCaptureScreen> {
             }
           }
         }
+        // Finaliza el borrador: la valoración ya quedó completa, así que la
+        // consulta deja de ser draft (si no, reaparecería como pendiente y
+        // volvería a abrir la valoración).
+        await repo.updateConsultationFields(consultationId, {'is_draft': false});
         // La bitacora de auditoria de wound_measurements la genera el
         // trigger AFTER INSERT de Postgres (audit_trigger_fn), no una
         // llamada manual desde el cliente: asi se garantiza que nadie pueda
