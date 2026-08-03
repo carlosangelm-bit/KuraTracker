@@ -390,56 +390,178 @@ class _SyncBanner extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final repo = ref.watch(dataRepositoryProvider).valueOrNull;
-    final writes = repo?.pendingSyncCount;
-    final photos = repo?.photoPendingCount;
-    if (repo == null || writes == null || photos == null) return child;
+    final writesPending = repo?.pendingSyncCount;
+    final photosPending = repo?.photoPendingCount;
+    final writesFailed = repo?.writeFailedCount;
+    final photosFailed = repo?.photoFailedCount;
+    if (repo == null ||
+        writesPending == null ||
+        photosPending == null ||
+        writesFailed == null ||
+        photosFailed == null) {
+      return child;
+    }
     return Column(
       children: [
-        ValueListenableBuilder<int>(
-          valueListenable: writes,
-          builder: (context, w, _) => ValueListenableBuilder<int>(
-            valueListenable: photos,
-            builder: (context, p, __) {
-              if (w + p <= 0) return const SizedBox.shrink();
-              final parts = <String>[
-                if (w > 0) '$w cambio(s)',
-                if (p > 0) '$p foto(s)',
-              ];
-              return Material(
-                color: Colors.orange.shade100,
+        AnimatedBuilder(
+          animation: Listenable.merge(
+              [writesPending, photosPending, writesFailed, photosFailed]),
+          builder: (context, _) {
+            final pending = writesPending.value + photosPending.value;
+            final failed = writesFailed.value + photosFailed.value;
+            if (pending + failed <= 0) return const SizedBox.shrink();
+            final hasFailed = failed > 0;
+            final base = hasFailed ? Colors.red : Colors.orange;
+            final parts = <String>[
+              if (pending > 0) '$pending pendiente(s)',
+              if (failed > 0) '$failed con problema(s)',
+            ];
+            return Material(
+              color: base.shade100,
+              child: InkWell(
+                onTap: () => _showSyncSheet(context, repo),
                 child: SafeArea(
                   bottom: false,
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(16, 6, 8, 6),
                     child: Row(
                       children: [
-                        Icon(Icons.cloud_off_outlined,
-                            size: 16, color: Colors.orange.shade800),
+                        Icon(
+                            hasFailed
+                                ? Icons.error_outline
+                                : Icons.cloud_off_outlined,
+                            size: 16,
+                            color: base.shade800),
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
-                            '${parts.join(' y ')} sin conexión, pendiente(s) '
-                            'de sincronizar',
+                            '${parts.join(' · ')} de sincronización · toca para ver',
                             style: TextStyle(
                                 fontSize: 12,
                                 fontWeight: FontWeight.w600,
-                                color: Colors.orange.shade900),
+                                color: base.shade900),
                           ),
                         ),
-                        TextButton(
-                          onPressed: () => repo.syncOfflineNow(),
-                          child: const Text('Sincronizar'),
-                        ),
+                        if (!hasFailed)
+                          TextButton(
+                            onPressed: () => repo.syncOfflineNow(),
+                            child: const Text('Sincronizar'),
+                          ),
                       ],
                     ),
                   ),
                 ),
-              );
-            },
-          ),
+              ),
+            );
+          },
         ),
         Expanded(child: child),
       ],
+    );
+  }
+
+  Future<void> _showSyncSheet(BuildContext context, DataRepository repo) async {
+    final failedWrites = repo.failedDescriptions();
+    final failedPhotos = await repo.failedPhotoDescriptions();
+    final failed = [...failedWrites, ...failedPhotos];
+    if (!context.mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (ctx) => Padding(
+        padding: EdgeInsets.only(
+            left: 20,
+            right: 20,
+            bottom: MediaQuery.of(ctx).viewInsets.bottom + 20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text('Sincronización offline',
+                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
+            const SizedBox(height: 4),
+            const Text(
+              'Los cambios y fotos capturados sin conexión se suben solos al '
+              'reconectar. Aquí puedes forzar el intento o gestionar los que '
+              'dieron problema.',
+              style: TextStyle(fontSize: 12),
+            ),
+            const SizedBox(height: 16),
+            FilledButton.icon(
+              icon: const Icon(Icons.sync),
+              label: const Text('Sincronizar ahora'),
+              onPressed: () {
+                repo.syncOfflineNow();
+                Navigator.of(ctx).pop();
+              },
+            ),
+            if (failed.isNotEmpty) ...[
+              const SizedBox(height: 20),
+              Text('Con problema (${failed.length})',
+                  style: const TextStyle(fontWeight: FontWeight.w700)),
+              const SizedBox(height: 4),
+              const Text(
+                'No se pudieron subir (rechazo del servidor o conflicto con un '
+                'cambio hecho por otra persona). No se sobrescribió nada.',
+                style: TextStyle(fontSize: 12),
+              ),
+              const SizedBox(height: 8),
+              Flexible(
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      for (final f in failed)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 3),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Icon(Icons.warning_amber_rounded,
+                                  size: 16, color: Colors.red),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                  child: Text(f,
+                                      style: const TextStyle(fontSize: 12))),
+                            ],
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () {
+                        repo.retryFailedOffline();
+                        Navigator.of(ctx).pop();
+                      },
+                      child: const Text('Reintentar'),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: OutlinedButton(
+                      style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.red),
+                      onPressed: () async {
+                        await repo.discardFailedOffline();
+                        if (ctx.mounted) Navigator.of(ctx).pop();
+                      },
+                      child: const Text('Descartar'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
     );
   }
 }
