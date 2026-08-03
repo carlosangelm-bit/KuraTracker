@@ -44,6 +44,7 @@ class _TourScopeState extends ConsumerState<TourScope> {
     if (role == null) return;
     String? pid;
     String? wid;
+    String? cid;
     final repo = ref.read(dataRepositoryProvider).valueOrNull;
     if (repo != null && (role == AppRole.clinico || role == AppRole.admin)) {
       final patients = repo.listAllPatients();
@@ -57,10 +58,17 @@ class _TourScopeState extends ConsumerState<TourScope> {
         }
       }
       if (pid == null && patients.isNotEmpty) pid = patients.first.id;
+      // Consulta más reciente del paciente demo, para el paso "hasta el cobro".
+      if (pid != null) {
+        final consults = repo.listConsultationsForPatient(pid);
+        if (consults.isNotEmpty) {
+          consults.sort((a, b) => b.visitDate.compareTo(a.visitDate));
+          cid = consults.first.id;
+        }
+      }
     }
-    ref
-        .read(tourProvider.notifier)
-        .start(tourStepsFor(role, patientId: pid, woundId: wid));
+    ref.read(tourProvider.notifier).start(
+        tourStepsFor(role, patientId: pid, woundId: wid, consultationId: cid));
   }
 
   @override
