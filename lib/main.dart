@@ -8,6 +8,7 @@ import 'core/theme/kura_theme.dart';
 import 'core/router/app_router.dart';
 import 'core/config/app_config.dart';
 import 'core/providers/session_provider.dart';
+import 'features/tour/tour_scope.dart';
 import 'services/supabase/supabase_bootstrap.dart';
 
 /// Hardening (bug "pantalla en blanco al crear concepto de catalogo",
@@ -126,6 +127,10 @@ class KuraTrackerApp extends ConsumerWidget {
       debugShowCheckedModeBanner: false,
       theme: KuraTheme.forType(centerType),
       routerConfig: router,
+      // Recorrido guiado (solo demo): navega por los flujos y explica cada
+      // pantalla. En producción es transparente (no se muestra).
+      builder: (context, child) =>
+          TourScope(child: child ?? const SizedBox.shrink()),
     );
   }
 }
