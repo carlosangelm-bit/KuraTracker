@@ -461,6 +461,40 @@ class _PatientHeaderCard extends StatelessWidget {
   final DateFormat dateFmt;
   const _PatientHeaderCard({required this.patient, required this.dateFmt});
 
+  // Muestra un campo (antecedentes / alergias / medicamentos) como chips a
+  // partir del texto guardado (un concepto por línea; ";"/"," como respaldo).
+  Widget _labeledChips(String label, String? raw,
+      {required Color color, bool danger = false}) {
+    final items = (raw ?? '')
+        .split(RegExp(r'[\n;,]'))
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toList();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label,
+            style: TextStyle(
+                fontSize: 12, fontWeight: FontWeight.w700, color: color)),
+        const SizedBox(height: 4),
+        Wrap(
+          spacing: 8,
+          runSpacing: 4,
+          children: items
+              .map((t) => Chip(
+                    label: Text(t, style: const TextStyle(fontSize: 12)),
+                    backgroundColor: danger
+                        ? KuraColors.danger.withOpacity(0.10)
+                        : KuraColors.chipBg,
+                    visualDensity: VisualDensity.compact,
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ))
+              .toList(),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Card(
@@ -530,37 +564,22 @@ class _PatientHeaderCard extends StatelessWidget {
               const SizedBox(height: 8),
               _InfoItem(label: 'Domicilio', value: patient.address!),
             ],
-            if (patient.backgroundNotes != null && patient.backgroundNotes!.isNotEmpty) ...[
+            if ((patient.backgroundNotes ?? '').trim().isNotEmpty) ...[
               const SizedBox(height: 12),
               const Divider(),
               const SizedBox(height: 8),
-              Text('Antecedentes',
-                  style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                      color: KuraColors.darkText.withOpacity(0.6))),
-              const SizedBox(height: 4),
-              Text(patient.backgroundNotes!),
+              _labeledChips('Antecedentes', patient.backgroundNotes,
+                  color: KuraColors.darkText.withOpacity(0.6)),
             ],
             if ((patient.allergies ?? '').trim().isNotEmpty) ...[
               const SizedBox(height: 12),
-              Text('Alergias',
-                  style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                      color: KuraColors.danger)),
-              const SizedBox(height: 4),
-              Text(patient.allergies!),
+              _labeledChips('Alergias', patient.allergies,
+                  color: KuraColors.danger, danger: true),
             ],
             if ((patient.activeMedications ?? '').trim().isNotEmpty) ...[
               const SizedBox(height: 12),
-              Text('Medicamentos activos',
-                  style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                      color: KuraColors.darkText.withOpacity(0.6))),
-              const SizedBox(height: 4),
-              Text(patient.activeMedications!),
+              _labeledChips('Medicamentos activos', patient.activeMedications,
+                  color: KuraColors.darkText.withOpacity(0.6)),
             ],
             if (patient.familyHistory.isNotEmpty) ...[
               const SizedBox(height: 12),
