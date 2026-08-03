@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 
 import '../local_db/local_store.dart' show Collections;
 import '../offline/offline_outbox.dart';
+import '../offline/read_cache_store.dart';
 import 'data_store.dart';
 
 /// Implementacion de [DataStore] respaldada por Supabase real (Postgrest +
@@ -41,7 +44,27 @@ class SupabaseDataStore implements DataStore {
   final OfflineOutbox? outbox;
   static const _uuid = Uuid();
 
-  SupabaseDataStore(this._client, {this.outbox});
+  /// Persistencia de la caché de lectura (Fase 3). Si está presente, la caché
+  /// en memoria se respalda en IndexedDB y se restaura al arrancar, de modo que
+  /// los expedientes se ven SIN señal (al recargar/abrir offline).
+  final ReadCacheStore? readCache;
+
+  SupabaseDataStore(this._client, {this.outbox, this.readCache});
+
+  /// Precarga en la caché en memoria la caché persistida (Fase 3), para que las
+  /// lecturas funcionen offline aun antes/aunque falle hydrate(). No pisa
+  /// colecciones ya presentes (p.ej. escrituras optimistas previas).
+  void primeCache(Map<String, List<Map<String, dynamic>>> persisted) {
+    for (final e in persisted.entries) {
+      _cache.putIfAbsent(e.key, () => e.value);
+    }
+  }
+
+  void _persistCollection(String collection) {
+    final rc = readCache;
+    if (rc == null) return;
+    unawaited(rc.saveCollection(collection, _cache[collection] ?? const []));
+  }
 
   /// Cliente Supabase subyacente. Expuesto para suscripciones Realtime
   /// (canales de `postgres_changes`) que viven fuera de la caché de tablas.
@@ -81,6 +104,7 @@ class SupabaseDataStore implements DataStore {
     try {
       final rows = await _client.from(collection).select();
       _cache[collection] = (rows as List).cast<Map<String, dynamic>>();
+      _persistCollection(collection);
     } catch (e) {
       debugPrint('refreshCollection("$collection") falló, se omite: $e');
       _cache.putIfAbsent(collection, () => <Map<String, dynamic>>[]);
@@ -135,6 +159,7 @@ class SupabaseDataStore implements DataStore {
     try {
       await _client.from(collection).delete().eq('id', id);
       _cache[collection]?.removeWhere((e) => e['id'] == id);
+      _persistCollection(collection);
     } catch (e) {
       final queued =
           await _queueWriteIfOffline(collection, 'delete', {'id': id}, e);
@@ -192,6 +217,7 @@ class SupabaseDataStore implements DataStore {
 
     if (type == 'delete') {
       _cache[collection]?.removeWhere((e) => e['id'] == rowId);
+      _persistCollection(collection);
       return const {};
     }
     if (type == 'update') {
@@ -308,5 +334,6 @@ class SupabaseDataStore implements DataStore {
     } else {
       list.add(row);
     }
+    _persistCollection(collection);
   }
 }

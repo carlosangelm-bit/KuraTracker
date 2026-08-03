@@ -51,6 +51,7 @@ import 'local_db/demo_seed.dart';
 import 'local_db/local_store.dart';
 import 'offline/offline_outbox.dart';
 import 'offline/photo_outbox.dart';
+import 'offline/read_cache_store.dart';
 import 'photo_upload_service.dart';
 import 'remote/data_store.dart';
 import 'remote/supabase_data_store.dart';
@@ -91,7 +92,14 @@ class DataRepository {
       // Offline-first (Fase 1): la cola persistente de escrituras se pasa al
       // store para que una falla por red encole en vez de perder la captura.
       final outbox = await OfflineOutbox.load();
-      final store = SupabaseDataStore(Supabase.instance.client, outbox: outbox);
+      // Fase 3: caché de lectura persistente (IndexedDB) para ver expedientes
+      // sin señal.
+      final readCache = await ReadCacheStore.open();
+      final store = SupabaseDataStore(Supabase.instance.client,
+          outbox: outbox, readCache: readCache);
+      // Precarga lo persistido ANTES de hidratar: si estamos offline (o mientras
+      // hidrata), las lecturas ya funcionan; si hay red, hydrate lo refresca.
+      store.primeCache(await readCache.loadAll());
       // Si hay sesion activa (usuario ya logueado en un run anterior de la
       // app / refresh de pagina), hidrata la cache de una vez. Si no hay
       // sesion aun, hydrate() se llama explicitamente desde el login
@@ -251,6 +259,9 @@ class DataRepository {
     final store = _store;
     if (store is SupabaseDataStore) {
       store.clearCache();
+      // Fase 3: borra también la caché de lectura persistida (IndexedDB) para
+      // que otro usuario en el mismo dispositivo no vea el expediente anterior.
+      unawaited(store.readCache?.clear() ?? Future.value());
     }
   }
 
