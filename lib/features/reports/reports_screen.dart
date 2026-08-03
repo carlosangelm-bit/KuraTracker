@@ -10,12 +10,15 @@ import 'package:printing/printing.dart';
 import '../../core/theme/kura_theme.dart';
 import '../../core/providers/session_provider.dart';
 import '../../core/router/app_shell.dart' show kFloatingNavBarHeight, UserMenuButton;
+import '../../engine/kura_sheehan_checkpoint.dart';
+import '../../engine/wound_checkpoint_deriver.dart';
 import '../../models/app_user.dart';
 import '../../models/center_type.dart';
 import '../../models/consultation.dart';
 import '../../engine/models/kura_engine_enums.dart';
 import '../../models/patient.dart';
 import '../../models/treatment_plan.dart' show WoundPhoto, TreatmentPlan;
+import '../../models/wound.dart';
 import '../../services/data_repository.dart';
 import '../../services/photo_upload_service.dart';
 import '../../services/prevention_report_pdf.dart';
@@ -312,13 +315,88 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
   }
 
   static final _fmtDate = DateFormat('dd/MM/yyyy');
+  static final _fmtDayShort = DateFormat('dd/MM');
 
-  /// Selecciona las fotos a incluir según el modo de evidencia (todas, o solo
-  /// la primera y la última por orden cronológico).
+  /// Gráfico de línea del área de la herida (cm²) contra el tiempo, para el
+  /// PDF. X = fecha de cada medición, Y = área. Devuelve null si no hay al
+  /// menos dos mediciones con span temporal y área positiva.
+  pw.Widget? _buildAreaChart(List<WoundMeasurement> measurements, PdfColor color) {
+    if (measurements.length < 2) return null; // ya viene asc por fecha
+    final base = measurements.first.measuredAt;
+    final pts = <pw.PointChartValue>[];
+    var maxArea = 0.0;
+    for (final m in measurements) {
+      final day = m.measuredAt.difference(base).inDays.toDouble();
+      pts.add(pw.PointChartValue(day, m.areaCm2));
+      if (m.areaCm2 > maxArea) maxArea = m.areaCm2;
+    }
+    final maxDay = pts.last.x;
+    if (maxDay <= 0 || maxArea <= 0) return null; // sin span temporal o sin área
+
+    // Hasta 5 marcas en X, equiespaciadas de 0 a maxDay, etiquetadas por fecha.
+    final n = measurements.length.clamp(2, 5);
+    final xTicks = List<double>.generate(n, (i) => maxDay * i / (n - 1));
+    final yMax = maxArea.ceilToDouble();
+    final yTicks = List<double>.generate(6, (i) => yMax * i / 5);
+
+    return pw.SizedBox(
+      width: 460,
+      height: 180,
+      child: pw.Chart(
+        grid: pw.CartesianGrid(
+          xAxis: pw.FixedAxis(
+            xTicks,
+            divisions: true,
+            format: (v) =>
+                _fmtDayShort.format(base.add(Duration(days: v.round()))),
+            textStyle: const pw.TextStyle(fontSize: 7),
+          ),
+          yAxis: pw.FixedAxis(
+            yTicks,
+            divisions: true,
+            format: (v) => v.toStringAsFixed(0),
+            textStyle: const pw.TextStyle(fontSize: 7),
+          ),
+        ),
+        datasets: [
+          pw.LineDataSet(
+            data: pts,
+            color: color,
+            lineWidth: 2,
+            drawPoints: true,
+            pointSize: 2.5,
+            drawSurface: true,
+            surfaceOpacity: 0.12,
+            surfaceColor: color,
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Texto llano del estado del checkpoint de Sheehan para el reporte.
+  String _sheehanEstado(SheehanDecision d) {
+    switch (d) {
+      case SheehanDecision.confirmarCierre:
+        return 'En trayectoria de cierre esperada.';
+      case SheehanDecision.extenderObservacion:
+        return 'Por debajo de lo esperado; se extiende la observación.';
+      case SheehanDecision.reclasificarC:
+        return 'Fuera de trayectoria; requiere replantear el manejo.';
+    }
+  }
+
+  /// Selecciona las fotos a incluir según el modo de evidencia. En modo
+  /// "primera_ultima" devuelve la BASAL (la marcada como basal, o la más
+  /// antigua si ninguna lo está) y la MÁS RECIENTE.
   List<WoundPhoto> _selectPhotos(List<WoundPhoto> photos) {
     final sorted = [...photos]..sort((a, b) => a.takenAt.compareTo(b.takenAt));
-    if (_evidenceMode == 'todas' || sorted.length <= 2) return sorted;
-    return [sorted.first, sorted.last];
+    if (_evidenceMode == 'todas' || sorted.length <= 1) return sorted;
+    final baseline =
+        sorted.firstWhere((p) => p.isBaseline, orElse: () => sorted.first);
+    final recent = sorted.last;
+    if (baseline.id == recent.id) return [recent];
+    return [baseline, recent];
   }
 
   /// Plan de tratamiento más reciente para una herida (recorre las consultas de
@@ -493,6 +571,8 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                 final last = measurements.isNotEmpty ? measurements.last : null;
                 final first = measurements.isNotEmpty ? measurements.first : null;
                 final plan = _latestPlan(repo, consultations, w.id);
+                final areaChart = _buildAreaChart(measurements, brandColor);
+                final sheehan = WoundCheckpointDeriver.evaluate(repo, w);
 
                 // Avance: % de reducción de área entre la primera y la última.
                 String? progreso;
@@ -563,6 +643,35 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                         pw.Text(progreso, style: const pw.TextStyle(fontSize: 9)),
                       ],
 
+                      // Gráfico de evolución del área
+                      if (areaChart != null) ...[
+                        pw.SizedBox(height: 8),
+                        label('Evolución del área (cm²)'),
+                        pw.SizedBox(height: 4),
+                        areaChart,
+                      ],
+
+                      // Checkpoint de Sheehan (trayectoria de cicatrización)
+                      if (sheehan != null) ...[
+                        pw.SizedBox(height: 8),
+                        label('Checkpoint de Sheehan (semana ${sheehan.semana})'),
+                        pw.Text(
+                          'Reducción de área: '
+                          '${sheehan.pctReduccionBruta.toStringAsFixed(0)}% '
+                          '(objetivo a la semana ${sheehan.semana}: '
+                          '${sheehan.umbralCierre.toStringAsFixed(0)}%).',
+                          style: const pw.TextStyle(fontSize: 9),
+                        ),
+                        pw.Text('Estado: ${_sheehanEstado(sheehan.decision)}',
+                            style: const pw.TextStyle(fontSize: 9)),
+                        if (sheehan.penalizacionesAplicadas.isNotEmpty)
+                          pw.Text(
+                            'Factores que penalizan la trayectoria: '
+                            '${sheehan.penalizacionesAplicadas.join(', ')}.',
+                            style: const pw.TextStyle(fontSize: 9),
+                          ),
+                      ],
+
                       // Tratamiento establecido
                       if (plan != null) ...[
                         pw.SizedBox(height: 6),
@@ -579,7 +688,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                       if (photos != null) ...[
                         pw.SizedBox(height: 6),
                         label(_evidenceMode == 'primera_ultima'
-                            ? 'Evidencia fotográfica (antes / después)'
+                            ? 'Evidencia fotográfica (basal / más reciente)'
                             : 'Evidencia fotográfica'),
                         pw.SizedBox(height: 4),
                         pw.Wrap(spacing: 8, runSpacing: 8, children: photos),
