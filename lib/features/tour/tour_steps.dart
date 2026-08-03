@@ -8,6 +8,7 @@ List<TourStep> tourStepsFor(
   AppRole role, {
   String? patientId,
   String? woundId,
+  String? consultationId,
 }) {
   final hasWound = patientId != null && woundId != null;
 
@@ -101,50 +102,81 @@ List<TourStep> tourStepsFor(
           route: '/',
           title: 'Bienvenido al recorrido',
           body:
-              'Este es tu tablero de inicio, con un resumen de tu actividad y '
-              'accesos rápidos.',
+              'Te muestro el flujo real del día a día: crear un paciente, '
+              'agendar, la consulta hasta el cobro, los reportes y el tablero de '
+              'avance.',
         ),
         const TourStep(
           route: '/patients',
-          title: 'Pacientes',
+          title: '1 · Pacientes',
           body:
-              'Aquí gestionas a tus pacientes y sus heridas: buscar, filtrar y '
-              'registrar nuevos.',
+              'El listado de tus pacientes: buscar, filtrar y dar de alta. Toca '
+              '“Nuevo paciente” para registrar uno.',
         ),
-        if (patientId != null)
-          TourStep(
-            route: '/patients/$patientId',
-            title: 'Expediente del paciente',
-            body:
-                'La ficha completa: heridas, diagnósticos CIE-10, comorbilidades, '
-                'consentimientos, laboratorios y su historial de consultas.',
-          ),
+        const TourStep(
+          route: '/patients/new',
+          title: '2 · Crear paciente',
+          body:
+              'Aquí capturas el perfil completo: datos generales, comorbilidades, '
+              'antecedentes y cuidador. Entre más completo, mejor alimenta el '
+              'motor Kura+ y el módulo de prevención.',
+        ),
+        const TourStep(
+          route: '/agenda',
+          title: '3 · Agenda de consultas',
+          body:
+              'Programa citas (o se sincronizan desde Acuity). Desde una cita: '
+              '“Iniciar consulta”; si ya existe, “Ir a la consulta” — sin '
+              'capturar dos veces.',
+        ),
+        const TourStep(
+          route: '/agenda',
+          title: '4 · Iniciar consulta o seguimiento',
+          body:
+              'Al iniciar la consulta eliges el tipo. Para una herida existente, '
+              '“Seguimiento” te lleva directo a su formulario (ya no a una '
+              'valoración).',
+        ),
         if (hasWound)
           TourStep(
             route: '/patients/$patientId/wound/$woundId/capture',
-            title: 'Valoración de la herida',
+            title: '5 · La consulta · Valoración',
             body:
-                'Captura guiada por etiología (divulgación progresiva) con el '
-                'PRONÓSTICO EN VIVO del motor Kura+ mientras mides el lecho. '
-                '(Es solo un vistazo; no guardaremos nada.)',
+                'Captura guiada por etiología con el PRONÓSTICO EN VIVO del motor '
+                'mientras mides el lecho. (Solo un vistazo; no guardamos nada.)',
           ),
         if (hasWound)
           TourStep(
             route: '/patients/$patientId/wound/$woundId/follow-up/new',
-            title: 'Seguimiento en 5 fases',
+            title: '6 · La consulta · Seguimiento (5 fases)',
             body:
-                'El seguimiento reorganizado: Fase 0 perfil heredado, 1 '
-                'procedimiento físico, 2 estado actual, 3 RÉGIMEN sugerido por '
-                'Kura+ (con alertas e interconsultas), 4 checkpoint de Sheehan y '
-                '5 nota + firma.',
+                'Perfil heredado (F0), procedimiento físico (F1), estado (F2), '
+                'RÉGIMEN de Kura+ con alertas/interconsultas (F3), checkpoint de '
+                'Sheehan (F4) y nota + firma (F5).',
+          ),
+        if (patientId != null && consultationId != null)
+          TourStep(
+            route: '/patients/$patientId/consultation/$consultationId',
+            title: '7 · …hasta el cobro',
+            body:
+                'Al cerrar la consulta registras los insumos usados y generas el '
+                'COBRO: efectivo, terminal Point o link de pago (Stripe). Todo '
+                'queda en el expediente.',
           ),
         const TourStep(
-          route: '/',
-          title: '¡Listo!',
+          route: '/reports',
+          title: '8 · Reportes del paciente',
           body:
-              'Ese es el flujo principal. Explora libremente; puedes reabrir este '
-              'recorrido con el botón “?”. Y recuerda: la app también funciona '
-              'sin conexión.',
+              'Genera reportes clínicos (evolución, medidas, fotos) para '
+              'compartir con el paciente o exportar.',
+        ),
+        const TourStep(
+          route: '/',
+          title: '9 · Dashboard · avance de todos',
+          body:
+              'El tablero de inicio: el avance de TODOS tus pacientes de un '
+              'vistazo (riesgo, cierres, pendientes). ¡Listo, explora libremente! '
+              'Reabre el recorrido con el botón “Tour”.',
         ),
       ];
   }
