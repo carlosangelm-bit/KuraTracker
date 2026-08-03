@@ -37,10 +37,13 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
   String _evidenceMode = 'primera_ultima'; // 'todas' | 'primera_ultima'
   bool _generating = false;
   final _recommendationsCtrl = TextEditingController();
+  final _searchCtrl = TextEditingController();
+  String _query = '';
 
   @override
   void dispose() {
     _recommendationsCtrl.dispose();
+    _searchCtrl.dispose();
     super.dispose();
   }
 
@@ -75,6 +78,18 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                       ? repo.listPatientsForStaff(session.user!.staffId!)
                       : <Patient>[]);
 
+          // Filtro por nombre o folio (búsqueda insensible a mayúsculas/acentos
+          // básicos). No afecta la selección: los pacientes ya marcados siguen
+          // seleccionados aunque el texto los oculte de la lista visible.
+          final q = _query.trim().toLowerCase();
+          final visiblePatients = q.isEmpty
+              ? patients
+              : patients
+                  .where((p) =>
+                      p.fullName.toLowerCase().contains(q) ||
+                      p.folio.toLowerCase().contains(q))
+                  .toList();
+
           // Cuadro de pacientes con altura acotada (no Expanded): ~40% del
           // alto de pantalla, siempre entre 220 y 380 px, para que sea
           // usable tanto en viewports cortos de movil como en escritorio.
@@ -100,29 +115,76 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                             .titleMedium
                             ?.copyWith(fontWeight: FontWeight.w700)),
                     const SizedBox(height: 8),
+                    TextField(
+                      controller: _searchCtrl,
+                      onChanged: (v) => setState(() => _query = v),
+                      decoration: InputDecoration(
+                        isDense: true,
+                        prefixIcon: const Icon(Icons.search),
+                        hintText: 'Buscar por nombre o folio',
+                        border: const OutlineInputBorder(),
+                        suffixIcon: _query.isEmpty
+                            ? null
+                            : IconButton(
+                                icon: const Icon(Icons.clear),
+                                tooltip: 'Limpiar',
+                                onPressed: () => setState(() {
+                                  _searchCtrl.clear();
+                                  _query = '';
+                                }),
+                              ),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    if (_selectedPatientIds.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: Row(
+                          children: [
+                            Text('${_selectedPatientIds.length} seleccionado(s)',
+                                style: TextStyle(
+                                    fontSize: 12,
+                                    color: KuraColors.darkText.withOpacity(0.7))),
+                            const Spacer(),
+                            TextButton(
+                              style: TextButton.styleFrom(
+                                  padding: EdgeInsets.zero,
+                                  minimumSize: const Size(0, 0),
+                                  tapTargetSize:
+                                      MaterialTapTargetSize.shrinkWrap),
+                              onPressed: () =>
+                                  setState(() => _selectedPatientIds.clear()),
+                              child: const Text('Quitar selección',
+                                  style: TextStyle(fontSize: 12)),
+                            ),
+                          ],
+                        ),
+                      ),
                     ConstrainedBox(
                       constraints: BoxConstraints(
                         minHeight: 220,
                         maxHeight: patientsBoxHeight,
                       ),
                       child: Card(
-                        child: patients.isEmpty
+                        child: visiblePatients.isEmpty
                             ? Center(
                                 child: Padding(
                                   padding: const EdgeInsets.all(24),
                                   child: Text(
-                                    isHospital
-                                        ? 'No hay pacientes internados en el centro'
-                                        : 'No hay pacientes disponibles',
+                                    patients.isEmpty
+                                        ? (isHospital
+                                            ? 'No hay pacientes internados en el centro'
+                                            : 'No hay pacientes disponibles')
+                                        : 'Sin coincidencias para “${_query.trim()}”',
                                     style: const TextStyle(color: Colors.black54),
                                     textAlign: TextAlign.center,
                                   ),
                                 ),
                               )
                             : ListView.builder(
-                                itemCount: patients.length,
+                                itemCount: visiblePatients.length,
                                 itemBuilder: (context, i) {
-                                  final p = patients[i];
+                                  final p = visiblePatients[i];
                                   return CheckboxListTile(
                                     value: _selectedPatientIds.contains(p.id),
                                     title: Text(p.fullName),
