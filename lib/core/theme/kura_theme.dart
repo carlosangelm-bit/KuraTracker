@@ -32,6 +32,20 @@ class KuraColors {
   static const Color chipBg = KuraPalette.chipBg;
 }
 
+/// Colores REALISTAS del lecho de la herida (clasificación RYB), para las
+/// visualizaciones de composición del tejido. Fuente ÚNICA: antes estaban
+/// duplicados e inconsistentes entre la gráfica de seguimiento y los sliders
+/// de captura (la necrosis, por ejemplo, salía roja en una y gris en otra).
+///
+/// NO son estado clínico (semáforo `success/warning/danger`): representan el
+/// aspecto real del tejido para que la gráfica se lea como el lecho mismo.
+class KuraTissueColors {
+  static const Color granulacion = Color(0xFFB5463C); // rojo carne
+  static const Color esfacelo = Color(0xFFD8B24A); // amarillo/tostado
+  static const Color necrosis = Color(0xFF2B2B2B); // negro
+  static const Color epitelizacion = Color(0xFFE79AAE); // rosa
+}
+
 class KuraTheme {
   /// Tema por defecto (clínica de heridas, morado). Alias de compatibilidad
   /// hacia atrás; el código nuevo/reactivo usa [forType].
