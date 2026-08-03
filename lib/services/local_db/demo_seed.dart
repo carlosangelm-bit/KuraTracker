@@ -31,7 +31,7 @@ class DemoSeed {
   // una sola vez en instalaciones demo previas (wipeAll + _seed), evitando
   // duplicados y datos viejos. Cada rediseño del roster sube este número.
   // v12: roster curado por escenario (clínica 7 / hospital 5 / cuidadores 3).
-  static const String _seedFlag = 'seeded_v21';
+  static const String _seedFlag = 'seeded_v22';
 
   static Future<void> ensureSeeded(LocalStore store) async {
     if (store.getBool(_seedFlag)) return;
@@ -493,6 +493,10 @@ class DemoSeed {
       String? dischargeNote,
       String? treatmentDescription,
       List<List<String>> treatmentComponents = const [], // [method, product]
+      bool withPhotos = false, // foto basal + más reciente (evidencia antes/después)
+      bool withFollowUpNotes = false, // narrativa de seguimiento por visita
+      String followUpSignedBy = 'Dra. Ana Martínez',
+      String followUpSignedLicense = 'K2024-0001',
     }) async {
       final pid = _uuid.v4();
       final wid = _uuid.v4();
@@ -598,8 +602,32 @@ class DemoSeed {
       ]);
       final consults = <Map<String, dynamic>>[];
       for (var i = 0; i < n; i++) {
-        consults.add(consulta(consultIds[i], pid, staffId, siteId,
-            i == 0 ? 'valoracion' : 'seguimiento', dates[i]));
+        final row = consulta(consultIds[i], pid, staffId, siteId,
+            i == 0 ? 'valoracion' : 'seguimiento', dates[i]);
+        if (withFollowUpNotes && i > 0) {
+          final c = comps[i];
+          final prev = areas[i - 1];
+          final cur = areas[i];
+          final trend = cur < prev * 0.98
+              ? 'en mejoría'
+              : (cur > prev * 1.02 ? 'con deterioro' : 'estable');
+          row.addAll({
+            'follow_up_care_type': 'Curación avanzada',
+            'follow_up_procedure_desc':
+                'Limpieza con solución salina 0.9%, desbridamiento de esfacelo '
+                    'según hallazgos y colocación de apósito acorde al exudado.',
+            'follow_up_materials_used':
+                'Solución salina 0.9%, gasas estériles, apósito primario '
+                    '(espuma/hidrocoloide según exudado).',
+            'follow_up_evolution':
+                'Lecho de ${cur.toStringAsFixed(1)} cm²; granulación ${c[0]}%, '
+                    'esfacelo ${c[1]}%${c[2] > 0 ? ', necrosis ${c[2]}%' : ''}, '
+                    'epitelización ${c[3]}%. Evolución $trend.',
+            'follow_up_signed_by': followUpSignedBy,
+            'follow_up_signed_license': followUpSignedLicense,
+          });
+        }
+        consults.add(row);
       }
       await appendRows(Collections.consultations, consults);
       await appendRows(Collections.woundAssessments, [
@@ -628,6 +656,35 @@ class DemoSeed {
             c[2], c[3], dpt[i]));
       }
       await appendRows(Collections.woundMeasurements, measures);
+      // Evidencia fotográfica: basal (primera visita) + más reciente (última),
+      // para lucir el antes/después en el detalle y el reporte. Se usan las dos
+      // imágenes más ligeras para no exceder la cuota de almacenamiento local.
+      if (withPhotos) {
+        final photoRows = <Map<String, dynamic>>[
+          {
+            'id': _uuid.v4(),
+            'wound_id': wid,
+            'consultation_id': consultIds.first,
+            'measurement_id': measures.first['id'],
+            'storage_path': DemoWoundPhotos.all[0],
+            'taken_at': iso(dates.first),
+            'is_baseline': true,
+            'photo_stage': null,
+          },
+          if (n > 1)
+            {
+              'id': _uuid.v4(),
+              'wound_id': wid,
+              'consultation_id': consultIds.last,
+              'measurement_id': measures.last['id'],
+              'storage_path': DemoWoundPhotos.all[1],
+              'taken_at': iso(dates.last),
+              'is_baseline': false,
+              'photo_stage': null,
+            },
+        ];
+        await appendRows(Collections.woundPhotos, photoRows);
+      }
       if (abiRight != null || abiLeft != null || albumin != null) {
         await appendRows(Collections.perfusionNutrition, [
           {
@@ -706,17 +763,21 @@ class DemoSeed {
           'primary': 'false'
         },
       ],
-      areas: [8.0, 5.9, 3.4],
+      areas: [8.0, 6.6, 5.1, 3.8, 2.4],
       comps: [
         [40, 35, 10, 15],
-        [55, 20, 5, 20],
-        [65, 10, 0, 25],
+        [48, 28, 7, 17],
+        [57, 20, 4, 19],
+        [66, 12, 1, 21],
+        [74, 5, 0, 21],
       ],
       glucose: 172,
       abiRight: 0.95,
       abiLeft: 0.92,
       isLowerExtremity: true,
       albumin: 3.6,
+      withPhotos: true,
+      withFollowUpNotes: true,
       treatmentDescription:
           'Descarga plantar con calzado terapéutico, curación en ambiente '
           'húmedo y control glucémico. Revisión cada 7 días.',
@@ -744,16 +805,21 @@ class DemoSeed {
         ['obesidad', 'presente'],
         ['diabetes_mellitus', 'negado'],
       ],
-      areas: [12.0, 8.0, 4.5],
+      areas: [12.0, 9.6, 7.0, 5.2, 3.6],
       comps: [
         [45, 30, 5, 20],
-        [58, 20, 2, 20],
-        [70, 8, 0, 22],
+        [52, 24, 3, 21],
+        [60, 17, 1, 22],
+        [68, 10, 0, 22],
+        [74, 4, 0, 22],
       ],
       abiRight: 1.0,
       abiLeft: 0.98,
       isLowerExtremity: true,
       albumin: 3.8,
+      withFollowUpNotes: true,
+      followUpSignedBy: 'Lic. Carlos Ramírez',
+      followUpSignedLicense: 'K2024-0002',
       treatmentDescription:
           'Terapia compresiva multicapa, curación en ambiente húmedo y '
           'elevación de la extremidad. Revisión semanal.',
@@ -788,18 +854,31 @@ class DemoSeed {
           'primary': 'true'
         },
       ],
-      areas: [3.0, 3.5, 4.2],
+      areas: [3.0, 3.4, 3.9, 4.4, 5.0],
       comps: [
         [15, 30, 45, 10],
-        [10, 32, 48, 10],
-        [6, 34, 50, 10],
+        [12, 31, 47, 10],
+        [9, 32, 49, 10],
+        [6, 33, 51, 10],
+        [4, 34, 52, 10],
       ],
-      depths: [0.5, 0.6, 0.7],
+      depths: [0.5, 0.6, 0.7, 0.8, 0.9],
       infectionCriteria: ['eritemaPerilesional', 'calorLocal'],
       abiRight: 0.62,
       abiLeft: 0.34, // isquemia crítica en la pierna con la herida
       isLowerExtremity: true,
       albumin: 3.0,
+      withPhotos: true,
+      withFollowUpNotes: true,
+      treatmentDescription:
+          'Herida arterial con isquemia crítica: NO desbridar tejido seco; '
+          'protección, control del dolor y manejo de la infección mientras se '
+          'resuelve la revascularización. Curación conservadora.',
+      treatmentComponents: [
+        ['Limpieza de la herida', 'Solución salina 0.9% (suave)'],
+        ['Protección', 'Apósito no adherente'],
+        ['Manejo del dolor', 'Analgesia escalonada'],
+      ],
     );
     // Referencia urgente a cirugía vascular.
     await appendRows(Collections.referrals, [
@@ -877,15 +956,28 @@ class DemoSeed {
           'primary': 'true'
         },
       ],
-      areas: [12.0, 11.5, 11.0],
+      areas: [12.0, 11.6, 11.3, 11.1, 10.9],
       comps: [
         [30, 35, 10, 25],
-        [30, 36, 10, 24],
-        [32, 36, 8, 24],
+        [31, 35, 9, 25],
+        [30, 36, 9, 25],
+        [31, 36, 8, 25],
+        [32, 36, 7, 25],
       ],
       infectionCriteria: ['eritemaPerilesional', 'calorLocal'],
       glucose: 108,
       albumin: 3.4,
+      withFollowUpNotes: true,
+      followUpSignedBy: 'Lic. Carlos Ramírez',
+      followUpSignedLicense: 'K2024-0002',
+      treatmentDescription:
+          'Herida estancada con datos de infección local: optimizar control de '
+          'la carga bacteriana (limpieza + antimicrobiano tópico), valorar '
+          'cultivo y reforzar soporte nutricional. Revisión cada 5 días.',
+      treatmentComponents: [
+        ['Limpieza de la herida', 'Solución salina 0.9%'],
+        ['Control de infección', 'Apósito con plata'],
+      ],
     );
 
     // 5. Pie diabético — ESTANCADO (ámbar). Adherencia irregular al descargo.
@@ -905,17 +997,31 @@ class DemoSeed {
         ['diabetes_mellitus', 'presente'],
         ['movilidad_reducida', 'no_evaluado'],
       ],
-      areas: [9.0, 7.4, 6.8],
+      areas: [9.0, 8.0, 7.2, 6.5, 5.9],
       comps: [
         [35, 35, 15, 15],
-        [38, 34, 13, 15],
-        [40, 34, 12, 14],
+        [37, 34, 14, 15],
+        [39, 33, 13, 15],
+        [41, 32, 12, 15],
+        [43, 31, 11, 15],
       ],
       glucose: 198,
       abiRight: 0.9,
       abiLeft: 0.88,
       isLowerExtremity: true,
       albumin: 3.2,
+      withFollowUpNotes: true,
+      followUpSignedBy: 'Lic. Carlos Ramírez',
+      followUpSignedLicense: 'K2024-0002',
+      treatmentDescription:
+          'Progreso lento por adherencia irregular a la descarga: reforzar '
+          'educación y descarga plantar estricta, curación en ambiente húmedo y '
+          'control glucémico. Revisión cada 7 días.',
+      treatmentComponents: [
+        ['Limpieza de la herida', 'Solución salina 0.9%'],
+        ['Apósito primario', 'Hidrofibra'],
+        ['Descarga', 'Fieltro de descarga / calzado terapéutico'],
+      ],
     );
 
     // 6. Quirúrgica (cesárea) — CERRADA. Historia de éxito (herida egresada).
@@ -934,18 +1040,31 @@ class DemoSeed {
       comorbid: [
         ['obesidad', 'presente'],
       ],
-      areas: [7.0, 3.0, 0.2],
+      areas: [7.0, 4.6, 2.4, 0.8, 0.1],
       comps: [
         [50, 25, 5, 20],
-        [70, 10, 0, 20],
-        [15, 0, 0, 85],
+        [62, 16, 2, 20],
+        [74, 8, 0, 18],
+        [40, 2, 0, 58],
+        [8, 0, 0, 92],
       ],
-      depths: [0.5, 0.3, 0.0],
+      depths: [0.5, 0.35, 0.2, 0.1, 0.0],
       baselineDaysAgo: 21,
       closed: true,
+      withPhotos: true,
+      withFollowUpNotes: true,
+      followUpSignedBy: 'Administradora Procomsa',
+      followUpSignedLicense: '',
       dischargeNote:
           'Cicatrización completa a las 3 semanas. Alta de la herida; se indican '
           'cuidados de la cicatriz y protección solar.',
+      treatmentDescription:
+          'Cierre por segunda intención sin datos de infección: curación en '
+          'ambiente húmedo y protección de la piel perilesional hasta el cierre.',
+      treatmentComponents: [
+        ['Limpieza de la herida', 'Solución salina 0.9%'],
+        ['Apósito primario', 'Hidrocoloide'],
+      ],
     );
 
     // 7. LPP sacra domiciliaria — MEJORANDO, con EVIDENCIA FOTOGRÁFICA real.
@@ -1374,8 +1493,8 @@ class DemoSeed {
       required String etiology,
       required String subtype,
       required String location,
-      required double area,
-      required List<int> comp, // [gran, slough, necr, epi]
+      required List<double> areas, // serie basal → actual (evolución en la app del cuidador)
+      required List<List<int>> comps, // [gran, slough, necr, epi] por medición
       required String instructions,
       required List<Map<String, dynamic>> tasks,
       Map<String, dynamic> woundExtra = const {},
@@ -1430,11 +1549,18 @@ class DemoSeed {
           'created_at': iso(now.subtract(const Duration(days: 20))),
         }
       ]);
-      // Medición sin consulta (consultation_id nullable): alimenta la vista de
-      // evolución de la herida en la app del cuidador.
+      // Mediciones seriadas sin consulta (consultation_id nullable): alimentan
+      // la vista de evolución de la herida en la app del cuidador. Se reparten
+      // en las últimas ~3 semanas (basal → actual).
+      final cuiN = areas.length;
+      final cuiDates = List<DateTime>.generate(
+          cuiN,
+          (i) => now.subtract(
+              Duration(days: (21 * (cuiN - 1 - i) / (cuiN - 1)).round())));
       await appendRows(Collections.woundMeasurements, [
-        meas(wid, null, now.subtract(const Duration(days: 3)), area, comp[0],
-            comp[1], comp[2], comp[3], 0.5),
+        for (var i = 0; i < cuiN; i++)
+          meas(wid, null, cuiDates[i], areas[i], comps[i][0], comps[i][1],
+              comps[i][2], comps[i][3], 0.5),
       ]);
       await appendRows(Collections.caregiverInstructions, [
         {
@@ -1478,8 +1604,12 @@ class DemoSeed {
       subtype: 'Lesión por presión sacra',
       location: 'sacro',
       woundExtra: {'wuwhs_grade': 'g2'},
-      area: 6.0,
-      comp: [55, 25, 5, 15],
+      areas: [6.0, 4.6, 3.4],
+      comps: [
+        [55, 25, 5, 15],
+        [62, 16, 2, 20],
+        [70, 8, 0, 22],
+      ],
       instructions:
           'Cambios de posición cada 2 h (registrar hora). Mantener la piel seca y '
           'limpia; aplicar crema barrera tras cada cambio de pañal. Avisar a la '
@@ -1523,8 +1653,12 @@ class DemoSeed {
       subtype: 'Lesión por presión en talón',
       location: 'talon_derecho',
       woundExtra: {'wuwhs_grade': 'g2'},
-      area: 4.0,
-      comp: [60, 20, 0, 20],
+      areas: [4.0, 3.7, 3.4],
+      comps: [
+        [60, 20, 0, 20],
+        [62, 17, 0, 21],
+        [64, 14, 0, 22],
+      ],
       instructions:
           'Usar taloneras de descarga en todo momento. Movilizar las piernas y '
           'revisar los talones 2 veces al día. Hidratar la piel; no masajear sobre '
@@ -1556,8 +1690,12 @@ class DemoSeed {
       subtype: 'Úlcera venosa',
       location: 'pierna_izquierda_tercio_distal',
       woundExtra: {'ceap_class': 'c6'},
-      area: 5.0,
-      comp: [65, 15, 0, 20],
+      areas: [5.0, 4.0, 3.0],
+      comps: [
+        [65, 15, 0, 20],
+        [70, 10, 0, 20],
+        [75, 5, 0, 20],
+      ],
       instructions:
           'Mantener el vendaje de compresión limpio y seco; no retirarlo salvo '
           'indicación. Elevar la pierna varias veces al día. Avisar si el vendaje '
