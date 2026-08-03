@@ -36,8 +36,19 @@ class _PatientFormScreenState extends ConsumerState<PatientFormScreen> {
   final _responsiblePhoneCtrl = TextEditingController();
   final _weightCtrl = TextEditingController();
   final _heightCtrl = TextEditingController();
-  final _medsCtrl = TextEditingController(); // medicamentos activos
-  final _allergiesCtrl = TextEditingController(); // alergias
+  final _medsCtrl = TextEditingController(); // medicamentos activos (input)
+  final _allergiesCtrl = TextEditingController(); // alergias (input)
+  // Estos tres campos se capturan como ETIQUETAS (una por concepto) y se guardan
+  // separadas por salto de línea en su columna de texto.
+  final List<String> _antecedentesTags = [];
+  final List<String> _medsTags = [];
+  final List<String> _allergiesTags = [];
+
+  static List<String> _splitTags(String? s) => (s ?? '')
+      .split(RegExp(r'[\n;]'))
+      .map((e) => e.trim())
+      .where((e) => e.isNotEmpty)
+      .toList();
   // Antecedentes (Fase 3).
   final Set<AntecedenteHeredoFamiliar> _familyHistory = {};
   final _familyHistoryNotesCtrl = TextEditingController();
@@ -130,9 +141,15 @@ class _PatientFormScreenState extends ConsumerState<PatientFormScreen> {
     _caregiverNameCtrl.text = p.caregiverName ?? '';
     _caregiverPhoneCtrl.text = p.caregiverPhone ?? '';
     _fragile = p.fragilePatient;
-    _notesCtrl.text = p.backgroundNotes ?? '';
-    _medsCtrl.text = p.activeMedications ?? '';
-    _allergiesCtrl.text = p.allergies ?? '';
+    _antecedentesTags
+      ..clear()
+      ..addAll(_splitTags(p.backgroundNotes));
+    _medsTags
+      ..clear()
+      ..addAll(_splitTags(p.activeMedications));
+    _allergiesTags
+      ..clear()
+      ..addAll(_splitTags(p.allergies));
     _curpCtrl.text = p.curp ?? '';
     _addressCtrl.text = p.address ?? '';
     _occupationCtrl.text = p.occupation ?? '';
@@ -153,6 +170,66 @@ class _PatientFormScreenState extends ConsumerState<PatientFormScreen> {
       _comorbidities[c.code] = c.status;
       _originalComorbidities[c.code] = c.status;
     }
+  }
+
+  // Entrada por ETIQUETAS: un TextField que agrega el concepto a [tags] (Enter o
+  // botón +) y una fila de chips borrables. Reemplaza los antiguos campos de
+  // texto libre para que la info quede organizada, no como texto suelto.
+  void _addTag(List<String> tags, TextEditingController ctrl) {
+    final raw = ctrl.text.trim();
+    if (raw.isEmpty) return;
+    // Permite pegar varios separados por coma/; y agregarlos de una vez.
+    final parts = raw
+        .split(RegExp(r'[,;\n]'))
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty);
+    setState(() {
+      for (final p in parts) {
+        if (!tags.any((t) => t.toLowerCase() == p.toLowerCase())) tags.add(p);
+      }
+      ctrl.clear();
+    });
+  }
+
+  Widget _tagInput({
+    required String label,
+    required String hint,
+    required List<String> tags,
+    required TextEditingController ctrl,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        TextField(
+          controller: ctrl,
+          textInputAction: TextInputAction.done,
+          onSubmitted: (_) => _addTag(tags, ctrl),
+          decoration: InputDecoration(
+            labelText: label,
+            hintText: hint,
+            suffixIcon: IconButton(
+              tooltip: 'Agregar',
+              icon: const Icon(Icons.add),
+              onPressed: () => _addTag(tags, ctrl),
+            ),
+          ),
+        ),
+        if (tags.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 4,
+            children: [
+              for (final t in tags)
+                InputChip(
+                  label: Text(t),
+                  onDeleted: () => setState(() => tags.remove(t)),
+                ),
+            ],
+          ),
+        ],
+      ],
+    );
   }
 
   @override
@@ -366,28 +443,25 @@ class _PatientFormScreenState extends ConsumerState<PatientFormScreen> {
                         ],
                       ),
                       const SizedBox(height: 12),
-                      TextFormField(
-                        controller: _notesCtrl,
-                        maxLines: 3,
-                        decoration: const InputDecoration(labelText: 'Antecedentes'),
+                      _tagInput(
+                        label: 'Antecedentes',
+                        hint: 'Agrega un antecedente y presiona Enter',
+                        tags: _antecedentesTags,
+                        ctrl: _notesCtrl,
                       ),
                       const SizedBox(height: 12),
-                      TextFormField(
-                        controller: _medsCtrl,
-                        maxLines: 2,
-                        decoration: const InputDecoration(
-                          labelText: 'Medicamentos activos',
-                          hintText: 'Medicamentos que toma actualmente',
-                        ),
+                      _tagInput(
+                        label: 'Medicamentos activos',
+                        hint: 'Agrega un medicamento y presiona Enter',
+                        tags: _medsTags,
+                        ctrl: _medsCtrl,
                       ),
                       const SizedBox(height: 12),
-                      TextFormField(
-                        controller: _allergiesCtrl,
-                        maxLines: 2,
-                        decoration: const InputDecoration(
-                          labelText: 'Alergias',
-                          hintText: 'Alergias conocidas (medicamentos, materiales…)',
-                        ),
+                      _tagInput(
+                        label: 'Alergias',
+                        hint: 'Agrega una alergia y presiona Enter',
+                        tags: _allergiesTags,
+                        ctrl: _allergiesCtrl,
                       ),
                       const SizedBox(height: 20),
                       Text('Comorbilidades (antecedentes personales patológicos)',
@@ -500,6 +574,11 @@ class _PatientFormScreenState extends ConsumerState<PatientFormScreen> {
                             ? null
                             : () async {
                                 if (!_formKey.currentState!.validate()) return;
+                                // Captura cualquier concepto escrito que no se
+                                // haya confirmado con Enter/+ antes de guardar.
+                                _addTag(_antecedentesTags, _notesCtrl);
+                                _addTag(_medsTags, _medsCtrl);
+                                _addTag(_allergiesTags, _allergiesCtrl);
                                 setState(() => _saving = true);
                                 final session = ref.read(sessionProvider);
                                 var staffId = session.user?.staffId;
@@ -528,15 +607,15 @@ class _PatientFormScreenState extends ConsumerState<PatientFormScreen> {
                                           ? _caregiverPhoneCtrl.text.trim()
                                           : null,
                                       fragilePatient: _fragile,
-                                      backgroundNotes: _notesCtrl.text.trim(),
-                                      activeMedications:
-                                          _medsCtrl.text.trim().isEmpty
-                                              ? null
-                                              : _medsCtrl.text.trim(),
-                                      allergies:
-                                          _allergiesCtrl.text.trim().isEmpty
-                                              ? null
-                                              : _allergiesCtrl.text.trim(),
+                                      backgroundNotes: _antecedentesTags.isEmpty
+                                          ? null
+                                          : _antecedentesTags.join('\n'),
+                                      activeMedications: _medsTags.isEmpty
+                                          ? null
+                                          : _medsTags.join('\n'),
+                                      allergies: _allergiesTags.isEmpty
+                                          ? null
+                                          : _allergiesTags.join('\n'),
                                       curp: _curpCtrl.text.trim().isEmpty
                                           ? null
                                           : _curpCtrl.text.trim().toUpperCase(),
@@ -609,15 +688,15 @@ class _PatientFormScreenState extends ConsumerState<PatientFormScreen> {
                                         ? _caregiverPhoneCtrl.text.trim()
                                         : null,
                                     fragilePatient: _fragile,
-                                    backgroundNotes: _notesCtrl.text.trim(),
-                                    activeMedications:
-                                        _medsCtrl.text.trim().isEmpty
-                                            ? null
-                                            : _medsCtrl.text.trim(),
-                                    allergies:
-                                        _allergiesCtrl.text.trim().isEmpty
-                                            ? null
-                                            : _allergiesCtrl.text.trim(),
+                                    backgroundNotes: _antecedentesTags.isEmpty
+                                        ? null
+                                        : _antecedentesTags.join('\n'),
+                                    activeMedications: _medsTags.isEmpty
+                                        ? null
+                                        : _medsTags.join('\n'),
+                                    allergies: _allergiesTags.isEmpty
+                                        ? null
+                                        : _allergiesTags.join('\n'),
                                     curp: _curpCtrl.text.trim().isEmpty
                                         ? null
                                         : _curpCtrl.text.trim().toUpperCase(),
