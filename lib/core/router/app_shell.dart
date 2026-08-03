@@ -150,7 +150,8 @@ class AppShell extends ConsumerWidget {
       // lo lleva en su encabezado. En escritorio el menu vive en el
       // NavigationRail. Esto elimina la doble barra en movil.
       appBar: null,
-      body: isWide
+      body: _SyncBanner(
+        child: isWide
           ? Row(
               children: [
                 NavigationRail(
@@ -177,6 +178,7 @@ class AppShell extends ConsumerWidget {
               ],
             )
           : child,
+      ),
       // Barra de navegacion FLOTANTE estilo "liquid glass": no pegada a los
       // bordes (margen + esquinas casi pildora), acabado de vidrio consistente
       // con KuraGlassCard y sombra en capas para verse despegada del fondo.
@@ -378,6 +380,62 @@ class _NavItem {
 /// Al quitar el AppBar del shell (una sola barra por pantalla), cada pantalla
 /// de nivel superior lo incluye en sus `actions` para conservar el acceso a
 /// cerrar sesión en móvil.
+/// Banda superior que avisa cuántas escrituras quedaron sin sincronizar
+/// (offline-first, Fase 1). Solo aparece cuando hay pendientes; permite forzar
+/// la sincronización. En modo demo/local no aparece (no hay cola).
+class _SyncBanner extends ConsumerWidget {
+  final Widget child;
+  const _SyncBanner({required this.child});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final repo = ref.watch(dataRepositoryProvider).valueOrNull;
+    final notifier = repo?.pendingSyncCount;
+    if (repo == null || notifier == null) return child;
+    return Column(
+      children: [
+        ValueListenableBuilder<int>(
+          valueListenable: notifier,
+          builder: (context, count, _) {
+            if (count <= 0) return const SizedBox.shrink();
+            return Material(
+              color: Colors.orange.shade100,
+              child: SafeArea(
+                bottom: false,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 6, 8, 6),
+                  child: Row(
+                    children: [
+                      Icon(Icons.cloud_off_outlined,
+                          size: 16, color: Colors.orange.shade800),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          '$count cambio(s) guardado(s) sin conexión, '
+                          'pendiente(s) de sincronizar',
+                          style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.orange.shade900),
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: () => repo.syncOfflineOutbox(),
+                        child: const Text('Sincronizar'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        ),
+        Expanded(child: child),
+      ],
+    );
+  }
+}
+
 class UserMenuButton extends ConsumerWidget {
   const UserMenuButton({super.key});
 

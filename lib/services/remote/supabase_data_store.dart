@@ -1,7 +1,9 @@
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:uuid/uuid.dart';
 
 import '../local_db/local_store.dart' show Collections;
+import '../offline/offline_outbox.dart';
 import 'data_store.dart';
 
 /// Implementacion de [DataStore] respaldada por Supabase real (Postgrest +
@@ -33,7 +35,13 @@ class SupabaseDataStore implements DataStore {
   final Map<String, List<Map<String, dynamic>>> _cache = {};
   bool _hydrated = false;
 
-  SupabaseDataStore(this._client);
+  /// Cola offline (Fase 1). Si es null, las escrituras fallan como antes; si
+  /// está presente, una falla POR RED encola la operación y actualiza la caché
+  /// de forma optimista (se sincroniza al reconectar via [syncOutbox]).
+  final OfflineOutbox? outbox;
+  static const _uuid = Uuid();
+
+  SupabaseDataStore(this._client, {this.outbox});
 
   /// Cliente Supabase subyacente. Expuesto para suscripciones Realtime
   /// (canales de `postgres_changes`) que viven fuera de la caché de tablas.
@@ -88,34 +96,50 @@ class SupabaseDataStore implements DataStore {
     if (payload['id'] == null || (payload['id'] as String).isEmpty) {
       payload.remove('id');
     }
-    final inserted = await _client
-        .from(collection)
-        .insert(payload)
-        .select()
-        .single();
-    final row = Map<String, dynamic>.from(inserted);
-    _upsertIntoCache(collection, row);
-    return row;
+    try {
+      final inserted =
+          await _client.from(collection).insert(payload).select().single();
+      final row = Map<String, dynamic>.from(inserted);
+      _upsertIntoCache(collection, row);
+      return row;
+    } catch (e) {
+      final queued = await _queueWriteIfOffline(collection, 'insert', data, e);
+      if (queued != null) return queued;
+      rethrow;
+    }
   }
 
   @override
   Future<Map<String, dynamic>> updateRow(
       String collection, String id, Map<String, dynamic> patch) async {
-    final updated = await _client
-        .from(collection)
-        .update(patch)
-        .eq('id', id)
-        .select()
-        .single();
-    final row = Map<String, dynamic>.from(updated);
-    _upsertIntoCache(collection, row);
-    return row;
+    try {
+      final updated = await _client
+          .from(collection)
+          .update(patch)
+          .eq('id', id)
+          .select()
+          .single();
+      final row = Map<String, dynamic>.from(updated);
+      _upsertIntoCache(collection, row);
+      return row;
+    } catch (e) {
+      final withId = {...patch, 'id': id};
+      final queued = await _queueWriteIfOffline(collection, 'update', withId, e);
+      if (queued != null) return queued;
+      rethrow;
+    }
   }
 
   @override
   Future<void> deleteRow(String collection, String id) async {
-    await _client.from(collection).delete().eq('id', id);
-    _cache[collection]?.removeWhere((e) => e['id'] == id);
+    try {
+      await _client.from(collection).delete().eq('id', id);
+      _cache[collection]?.removeWhere((e) => e['id'] == id);
+    } catch (e) {
+      final queued =
+          await _queueWriteIfOffline(collection, 'delete', {'id': id}, e);
+      if (queued == null) rethrow;
+    }
   }
 
   @override
@@ -125,14 +149,127 @@ class SupabaseDataStore implements DataStore {
     if (payload['id'] == null || (payload['id'] as String).isEmpty) {
       payload.remove('id');
     }
-    final upserted = await _client
-        .from(collection)
-        .upsert(payload)
-        .select()
-        .single();
-    final row = Map<String, dynamic>.from(upserted);
+    try {
+      final upserted =
+          await _client.from(collection).upsert(payload).select().single();
+      final row = Map<String, dynamic>.from(upserted);
+      _upsertIntoCache(collection, row);
+      return row;
+    } catch (e) {
+      final queued = await _queueWriteIfOffline(collection, 'upsert', data, e);
+      if (queued != null) return queued;
+      rethrow;
+    }
+  }
+
+  /// Una escritura falló: si la cola offline está activa y el error parece de
+  /// RED (no un rechazo del servidor: RLS/validación → [PostgrestException]),
+  /// la encola y actualiza la caché de forma optimista, devolviendo la fila
+  /// resultante. Devuelve null si NO se debe encolar (el llamador relanza).
+  Future<Map<String, dynamic>?> _queueWriteIfOffline(
+    String collection,
+    String type,
+    Map<String, dynamic> data,
+    Object error,
+  ) async {
+    if (outbox == null || !_looksLikeNetworkError(error)) return null;
+
+    final row = Map<String, dynamic>.from(data);
+    if (type != 'delete' &&
+        (row['id'] == null || (row['id'] as String).isEmpty)) {
+      row['id'] = _uuid.v4();
+    }
+    final rowId = row['id'] as String?;
+
+    await outbox!.enqueue(OutboxOp(
+      opId: _uuid.v4(),
+      collection: collection,
+      type: type,
+      rowId: rowId,
+      payload: row,
+      createdAt: DateTime.now().toUtc().toIso8601String(),
+    ));
+
+    if (type == 'delete') {
+      _cache[collection]?.removeWhere((e) => e['id'] == rowId);
+      return const {};
+    }
+    if (type == 'update') {
+      // Optimista: fusiona el patch sobre la fila en caché (o crea una mínima).
+      final list = _cache.putIfAbsent(collection, () => []);
+      final idx = list.indexWhere((e) => e['id'] == rowId);
+      final merged = idx >= 0 ? {...list[idx], ...row} : row;
+      _upsertIntoCache(collection, merged);
+      return merged;
+    }
     _upsertIntoCache(collection, row);
     return row;
+  }
+
+  /// Heurística: un [PostgrestException]/[AuthException]/[FunctionException]
+  /// significa que el servidor RESPONDIÓ (rechazo por RLS/validación) → NO se
+  /// encola (es un error real). Cualquier otra cosa (fetch fallido, socket,
+  /// timeout) se trata como falta de red → se encola.
+  bool _looksLikeNetworkError(Object e) =>
+      !(e is PostgrestException || e is AuthException || e is FunctionException);
+
+  /// Drena la cola offline aplicando cada operación a Supabase, en orden. Se
+  /// llama al reconectar y tras hidratar. Idempotente: los insert/upsert se
+  /// re-aplican como UPSERT (por id de cliente), así una operación que ya se
+  /// había aplicado (respuesta perdida) no duplica. Devuelve cuántas se
+  /// aplicaron. Si vuelve a fallar la red, se detiene y reintenta luego.
+  Future<int> syncOutbox() async {
+    final box = outbox;
+    if (box == null || box.isEmpty) return 0;
+    var applied = 0;
+    for (final op in box.all()) {
+      try {
+        switch (op.type) {
+          case 'insert':
+          case 'upsert':
+            final payload = Map<String, dynamic>.from(op.payload);
+            final refreshed =
+                await _client.from(op.collection).upsert(payload).select().single();
+            _upsertIntoCache(op.collection, Map<String, dynamic>.from(refreshed));
+            break;
+          case 'update':
+            final patch = Map<String, dynamic>.from(op.payload)..remove('id');
+            final updated = await _client
+                .from(op.collection)
+                .update(patch)
+                .eq('id', op.rowId as Object)
+                .select()
+                .maybeSingle();
+            if (updated != null) {
+              _upsertIntoCache(
+                  op.collection, Map<String, dynamic>.from(updated));
+            }
+            break;
+          case 'delete':
+            await _client
+                .from(op.collection)
+                .delete()
+                .eq('id', op.rowId as Object);
+            break;
+        }
+        await box.remove(op.opId);
+        applied++;
+      } on PostgrestException catch (e) {
+        // 23505 = unique_violation → la fila ya existía (op ya aplicada): OK.
+        if (e.code == '23505') {
+          await box.remove(op.opId);
+          applied++;
+          continue;
+        }
+        // Rechazo real (RLS/validación): parkear para no bloquear la cola.
+        await box.markFailed(op.opId, e.message);
+        continue;
+      } catch (e) {
+        // Sigue sin red: detener y reintentar en el próximo ciclo.
+        break;
+      }
+    }
+    return applied;
   }
 
   /// Invoca una Edge Function de Supabase. El cliente adjunta automaticamente
