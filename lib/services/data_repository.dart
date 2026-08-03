@@ -3785,6 +3785,15 @@ class DataRepository {
     await _store.updateRow(Collections.consultations, consultationId, patch);
   }
 
+  /// Elimina una consulta EN BORRADOR y su captura de herida asociada (fotos/
+  /// valoración/mediciones de esa consulta). Usado para descartar un borrador
+  /// que ya no se va a completar. No borra la herida en sí (persiste entre
+  /// consultas), solo los datos capturados en esta consulta.
+  Future<void> deleteConsultation(String consultationId) async {
+    await deleteWoundDataForConsultation(consultationId);
+    await _store.deleteRow(Collections.consultations, consultationId);
+  }
+
   /// Consulta ligada a una cita de la agenda, por su referencia
   /// ("acuity:<id>" | "manual:<uuid>"), o null si aún no se ha realizado.
   /// Usado por la agenda para el botón inteligente "Iniciar / Ir a la consulta".

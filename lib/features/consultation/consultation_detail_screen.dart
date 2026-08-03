@@ -104,24 +104,40 @@ class ConsultationDetailScreen extends ConsumerWidget {
                   dateFmt: dateFmt,
                 ),
                 const SizedBox(height: 16),
-                // Borrador de seguimiento: se puede cobrar aquí y completar la
-                // parte clínica cuando se pueda (retoma el formulario).
-                if (consultation.isDraft &&
-                    consultation.visitType == VisitType.seguimiento) ...[
+                // Borrador (valoración o seguimiento): retomar el formulario
+                // para continuarlo, o descartarlo. Antes solo el seguimiento
+                // podía retomarse, así que un borrador de valoración quedaba
+                // atascado (ni continuar ni borrar).
+                if (consultation.isDraft) ...[
                   Builder(builder: (ctx) {
-                    final woundId =
-                        repo.woundIdForConsultation(consultationId);
-                    return SizedBox(
-                      width: double.infinity,
-                      child: FilledButton.tonalIcon(
-                        icon: const Icon(Icons.edit_note),
-                        label:
-                            const Text('Completar consulta clínica (borrador)'),
-                        onPressed: woundId == null
-                            ? null
-                            : () => context.go(
-                                '/patients/$patientId/wound/$woundId/follow-up/draft/$consultationId'),
-                      ),
+                    final isFollowUp =
+                        consultation.visitType == VisitType.seguimiento;
+                    final woundId = isFollowUp
+                        ? repo.woundIdForConsultation(consultationId)
+                        : null;
+                    final canContinue = !isFollowUp || woundId != null;
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        FilledButton.tonalIcon(
+                          icon: const Icon(Icons.edit_note),
+                          label: const Text('Continuar consulta (borrador)'),
+                          onPressed: !canContinue
+                              ? null
+                              : () => context.go(isFollowUp
+                                  ? '/patients/$patientId/wound/$woundId/follow-up/draft/$consultationId'
+                                  : '/patients/$patientId/wound/new/capture?consultationId=$consultationId'),
+                        ),
+                        const SizedBox(height: 8),
+                        OutlinedButton.icon(
+                          icon: const Icon(Icons.delete_outline,
+                              color: KuraColors.danger),
+                          label: const Text('Eliminar borrador',
+                              style: TextStyle(color: KuraColors.danger)),
+                          onPressed: () => _confirmDeleteDraft(
+                              context, repo, patientId, consultationId),
+                        ),
+                      ],
                     );
                   }),
                   const SizedBox(height: 16),
@@ -172,6 +188,38 @@ class ConsultationDetailScreen extends ConsumerWidget {
       ),
     );
   }
+}
+
+/// Confirma y elimina un borrador de consulta (+ su captura de herida), luego
+/// regresa al expediente del paciente.
+Future<void> _confirmDeleteDraft(
+  BuildContext context,
+  DataRepository repo,
+  String patientId,
+  String consultationId,
+) async {
+  final ok = await showDialog<bool>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: const Text('Eliminar borrador'),
+      content: const Text(
+          'Se eliminará este borrador de consulta y la captura asociada '
+          '(fotos/medición). Esta acción no se puede deshacer.'),
+      actions: [
+        TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancelar')),
+        FilledButton(
+          style: FilledButton.styleFrom(backgroundColor: KuraColors.danger),
+          onPressed: () => Navigator.pop(ctx, true),
+          child: const Text('Eliminar'),
+        ),
+      ],
+    ),
+  );
+  if (ok != true) return;
+  await repo.deleteConsultation(consultationId);
+  if (context.mounted) context.go('/patients/$patientId');
 }
 
 /// Notas del especialista + resumen (Plaud) + transcripción. La transcripción

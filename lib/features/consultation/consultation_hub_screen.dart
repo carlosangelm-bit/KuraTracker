@@ -7,6 +7,7 @@ import '../../core/theme/kura_theme.dart';
 import '../../core/providers/session_provider.dart';
 import '../../models/app_user.dart';
 import '../../models/consultation.dart';
+import '../../models/wound.dart';
 
 /// Encabezado rapido de consulta (fecha, sitio, tipo de visita) — luego
 /// entra directo al flujo unificado de captura de herida (foto-primero).
@@ -38,6 +39,38 @@ class _ConsultationHubScreenState extends ConsumerState<ConsultationHubScreen> {
   late VisitType _visitType = widget.initialVisitType;
   String? _siteId;
   bool _creating = false;
+
+  /// Selector de herida para el seguimiento cuando el paciente tiene más de una
+  /// activa. Devuelve el id elegido o null si se cancela.
+  Future<String?> _pickWound(List<Wound> wounds) {
+    return showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(20, 4, 20, 8),
+              child: Text('¿A qué herida darás seguimiento?',
+                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
+            ),
+            for (final w in wounds)
+              ListTile(
+                leading: const Icon(Icons.healing_outlined,
+                    color: KuraColors.primary),
+                title: Text(w.subtype?.isNotEmpty == true
+                    ? w.subtype!
+                    : w.etiology.name),
+                subtitle: Text(w.bodyLocationPrimary),
+                onTap: () => Navigator.of(ctx).pop(w.id),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -136,7 +169,11 @@ class _ConsultationHubScreenState extends ConsumerState<ConsultationHubScreen> {
                                   CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                             )
                           : const Icon(Icons.camera_alt_outlined),
-                      label: Text(_creating ? 'Creando...' : 'Continuar: capturar herida'),
+                      label: Text(_creating
+                          ? 'Creando...'
+                          : _visitType == VisitType.seguimiento
+                              ? 'Continuar: registrar seguimiento'
+                              : 'Continuar: capturar herida'),
                       style: FilledButton.styleFrom(
                         backgroundColor: KuraColors.primary,
                         padding: const EdgeInsets.symmetric(vertical: 14),
@@ -147,14 +184,8 @@ class _ConsultationHubScreenState extends ConsumerState<ConsultationHubScreen> {
                               setState(() => _creating = true);
                               // Fix admin-clinico (ajuste obligatorio #3): el
                               // staffId de un admin ya se resuelve de forma
-                              // perezosa en SessionController (login/restore,
-                              // ver ensureAdminStaffId), por lo que a esta
-                              // altura session.user.staffId deberia estar
-                              // resuelto tanto para clinico como para admin.
-                              // Si por algun motivo aun no lo esta (p.ej. fallo
-                              // de red durante el aprovisionamiento), se
-                              // reintenta aqui mismo en vez de bloquear
-                              // silenciosamente el flujo.
+                              // perezosa en SessionController; si aún no está,
+                              // se reintenta aquí en vez de bloquear el flujo.
                               var staffId = session.user?.staffId;
                               if (staffId == null && session.user?.role == AppRole.admin) {
                                 staffId = await repo.ensureAdminStaffId(session.user!);
@@ -172,6 +203,38 @@ class _ConsultationHubScreenState extends ConsumerState<ConsultationHubScreen> {
                                 }
                                 return;
                               }
+
+                              // SEGUIMIENTO: necesita una herida existente. Se
+                              // resuelve ANTES de crear la consulta para no dejar
+                              // un borrador huérfano si se cancela / no hay herida.
+                              String? woundId;
+                              if (_visitType == VisitType.seguimiento) {
+                                final active = repo
+                                    .listWoundsForPatient(widget.patientId)
+                                    .where((w) => w.isActive)
+                                    .toList();
+                                if (active.isEmpty) {
+                                  setState(() => _creating = false);
+                                  if (mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text(
+                                            'Este paciente no tiene heridas activas para dar seguimiento. Registra una valoración primero.'),
+                                      ),
+                                    );
+                                  }
+                                  return;
+                                } else if (active.length == 1) {
+                                  woundId = active.first.id;
+                                } else {
+                                  woundId = await _pickWound(active);
+                                  if (woundId == null) {
+                                    setState(() => _creating = false);
+                                    return; // cancelado
+                                  }
+                                }
+                              }
+
                               final consultation = await repo.createConsultation(
                                 patientId: widget.patientId,
                                 staffId: staffId,
@@ -184,10 +247,15 @@ class _ConsultationHubScreenState extends ConsumerState<ConsultationHubScreen> {
                                 scheduledAppointmentRef:
                                     widget.scheduledAppointmentRef,
                               );
-                              if (mounted) {
+                              if (!mounted) return;
+                              if (_visitType == VisitType.seguimiento) {
+                                // El borrador ya creado se retoma en el
+                                // formulario de SEGUIMIENTO de esa herida.
                                 context.go(
-                                  '/patients/${widget.patientId}/wound/new/capture?consultationId=${consultation.id}',
-                                );
+                                    '/patients/${widget.patientId}/wound/$woundId/follow-up/draft/${consultation.id}');
+                              } else {
+                                context.go(
+                                    '/patients/${widget.patientId}/wound/new/capture?consultationId=${consultation.id}');
                               }
                             },
                     ),
