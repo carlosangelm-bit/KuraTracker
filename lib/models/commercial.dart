@@ -201,6 +201,8 @@ class ChargeItem {
   final int quantity;
   final double unitPrice;
   final double lineTotal;
+  // Insumo del inventario (si el renglón es un producto), para descontar stock.
+  final String? inventoryItemId;
 
   const ChargeItem({
     required this.id,
@@ -211,6 +213,7 @@ class ChargeItem {
     required this.quantity,
     required this.unitPrice,
     required this.lineTotal,
+    this.inventoryItemId,
   });
 
   factory ChargeItem.fromJson(Map<String, dynamic> j) => ChargeItem(
@@ -222,5 +225,6 @@ class ChargeItem {
         quantity: (j['quantity'] as num?)?.toInt() ?? 1,
         unitPrice: (j['unit_price'] as num?)?.toDouble() ?? 0,
         lineTotal: (j['line_total'] as num?)?.toDouble() ?? 0,
+        inventoryItemId: j['inventory_item_id'] as String?,
       );
 }

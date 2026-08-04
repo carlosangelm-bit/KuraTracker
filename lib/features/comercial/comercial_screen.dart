@@ -10,6 +10,8 @@ import '../../core/providers/session_provider.dart';
 import '../../core/router/app_shell.dart'
     show UserMenuButton, kFloatingNavBarHeight;
 import '../../models/commercial.dart';
+import '../../models/inventory.dart';
+import '../../models/patient.dart';
 import '../../services/acuity_service.dart';
 import '../../services/data_repository.dart';
 import '../insumos/dashboard_charts.dart';
@@ -154,7 +156,13 @@ class _CobrosTabState extends ConsumerState<_CobrosTab> {
     final list = _filter == null ? all : all.where((c) => c.status == _filter).toList();
     final fmt = DateFormat('dd/MM/yyyy HH:mm');
 
-    return Column(
+    return Scaffold(
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () => _nuevoCobro(repo),
+        icon: const Icon(Icons.add),
+        label: const Text('Nuevo cobro'),
+      ),
+      body: Column(
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
@@ -205,8 +213,19 @@ class _CobrosTabState extends ConsumerState<_CobrosTab> {
                   },
                 ),
         ),
-      ],
+        ],
+      ),
     );
+  }
+
+  Future<void> _nuevoCobro(DataRepository repo) async {
+    final created = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (_) => _NewChargeSheet(repo: repo, orgId: widget.orgId),
+    );
+    if (created == true && mounted) setState(() {});
   }
 
   Future<void> _openCharge(DataRepository repo, Charge c) async {
@@ -217,6 +236,387 @@ class _CobrosTabState extends ConsumerState<_CobrosTab> {
       builder: (_) => _ChargeDetailSheet(repo: repo, charge: c),
     );
     if (mounted) setState(() {});
+  }
+}
+
+/// Renglón en construcción del cobro directo (servicio o producto).
+class _ChargeLine {
+  final String kind; // 'servicio' | 'insumo'
+  final String name;
+  final double unitPrice;
+  final String? inventoryItemId;
+  int quantity = 1;
+  _ChargeLine({
+    required this.kind,
+    required this.name,
+    required this.unitPrice,
+    this.inventoryItemId,
+  });
+  double get lineTotal => unitPrice * quantity;
+}
+
+/// Builder de un cobro DIRECTO (sin consulta) desde la pestaña Cobros: elige
+/// tipos de consulta (servicios) y productos (inventario); paciente opcional.
+class _NewChargeSheet extends StatefulWidget {
+  final DataRepository repo;
+  final String? orgId;
+  const _NewChargeSheet({required this.repo, required this.orgId});
+  @override
+  State<_NewChargeSheet> createState() => _NewChargeSheetState();
+}
+
+class _NewChargeSheetState extends State<_NewChargeSheet> {
+  Patient? _patient;
+  final List<_ChargeLine> _lines = [];
+  bool _busy = false;
+
+  double get _total => _lines.fold(0, (a, l) => a + l.lineTotal);
+
+  void _snack(String m) => ScaffoldMessenger.of(context)
+      .showSnackBar(SnackBar(content: Text(m)));
+
+  Future<void> _pickPatient() async {
+    final all = widget.repo
+        .listAllPatients()
+        .where((p) => widget.orgId == null || p.organizationId == widget.orgId)
+        .toList()
+      ..sort((a, b) => a.fullName.toLowerCase().compareTo(b.fullName.toLowerCase()));
+    final picked = await showModalBottomSheet<Patient>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (_) => _SearchPickerSheet<Patient>(
+        title: 'Ligar paciente',
+        items: all,
+        labelOf: (p) => p.fullName,
+        sublabelOf: (p) => p.folio,
+      ),
+    );
+    if (picked != null) setState(() => _patient = picked);
+  }
+
+  Future<void> _addServicio() async {
+    final services = widget.repo
+        .listServices(widget.orgId)
+        .where((s) => s.isActive)
+        .toList();
+    if (services.isEmpty) {
+      _snack('No hay tipos de consulta en el catálogo de servicios.');
+      return;
+    }
+    final picked = await showModalBottomSheet<ServiceCatalogItem>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (_) => _SearchPickerSheet<ServiceCatalogItem>(
+        title: 'Tipo de consulta / servicio',
+        items: services,
+        labelOf: (s) => s.name,
+        sublabelOf: (s) => _money(s.price),
+      ),
+    );
+    if (picked != null) {
+      setState(() => _lines.add(_ChargeLine(
+            kind: 'servicio',
+            name: picked.name,
+            unitPrice: picked.price,
+          )));
+    }
+  }
+
+  Future<void> _addProducto() async {
+    final items =
+        widget.repo.listInventoryItems(organizationId: widget.orgId);
+    if (items.isEmpty) {
+      _snack('No hay productos en el inventario del centro.');
+      return;
+    }
+    final picked = await showModalBottomSheet<InventoryItem>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (_) => _SearchPickerSheet<InventoryItem>(
+        title: 'Producto del inventario',
+        items: items,
+        labelOf: (i) => i.name,
+        sublabelOf: (i) =>
+            '${_money(i.unitPrice ?? i.unitCost ?? 0)} · stock ${widget.repo.onHandFor(i.id)}',
+      ),
+    );
+    if (picked != null) {
+      setState(() => _lines.add(_ChargeLine(
+            kind: 'insumo',
+            name: picked.name,
+            unitPrice: picked.unitPrice ?? picked.unitCost ?? 0,
+            inventoryItemId: picked.id,
+          )));
+    }
+  }
+
+  Future<void> _crear() async {
+    if (widget.orgId == null) {
+      _snack('Selecciona un centro para crear el cobro.');
+      return;
+    }
+    if (_lines.isEmpty) {
+      _snack('Agrega al menos un concepto.');
+      return;
+    }
+    setState(() => _busy = true);
+    try {
+      await widget.repo.createManualCharge(
+        organizationId: widget.orgId!,
+        patientId: _patient?.id,
+        siteId: null,
+        lines: [
+          for (final l in _lines)
+            (
+              kind: l.kind,
+              name: l.name,
+              quantity: l.quantity,
+              unitPrice: l.unitPrice,
+              inventoryItemId: l.inventoryItemId,
+            ),
+        ],
+      );
+      if (mounted) Navigator.of(context).pop(true);
+    } catch (e) {
+      if (mounted) {
+        setState(() => _busy = false);
+        _snack('$e'.replaceFirst('Exception: ', ''));
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(
+        left: 16,
+        right: 16,
+        top: 4,
+        bottom: MediaQuery.of(context).viewInsets.bottom + 16,
+      ),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Nuevo cobro',
+                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18)),
+            const SizedBox(height: 12),
+            // Paciente (opcional)
+            Card(
+              margin: EdgeInsets.zero,
+              child: ListTile(
+                leading: Icon(Icons.person_outline,
+                    color: _patient == null
+                        ? KuraColors.darkText.withOpacity(0.5)
+                        : KuraColors.primary),
+                title: Text(_patient?.fullName ?? 'Venta de mostrador'),
+                subtitle: Text(_patient == null
+                    ? 'Sin paciente ligado (opcional)'
+                    : _patient!.folio),
+                trailing: _patient == null
+                    ? TextButton(
+                        onPressed: _pickPatient, child: const Text('Ligar'))
+                    : IconButton(
+                        icon: const Icon(Icons.close),
+                        onPressed: () => setState(() => _patient = null),
+                      ),
+                onTap: _pickPatient,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    icon: const Icon(Icons.medical_services_outlined, size: 18),
+                    label: const Text('Servicio'),
+                    onPressed: _busy ? null : _addServicio,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    icon: const Icon(Icons.inventory_2_outlined, size: 18),
+                    label: const Text('Producto'),
+                    onPressed: _busy ? null : _addProducto,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            if (_lines.isEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 20),
+                child: Center(
+                  child: Text('Agrega servicios o productos al cobro.',
+                      style: TextStyle(
+                          color: KuraColors.darkText.withOpacity(0.5))),
+                ),
+              )
+            else
+              ...List.generate(_lines.length, (i) {
+                final l = _lines[i];
+                return Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 2),
+                  child: Row(
+                    children: [
+                      Icon(
+                        l.kind == 'servicio'
+                            ? Icons.medical_services_outlined
+                            : Icons.inventory_2_outlined,
+                        size: 18,
+                        color: KuraColors.darkText.withOpacity(0.6),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(l.name,
+                                style: const TextStyle(fontSize: 13)),
+                            Text(_money(l.unitPrice),
+                                style: TextStyle(
+                                    fontSize: 11,
+                                    color:
+                                        KuraColors.darkText.withOpacity(0.5))),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        visualDensity: VisualDensity.compact,
+                        icon: const Icon(Icons.remove_circle_outline, size: 20),
+                        onPressed: () => setState(() {
+                          if (l.quantity > 1) {
+                            l.quantity--;
+                          } else {
+                            _lines.removeAt(i);
+                          }
+                        }),
+                      ),
+                      Text('${l.quantity}',
+                          style: const TextStyle(fontWeight: FontWeight.w700)),
+                      IconButton(
+                        visualDensity: VisualDensity.compact,
+                        icon: const Icon(Icons.add_circle_outline, size: 20),
+                        onPressed: () => setState(() => l.quantity++),
+                      ),
+                      SizedBox(
+                        width: 72,
+                        child: Text(_money(l.lineTotal),
+                            textAlign: TextAlign.right,
+                            style: const TextStyle(fontWeight: FontWeight.w700)),
+                      ),
+                    ],
+                  ),
+                );
+              }),
+            const Divider(height: 24),
+            Row(
+              children: [
+                const Expanded(
+                    child: Text('Total',
+                        style: TextStyle(
+                            fontWeight: FontWeight.w800, fontSize: 16))),
+                Text(_money(_total),
+                    style: const TextStyle(
+                        fontWeight: FontWeight.w800, fontSize: 16)),
+              ],
+            ),
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton(
+                onPressed: (_busy || _lines.isEmpty) ? null : _crear,
+                child: Text(_busy ? 'Creando…' : 'Crear cobro'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Hoja genérica de selección con buscador (paciente / servicio / producto).
+class _SearchPickerSheet<T> extends StatefulWidget {
+  final String title;
+  final List<T> items;
+  final String Function(T) labelOf;
+  final String Function(T) sublabelOf;
+  const _SearchPickerSheet({
+    required this.title,
+    required this.items,
+    required this.labelOf,
+    required this.sublabelOf,
+  });
+  @override
+  State<_SearchPickerSheet<T>> createState() => _SearchPickerSheetState<T>();
+}
+
+class _SearchPickerSheetState<T> extends State<_SearchPickerSheet<T>> {
+  String _q = '';
+
+  @override
+  Widget build(BuildContext context) {
+    final q = _q.trim().toLowerCase();
+    final filtered = q.isEmpty
+        ? widget.items
+        : widget.items
+            .where((it) => widget.labelOf(it).toLowerCase().contains(q))
+            .toList();
+    return Padding(
+      padding: EdgeInsets.only(
+        left: 16,
+        right: 16,
+        top: 4,
+        bottom: MediaQuery.of(context).viewInsets.bottom + 16,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(widget.title,
+              style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+          const SizedBox(height: 8),
+          TextField(
+            autofocus: true,
+            decoration: const InputDecoration(
+              prefixIcon: Icon(Icons.search),
+              hintText: 'Buscar…',
+              isDense: true,
+            ),
+            onChanged: (v) => setState(() => _q = v),
+          ),
+          const SizedBox(height: 8),
+          ConstrainedBox(
+            constraints: BoxConstraints(
+                maxHeight: MediaQuery.of(context).size.height * 0.5),
+            child: filtered.isEmpty
+                ? const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 24),
+                    child: Center(child: Text('Sin resultados.')),
+                  )
+                : ListView.builder(
+                    shrinkWrap: true,
+                    itemCount: filtered.length,
+                    itemBuilder: (_, i) {
+                      final it = filtered[i];
+                      return ListTile(
+                        dense: true,
+                        title: Text(widget.labelOf(it)),
+                        subtitle: Text(widget.sublabelOf(it)),
+                        onTap: () => Navigator.of(context).pop(it),
+                      );
+                    },
+                  ),
+          ),
+        ],
+      ),
+    );
   }
 }
 
