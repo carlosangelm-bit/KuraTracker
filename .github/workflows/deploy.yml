@@ -80,6 +80,10 @@ jobs:
           version: latest
       - name: Deploy admin-create-user (--use-api)
         run: supabase functions deploy admin-create-user --use-api --project-ref "$SUPABASE_PROJECT_REF"
+      # Acuity proxy: la app (web) lo invoca con JWT → verify_jwt por default.
+      # NO usar --no-verify-jwt aquí (eso es solo para el webhook de Acuity).
+      - name: Deploy acuity-proxy (--use-api)
+        run: supabase functions deploy acuity-proxy --use-api --project-ref "$SUPABASE_PROJECT_REF"
       # Mercado Pago (SOLO terminal Point / presencial; el pago en línea lo hace
       # Stripe). webhook SIN verify_jwt (MP no manda JWT; valida firma propia).
       - name: Deploy mercadopago-webhook (--use-api, --no-verify-jwt)
