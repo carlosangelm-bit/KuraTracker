@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+
+import '../config/app_config.dart';
+import '../../features/support/support_launcher.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -336,6 +339,8 @@ class AppShell extends ConsumerWidget {
           context.go('/login');
         } else if (value == 'switch') {
           showCenterSwitcher(context, ref);
+        } else if (value == 'help') {
+          openSupportAssistant(context, ref);
         }
       },
       itemBuilder: (context) => [
@@ -345,6 +350,8 @@ class AppShell extends ConsumerWidget {
         ),
         PopupMenuItem(enabled: false, child: Text(user.role.label)),
         const PopupMenuDivider(),
+        if (AppConfig.isSupabaseConfigured)
+          const PopupMenuItem(value: 'help', child: Text('Asistente de ayuda')),
         if (session.canSwitchCenter)
           const PopupMenuItem(value: 'switch', child: Text('Cambiar de centro')),
         const PopupMenuItem(value: 'logout', child: Text('Cerrar sesión')),
@@ -644,6 +651,8 @@ class UserMenuButton extends ConsumerWidget {
             context.go('/login');
           } else if (value == 'switch') {
             showCenterSwitcher(context, ref);
+          } else if (value == 'help') {
+            openSupportAssistant(context, ref);
           }
         },
         itemBuilder: (context) => [
@@ -653,6 +662,8 @@ class UserMenuButton extends ConsumerWidget {
           ),
           PopupMenuItem(enabled: false, child: Text(user.role.label)),
           const PopupMenuDivider(),
+          if (AppConfig.isSupabaseConfigured)
+            const PopupMenuItem(value: 'help', child: Text('Asistente de ayuda')),
           if (session.canSwitchCenter)
             const PopupMenuItem(value: 'switch', child: Text('Cambiar de centro')),
           const PopupMenuItem(value: 'logout', child: Text('Cerrar sesión')),

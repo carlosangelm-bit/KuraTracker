@@ -1817,6 +1817,56 @@ class DataRepository {
     return (data['reply'] as String?) ?? '';
   }
 
+  /// Inicia una conversación con el asistente de SOPORTE de la plataforma
+  /// (CustomGPT vía Edge Function support-bot) y devuelve el sessionId. Solo en
+  /// producción.
+  Future<String> supportBotStart() async {
+    final store = _store;
+    if (store is! SupabaseDataStore) {
+      throw Exception('El asistente requiere el entorno de producción.');
+    }
+    Map<String, dynamic> data;
+    try {
+      data = await store.invokeFunction('support-bot', {'action': 'create'});
+    } on FunctionException catch (e) {
+      throw Exception(_edgeErrorMessage(e));
+    }
+    if (data['error'] != null) throw Exception(data['error'].toString());
+    final id = data['sessionId'] as String?;
+    if (id == null || id.isEmpty) {
+      throw Exception('El asistente no devolvió una sesión.');
+    }
+    return id;
+  }
+
+  /// Envía un mensaje al asistente de soporte y devuelve la respuesta. [context]
+  /// es el contexto NO SENSIBLE del usuario ({rol, centro, ruta, pantalla}) para
+  /// que el agente detecte el perfil y el proceso; nunca incluye datos del
+  /// paciente (la Edge Function además borra ids de la ruta).
+  Future<String> supportBotSend(
+    String sessionId,
+    String prompt, {
+    Map<String, String>? context,
+  }) async {
+    final store = _store;
+    if (store is! SupabaseDataStore) {
+      throw Exception('El asistente requiere el entorno de producción.');
+    }
+    Map<String, dynamic> data;
+    try {
+      data = await store.invokeFunction('support-bot', {
+        'action': 'message',
+        'sessionId': sessionId,
+        'prompt': prompt,
+        if (context != null && context.isNotEmpty) 'context': context,
+      });
+    } on FunctionException catch (e) {
+      throw Exception(_edgeErrorMessage(e));
+    }
+    if (data['error'] != null) throw Exception(data['error'].toString());
+    return (data['reply'] as String?) ?? '';
+  }
+
   /// Realtime: se suscribe a cambios en una tabla ([collection]) y, cada vez que
   /// llega un evento (INSERT/UPDATE/DELETE), refresca la caché de esa tabla y
   /// llama [onChange]. Sirve para que Cobros/Conciliación reflejen un pago en
