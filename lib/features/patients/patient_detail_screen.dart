@@ -9,8 +9,10 @@ import '../../models/center_type.dart';
 import '../../models/module_key.dart';
 import '../../models/vac_therapy.dart';
 import '../vac/vac_therapy_form.dart';
+import '../../engine/labs/lab_domain_scoring.dart';
 import '../../engine/models/kura_engine_enums.dart';
 import '../../engine/risk/prevention_risk_engine.dart';
+import 'patient_labs_screen.dart' show severityColor;
 import '../../models/app_user.dart';
 import '../../models/antecedentes.dart';
 import '../../models/patient_diagnosis.dart';
@@ -135,8 +137,12 @@ class _PatientDetailScreenState extends ConsumerState<PatientDetailScreen> {
               canWrite: canWrite);
           final diagnosesCard = _DiagnosesCard(
               patientId: patient.id, diagnoses: diagnoses, canWrite: canWrite);
-          // Laboratorios (0070): los más recientes alimentan el motor.
+          // Laboratorios (0070 + dominio clínico 0073): los más recientes
+          // alimentan el motor (albúmina) y se puntúan 0–3 (banderas).
           final latestLab = repo.latestPatientLab(patient.id);
+          final labsSummary =
+              latestLab == null ? null : scoreClinicalDomain(latestLab);
+          final labsWorst = labsSummary?.worst;
           final labsCard = Card(
             margin: EdgeInsets.zero,
             child: ListTile(
@@ -148,7 +154,31 @@ class _PatientDetailScreenState extends ConsumerState<PatientDetailScreen> {
                   : 'Último: ${_dateFmt.format(latestLab.takenAt)}'
                       '${latestLab.glucoseMgDl != null ? ' · Glu ${latestLab.glucoseMgDl!.toStringAsFixed(0)}' : ''}'
                       '${latestLab.albuminGdl != null ? ' · Alb ${latestLab.albuminGdl}' : ''}'),
-              trailing: const Icon(Icons.chevron_right, size: 18),
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (labsWorst != null)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: severityColor(labsWorst).withOpacity(0.12),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(
+                        (labsSummary!.highCount > 0)
+                            ? '${labsWorst.label} · ${labsSummary.highCount}'
+                            : labsWorst.label,
+                        style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: severityColor(labsWorst)),
+                      ),
+                    ),
+                  const SizedBox(width: 4),
+                  const Icon(Icons.chevron_right, size: 18),
+                ],
+              ),
               onTap: () => context.go('/patients/${patient.id}/labs'),
             ),
           );
