@@ -23,6 +23,16 @@ import { getAcuityAuth } from "../_shared/acuity_auth.ts";
 
 const ACUITY_BASE = "https://acuityscheduling.com/api/v1";
 
+// CORS: la app (Flutter Web) llama esta función cross-origin
+// (app.kuramas.com → supabase.co); sin estos headers ni manejo del preflight
+// OPTIONS, el navegador bloquea la llamada ("Failed to fetch").
+const CORS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+};
+
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
@@ -37,6 +47,10 @@ interface ProxyRequest {
 }
 
 serve(async (req) => {
+  // Preflight CORS: debe responder 200 con los headers ANTES de validar el JWT
+  // (el navegador no manda Authorization en el preflight).
+  if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
+
   // Resolver el centro del usuario que llama (por su JWT) y sus credenciales.
   const jwt = (req.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "");
   if (!jwt) return json({ error: "No autenticado." }, 401);
@@ -80,7 +94,7 @@ serve(async (req) => {
     const text = await res.text();
     return new Response(text, {
       status: res.status,
-      headers: { "Content-Type": "application/json" },
+      headers: { ...CORS, "Content-Type": "application/json" },
     });
   }
   return json({ error: "Acuity rate limit (429)." }, 429);
@@ -89,6 +103,6 @@ serve(async (req) => {
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
     status,
-    headers: { "Content-Type": "application/json" },
+    headers: { ...CORS, "Content-Type": "application/json" },
   });
 }
