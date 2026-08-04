@@ -3,11 +3,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/config/app_config.dart';
+import '../../core/design/tokens.dart';
 import '../../core/providers/session_provider.dart';
 import '../../core/router/app_router.dart';
 import '../../core/router/app_shell.dart' show kFloatingNavBarHeight;
 import '../../core/theme/kura_theme.dart';
 import '../../models/app_user.dart';
+import '../support/support_launcher.dart';
 import 'tour_controller.dart';
 import 'tour_steps.dart';
 
@@ -92,6 +94,13 @@ class _TourScopeState extends ConsumerState<TourScope> {
         !tour.running &&
         ref.watch(sessionProvider).isAuthenticated;
 
+    // Botón flotante de AYUDA (asistente): solo en producción (el asistente vive
+    // detrás de Supabase). Nunca coincide con el lanzador del Tour, que es de la
+    // demo. Mismo anclaje bottom-left, elevado sobre la barra flotante.
+    final showHelp = !_isDemo &&
+        !tour.running &&
+        ref.watch(sessionProvider).isAuthenticated;
+
     return Stack(
       children: [
         widget.child,
@@ -117,7 +126,51 @@ class _TourScopeState extends ConsumerState<TourScope> {
                 12,
             child: _TourLauncher(onTap: _startForRole),
           ),
+        if (showHelp)
+          Positioned(
+            left: MediaQuery.of(context).size.width >= 900 ? 88 : 16,
+            bottom: MediaQuery.of(context).viewPadding.bottom +
+                kFloatingNavBarHeight +
+                12,
+            child: _HelpLauncher(onTap: () => openSupportAssistant(ref)),
+          ),
       ],
+    );
+  }
+}
+
+/// Botón flotante que abre el asistente de ayuda (solo producción). Estilo pill,
+/// color de marca del centro activo, para diferenciarlo del lanzador del Tour.
+class _HelpLauncher extends StatelessWidget {
+  final VoidCallback onTap;
+  const _HelpLauncher({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final color = BrandTokens.of(context).brandPrimary;
+    return Material(
+      color: color,
+      borderRadius: BorderRadius.circular(24),
+      elevation: 4,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(24),
+        onTap: onTap,
+        child: const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.support_agent_outlined, color: Colors.white, size: 18),
+              SizedBox(width: 6),
+              Text('Ayuda',
+                  style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 13)),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

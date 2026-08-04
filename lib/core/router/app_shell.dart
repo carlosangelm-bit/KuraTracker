@@ -340,7 +340,7 @@ class AppShell extends ConsumerWidget {
         } else if (value == 'switch') {
           showCenterSwitcher(context, ref);
         } else if (value == 'help') {
-          openSupportAssistant(context, ref);
+          openSupportAssistant(ref);
         }
       },
       itemBuilder: (context) => [
@@ -652,7 +652,7 @@ class UserMenuButton extends ConsumerWidget {
           } else if (value == 'switch') {
             showCenterSwitcher(context, ref);
           } else if (value == 'help') {
-            openSupportAssistant(context, ref);
+            openSupportAssistant(ref);
           }
         },
         itemBuilder: (context) => [
