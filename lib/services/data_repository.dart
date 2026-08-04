@@ -37,6 +37,7 @@ import '../models/note_option_catalog.dart';
 import '../models/site.dart';
 import '../models/staff.dart';
 import '../models/treatment_plan.dart';
+import '../models/treatment_program.dart';
 import '../models/wound.dart';
 import '../engine/models/kura_engine_output.dart';
 import '../engine/models/kura_engine_enums.dart';
@@ -4549,6 +4550,198 @@ class DataRepository {
     }
 
     return getTreatmentPlanForConsultation(consultationId, woundId)!;
+  }
+
+  // ---------------- Programa de tratamiento mensual (0075) ----------------
+
+  /// Crea el encabezado de un programa (plan mensual) en estado borrador.
+  Future<TreatmentProgram> createTreatmentProgram({
+    required String organizationId,
+    required String patientId,
+    required String woundId,
+    String? consultationId,
+    String? siteId,
+    String? staffId,
+    int weeks = 4,
+    String? createdBy,
+  }) async {
+    final now = DateTime.now().toIso8601String();
+    final saved = await _store.insertRow(Collections.treatmentPrograms, {
+      'id': _uuid.v4(),
+      'organization_id': organizationId,
+      'patient_id': patientId,
+      'wound_id': woundId,
+      'consultation_id': consultationId,
+      'site_id': siteId,
+      'staff_id': staffId,
+      'weeks': weeks,
+      'status': 'borrador',
+      'created_by': createdBy,
+      'created_at': now,
+      'updated_at': now,
+    });
+    return TreatmentProgram.fromJson(saved);
+  }
+
+  TreatmentProgram? programForConsultation(String consultationId) {
+    final rows = _store
+        .getAll(Collections.treatmentPrograms)
+        .where((p) => p['consultation_id'] == consultationId)
+        .map(TreatmentProgram.fromJson)
+        .toList()
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return rows.isEmpty ? null : rows.first;
+  }
+
+  /// Programa vigente (no cancelado) más reciente de una herida.
+  TreatmentProgram? activeProgramForWound(String woundId) {
+    final rows = _store
+        .getAll(Collections.treatmentPrograms)
+        .map(TreatmentProgram.fromJson)
+        .where((p) =>
+            p.woundId == woundId && p.status != ProgramStatus.cancelado)
+        .toList()
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return rows.isEmpty ? null : rows.first;
+  }
+
+  Future<void> updateProgramStatus(String id, ProgramStatus status,
+      {DateTime? acceptedAt}) async {
+    await _store.updateRow(Collections.treatmentPrograms, id, {
+      'status': status.dbValue,
+      if (acceptedAt != null) 'accepted_at': acceptedAt.toIso8601String(),
+      'updated_at': DateTime.now().toIso8601String(),
+    });
+  }
+
+  List<TreatmentProgramSupply> listProgramSupplies(String programId) => _store
+      .getAll(Collections.treatmentProgramSupplies)
+      .map(TreatmentProgramSupply.fromJson)
+      .where((s) => s.programId == programId)
+      .toList()
+    ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+
+  /// Reemplaza los insumos del programa (borra los existentes y crea los nuevos),
+  /// mismo patrón que saveTreatmentPlan (fila por fila para LocalStore/Postgrest).
+  Future<void> saveProgramSupplies(
+    String programId,
+    String organizationId,
+    List<
+            ({
+              String method,
+              String? product,
+              String? inventoryItemId,
+              String name,
+              double quantityPerSession,
+              double? unitCost,
+              double? unitPrice,
+              String? currency
+            })>
+        supplies,
+  ) async {
+    final existing = _store
+        .getAll(Collections.treatmentProgramSupplies)
+        .where((s) => s['program_id'] == programId)
+        .toList();
+    for (final s in existing) {
+      await _store.deleteRow(
+          Collections.treatmentProgramSupplies, s['id'] as String);
+    }
+    final now = DateTime.now().toIso8601String();
+    for (var i = 0; i < supplies.length; i++) {
+      final s = supplies[i];
+      await _store.insertRow(Collections.treatmentProgramSupplies, {
+        'id': _uuid.v4(),
+        'program_id': programId,
+        'organization_id': organizationId,
+        'method': s.method,
+        'product': s.product,
+        'inventory_item_id': s.inventoryItemId,
+        'name': s.name,
+        'quantity_per_session': s.quantityPerSession,
+        'unit_cost': s.unitCost,
+        'unit_price': s.unitPrice,
+        'currency': s.currency ?? 'MXN',
+        'sort_order': i,
+        'created_at': now,
+        'updated_at': now,
+      });
+    }
+  }
+
+  List<TreatmentProgramSession> listProgramSessions(String programId) => _store
+      .getAll(Collections.treatmentProgramSessions)
+      .map(TreatmentProgramSession.fromJson)
+      .where((s) => s.programId == programId)
+      .toList()
+    ..sort((a, b) => a.scheduledAt.compareTo(b.scheduledAt));
+
+  /// Reemplaza las sesiones del programa.
+  Future<void> saveProgramSessions(
+    String programId,
+    String organizationId,
+    String patientId,
+    List<
+            ({
+              String? staffId,
+              DateTime scheduledAt,
+              DateTime? endAt,
+              String? appointmentRef
+            })>
+        sessions,
+  ) async {
+    final existing = _store
+        .getAll(Collections.treatmentProgramSessions)
+        .where((s) => s['program_id'] == programId)
+        .toList();
+    for (final s in existing) {
+      await _store.deleteRow(
+          Collections.treatmentProgramSessions, s['id'] as String);
+    }
+    final now = DateTime.now().toIso8601String();
+    for (var i = 0; i < sessions.length; i++) {
+      final s = sessions[i];
+      await _store.insertRow(Collections.treatmentProgramSessions, {
+        'id': _uuid.v4(),
+        'program_id': programId,
+        'organization_id': organizationId,
+        'patient_id': patientId,
+        'staff_id': s.staffId,
+        'scheduled_at': s.scheduledAt.toIso8601String(),
+        'end_at': s.endAt?.toIso8601String(),
+        'status': 'planeada',
+        'appointment_ref': s.appointmentRef,
+        'sort_index': i,
+        'created_at': now,
+        'updated_at': now,
+      });
+    }
+  }
+
+  /// Explosión de materiales MENSUAL: por cada insumo del plan, cantidad por
+  /// sesión × nº de sesiones no canceladas. Para que atención a cliente reserve
+  /// stock del mes.
+  List<
+      ({
+        String name,
+        String? inventoryItemId,
+        double totalQuantity,
+        double? unitCost,
+        double? unitPrice,
+      })> monthlyExplosion(String programId) {
+    final sessions = listProgramSessions(programId)
+        .where((s) => s.status != SessionStatus.cancelada)
+        .length;
+    return [
+      for (final sup in listProgramSupplies(programId))
+        (
+          name: sup.name,
+          inventoryItemId: sup.inventoryItemId,
+          totalQuantity: sup.quantityPerSession * sessions,
+          unitCost: sup.unitCost,
+          unitPrice: sup.unitPrice,
+        ),
+    ];
   }
 
   // ---------------- Recomendaciones Kura+ ----------------
