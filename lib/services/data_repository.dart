@@ -1595,6 +1595,71 @@ class DataRepository {
     return Charge.fromJson(saved);
   }
 
+  /// Crea un cobro DIRECTO (sin consulta) desde la pestaña Cobros: renglones
+  /// libres de servicios (tipos de consulta) y/o productos (inventario). El
+  /// paciente es opcional (venta de mostrador). Estado inicial pendiente; al
+  /// pagarse, los renglones con inventory_item_id descuentan stock (markChargePaid).
+  Future<Charge> createManualCharge({
+    required String organizationId,
+    String? patientId,
+    String? siteId,
+    required List<
+            ({
+              String kind,
+              String name,
+              int quantity,
+              double unitPrice,
+              String? inventoryItemId
+            })>
+        lines,
+    String? createdBy,
+  }) async {
+    if (lines.isEmpty) {
+      throw Exception('Agrega al menos un concepto al cobro.');
+    }
+    final now = DateTime.now().toIso8601String();
+    final chargeId = _uuid.v4();
+    double svc = 0, sup = 0;
+    for (final l in lines) {
+      final lt = l.unitPrice * l.quantity;
+      if (l.kind == 'servicio') {
+        svc += lt;
+      } else {
+        sup += lt;
+      }
+    }
+    final saved = await _store.insertRow(Collections.charges, {
+      'id': chargeId,
+      'organization_id': organizationId,
+      'patient_id': patientId,
+      'consultation_id': null,
+      'site_id': siteId,
+      'subtotal_service': svc,
+      'subtotal_supplies': sup,
+      'total': svc + sup,
+      'currency': 'MXN',
+      'status': 'pendiente',
+      'created_by': createdBy,
+      'created_at': now,
+      'updated_at': now,
+    });
+    for (final l in lines) {
+      await _store.insertRow(Collections.chargeItems, {
+        'id': _uuid.v4(),
+        'charge_id': chargeId,
+        'organization_id': organizationId,
+        'kind': l.kind,
+        'name': l.name,
+        'quantity': l.quantity,
+        'unit_price': l.unitPrice,
+        'line_total': l.unitPrice * l.quantity,
+        if (l.inventoryItemId != null) 'inventory_item_id': l.inventoryItemId,
+        'created_at': now,
+      });
+    }
+    return Charge.fromJson(saved);
+  }
+
   /// Marca un cobro como pagado y materializa el DESCUENTO de inventario de los
   /// insumos de la consulta marcados "descontar" (que aún no se hayan descontado).
   Future<void> markChargePaid(
@@ -1610,6 +1675,7 @@ class DataRepository {
         .getAll(Collections.charges)
         .map(Charge.fromJson)
         .firstWhere((c) => c.id == chargeId);
+    final wasPaid = charge.status == ChargeStatus.pagado;
     await _store.updateRow(Collections.charges, chargeId, {
       'status': 'pagado',
       'payment_method': method,
@@ -1622,7 +1688,14 @@ class DataRepository {
     });
     // Descontar del inventario los insumos "descontar" no descontados.
     final consultId = charge.consultationId;
-    if (consultId == null) return;
+    if (consultId == null) {
+      // Cobro DIRECTO (sin consulta): descuenta los productos del desglose que
+      // tengan inventory_item_id. Solo en la primera vez que se marca pagado.
+      if (!wasPaid) {
+        await _discountManualChargeInventory(charge, createdBy: createdBy);
+      }
+      return;
+    }
     final items = {for (final it in listInventoryItems(activeOnly: false)) it.id: it};
     for (final u in listSupplyUsageForConsultation(consultId)) {
       if (!u.discount || u.discounted || u.inventoryItemId == null) continue;
@@ -1640,6 +1713,31 @@ class DataRepository {
       );
       await _store.updateRow(Collections.consultationSupplyUsage, u.id,
           {'discounted': true, 'updated_at': DateTime.now().toIso8601String()});
+    }
+  }
+
+  /// Descuenta del inventario los productos de un cobro DIRECTO (sin consulta)
+  /// al marcarse pagado: un movimiento de consumo por cada renglón con
+  /// inventory_item_id. En Kura+ el consumo dispara el espejo con Shopify.
+  Future<void> _discountManualChargeInventory(Charge charge,
+      {String? createdBy}) async {
+    final items = {
+      for (final it in listInventoryItems(activeOnly: false)) it.id: it
+    };
+    for (final ci in listChargeItems(charge.id)) {
+      final invId = ci.inventoryItemId;
+      if (invId == null) continue;
+      final item = items[invId];
+      if (item == null) continue;
+      await addInventoryMovement(
+        item: item,
+        delta: -ci.quantity,
+        reason: InventoryReason.consumo,
+        unitCost: item.unitCost,
+        patientId: charge.patientId,
+        note: 'Venta cobrada (cobro directo)',
+        createdBy: createdBy,
+      );
     }
   }
 
