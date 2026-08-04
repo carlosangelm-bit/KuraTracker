@@ -22,6 +22,8 @@ class Organization {
   final bool shopifyMirror;
   // Alcance del inventario (0053): 'site' (por sitio) | 'center' (por centro).
   final String inventoryScope;
+  // Terminal Mercado Pago Point asignada al centro (0074). NULL = sin terminal.
+  final String? mpPointDeviceId;
 
   const Organization({
     required this.id,
@@ -35,6 +37,7 @@ class Organization {
     this.premiumProtocoloKura = false,
     this.shopifyMirror = false,
     this.inventoryScope = 'site',
+    this.mpPointDeviceId,
   });
 
   factory Organization.fromJson(Map<String, dynamic> json) => Organization(
@@ -49,6 +52,7 @@ class Organization {
         premiumProtocoloKura: json['premium_protocolo_kura'] as bool? ?? false,
         shopifyMirror: json['shopify_mirror'] as bool? ?? false,
         inventoryScope: (json['inventory_scope'] as String?) ?? 'site',
+        mpPointDeviceId: json['mp_point_device_id'] as String?,
       );
 
   Map<String, dynamic> toJson() => {
@@ -63,5 +67,6 @@ class Organization {
         'premium_protocolo_kura': premiumProtocoloKura,
         'shopify_mirror': shopifyMirror,
         'inventory_scope': inventoryScope,
+        'mp_point_device_id': mpPointDeviceId,
       };
 }

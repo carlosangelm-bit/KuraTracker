@@ -231,6 +231,9 @@ class _ChargeDetailSheet extends StatefulWidget {
 
 class _ChargeDetailSheetState extends State<_ChargeDetailSheet> {
   bool _busy = false;
+  // Orden ya enviada a la terminal Point en esta sesión (revela Verificar/Cancelar
+  // aunque el snapshot del cobro aún no refleje el proveedor).
+  bool _sentToTerminal = false;
 
   @override
   Widget build(BuildContext context) {
@@ -238,8 +241,9 @@ class _ChargeDetailSheetState extends State<_ChargeDetailSheet> {
     final charge = widget.charge;
     final items = repo.listChargeItems(charge.id);
     final patient = charge.patientId == null ? null : repo.getPatient(charge.patientId!);
-    // "Verificar pago (Point)" visible si el cobro ya está ligado a Mercado Pago.
-    final showVerify = charge.paymentProvider == 'mercadopago';
+    // "Verificar pago (Point)" visible si el cobro ya está ligado a Mercado Pago
+    // o si acabamos de enviar la orden a la terminal.
+    final showVerify = charge.paymentProvider == 'mercadopago' || _sentToTerminal;
     return Padding(
       padding: EdgeInsets.only(
           left: 20, right: 20, top: 4, bottom: MediaQuery.of(context).viewInsets.bottom + 20),
@@ -283,6 +287,32 @@ class _ChargeDetailSheetState extends State<_ChargeDetailSheet> {
               ),
             ),
             const SizedBox(height: 8),
+            // Cobro presencial: envía la orden a la terminal Point (0074).
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                icon: const Icon(Icons.point_of_sale),
+                label: const Text('Cobrar con terminal (Point)'),
+                onPressed: _busy ? null : _cobrarConTerminal,
+              ),
+            ),
+            const SizedBox(height: 8),
+            if (_sentToTerminal)
+              Container(
+                width: double.infinity,
+                margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: KuraColors.infoBlue.withOpacity(0.08),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  'Orden enviada a la terminal. Pídele al paciente que pague '
+                  'en la terminal; luego toca "Verificar pago (Point)".',
+                  style: TextStyle(
+                      fontSize: 12, color: KuraColors.darkText.withOpacity(0.8)),
+                ),
+              ),
             if (showVerify) ...[
               SizedBox(
                 width: double.infinity,
@@ -295,6 +325,17 @@ class _ChargeDetailSheetState extends State<_ChargeDetailSheet> {
                       : const Icon(Icons.refresh),
                   label: const Text('Verificar pago (Point)'),
                   onPressed: _busy ? null : _verificarPago,
+                ),
+              ),
+              const SizedBox(height: 8),
+            ],
+            if (_sentToTerminal) ...[
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  icon: const Icon(Icons.cancel_schedule_send_outlined),
+                  label: const Text('Cancelar orden en terminal'),
+                  onPressed: _busy ? null : _cancelarOrdenTerminal,
                 ),
               ),
               const SizedBox(height: 8),
@@ -330,6 +371,46 @@ class _ChargeDetailSheetState extends State<_ChargeDetailSheet> {
         ],
       ),
     );
+  }
+
+  /// Envía la orden de cobro a la terminal Point (payment intent). La terminal
+  /// pide la tarjeta; el pago se concilia por webhook/pull.
+  Future<void> _cobrarConTerminal() async {
+    final repo = widget.repo;
+    final charge = widget.charge;
+    final patient =
+        charge.patientId == null ? null : repo.getPatient(charge.patientId!);
+    setState(() => _busy = true);
+    try {
+      await repo.createPointIntent(
+        charge.id,
+        title: patient != null
+            ? 'Cobro · ${patient.fullName}'
+            : 'Cobro de consulta',
+      );
+      if (!mounted) return;
+      setState(() => _sentToTerminal = true);
+      _snack('Orden enviada a la terminal 🟢');
+    } catch (e) {
+      if (mounted) _snack('$e'.replaceFirst('Exception: ', ''));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  /// Cancela la orden abierta en la terminal (si el paciente aún no pagó).
+  Future<void> _cancelarOrdenTerminal() async {
+    setState(() => _busy = true);
+    try {
+      await widget.repo.cancelPointIntent(widget.charge.id);
+      if (!mounted) return;
+      setState(() => _sentToTerminal = false);
+      _snack('Orden cancelada en la terminal.');
+    } catch (e) {
+      if (mounted) _snack('$e'.replaceFirst('Exception: ', ''));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   /// Consulta a Mercado Pago el estado del pago (pull) y actualiza al instante.
@@ -766,6 +847,137 @@ String _methodLabel(String? m) => switch (m) {
       _ => m,
     };
 
+/// Config de la terminal Mercado Pago Point del centro (0074). Muestra la
+/// terminal asignada y permite elegirla de la lista de dispositivos de la cuenta.
+class _TerminalConfigCard extends StatefulWidget {
+  final DataRepository repo;
+  final String? orgId;
+  final String? deviceId;
+  final VoidCallback onChanged;
+  const _TerminalConfigCard({
+    required this.repo,
+    required this.orgId,
+    required this.deviceId,
+    required this.onChanged,
+  });
+  @override
+  State<_TerminalConfigCard> createState() => _TerminalConfigCardState();
+}
+
+class _TerminalConfigCardState extends State<_TerminalConfigCard> {
+  bool _busy = false;
+
+  void _snack(String m) => ScaffoldMessenger.of(context)
+      .showSnackBar(SnackBar(content: Text(m)));
+
+  Future<void> _configurar() async {
+    if (widget.orgId == null) return;
+    setState(() => _busy = true);
+    List<Map<String, dynamic>> devices;
+    try {
+      devices = await widget.repo.listPointDevices();
+    } catch (e) {
+      if (mounted) {
+        setState(() => _busy = false);
+        _snack('$e'.replaceFirst('Exception: ', ''));
+      }
+      return;
+    }
+    if (!mounted) return;
+    setState(() => _busy = false);
+    if (devices.isEmpty) {
+      _snack('No se encontraron terminales en la cuenta de Mercado Pago.');
+      return;
+    }
+    final picked = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Padding(
+              padding: EdgeInsets.all(16),
+              child: Text('Elige la terminal del centro',
+                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+            ),
+            for (final d in devices)
+              ListTile(
+                leading: const Icon(Icons.point_of_sale),
+                title: Text('${d['id']}'),
+                subtitle: Text(
+                    'Modo: ${d['operating_mode'] ?? '—'}'
+                    '${widget.deviceId == d['id'] ? ' · (actual)' : ''}'),
+                onTap: () => Navigator.of(context).pop('${d['id']}'),
+              ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+    if (picked == null) return;
+    setState(() => _busy = true);
+    try {
+      await widget.repo.setOrgPointDevice(widget.orgId!, picked);
+      // Asegura modo integrado (PDV) para que reciba órdenes.
+      try {
+        await widget.repo.setPointDevicePdv(picked);
+      } catch (_) {/* no bloquea: puede ya estar en PDV */}
+      if (mounted) _snack('Terminal configurada ✅');
+      widget.onChanged();
+    } catch (e) {
+      if (mounted) _snack('$e'.replaceFirst('Exception: ', ''));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final configured = (widget.deviceId ?? '').isNotEmpty;
+    return Card(
+      margin: EdgeInsets.zero,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+        child: Row(
+          children: [
+            Icon(Icons.point_of_sale,
+                color: configured ? KuraColors.success : KuraColors.warning),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Terminal Point',
+                      style: TextStyle(fontWeight: FontWeight.w700)),
+                  const SizedBox(height: 2),
+                  Text(
+                    configured
+                        ? 'Asignada: ${widget.deviceId}'
+                        : 'Sin terminal configurada.',
+                    style: TextStyle(
+                        fontSize: 12,
+                        color: KuraColors.darkText.withOpacity(0.7)),
+                  ),
+                ],
+              ),
+            ),
+            _busy
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2))
+                : TextButton(
+                    onPressed: _configurar,
+                    child: Text(configured ? 'Cambiar' : 'Configurar'),
+                  ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 /// Conciliación: bandeja de pagos de terminal (Mercado Pago Point). Los sin
 /// ligar se concilian a mano; en Fase 2 el webhook los liga automáticamente por
 /// la referencia (folio del paciente / consulta).
@@ -805,15 +1017,30 @@ class _ConciliacionTabState extends ConsumerState<_ConciliacionTab> {
   @override
   Widget build(BuildContext context) {
     final repo = widget.repo;
-    final all = repo.listPointPayments(organizationId: widget.orgId);
+    // Excluye las órdenes de terminal (intents): son seguimiento del push, no
+    // pagos a conciliar; el pago real llega como fila propia (webhook/pull).
+    final all = repo
+        .listPointPayments(organizationId: widget.orgId)
+        .where((p) => p.source != 'point_intent')
+        .toList();
     final unlinked = all.where((p) => !p.isLinked).toList();
     final linked = all.where((p) => p.isLinked).toList();
     final unlinkedTotal = unlinked.fold<double>(0, (a, p) => a + p.amount);
 
+    final org = repo.organizationById(widget.orgId);
     return Scaffold(
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 88),
         children: [
+          _TerminalConfigCard(
+            repo: repo,
+            orgId: widget.orgId,
+            deviceId: org?.mpPointDeviceId,
+            onChanged: () {
+              if (mounted) setState(() {});
+            },
+          ),
+          const SizedBox(height: 12),
           Row(children: [
             Expanded(
                 child: _KpiBox(
