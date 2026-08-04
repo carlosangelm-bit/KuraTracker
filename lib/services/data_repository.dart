@@ -1776,6 +1776,116 @@ class DataRepository {
     return url;
   }
 
+  // ---- Terminal Mercado Pago Point (push a la terminal física, 0074) ----
+
+  /// Lista las terminales Point de la cuenta (para que el master/admin elija
+  /// cuál asignar al centro). Devuelve la lista cruda de dispositivos de MP
+  /// (cada uno con `id`, `operating_mode`, …). Solo en producción.
+  Future<List<Map<String, dynamic>>> listPointDevices() async {
+    final store = _store;
+    if (store is! SupabaseDataStore) {
+      throw Exception('La terminal requiere el entorno de producción.');
+    }
+    Map<String, dynamic> data;
+    try {
+      data = await store.invokeFunction('mercadopago-point-intent', {
+        'action': 'list_devices',
+      });
+    } on FunctionException catch (e) {
+      throw Exception(_edgeErrorMessage(e));
+    }
+    if (data['error'] != null) throw Exception(data['error'].toString());
+    final devices = (data['devices'] as List?) ?? const [];
+    return devices.cast<Map<String, dynamic>>();
+  }
+
+  /// Fija la terminal Point del centro (RPC set_mp_point_device, 0074: master o
+  /// admin del propio centro). `deviceId` vacío/null la desasigna.
+  Future<void> setOrgPointDevice(String organizationId, String? deviceId) async {
+    final store = _store;
+    if (store is SupabaseDataStore) {
+      await store.callRpc('set_mp_point_device', {
+        'p_org': organizationId,
+        'p_device_id': deviceId,
+      });
+      await store.refreshCollection(Collections.organizations);
+    } else {
+      await _store.updateRow(Collections.organizations, organizationId,
+          {'mp_point_device_id': (deviceId?.trim().isEmpty ?? true) ? null : deviceId});
+    }
+  }
+
+  /// Pone una terminal en modo integrado (PDV) para que pueda recibir órdenes.
+  Future<void> setPointDevicePdv(String deviceId) async {
+    final store = _store;
+    if (store is! SupabaseDataStore) {
+      throw Exception('La terminal requiere el entorno de producción.');
+    }
+    Map<String, dynamic> data;
+    try {
+      data = await store.invokeFunction('mercadopago-point-intent', {
+        'action': 'set_pdv',
+        'deviceId': deviceId,
+      });
+    } on FunctionException catch (e) {
+      throw Exception(_edgeErrorMessage(e));
+    }
+    if (data['error'] != null) throw Exception(data['error'].toString());
+  }
+
+  /// Envía la orden de cobro a la terminal Point (payment intent). La terminal
+  /// pide la tarjeta; al aprobar, el webhook/pull concilia el cobro (0055).
+  /// Devuelve el `intentId`. `deviceId` opcional (si no, usa la del centro).
+  Future<String> createPointIntent(String chargeId,
+      {String? deviceId, String? title}) async {
+    final store = _store;
+    if (store is! SupabaseDataStore) {
+      throw Exception('La terminal requiere el entorno de producción.');
+    }
+    Map<String, dynamic> data;
+    try {
+      data = await store.invokeFunction('mercadopago-point-intent', {
+        'action': 'create',
+        'chargeId': chargeId,
+        if (deviceId != null) 'deviceId': deviceId,
+        if (title != null) 'title': title,
+      });
+    } on FunctionException catch (e) {
+      throw Exception(_edgeErrorMessage(e));
+    }
+    if (data['error'] != null) throw Exception(data['error'].toString());
+    await store.refreshCollection(Collections.charges);
+    await store.refreshCollection(Collections.pointPayments);
+    final intentId = data['intent_id'] as String?;
+    if (intentId == null || intentId.isEmpty) {
+      throw Exception('La terminal no devolvió una orden.');
+    }
+    return intentId;
+  }
+
+  /// Cancela la orden abierta en la terminal para un cobro (si aún no se pagó).
+  Future<void> cancelPointIntent(String chargeId,
+      {String? deviceId, String? intentId}) async {
+    final store = _store;
+    if (store is! SupabaseDataStore) {
+      throw Exception('La terminal requiere el entorno de producción.');
+    }
+    Map<String, dynamic> data;
+    try {
+      data = await store.invokeFunction('mercadopago-point-intent', {
+        'action': 'cancel',
+        'chargeId': chargeId,
+        if (deviceId != null) 'deviceId': deviceId,
+        if (intentId != null) 'intentId': intentId,
+      });
+    } on FunctionException catch (e) {
+      throw Exception(_edgeErrorMessage(e));
+    }
+    if (data['error'] != null) throw Exception(data['error'].toString());
+    await store.refreshCollection(Collections.charges);
+    await store.refreshCollection(Collections.pointPayments);
+  }
+
   /// Inicia una conversación con el asistente VAC (CustomGPT vía Edge Function)
   /// y devuelve el sessionId. Solo en producción.
   Future<String> vacBotStart() async {
