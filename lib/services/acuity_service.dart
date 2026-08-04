@@ -18,6 +18,23 @@ class AcuityService {
 
   SupabaseClient get _sb => Supabase.instance.client;
 
+  /// Citas (Acuity) en un rango de fechas, en una sola lectura. Se usa para
+  /// VALIDAR EMPALMES al armar el plan de tratamiento (marcar en rojo las
+  /// sesiones que chocan con el calendario del especialista). Devuelve vacío si
+  /// no hay Supabase configurado (demo).
+  Future<List<Appointment>> appointmentsBetween(
+      DateTime from, DateTime to) async {
+    if (!isAvailable) return const [];
+    final rows = await _sb
+        .from('appointments')
+        .select()
+        .gte('datetime', from.toUtc().toIso8601String())
+        .lte('datetime', to.toUtc().toIso8601String());
+    return (rows as List)
+        .map((r) => Appointment.fromMap(r as Map<String, dynamic>))
+        .toList();
+  }
+
   /// Citas en tiempo real (RLS aplica el aislamiento por rol/centro).
   Stream<List<Appointment>> watchAppointments() {
     return _sb

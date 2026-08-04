@@ -439,7 +439,11 @@ class _TreatmentStepScreenState extends ConsumerState<TreatmentStepScreen> {
       // de la herida en vez de en la ficha del paciente.
       Navigator.of(context).pop();
       if (context.mounted) {
-        context.go('/patients/${widget.patientId}');
+        // Capa intermedia: tras la valoración, arma el plan de tratamiento del
+        // mes (insumos + cadencia de sesiones). Es omitible desde esa pantalla.
+        context.go(
+          '/patients/${widget.patientId}/wound/${widget.woundId}/plan/${widget.consultationId}',
+        );
       }
     }
   }

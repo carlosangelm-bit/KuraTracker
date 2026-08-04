@@ -8,6 +8,7 @@ import '../../models/module_key.dart';
 import '../../features/auth/demo_persona_screen.dart';
 import '../../features/auth/login_screen.dart';
 import '../../features/support/support_bot_screen.dart';
+import '../../features/treatment/treatment_program_builder_screen.dart';
 import '../../features/comercial/payment_result_screen.dart';
 import '../../features/dashboard/dashboard_screen.dart';
 import '../../features/patients/patients_list_screen.dart';
@@ -138,6 +139,7 @@ final routerProvider = Provider<GoRouter>((ref) {
             location.endsWith('/edit') ||
             location.contains('/consultation/new') ||
             (location.contains('/wound/') && location.endsWith('/capture')) ||
+            (location.contains('/wound/') && location.contains('/plan/')) ||
             location.endsWith('/follow-up/new') ||
             location.contains('/follow-up/draft/') ||
             location.endsWith('/comorbidities') ||
@@ -226,6 +228,14 @@ final routerProvider = Provider<GoRouter>((ref) {
               patientId: state.pathParameters['patientId']!,
               woundId: state.pathParameters['woundId'],
               consultationId: state.uri.queryParameters['consultationId'],
+            ),
+          ),
+          GoRoute(
+            path: '/patients/:patientId/wound/:woundId/plan/:consultationId',
+            builder: (context, state) => TreatmentProgramBuilderScreen(
+              patientId: state.pathParameters['patientId']!,
+              woundId: state.pathParameters['woundId']!,
+              consultationId: state.pathParameters['consultationId']!,
             ),
           ),
           GoRoute(
