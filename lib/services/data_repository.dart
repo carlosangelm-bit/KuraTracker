@@ -1779,9 +1779,12 @@ class DataRepository {
   // ---- Terminal Mercado Pago Point (push a la terminal física, 0074) ----
 
   /// Lista las terminales Point de la cuenta (para que el master/admin elija
-  /// cuál asignar al centro). Devuelve la lista cruda de dispositivos de MP
-  /// (cada uno con `id`, `operating_mode`, …). Solo en producción.
-  Future<List<Map<String, dynamic>>> listPointDevices() async {
+  /// cuál asignar al centro). Devuelve los dispositivos crudos de MP (cada uno
+  /// con `id`, `operating_mode`, …) y el `mode` con que corrió la función
+  /// ('test'|'prod') — útil para diagnosticar por qué la lista viene vacía.
+  /// Solo en producción.
+  Future<({List<Map<String, dynamic>> devices, String mode})>
+      listPointDevices() async {
     final store = _store;
     if (store is! SupabaseDataStore) {
       throw Exception('La terminal requiere el entorno de producción.');
@@ -1796,7 +1799,10 @@ class DataRepository {
     }
     if (data['error'] != null) throw Exception(data['error'].toString());
     final devices = (data['devices'] as List?) ?? const [];
-    return devices.cast<Map<String, dynamic>>();
+    return (
+      devices: devices.cast<Map<String, dynamic>>(),
+      mode: (data['mode'] as String?) ?? 'test',
+    );
   }
 
   /// Fija la terminal Point del centro (RPC set_mp_point_device, 0074: master o
