@@ -5,11 +5,21 @@ import 'package:intl/intl.dart';
 
 import '../../core/theme/kura_theme.dart';
 import '../../core/providers/session_provider.dart';
+import '../../engine/labs/lab_domain_scoring.dart';
 import '../../models/patient_lab.dart';
 import '../../services/data_repository.dart';
 
-/// Laboratorios del paciente (0070). Los MÁS RECIENTES alimentan el motor de
-/// cicatrización (albúmina, glucosa, saturación de O2).
+/// Color de una severidad 0–3 del dominio clínico.
+Color severityColor(LabSeverity s) => switch (s) {
+      LabSeverity.normal => KuraColors.success,
+      LabSeverity.mild => KuraColors.warning,
+      LabSeverity.moderate => const Color(0xFFE8590C), // naranja intenso
+      LabSeverity.severe => KuraColors.danger,
+    };
+
+/// Laboratorios del paciente (0070 + dominio clínico 0073). Los MÁS RECIENTES
+/// alimentan el motor de cicatrización (albúmina); el resto del dominio se
+/// puntúa 0–3 (informativo, banderas de severidad — ver lab_domain_scoring.dart).
 class PatientLabsScreen extends ConsumerStatefulWidget {
   final String patientId;
   const PatientLabsScreen({super.key, required this.patientId});
@@ -43,9 +53,10 @@ class _PatientLabsScreenState extends ConsumerState<PatientLabsScreen> {
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 88),
             children: [
               Text(
-                'Los laboratorios más recientes se usan en el motor de '
-                'cicatrización (albúmina, glucosa, saturación de O₂). Los umbrales '
-                'y su peso siguen en validación clínica.',
+                'El laboratorio más reciente alimenta el motor de cicatrización '
+                '(albúmina). El dominio clínico completo se puntúa 0–3 por '
+                'parámetro (banderas de severidad); los umbrales siguen en '
+                'validación clínica.',
                 style: TextStyle(
                     fontSize: 12, color: KuraColors.darkText.withOpacity(0.6)),
               ),
@@ -104,18 +115,49 @@ class _LabCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    Widget chip(String label, double? v, String unit, {bool alert = false}) {
-      if (v == null) return const SizedBox.shrink();
-      return Chip(
-        label: Text('$label: ${v.toStringAsFixed(v == v.roundToDouble() ? 0 : 1)} $unit',
-            style: TextStyle(
-                fontSize: 12, color: alert ? KuraColors.danger : null)),
-        backgroundColor:
-            alert ? KuraColors.danger.withOpacity(0.10) : KuraColors.chipBg,
-        side: BorderSide.none,
+    final summary = scoreClinicalDomain(lab);
+
+    String fmtVal(double v) =>
+        v == v.roundToDouble() ? v.toStringAsFixed(0) : v.toStringAsFixed(1);
+
+    Widget paramChip(LabParamScore p) {
+      final v = p.value!;
+      final s = p.severity!;
+      final c = severityColor(s);
+      // Plaquetas: mostrar en miles para legibilidad (250,000 → 250k).
+      final shown = p.key == 'platelets' && v >= 1000
+          ? '${(v / 1000).toStringAsFixed(0)}k'
+          : fmtVal(v);
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        decoration: BoxDecoration(
+          color: c.withOpacity(0.10),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: c.withOpacity(0.35)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 18,
+              height: 18,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(color: c, shape: BoxShape.circle),
+              child: Text('${s.index}',
+                  style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700)),
+            ),
+            const SizedBox(width: 6),
+            Text('${p.label}: $shown ${p.unit}',
+                style: const TextStyle(fontSize: 12)),
+          ],
+        ),
       );
     }
 
+    final worst = summary.worst;
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
       child: Padding(
@@ -129,6 +171,24 @@ class _LabCard extends StatelessWidget {
                   child: Text(fmt.format(lab.takenAt),
                       style: const TextStyle(fontWeight: FontWeight.w700)),
                 ),
+                if (worst != null)
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: severityColor(worst).withOpacity(0.12),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      summary.highCount > 0
+                          ? 'Dominio: ${worst.label} · ${summary.highCount} en alto'
+                          : 'Dominio: ${worst.label}',
+                      style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: severityColor(worst)),
+                    ),
+                  ),
                 IconButton(
                   tooltip: 'Eliminar',
                   visualDensity: VisualDensity.compact,
@@ -137,21 +197,36 @@ class _LabCard extends StatelessWidget {
                 ),
               ],
             ),
-            Wrap(
-              spacing: 8,
-              runSpacing: 6,
-              children: [
-                chip('Glucosa', lab.glucoseMgDl, 'mg/dL',
-                    alert: (lab.glucoseMgDl ?? 0) > 180),
-                chip('HbA1c', lab.hba1cPct, '%'),
-                chip('Albúmina', lab.albuminGdl, 'g/dL',
-                    alert: (lab.albuminGdl != null && lab.albuminGdl! < 3.0)),
-                chip('Hb', lab.hemoglobinGdl, 'g/dL'),
-                chip('SatO₂', lab.o2SaturationPct, '%',
-                    alert: (lab.o2SaturationPct != null &&
-                        lab.o2SaturationPct! < 90)),
-              ],
-            ),
+            const SizedBox(height: 4),
+            if (summary.isEmpty && (lab.o2SaturationPct == null))
+              Text('Sin parámetros capturados.',
+                  style: TextStyle(
+                      fontSize: 12,
+                      color: KuraColors.darkText.withOpacity(0.5)))
+            else
+              Wrap(
+                spacing: 8,
+                runSpacing: 6,
+                children: [
+                  for (final p in summary.measured) paramChip(p),
+                  // SatO₂ es un signo vital (no está en el puntaje del dominio),
+                  // pero se muestra junto para contexto.
+                  if (lab.o2SaturationPct != null)
+                    Chip(
+                      label: Text('SatO₂: ${fmtVal(lab.o2SaturationPct!)} %',
+                          style: TextStyle(
+                              fontSize: 12,
+                              color: lab.o2SaturationPct! < 90
+                                  ? KuraColors.danger
+                                  : null)),
+                      backgroundColor: lab.o2SaturationPct! < 90
+                          ? KuraColors.danger.withOpacity(0.10)
+                          : KuraColors.chipBg,
+                      side: BorderSide.none,
+                      visualDensity: VisualDensity.compact,
+                    ),
+                ],
+              ),
             if ((lab.notes ?? '').trim().isNotEmpty) ...[
               const SizedBox(height: 6),
               Text(lab.notes!, style: const TextStyle(fontSize: 12)),
@@ -180,27 +255,51 @@ class _LabForm extends StatefulWidget {
 
 class _LabFormState extends State<_LabForm> {
   DateTime _date = DateTime.now();
+  // Nutrición
+  final _alb = TextEditingController();
+  final _prealb = TextEditingController();
+  final _prot = TextEditingController();
+  // Metabólico
   final _glu = TextEditingController();
   final _hba1c = TextEditingController();
-  final _alb = TextEditingController();
+  // Hematología
   final _hb = TextEditingController();
+  final _hct = TextEditingController();
+  final _plt = TextEditingController();
+  // Inflamación / coagulación
+  final _crp = TextEditingController();
+  final _pt = TextEditingController();
+  final _ptt = TextEditingController();
+  // Vital
   final _o2 = TextEditingController();
   final _notes = TextEditingController();
   bool _saving = false;
 
   @override
   void dispose() {
-    _glu.dispose();
-    _hba1c.dispose();
-    _alb.dispose();
-    _hb.dispose();
-    _o2.dispose();
-    _notes.dispose();
+    for (final c in [
+      _alb,
+      _prealb,
+      _prot,
+      _glu,
+      _hba1c,
+      _hb,
+      _hct,
+      _plt,
+      _crp,
+      _pt,
+      _ptt,
+      _o2,
+      _notes,
+    ]) {
+      c.dispose();
+    }
     super.dispose();
   }
 
-  double? _n(TextEditingController c) =>
-      c.text.trim().isEmpty ? null : double.tryParse(c.text.trim().replaceAll(',', '.'));
+  double? _n(TextEditingController c) => c.text.trim().isEmpty
+      ? null
+      : double.tryParse(c.text.trim().replaceAll(',', '.').replaceAll(' ', ''));
 
   Future<void> _save() async {
     setState(() => _saving = true);
@@ -214,6 +313,13 @@ class _LabFormState extends State<_LabForm> {
         albuminGdl: _n(_alb),
         hemoglobinGdl: _n(_hb),
         o2SaturationPct: _n(_o2),
+        prealbuminMgDl: _n(_prealb),
+        totalProteinGdl: _n(_prot),
+        crpMgL: _n(_crp),
+        ptSeconds: _n(_pt),
+        hematocritPct: _n(_hct),
+        plateletsUl: _n(_plt),
+        pttSeconds: _n(_ptt),
         notes: _notes.text.trim().isEmpty ? null : _notes.text.trim(),
         createdBy: widget.createdBy,
       );
@@ -230,15 +336,44 @@ class _LabFormState extends State<_LabForm> {
   @override
   Widget build(BuildContext context) {
     final fmt = DateFormat('dd/MM/yyyy');
-    Widget field(TextEditingController c, String label, String unit) => Padding(
-          padding: const EdgeInsets.only(bottom: 10),
-          child: TextField(
-            controller: c,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            decoration: InputDecoration(
-                labelText: label, suffixText: unit, isDense: true),
+
+    // Campo numérico con vista previa de severidad 0–3 en vivo.
+    Widget field(TextEditingController c, String label, String unit,
+        LabSeverity? Function(double) sev) {
+      final v = _n(c);
+      final s = (v == null) ? null : sev(v);
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 10),
+        child: TextField(
+          controller: c,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          onChanged: (_) => setState(() {}),
+          decoration: InputDecoration(
+            labelText: label,
+            suffixText: unit,
+            isDense: true,
+            suffixIcon: s == null
+                ? null
+                : Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: _sevDot(s),
+                  ),
+            suffixIconConstraints:
+                const BoxConstraints(minWidth: 0, minHeight: 0),
           ),
+        ),
+      );
+    }
+
+    Widget header(String t) => Padding(
+          padding: const EdgeInsets.only(top: 6, bottom: 6),
+          child: Text(t,
+              style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                  color: KuraColors.primary)),
         );
+
     return Padding(
       padding: EdgeInsets.only(
         left: 20,
@@ -253,7 +388,14 @@ class _LabFormState extends State<_LabForm> {
           children: [
             const Text('Registrar laboratorios',
                 style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
-            const SizedBox(height: 12),
+            const SizedBox(height: 4),
+            Text(
+              'Captura solo lo que tengas; cada parámetro muestra su severidad '
+              '0–3. Los umbrales están en validación clínica.',
+              style: TextStyle(
+                  fontSize: 11, color: KuraColors.darkText.withOpacity(0.6)),
+            ),
+            const SizedBox(height: 10),
             Row(
               children: [
                 const Icon(Icons.event, size: 18),
@@ -274,12 +416,25 @@ class _LabFormState extends State<_LabForm> {
                 ),
               ],
             ),
-            const SizedBox(height: 8),
-            field(_glu, 'Glucosa', 'mg/dL'),
-            field(_hba1c, 'HbA1c', '%'),
-            field(_alb, 'Albúmina', 'g/dL'),
-            field(_hb, 'Hemoglobina', 'g/dL'),
-            field(_o2, 'Saturación O₂', '%'),
+            const SizedBox(height: 4),
+            header('Nutrición'),
+            field(_alb, 'Albúmina', 'g/dL', sevAlbumin),
+            field(_prealb, 'Prealbúmina', 'mg/dL', sevPrealbumin),
+            field(_prot, 'Proteínas totales', 'g/dL', sevTotalProtein),
+            header('Metabólico (glucémico)'),
+            field(_hba1c, 'HbA1c (si DM)', '%', sevHba1c),
+            field(_glu, 'Glucosa', 'mg/dL', sevGlucose),
+            header('Hematología'),
+            field(_hb, 'Hemoglobina', 'g/dL', sevHemoglobin),
+            field(_hct, 'Hematocrito', '%', sevHematocrit),
+            field(_plt, 'Plaquetas', 'µL', sevPlatelets),
+            header('Inflamación y coagulación'),
+            field(_crp, 'PCR', 'mg/L', sevCrp),
+            field(_pt, 'TP', 'seg', sevPt),
+            field(_ptt, 'TPP', 'seg', sevPtt),
+            header('Signo vital'),
+            field(_o2, 'Saturación O₂', '%', (_) => null),
+            const SizedBox(height: 4),
             TextField(
               controller: _notes,
               maxLines: 2,
@@ -296,6 +451,30 @@ class _LabFormState extends State<_LabForm> {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _sevDot(LabSeverity s) {
+    final c = severityColor(s);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 18,
+          height: 18,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(color: c, shape: BoxShape.circle),
+          child: Text('${s.index}',
+              style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700)),
+        ),
+        const SizedBox(width: 6),
+        Text(s.label,
+            style: TextStyle(
+                fontSize: 11, color: c, fontWeight: FontWeight.w600)),
+      ],
     );
   }
 }
