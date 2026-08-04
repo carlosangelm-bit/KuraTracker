@@ -874,8 +874,11 @@ class _TerminalConfigCardState extends State<_TerminalConfigCard> {
     if (widget.orgId == null) return;
     setState(() => _busy = true);
     List<Map<String, dynamic>> devices;
+    String mode;
     try {
-      devices = await widget.repo.listPointDevices();
+      final res = await widget.repo.listPointDevices();
+      devices = res.devices;
+      mode = res.mode;
     } catch (e) {
       if (mounted) {
         setState(() => _busy = false);
@@ -886,7 +889,23 @@ class _TerminalConfigCardState extends State<_TerminalConfigCard> {
     if (!mounted) return;
     setState(() => _busy = false);
     if (devices.isEmpty) {
-      _snack('No se encontraron terminales en la cuenta de Mercado Pago.');
+      final hint = mode == 'prod'
+          ? 'La cuenta de producción no tiene terminales encendidas/vinculadas. '
+              'Enciende la terminal y verifica que esté asociada a esta cuenta.'
+          : 'La función está en modo PRUEBA (MP_MODE=test), que no ve terminales '
+              'reales. Configura MP_MODE=prod y el token de producción en Supabase.';
+      await showDialog<void>(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: Text('Sin terminales (modo: $mode)'),
+          content: Text('No se encontraron terminales Point.\n\n$hint'),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Entendido')),
+          ],
+        ),
+      );
       return;
     }
     final picked = await showModalBottomSheet<String>(
