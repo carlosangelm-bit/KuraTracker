@@ -1,26 +1,30 @@
-import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
 import '../../core/providers/session_provider.dart';
+import '../../core/router/app_router.dart';
 import '../../models/center_type.dart';
 
 /// Abre el asistente de ayuda capturando el CONTEXTO NO SENSIBLE de la pantalla
 /// actual (rol, tipo de centro, ruta y una etiqueta legible de la pantalla) para
 /// que el agente detecte el perfil y el proceso del usuario. Nunca incluye datos
 /// del paciente; la ruta se limpia de ids en la Edge Function.
-void openSupportAssistant(BuildContext context, WidgetRef ref) {
+///
+/// No depende del BuildContext para la ruta/navegación (usa el routerProvider),
+/// así funciona igual desde un menú o desde el overlay global de ayuda.
+void openSupportAssistant(WidgetRef ref) {
   final session = ref.read(sessionProvider);
   final user = session.user;
   if (user == null) return;
-  final location = GoRouterState.of(context).uri.toString();
+  final router = ref.read(routerProvider);
+  final location =
+      router.routerDelegate.currentConfiguration.uri.toString();
   final ctx = <String, String>{
     'rol': user.role.name,
     'centro': session.activeCenterType.dbValue,
     'ruta': location,
     'pantalla': supportScreenLabelFor(location),
   };
-  context.push('/support', extra: ctx);
+  router.push('/support', extra: ctx);
 }
 
 /// Traduce la ruta actual a una etiqueta legible de la pantalla (el "proceso"
