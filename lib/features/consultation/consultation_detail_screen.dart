@@ -9,6 +9,7 @@ import '../../models/app_user.dart';
 import '../../engine/models/kura_engine_enums.dart';
 import '../../models/commercial.dart';
 import '../../models/consultation.dart';
+import '../../models/note_option_catalog.dart';
 import '../../models/consultation_supply_usage.dart';
 import '../../models/inventory.dart';
 import '../../models/supply_product_mapping.dart';
@@ -1222,6 +1223,63 @@ class _SuppliesUsedSectionState extends ConsumerState<_SuppliesUsedSection> {
     if (orgId == null) return;
     final siteId = _effectiveSite(repo, orgId);
     if (siteId == null) return;
+
+    final components =
+        repo.treatmentComponentsForConsultation(widget.consultationId);
+    final existingIds = repo
+        .listSupplyUsageForConsultation(widget.consultationId)
+        .map((u) => u.inventoryItemId)
+        .whereType<String>()
+        .toSet();
+
+    // 1) Vía preferente (0076): resolución por CATEGORÍA + MEDIDA de la herida.
+    final categories = <KuraTag>{
+      for (final comp in components)
+        if (kKuraMethodToTag[comp.method] != null)
+          kKuraMethodToTag[comp.method]!
+    };
+    if (categories.isNotEmpty) {
+      final woundId = repo.woundIdForConsultation(widget.consultationId);
+      final measures =
+          woundId == null ? const [] : repo.listMeasurementsForWound(woundId);
+      final last = measures.isEmpty ? null : measures.last;
+      final resolved = repo.resolveProtocolProducts(
+        organizationId: orgId,
+        categories: categories,
+        areaCm2: last?.areaCm2,
+        volumeCm3: last?.volumeCm3,
+        siteId: siteId,
+      );
+      if (resolved.isNotEmpty) {
+        var added = 0;
+        for (final r in resolved) {
+          if (!existingIds.add(r.inventoryItemId)) continue;
+          await repo.addSupplyUsage(
+            organizationId: orgId,
+            consultationId: widget.consultationId,
+            patientId: widget.patientId,
+            name: r.name,
+            inventoryItemId: r.inventoryItemId,
+            quantity: r.quantity <= 0 ? 1 : r.quantity.ceil(),
+            unitCost: r.unitCost,
+            unitPrice: r.unitPrice,
+            currency: r.currency,
+            createdBy: ref.read(sessionProvider).user?.id,
+          );
+          added++;
+        }
+        if (added > 0) {
+          if (mounted) {
+            setState(() {});
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                content: Text('Se agregaron $added insumo(s) del protocolo.')));
+          }
+          return;
+        }
+      }
+    }
+
+    // 2) Fallback: mapeo antiguo por (método, genérico) → producto Shopify.
     final mapGroups = repo.supplyMappingGroups(orgId);
     final inventory = repo.listInventoryItems(organizationId: orgId, siteId: siteId);
     final byProduct = <String, InventoryItem>{

@@ -293,3 +293,27 @@ class NoteOptionCatalogItem {
         'kura_tag': kuraTag?.dbValue,
       };
 }
+
+/// Lookup método del régimen (RegimenComponente.metodo, tal cual lo emite
+/// KuraTreatmentRulesEngine) → KuraTag del protocolo. Los métodos de manejo
+/// especializado por tipo de herida (sin equivalente genérico) mapean a `null`
+/// a propósito. Compartido por el seguimiento (pre-selección de conceptos) y la
+/// resolución protocolo→producto (0076).
+const Map<String, KuraTag?> kKuraMethodToTag = {
+  'Limpieza de la herida': KuraTag.limpieza,
+  'Desbridamiento': KuraTag.desbridamiento,
+  'Relleno de cavidad': KuraTag.rellenoCavidad,
+  'Apósito': KuraTag.aposito,
+  'Protección de la piel': KuraTag.proteccionPiel,
+  'Tratamiento para la infección': KuraTag.antimicrobiano,
+  'Educación al paciente/cuidador': KuraTag.educacion,
+  'Dispositivo de descarga': KuraTag.descarga,
+  'Terapia compresiva': KuraTag.compresion,
+  'Manejo neuropático': null,
+  'Manejo de herida quirúrgica': null,
+  'Manejo de herida por mordedura': null,
+  'Manejo de herida por arma de fuego': null,
+  'Manejo de herida por aplastamiento': null,
+  'Manejo de herida punzocortante': null,
+  'Manejo de herida traumática': null,
+};

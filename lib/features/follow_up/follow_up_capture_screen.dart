@@ -59,24 +59,8 @@ import '../wound_capture/widgets/bed_composition_sliders.dart';
 /// (sin equivalente 1:1 generico en el catalogo) mapean a `null` a
 /// proposito, para que NUNCA se auto-seleccione nada en esos casos (los
 /// conceptos sin etiqueta o personalizados jamas se auto-seleccionan).
-const Map<String, KuraTag?> kKuraMethodToTag = {
-  'Limpieza de la herida': KuraTag.limpieza,
-  'Desbridamiento': KuraTag.desbridamiento,
-  'Relleno de cavidad': KuraTag.rellenoCavidad,
-  'Apósito': KuraTag.aposito,
-  'Protección de la piel': KuraTag.proteccionPiel,
-  'Tratamiento para la infección': KuraTag.antimicrobiano,
-  'Educación al paciente/cuidador': KuraTag.educacion,
-  'Dispositivo de descarga': KuraTag.descarga,
-  'Terapia compresiva': KuraTag.compresion,
-  'Manejo neuropático': null,
-  'Manejo de herida quirúrgica': null,
-  'Manejo de herida por mordedura': null,
-  'Manejo de herida por arma de fuego': null,
-  'Manejo de herida por aplastamiento': null,
-  'Manejo de herida punzocortante': null,
-  'Manejo de herida traumática': null,
-};
+// kKuraMethodToTag se movió a note_option_catalog.dart (compartido con la
+// resolución protocolo→producto). Se usa aquí vía ese import.
 
 /// Persiste, en este orden:
 ///   1. consultations (visit_type='seguimiento' + nota de seguimiento)
