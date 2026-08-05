@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/theme/kura_theme.dart';
 import '../../core/providers/session_provider.dart';
 import '../../models/inventory.dart';
+import '../../models/note_option_catalog.dart';
 import '../../models/supply_product_mapping.dart';
 import '../../models/appointment.dart';
 import '../../models/treatment_program.dart';
@@ -119,6 +120,38 @@ class _TreatmentProgramBuilderScreenState
 
   void _buildSuggestedSupplies(DataRepository repo, String orgId, String? siteId) {
     _supplies.clear();
+    final components = repo.treatmentComponentsForConsultation(widget.consultationId);
+
+    // 1) Vía preferente (0076): resolución por CATEGORÍA + MEDIDA de la herida.
+    final categories = <KuraTag>{
+      for (final comp in components)
+        if (kKuraMethodToTag[comp.method] != null) kKuraMethodToTag[comp.method]!
+    };
+    final measures = repo.listMeasurementsForWound(widget.woundId);
+    final last = measures.isEmpty ? null : measures.last;
+    if (categories.isNotEmpty) {
+      final resolved = repo.resolveProtocolProducts(
+        organizationId: orgId,
+        categories: categories,
+        areaCm2: last?.areaCm2,
+        volumeCm3: last?.volumeCm3,
+        siteId: siteId,
+      );
+      for (final r in resolved) {
+        final tag = KuraTag.values.where((t) => t.dbValue == r.category);
+        _supplies.add(_SupplyRow(
+          method: tag.isEmpty ? r.category : tag.first.label,
+          inventoryItemId: r.inventoryItemId,
+          name: r.name,
+          unitCost: r.unitCost,
+          unitPrice: r.unitPrice,
+          currency: r.currency,
+        )..qty = r.quantity <= 0 ? 1 : r.quantity);
+      }
+      if (_supplies.isNotEmpty) return;
+    }
+
+    // 2) Fallback: mapeo antiguo por (método, genérico) → producto Shopify.
     final mapGroups = repo.supplyMappingGroups(orgId);
     final inventory =
         repo.listInventoryItems(organizationId: orgId, siteId: siteId);
@@ -127,7 +160,7 @@ class _TreatmentProgramBuilderScreenState
         if (it.shopifyProductId != null) it.shopifyProductId!: it
     };
     final seen = <String>{};
-    for (final comp in repo.treatmentComponentsForConsultation(widget.consultationId)) {
+    for (final comp in components) {
       final ms =
           mapGroups[SupplyProductMapping.keyFor(comp.method, comp.product)] ??
               const [];
