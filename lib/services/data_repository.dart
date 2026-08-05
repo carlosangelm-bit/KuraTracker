@@ -38,6 +38,7 @@ import '../models/site.dart';
 import '../models/staff.dart';
 import '../models/treatment_plan.dart';
 import '../models/treatment_program.dart';
+import '../models/protocol_product_rule.dart';
 import '../models/wound.dart';
 import '../engine/models/kura_engine_output.dart';
 import '../engine/models/kura_engine_enums.dart';
@@ -4742,6 +4743,80 @@ class DataRepository {
           unitPrice: sup.unitPrice,
         ),
     ];
+  }
+
+  // ------------- Reglas producto-por-categoría del protocolo (0076) -------------
+
+  List<ProtocolProductRule> listProtocolProductRules(String? organizationId) =>
+      _store
+          .getAll(Collections.protocolProductRules)
+          .map(ProtocolProductRule.fromJson)
+          .where((r) =>
+              organizationId == null || r.organizationId == organizationId)
+          .toList()
+        ..sort((a, b) {
+          final c = a.category.compareTo(b.category);
+          return c != 0 ? c : a.sortOrder.compareTo(b.sortOrder);
+        });
+
+  List<ProtocolProductRule> protocolRulesForCategory(
+          String organizationId, KuraTag category) =>
+      listProtocolProductRules(organizationId)
+          .where((r) => r.category == category.dbValue)
+          .toList();
+
+  Future<void> saveProtocolProductRule(ProtocolProductRule rule) async {
+    await _store.upsertRow(Collections.protocolProductRules, {
+      ...rule.toJson(),
+      'id': rule.id.isEmpty ? _uuid.v4() : rule.id,
+      'updated_at': DateTime.now().toIso8601String(),
+    });
+  }
+
+  Future<void> deleteProtocolProductRule(String id) async {
+    await _store.deleteRow(Collections.protocolProductRules, id);
+  }
+
+  /// RESOLUCIÓN unificada protocolo → producto. Para cada categoría del régimen
+  /// (KuraTag), elige la(s) regla(s) cuya dimensión/rango calza con la medida de
+  /// la herida (área/volumen) y devuelve el producto concreto + cantidad. Es la
+  /// misma resolución para el armador del plan y el "sugerir del plan" del
+  /// seguimiento. Enriquece costo/precio desde el inventario.
+  List<ResolvedProtocolProduct> resolveProtocolProducts({
+    required String organizationId,
+    required Set<KuraTag> categories,
+    double? areaCm2,
+    double? volumeCm3,
+    String? siteId,
+  }) {
+    final inv = {
+      for (final it in listInventoryItems(
+          organizationId: organizationId, siteId: siteId, activeOnly: false))
+        it.id: it
+    };
+    final out = <ResolvedProtocolProduct>[];
+    final seen = <String>{};
+    for (final cat in categories) {
+      for (final r in protocolRulesForCategory(organizationId, cat)) {
+        if (r.inventoryItemId == null) continue;
+        if (!r.appliesTo(areaCm2: areaCm2, volumeCm3: volumeCm3)) continue;
+        // Un producto por (categoría, item): evita duplicar si varias reglas
+        // resuelven al mismo producto.
+        if (!seen.add('${cat.dbValue}::${r.inventoryItemId}')) continue;
+        final item = inv[r.inventoryItemId];
+        if (item == null) continue;
+        out.add(ResolvedProtocolProduct(
+          category: cat.dbValue,
+          inventoryItemId: item.id,
+          name: item.name,
+          quantity: r.quantityFor(areaCm2: areaCm2, volumeCm3: volumeCm3),
+          unitCost: item.unitCost,
+          unitPrice: item.unitPrice,
+          currency: item.currency,
+        ));
+      }
+    }
+    return out;
   }
 
   // ---------------- Recomendaciones Kura+ ----------------

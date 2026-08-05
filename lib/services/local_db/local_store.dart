@@ -205,6 +205,7 @@ class Collections {
   static const treatmentPrograms = 'treatment_programs';
   static const treatmentProgramSupplies = 'treatment_program_supplies';
   static const treatmentProgramSessions = 'treatment_program_sessions';
+  static const protocolProductRules = 'protocol_product_rules';
 
   /// Todas las colecciones/tablas, en un orden razonable para hidratar la
   /// cache de [SupabaseDataStore] tras el login (catalogos primero, luego
@@ -262,5 +263,6 @@ class Collections {
     treatmentPrograms,
     treatmentProgramSupplies,
     treatmentProgramSessions,
+    protocolProductRules,
   ];
 }
