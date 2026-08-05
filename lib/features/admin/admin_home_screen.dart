@@ -21,6 +21,7 @@ import '../../models/staff.dart';
 import '../../services/csv_download.dart';
 import '../../services/data_repository.dart';
 import 'protocol_kura_screen.dart';
+import 'protocol_product_rules_screen.dart';
 import '../../services/photo_upload_service.dart';
 
 /// Panel de administración: gestión de personal sanitario, sitios y
@@ -1511,6 +1512,20 @@ class _NoteCatalogTabState extends State<NoteCatalogTab> {
                       ),
                       icon: const Icon(Icons.auto_awesome, size: 18),
                       label: const Text('Protocolo Kura+'),
+                    ),
+                    // Vínculo protocolo → producto por medida (0076): por
+                    // categoría, qué producto del inventario y en qué cantidad.
+                    FilledButton.tonalIcon(
+                      onPressed: () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => ProtocolProductRulesScreen(
+                            repo: widget.repo,
+                            organizationId: widget.organizationId,
+                          ),
+                        ),
+                      ),
+                      icon: const Icon(Icons.inventory_2_outlined, size: 18),
+                      label: const Text('Productos del protocolo'),
                     ),
                   ],
                 ),
