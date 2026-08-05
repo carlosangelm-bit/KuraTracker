@@ -277,6 +277,19 @@ class _RuleEditorState extends State<_RuleEditor> {
     Navigator.of(context).pop(rule);
   }
 
+  Future<void> _pickProduct() async {
+    final picked = await showModalBottomSheet<InventoryItem>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (_) => _InventorySearchSheet(
+        items: widget.inventory,
+        money: widget.money,
+      ),
+    );
+    if (picked != null) setState(() => _item = picked);
+  }
+
   @override
   Widget build(BuildContext context) {
     final measured = _dimension != RuleDimension.none;
@@ -297,23 +310,34 @@ class _RuleEditorState extends State<_RuleEditor> {
                 style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
             const SizedBox(height: 12),
 
-            // Producto
-            DropdownButtonFormField<InventoryItem>(
-              value: _item,
-              isExpanded: true,
+            // Producto (buscador con escritura)
+            InputDecorator(
               decoration: const InputDecoration(
                   labelText: 'Producto del inventario', isDense: true),
-              items: [
-                for (final it in widget.inventory)
-                  DropdownMenuItem(
-                    value: it,
-                    child: Text(
-                      '${it.name}  ·  ${widget.money(it.unitPrice ?? it.unitCost ?? 0)}',
-                      overflow: TextOverflow.ellipsis,
-                    ),
+              child: InkWell(
+                onTap: _pickProduct,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 6),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          _item == null
+                              ? 'Buscar producto…'
+                              : '${_item!.name}  ·  ${widget.money(_item!.unitPrice ?? _item!.unitCost ?? 0)}',
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: _item == null
+                                ? KuraColors.darkText.withValues(alpha: 0.5)
+                                : KuraColors.darkText,
+                          ),
+                        ),
+                      ),
+                      const Icon(Icons.search, size: 20),
+                    ],
                   ),
-              ],
-              onChanged: (v) => setState(() => _item = v),
+                ),
+              ),
             ),
             const SizedBox(height: 14),
 
@@ -428,6 +452,78 @@ class _RuleEditorState extends State<_RuleEditor> {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Hoja de búsqueda de producto del inventario: escribe para filtrar.
+class _InventorySearchSheet extends StatefulWidget {
+  final List<InventoryItem> items;
+  final String Function(double) money;
+  const _InventorySearchSheet({required this.items, required this.money});
+  @override
+  State<_InventorySearchSheet> createState() => _InventorySearchSheetState();
+}
+
+class _InventorySearchSheetState extends State<_InventorySearchSheet> {
+  String _q = '';
+  @override
+  Widget build(BuildContext context) {
+    final q = _q.trim().toLowerCase();
+    final filtered = q.isEmpty
+        ? widget.items
+        : widget.items
+            .where((i) => i.name.toLowerCase().contains(q))
+            .toList();
+    return Padding(
+      padding: EdgeInsets.only(
+        left: 16,
+        right: 16,
+        top: 4,
+        bottom: MediaQuery.of(context).viewInsets.bottom + 16,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Buscar producto',
+              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+          const SizedBox(height: 8),
+          TextField(
+            autofocus: true,
+            decoration: const InputDecoration(
+              prefixIcon: Icon(Icons.search),
+              hintText: 'Escribe el nombre…',
+              isDense: true,
+            ),
+            onChanged: (v) => setState(() => _q = v),
+          ),
+          const SizedBox(height: 8),
+          ConstrainedBox(
+            constraints: BoxConstraints(
+                maxHeight: MediaQuery.of(context).size.height * 0.5),
+            child: filtered.isEmpty
+                ? const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 24),
+                    child: Center(child: Text('Sin resultados.')),
+                  )
+                : ListView.builder(
+                    shrinkWrap: true,
+                    itemCount: filtered.length,
+                    itemBuilder: (_, i) {
+                      final it = filtered[i];
+                      return ListTile(
+                        dense: true,
+                        title: Text(it.name),
+                        subtitle: Text(
+                            widget.money(it.unitPrice ?? it.unitCost ?? 0)),
+                        onTap: () => Navigator.of(context).pop(it),
+                      );
+                    },
+                  ),
+          ),
+        ],
       ),
     );
   }
