@@ -23,7 +23,7 @@
 3. Pacientes (lista, filtros, alta/edición, comorbilidades, diagnósticos, detalle)
 4. Agenda de citas
 5. Consulta (nueva consulta, detalle, cobro)
-6. Valoración: captura de herida (con el pronóstico Kura+ en vivo)
+6. Valoración: captura de herida (pronóstico Kura+ en vivo) y **Plan del mes**
 7. Seguimiento en 5 fases
 8. Reportes
 9. Prevención y riesgo (Braden, tablero, perfil, rondas, dashboard hospital)
@@ -35,7 +35,7 @@
 15. Comercial (servicios, cobros, Stripe, terminal Point)
 16. Terapia VAC y Laboratorios
 17. Importar / exportar (eKare)
-18. Administración (admin de centro)
+18. Administración (admin de centro) — incl. Protocolo Kura+ y Productos del protocolo
 19. Plataforma (master)
 20. Dashboard principal (Inicio)
 21. Glosario clínico
@@ -256,8 +256,11 @@ Título **"Detalle de consulta"** (referencia histórica). Chip del tipo de visi
   clínica** (exudado, olor, borde, dolor EVA, adherencia, criterios de infección IWII,
   piel perilesional), **Recomendación Kura+** (escenario, fenotipo, régimen,
   interconsultas), **Tratamiento aplicado** y **Fotos**.
-- **Insumos utilizados** (centros premium): **"Sugerir del plan"**, **"Agregar
-  insumo"**; por insumo, cantidad ± y chips **"Cobrar"** / **"Descontar"**.
+- **Insumos utilizados** (centros premium): **"Sugerir del plan"** resuelve los productos
+  del Protocolo Kura+ según la **medida de la herida**, el exudado, la zona y la infección,
+  y los agrega como insumos (si un genérico tiene varias presentaciones, te deja elegir);
+  si no hay reglas, usa el mapeo antiguo. **"Agregar insumo"** agrega uno manual. Por
+  insumo: cantidad ± y chips **"Cobrar"** / **"Descontar"** (independientes).
 - **Cobro / pago:** **"Cobrar consulta"** (funciona en borrador) → elige el
   **Servicio (honorario)** o captura "Otro"; suma honorario + insumos a cobrar y
   muestra el **Total** → **"Registrar cobro"**. Después, **"Registrar pago"** con
@@ -321,6 +324,39 @@ sustituye el juicio clínico"). En tiempo real muestra las tres probabilidades
 (**Escenarios A/B/C**) como barras, resalta el **escenario dominante** con su
 significado y **fenotipo**, y lista **alertas** de seguridad e **interconsultas**
 sugeridas (con marca de urgente). Antes de tener largo y ancho, indica que faltan datos.
+
+### 6.2 Plan del mes (tras la valoración)
+
+Título **"Plan de tratamiento del mes"**. Se abre **automáticamente al guardar la
+valoración** (se puede **"Omitir"**). Arma el plan del mes: qué insumos, en qué cantidad
+y con qué cadencia. Enfermería no puede acceder (rol restringido).
+
+- **Insumos por procedimiento** (agrupados por procedimiento): se **autosugieren** desde
+  las reglas de producto del Protocolo Kura+ (resueltas por la medida de la herida,
+  exudado, zona e infección; ver §18) o, si no hay regla, desde el mapeo antiguo. Cada
+  insumo tiene: nombre, precio unitario, un **± de cantidad** y un **toggle de modo**:
+  - **"por sesión"**: la cantidad se multiplica por el nº de sesiones (consumibles de cada
+    cura).
+  - **"mensual (multidosis)"**: la cantidad **ya es la del mes** (productos que se compran
+    1–2 veces al mes según el uso); **no** se multiplica por sesiones.
+  Toca el chip para alternar. **"Agregar producto"** abre un buscador del inventario del
+  sitio.
+- **Cadencia de sesiones:** **Días de la semana** (chips L–D; por defecto Lun/Mié/Vie),
+  **Hora**, **Inicio** (fecha) y **Semanas** (1–8, duración del plan).
+- **Sesiones del mes:** lista autogenerada (una por día elegido × semanas). En centros con
+  **Acuity**, las sesiones que se **empalman** con el calendario del especialista (±60 min)
+  se marcan en rojo con un aviso (Acuity se usa solo para detectar conflictos; el plan **no**
+  crea citas en Acuity).
+- **Explosión de materiales del mes** ("para reservar stock"): total por insumo — los "por
+  sesión" = cantidad × sesiones; los "mensual" = su cantidad tal cual (con etiqueta
+  "mensual"). Sirve para reservar/pedir stock.
+- Botones: **"Guardar borrador"** (guarda el plan como borrador) y **"Aceptar e iniciar"**
+  (guarda los insumos con su modo y **registra todas las sesiones** del mes; el plan queda
+  aceptado).
+
+**Cómo se conecta con los seguimientos:** al aceptar, cada seguimiento **no** se rellena
+solo; en la consulta se usa **"Sugerir del plan"** (ver §5.2 y §14) para volver a resolver
+los mismos insumos. La explosión del mes alimenta el reabasto/stock.
 
 ---
 
@@ -628,7 +664,18 @@ Personal sanitario · Sitios · Configuración · Marca**.
 - **Configuración (catálogo de notas):** administra los chips que el clínico elige al
   escribir la nota de seguimiento (por campo). Activar/desactivar, borrar, etiqueta
   Kura+. Herramientas: **Cargar catálogo base**, **Descargar plantilla CSV**, **Cargar
-  CSV**, **"Nuevo concepto"** y acceso a la configuración del **Protocolo Kura+**.
+  CSV**, **"Nuevo concepto"**, y dos accesos de protocolo:
+  - **"Protocolo Kura+"**: mapeo por categoría de los pasos del protocolo a conceptos del
+    catálogo.
+  - **"Productos del protocolo"** ("Productos del protocolo"): por cada **categoría** del
+    protocolo (Limpieza, Desbridamiento, Relleno de cavidad, Apósito, Protección de piel,
+    Antimicrobiano, Compresión, Descarga) defines **reglas de producto**: qué producto del
+    inventario usar y en qué cantidad, opcionalmente condicionado a la **medida de la
+    herida** (Área/Volumen con rango Mín/Máx), al **exudado**, la **zona anatómica** y la
+    **infección/riesgo**. Cada regla: **"Buscar producto…"**, condiciones (chips), modo de
+    cantidad (**Cantidad fija** / **Por área (× cm²)** / **Por volumen (× cm³)**) + **Valor**,
+    y **"Guardar regla"**. Estas reglas son las que alimentan **"Sugerir del plan"** y el
+    autollenado del **Plan del mes** (§6.2, §5.2).
 - **Marca:** logo y color del centro.
 
 ---
@@ -695,6 +742,15 @@ Tablero de triage; cambia según tipo de centro y rol.
 - **Fórmula de Kundin:** cálculo del volumen de la herida a partir de sus dimensiones.
 - **LPP:** lesión por presión.
 - **APP / APNP:** antecedentes personales patológicos / no patológicos.
+- **Plan del mes (programa de tratamiento):** plan mensual que se arma tras la valoración
+  (insumos por procedimiento + cadencia de sesiones); genera las sesiones del mes y la
+  explosión de materiales.
+- **Regla de producto (Protocolo Kura+):** regla que, por categoría del protocolo, asigna
+  un producto del inventario y una cantidad, condicionada opcionalmente a la medida de la
+  herida, el exudado, la zona y la infección. Alimenta "Sugerir del plan" y el Plan del mes.
+- **Insumo por sesión vs. mensual (multidosis):** un insumo "por sesión" se consume en cada
+  cura (mensual = cantidad × sesiones); uno "mensual/multidosis" se compra 1–2 veces al mes
+  y su cantidad ya es la del mes.
 - **Folio:** identificador del expediente (EXP2026-…, HOSP-…, CUI-…).
 
 ---
