@@ -4787,6 +4787,9 @@ class DataRepository {
     required Set<KuraTag> categories,
     double? areaCm2,
     double? volumeCm3,
+    String? exudateLevel, // ExudadoCantidad.name
+    String? zoneGroup, // ZoneGroup key
+    bool? infectionSuspected,
     String? siteId,
   }) {
     final inv = {
@@ -4797,11 +4800,24 @@ class DataRepository {
     final out = <ResolvedProtocolProduct>[];
     final seen = <String>{};
     for (final cat in categories) {
-      for (final r in protocolRulesForCategory(organizationId, cat)) {
-        if (r.inventoryItemId == null) continue;
-        if (!r.appliesTo(areaCm2: areaCm2, volumeCm3: volumeCm3)) continue;
-        // Un producto por (categoría, item): evita duplicar si varias reglas
-        // resuelven al mismo producto.
+      // Reglas de la categoría que APLICAN a este caso.
+      final matching = protocolRulesForCategory(organizationId, cat)
+          .where((r) => r.inventoryItemId != null)
+          .where((r) => r.appliesTo(
+                areaCm2: areaCm2,
+                volumeCm3: volumeCm3,
+                exudateLevel: exudateLevel,
+                zoneGroup: zoneGroup,
+                infectionSuspected: infectionSuspected,
+              ))
+          .toList();
+      if (matching.isEmpty) continue;
+      // Gana la MÁS ESPECÍFICA (más condiciones); el comodín solo aplica si no
+      // hubo match específico. Empate de especificidad → todas (p. ej. limpieza
+      // = solución + gasa, ambas sin condiciones).
+      final maxSpec =
+          matching.map((r) => r.specificity).reduce((a, b) => a > b ? a : b);
+      for (final r in matching.where((r) => r.specificity == maxSpec)) {
         if (!seen.add('${cat.dbValue}::${r.inventoryItemId}')) continue;
         final item = inv[r.inventoryItemId];
         if (item == null) continue;

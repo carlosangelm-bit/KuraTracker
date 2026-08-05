@@ -6,6 +6,7 @@ import '../../core/theme/kura_theme.dart';
 import '../../core/providers/session_provider.dart';
 import '../../models/inventory.dart';
 import '../../models/note_option_catalog.dart';
+import '../../models/protocol_product_rule.dart';
 import '../../models/supply_product_mapping.dart';
 import '../../models/appointment.dart';
 import '../../models/treatment_program.dart';
@@ -129,12 +130,24 @@ class _TreatmentProgramBuilderScreenState
     };
     final measures = repo.listMeasurementsForWound(widget.woundId);
     final last = measures.isEmpty ? null : measures.last;
+    final wound = repo.getWound(widget.woundId);
+    // Exudado / infección salen de la valoración de ESTA consulta (o la última).
+    final assessments = repo.listAssessmentsForWound(widget.woundId);
+    final assess = assessments
+            .where((a) => a.consultationId == widget.consultationId)
+            .isNotEmpty
+        ? assessments
+            .firstWhere((a) => a.consultationId == widget.consultationId)
+        : (assessments.isEmpty ? null : assessments.last);
     if (categories.isNotEmpty) {
       final resolved = repo.resolveProtocolProducts(
         organizationId: orgId,
         categories: categories,
         areaCm2: last?.areaCm2,
         volumeCm3: last?.volumeCm3,
+        exudateLevel: assess?.exudateAmount.name,
+        zoneGroup: ZoneGroup.forLocation(wound?.bodyLocationPrimary),
+        infectionSuspected: assess?.infectionCriteria.isNotEmpty,
         siteId: siteId,
       );
       for (final r in resolved) {
