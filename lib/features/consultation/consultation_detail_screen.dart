@@ -10,6 +10,7 @@ import '../../engine/models/kura_engine_enums.dart';
 import '../../models/commercial.dart';
 import '../../models/consultation.dart';
 import '../../models/note_option_catalog.dart';
+import '../../models/protocol_product_rule.dart';
 import '../../models/consultation_supply_usage.dart';
 import '../../models/inventory.dart';
 import '../../models/supply_product_mapping.dart';
@@ -1243,11 +1244,23 @@ class _SuppliesUsedSectionState extends ConsumerState<_SuppliesUsedSection> {
       final measures =
           woundId == null ? const [] : repo.listMeasurementsForWound(woundId);
       final last = measures.isEmpty ? null : measures.last;
+      final wound = woundId == null ? null : repo.getWound(woundId);
+      final assessments =
+          woundId == null ? const [] : repo.listAssessmentsForWound(woundId);
+      final assess = assessments
+              .where((a) => a.consultationId == widget.consultationId)
+              .isNotEmpty
+          ? assessments
+              .firstWhere((a) => a.consultationId == widget.consultationId)
+          : (assessments.isEmpty ? null : assessments.last);
       final resolved = repo.resolveProtocolProducts(
         organizationId: orgId,
         categories: categories,
         areaCm2: last?.areaCm2,
         volumeCm3: last?.volumeCm3,
+        exudateLevel: assess?.exudateAmount.name,
+        zoneGroup: ZoneGroup.forLocation(wound?.bodyLocationPrimary),
+        infectionSuspected: assess?.infectionCriteria.isNotEmpty,
         siteId: siteId,
       );
       if (resolved.isNotEmpty) {
