@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/theme/kura_theme.dart';
+import '../../engine/models/kura_engine_enums.dart';
 import '../../models/inventory.dart';
 import '../../models/note_option_catalog.dart';
 import '../../models/protocol_product_rule.dart';
@@ -44,6 +45,14 @@ class _ProtocolProductRulesScreenState
   String _fmtNum(double v) =>
       v == v.roundToDouble() ? v.toStringAsFixed(0) : v.toStringAsFixed(1);
 
+  String _exudateShort(String name) => switch (name) {
+        'ninguno' => 'nulo',
+        'escaso' => 'escaso',
+        'moderado' => 'mod',
+        'abundante' => 'abund',
+        _ => name,
+      };
+
   String _ruleSummary(ProtocolProductRule r) {
     final parts = <String>[];
     switch (r.dimension) {
@@ -57,6 +66,14 @@ class _ProtocolProductRulesScreenState
         parts.add('Siempre');
         break;
     }
+    if (r.exudateLevels.isNotEmpty) {
+      parts.add('Exud: ${r.exudateLevels.map((e) => _exudateShort(e)).join('/')}');
+    }
+    if (r.zoneGroups.isNotEmpty) {
+      parts.add('Zona: ${r.zoneGroups.map(ZoneGroup.label).join('/')}');
+    }
+    if (r.infection == RuleInfection.yes) parts.add('c/infección');
+    if (r.infection == RuleInfection.no) parts.add('s/infección');
     parts.add(switch (r.quantityMode) {
       QuantityMode.perArea => '${_fmtNum(r.quantityValue)}/cm²',
       QuantityMode.perVolume => '${_fmtNum(r.quantityValue)}/cm³',
@@ -222,6 +239,17 @@ class _RuleEditorState extends State<_RuleEditor> {
   final _minCtrl = TextEditingController();
   final _maxCtrl = TextEditingController();
   final _qtyCtrl = TextEditingController(text: '1');
+  // Condiciones (0077)
+  final Set<String> _exudate = {};
+  final Set<String> _zones = {};
+  RuleInfection _infection = RuleInfection.any;
+
+  static const _exudateLabels = {
+    'ninguno': 'Ninguno',
+    'escaso': 'Escaso',
+    'moderado': 'Moderado',
+    'abundante': 'Abundante',
+  };
 
   @override
   void initState() {
@@ -236,6 +264,9 @@ class _RuleEditorState extends State<_RuleEditor> {
       if (e.minValue != null) _minCtrl.text = _fmt(e.minValue!);
       if (e.maxValue != null) _maxCtrl.text = _fmt(e.maxValue!);
       _qtyCtrl.text = _fmt(e.quantityValue);
+      _exudate.addAll(e.exudateLevels);
+      _zones.addAll(e.zoneGroups);
+      _infection = e.infection;
     }
   }
 
@@ -273,6 +304,10 @@ class _RuleEditorState extends State<_RuleEditor> {
       quantityMode: _qtyMode,
       quantityValue: qty,
       sortOrder: widget.existing?.sortOrder ?? 0,
+      exudateLevels: _exudate.toList(),
+      zoneGroups: _zones.toList(),
+      infection: _infection,
+      priority: widget.existing?.priority ?? 0,
     );
     Navigator.of(context).pop(rule);
   }
@@ -339,7 +374,78 @@ class _RuleEditorState extends State<_RuleEditor> {
                 ),
               ),
             ),
-            const SizedBox(height: 14),
+            const SizedBox(height: 16),
+
+            // ---- Condiciones (opcionales) ----
+            Text('Condiciones (opcional — vacío = cualquiera)',
+                style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: KuraColors.primary)),
+            const SizedBox(height: 8),
+            Text('Exudado',
+                style: TextStyle(
+                    fontSize: 12,
+                    color: KuraColors.darkText.withValues(alpha: 0.7))),
+            const SizedBox(height: 4),
+            Wrap(
+              spacing: 6,
+              children: [
+                for (final e in ExudadoCantidad.values)
+                  FilterChip(
+                    label: Text(_exudateLabels[e.name] ?? e.name),
+                    selected: _exudate.contains(e.name),
+                    onSelected: (sel) => setState(() {
+                      if (sel) {
+                        _exudate.add(e.name);
+                      } else {
+                        _exudate.remove(e.name);
+                      }
+                    }),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Text('Zona anatómica',
+                style: TextStyle(
+                    fontSize: 12,
+                    color: KuraColors.darkText.withValues(alpha: 0.7))),
+            const SizedBox(height: 4),
+            Wrap(
+              spacing: 6,
+              children: [
+                for (final z in ZoneGroup.all)
+                  FilterChip(
+                    label: Text(ZoneGroup.label(z)),
+                    selected: _zones.contains(z),
+                    onSelected: (sel) => setState(() {
+                      if (sel) {
+                        _zones.add(z);
+                      } else {
+                        _zones.remove(z);
+                      }
+                    }),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Text('Infección / riesgo',
+                style: TextStyle(
+                    fontSize: 12,
+                    color: KuraColors.darkText.withValues(alpha: 0.7))),
+            const SizedBox(height: 4),
+            Wrap(
+              spacing: 6,
+              children: [
+                for (final inf in RuleInfection.values)
+                  ChoiceChip(
+                    label: Text(inf.label),
+                    selected: _infection == inf,
+                    onSelected: (_) => setState(() => _infection = inf),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 16),
 
             // Dimensión
             Text('¿Depende de la medida de la herida?',
