@@ -71,7 +71,10 @@ class TreatmentProgram {
       );
 }
 
-/// Insumo del plan (por procedimiento), con cantidad POR SESIÓN.
+/// Insumo del plan (por procedimiento). La cantidad se interpreta según
+/// [isMonthly]: si es false (default), es cantidad POR SESIÓN (mensual = ×
+/// sesiones); si es true, es cantidad MENSUAL directa (producto multidosis que
+/// se compra 1–2 veces al mes, sin multiplicar por sesiones).
 class TreatmentProgramSupply {
   final String id;
   final String programId;
@@ -81,6 +84,7 @@ class TreatmentProgramSupply {
   final String? inventoryItemId;
   final String name;
   final double quantityPerSession;
+  final bool isMonthly; // true = la cantidad ya es la del mes (multidosis)
   final double? unitCost;
   final double? unitPrice;
   final String? currency;
@@ -95,6 +99,7 @@ class TreatmentProgramSupply {
     this.inventoryItemId,
     required this.name,
     this.quantityPerSession = 1,
+    this.isMonthly = false,
     this.unitCost,
     this.unitPrice,
     this.currency,
@@ -114,6 +119,7 @@ class TreatmentProgramSupply {
         name: j['name'] as String? ?? '',
         quantityPerSession:
             (j['quantity_per_session'] as num?)?.toDouble() ?? 1,
+        isMonthly: (j['is_monthly'] as bool?) ?? false,
         unitCost: (j['unit_cost'] as num?)?.toDouble(),
         unitPrice: (j['unit_price'] as num?)?.toDouble(),
         currency: j['currency'] as String?,

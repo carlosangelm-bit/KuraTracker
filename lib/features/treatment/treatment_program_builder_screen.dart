@@ -13,7 +13,8 @@ import '../../models/treatment_program.dart';
 import '../../services/acuity_service.dart';
 import '../../services/data_repository.dart';
 
-/// Renglón de insumo del plan en construcción (cantidad POR SESIÓN).
+/// Renglón de insumo del plan en construcción. [perMonth] elige cómo se
+/// interpreta [qty]: por sesión (default) o mensual directo (multidosis).
 class _SupplyRow {
   final String method; // procedimiento
   final String? product; // genérico del régimen
@@ -23,6 +24,7 @@ class _SupplyRow {
   final double? unitPrice;
   final String? currency;
   double qty = 1;
+  bool perMonth = false; // true = qty ya es la cantidad del mes (multidosis)
   _SupplyRow({
     required this.method,
     this.product,
@@ -277,6 +279,7 @@ class _TreatmentProgramBuilderScreenState
             inventoryItemId: s.inventoryItemId,
             name: s.name,
             quantityPerSession: s.qty,
+            isMonthly: s.perMonth,
             unitCost: s.unitCost,
             unitPrice: s.unitPrice,
             currency: s.currency,
@@ -372,15 +375,17 @@ class _TreatmentProgramBuilderScreenState
         children: [
           Text(
             'A partir de la valoración, define el plan del mes: insumos por '
-            'procedimiento (cantidad por sesión) y la cadencia de las sesiones. '
-            'Al aceptarlo, cada seguimiento vendrá pre-cargado.',
+            'procedimiento y la cadencia de las sesiones. Cada insumo puede ser '
+            '"por sesión" (se multiplica por las sesiones) o "mensual" para '
+            'productos multidosis (la cantidad ya es la del mes). Al aceptarlo, '
+            'cada seguimiento vendrá pre-cargado.',
             style: TextStyle(
                 fontSize: 12, color: KuraColors.darkText.withValues(alpha: 0.6)),
           ),
           const SizedBox(height: 16),
 
           // ---- Insumos por procedimiento ----
-          _sectionTitle('Insumos por procedimiento', 'cantidad por sesión'),
+          _sectionTitle('Insumos por procedimiento', 'por sesión o mensual'),
           if (_supplies.isEmpty)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 12),
@@ -555,7 +560,17 @@ class _TreatmentProgramBuilderScreenState
                 child: Row(
                   children: [
                     Expanded(child: Text(s.name, style: const TextStyle(fontSize: 13))),
-                    Text('${_fmtQty(s.qty * sessions.length)} u',
+                    if (s.perMonth)
+                      Padding(
+                        padding: const EdgeInsets.only(right: 6),
+                        child: Text('mensual',
+                            style: TextStyle(
+                                fontSize: 10,
+                                color:
+                                    KuraColors.darkText.withValues(alpha: 0.45))),
+                      ),
+                    Text(
+                        '${_fmtQty(s.perMonth ? s.qty : s.qty * sessions.length)} u',
                         style: const TextStyle(fontWeight: FontWeight.w700)),
                   ],
                 ),
@@ -614,6 +629,8 @@ class _TreatmentProgramBuilderScreenState
                         style: TextStyle(
                             fontSize: 11,
                             color: KuraColors.darkText.withValues(alpha: 0.5))),
+                  const SizedBox(height: 4),
+                  _modeChip(s),
                 ],
               ),
             ),
@@ -638,6 +655,38 @@ class _TreatmentProgramBuilderScreenState
           ],
         ),
       );
+
+  /// Toggle por insumo: "por sesión" (consumible de cada cura) vs "mensual"
+  /// (multidosis, se compra 1–2 veces al mes). Cambia cómo se cuenta en la
+  /// explosión de materiales del mes.
+  Widget _modeChip(_SupplyRow s) {
+    final monthly = s.perMonth;
+    final color =
+        monthly ? KuraColors.primary : KuraColors.darkText.withValues(alpha: 0.55);
+    return InkWell(
+      borderRadius: BorderRadius.circular(12),
+      onTap: () => setState(() => s.perMonth = !s.perMonth),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+        decoration: BoxDecoration(
+          border: Border.all(color: color.withValues(alpha: 0.5)),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(monthly ? Icons.calendar_month : Icons.repeat,
+                size: 12, color: color),
+            const SizedBox(width: 4),
+            Text(monthly ? 'mensual (multidosis)' : 'por sesión',
+                style: TextStyle(
+                    fontSize: 11, color: color, fontWeight: FontWeight.w600)),
+            Icon(Icons.swap_horiz, size: 12, color: color.withValues(alpha: 0.6)),
+          ],
+        ),
+      ),
+    );
+  }
 
   Widget _sessionChip(DateTime s, bool conflict) {
     final c = conflict ? KuraColors.danger : KuraColors.primary;
