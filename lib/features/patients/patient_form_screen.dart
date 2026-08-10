@@ -28,6 +28,8 @@ class _PatientFormScreenState extends ConsumerState<PatientFormScreen> {
   final _caregiverPhoneCtrl = TextEditingController();
   final _notesCtrl = TextEditingController();
   // Identificación NOM-004 (Fase 2).
+  final _emailCtrl = TextEditingController();
+  final _mobileCtrl = TextEditingController();
   final _curpCtrl = TextEditingController();
   final _addressCtrl = TextEditingController();
   final _occupationCtrl = TextEditingController();
@@ -63,6 +65,8 @@ class _PatientFormScreenState extends ConsumerState<PatientFormScreen> {
     _caregiverNameCtrl.dispose();
     _caregiverPhoneCtrl.dispose();
     _notesCtrl.dispose();
+    _emailCtrl.dispose();
+    _mobileCtrl.dispose();
     _curpCtrl.dispose();
     _addressCtrl.dispose();
     _occupationCtrl.dispose();
@@ -150,6 +154,8 @@ class _PatientFormScreenState extends ConsumerState<PatientFormScreen> {
     _allergiesTags
       ..clear()
       ..addAll(_splitTags(p.allergies));
+    _emailCtrl.text = p.email ?? '';
+    _mobileCtrl.text = p.mobilePhone ?? '';
     _curpCtrl.text = p.curp ?? '';
     _addressCtrl.text = p.address ?? '';
     _occupationCtrl.text = p.occupation ?? '';
@@ -300,6 +306,30 @@ class _PatientFormScreenState extends ConsumerState<PatientFormScreen> {
                                 DropdownMenuItem(value: 'otro', child: Text('Otro')),
                               ],
                               onChanged: (v) => setState(() => _sex = v ?? 'F'),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextFormField(
+                              controller: _emailCtrl,
+                              keyboardType: TextInputType.emailAddress,
+                              decoration: const InputDecoration(
+                                labelText: 'Email',
+                                helperText: 'Para recordatorios de citas',
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: TextFormField(
+                              controller: _mobileCtrl,
+                              keyboardType: TextInputType.phone,
+                              decoration:
+                                  const InputDecoration(labelText: 'Celular'),
                             ),
                           ),
                         ],
@@ -616,6 +646,12 @@ class _PatientFormScreenState extends ConsumerState<PatientFormScreen> {
                                       allergies: _allergiesTags.isEmpty
                                           ? null
                                           : _allergiesTags.join('\n'),
+                                      email: _emailCtrl.text.trim().isEmpty
+                                          ? null
+                                          : _emailCtrl.text.trim(),
+                                      mobilePhone: _mobileCtrl.text.trim().isEmpty
+                                          ? null
+                                          : _mobileCtrl.text.trim(),
                                       curp: _curpCtrl.text.trim().isEmpty
                                           ? null
                                           : _curpCtrl.text.trim().toUpperCase(),
@@ -697,6 +733,12 @@ class _PatientFormScreenState extends ConsumerState<PatientFormScreen> {
                                     allergies: _allergiesTags.isEmpty
                                         ? null
                                         : _allergiesTags.join('\n'),
+                                    email: _emailCtrl.text.trim().isEmpty
+                                        ? null
+                                        : _emailCtrl.text.trim(),
+                                    mobilePhone: _mobileCtrl.text.trim().isEmpty
+                                        ? null
+                                        : _mobileCtrl.text.trim(),
                                     curp: _curpCtrl.text.trim().isEmpty
                                         ? null
                                         : _curpCtrl.text.trim().toUpperCase(),
