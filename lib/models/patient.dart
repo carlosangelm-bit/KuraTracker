@@ -20,6 +20,8 @@ class Patient {
   // Contacto propio del paciente (0079): cliente en Acuity / recordatorios.
   final String? email;
   final String? mobilePhone; // celular
+  // Antecedentes quirúrgicos (0082, KT-7): texto abierto.
+  final String? surgicalHistory;
   // Identificación NOM-004 (Fase 2, migración 0031).
   final String? curp;
   final String? address; // domicilio
@@ -61,6 +63,7 @@ class Patient {
     this.ekareExternalId,
     this.email,
     this.mobilePhone,
+    this.surgicalHistory,
     this.curp,
     this.address,
     this.occupation,
@@ -119,6 +122,7 @@ class Patient {
         ekareExternalId: json['ekare_external_id'] as String?,
         email: json['email'] as String?,
         mobilePhone: json['mobile_phone'] as String?,
+        surgicalHistory: json['surgical_history'] as String?,
         curp: json['curp'] as String?,
         address: json['address'] as String?,
         occupation: json['occupation'] as String?,
@@ -160,6 +164,7 @@ class Patient {
         'ekare_external_id': ekareExternalId,
         'email': email,
         'mobile_phone': mobilePhone,
+        'surgical_history': surgicalHistory,
         'curp': curp,
         'address': address,
         'occupation': occupation,

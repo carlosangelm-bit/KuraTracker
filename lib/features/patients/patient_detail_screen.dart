@@ -611,6 +611,16 @@ class _PatientHeaderCard extends StatelessWidget {
               _labeledChips('Medicamentos activos', patient.activeMedications,
                   color: KuraColors.darkText.withOpacity(0.6)),
             ],
+            if ((patient.surgicalHistory ?? '').trim().isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Text('Antecedentes quirúrgicos',
+                  style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: KuraColors.darkText.withOpacity(0.6))),
+              const SizedBox(height: 4),
+              Text(patient.surgicalHistory!),
+            ],
             if (patient.familyHistory.isNotEmpty) ...[
               const SizedBox(height: 12),
               Text('Antecedentes heredo-familiares',

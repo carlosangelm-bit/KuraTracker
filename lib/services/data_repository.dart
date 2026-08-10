@@ -2886,6 +2886,7 @@ class DataRepository {
     String? allergies,
     String? email,
     String? mobilePhone,
+    String? surgicalHistory,
     String? curp,
     String? address,
     String? occupation,
@@ -2933,6 +2934,7 @@ class DataRepository {
           'ekare_external_id': null,
           'email': email,
           'mobile_phone': mobilePhone,
+          'surgical_history': surgicalHistory,
           'curp': curp,
           'address': address,
           'occupation': occupation,
@@ -3014,6 +3016,7 @@ class DataRepository {
     String? allergies,
     String? email,
     String? mobilePhone,
+    String? surgicalHistory,
     String? curp,
     String? address,
     String? occupation,
@@ -3044,6 +3047,7 @@ class DataRepository {
       'allergies': allergies,
       'email': email,
       'mobile_phone': mobilePhone,
+      'surgical_history': surgicalHistory,
       'curp': curp,
       'address': address,
       'occupation': occupation,
@@ -3075,11 +3079,21 @@ class DataRepository {
     }
   }
 
-  List<PatientComorbidity> listComorbidities(String patientId) => _store
-      .getAll(Collections.patientComorbidities)
-      .where((c) => c['patient_id'] == patientId)
-      .map(PatientComorbidity.fromJson)
-      .toList();
+  List<PatientComorbidity> listComorbidities(String patientId) {
+    // Dedup por código (KT-5): si hay duplicados previos, muestra solo el más
+    // reciente por código (red de seguridad además del fix en setComorbidity).
+    final byCode = <Comorbilidad, PatientComorbidity>{};
+    for (final c in _store
+        .getAll(Collections.patientComorbidities)
+        .where((c) => c['patient_id'] == patientId)
+        .map(PatientComorbidity.fromJson)) {
+      final prev = byCode[c.code];
+      final cAt = c.notedAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+      final pAt = prev?.notedAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+      if (prev == null || cAt.isAfter(pAt)) byCode[c.code] = c;
+    }
+    return byCode.values.toList();
+  }
 
   // ---------------- Laboratorios del paciente (0070) ------------------------
 
@@ -3168,8 +3182,16 @@ class DataRepository {
       notedBy: staffId,
     );
     final json = pc.toJson();
-    final existing = _store.getAll(Collections.patientComorbidities).where(
-        (c) => c['patient_id'] == patientId && c['code'] == json['code']);
+    // KT-5: confirma contra el servidor antes de decidir insert/update (la cache
+    // puede estar incompleta por RLS y provocar inserts duplicados).
+    final store = _store;
+    if (store is SupabaseDataStore) {
+      await store.refreshCollection(Collections.patientComorbidities);
+    }
+    final existing = _store
+        .getAll(Collections.patientComorbidities)
+        .where((c) => c['patient_id'] == patientId && c['code'] == json['code'])
+        .toList();
     if (existing.isNotEmpty) {
       final saved = await _store.updateRow(
         Collections.patientComorbidities,
@@ -3180,6 +3202,11 @@ class DataRepository {
           'noted_by': json['noted_by'],
         },
       );
+      // Limpia duplicados previos del mismo (paciente, código), si los hubiera.
+      for (final dup in existing.skip(1)) {
+        await _store.deleteRow(
+            Collections.patientComorbidities, dup['id'] as String);
+      }
       return PatientComorbidity.fromJson(saved);
     }
     final saved =
