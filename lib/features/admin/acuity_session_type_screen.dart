@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/theme/kura_theme.dart';
-import '../../core/providers/session_provider.dart';
 import '../../services/acuity_service.dart';
 import '../../services/data_repository.dart';
 
@@ -26,27 +25,31 @@ class _AcuitySessionTypeScreenState
     extends ConsumerState<AcuitySessionTypeScreen> {
   late Future<List<dynamic>> _typesFuture;
   bool _saving = false;
-  String? _selectedOrgId;
+  String? _selectedSiteId;
 
   @override
   void initState() {
     super.initState();
-    _selectedOrgId = widget.organizationId;
+    final sites = widget.repo
+        .listSites(organizationId: widget.organizationId)
+        .where((s) => s.isActive)
+        .toList();
+    _selectedSiteId = sites.isEmpty ? null : sites.first.id;
     _typesFuture = ref.read(acuityServiceProvider).appointmentTypes();
   }
 
   int? get _current =>
-      widget.repo.organizationById(_selectedOrgId)?.acuitySessionTypeId;
+      widget.repo.siteById(_selectedSiteId)?.acuitySessionTypeId;
 
   Future<void> _select(int typeId) async {
-    if (_selectedOrgId == null) {
+    if (_selectedSiteId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Elige primero un centro.')));
+          const SnackBar(content: Text('Elige primero un sitio.')));
       return;
     }
     setState(() => _saving = true);
     try {
-      await widget.repo.setAcuitySessionType(_selectedOrgId!, typeId);
+      await widget.repo.setSiteAcuitySessionType(_selectedSiteId!, typeId);
       if (mounted) {
         setState(() {});
         ScaffoldMessenger.of(context).showSnackBar(
@@ -82,46 +85,47 @@ class _AcuitySessionTypeScreenState
             );
           }
           final types = (snap.data ?? const []).whereType<Map>().toList();
-          final isMaster =
-              ref.watch(sessionProvider).user?.isMaster ?? false;
-          final orgs = isMaster ? widget.repo.listOrganizations() : const [];
+          final sites = widget.repo
+              .listSites(organizationId: widget.organizationId)
+              .where((s) => s.isActive)
+              .toList();
           return ListView(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 40),
             children: [
               Text(
                 'Elige el tipo de cita de Acuity con el que se agendarán las '
                 'sesiones del plan de tratamiento. La configuración es POR '
-                'CENTRO; se usará al aceptar un plan para crear las citas del '
-                'mes en Acuity.',
+                'SITIO; se usará al aceptar un plan para crear las citas del mes '
+                'en Acuity.',
                 style: TextStyle(
                     fontSize: 12,
                     color: KuraColors.darkText.withValues(alpha: 0.6)),
               ),
               const SizedBox(height: 12),
-              // Selector de centro (solo master; el admin ya está acotado al suyo).
-              if (isMaster) ...[
+              // Selector de sitio del centro. Si hay más de uno, se configura
+              // cada sitio por separado.
+              if (sites.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Text('Este centro no tiene sitios activos.',
+                      style: TextStyle(
+                          fontSize: 12, color: KuraColors.danger)),
+                )
+              else ...[
                 DropdownButtonFormField<String>(
-                  value: _selectedOrgId,
+                  value: _selectedSiteId,
                   isExpanded: true,
                   decoration: const InputDecoration(
-                      labelText: 'Centro', isDense: true),
+                      labelText: 'Sitio', isDense: true),
                   items: [
-                    for (final o in orgs)
-                      DropdownMenuItem(value: o.id, child: Text(o.name)),
+                    for (final s in sites)
+                      DropdownMenuItem(value: s.id, child: Text(s.name)),
                   ],
                   onChanged: _saving
                       ? null
-                      : (v) => setState(() => _selectedOrgId = v),
+                      : (v) => setState(() => _selectedSiteId = v),
                 ),
                 const SizedBox(height: 8),
-                if (_selectedOrgId == null)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 8),
-                    child: Text('Elige un centro para configurar su tipo de cita.',
-                        style: TextStyle(
-                            fontSize: 12,
-                            color: KuraColors.darkText.withValues(alpha: 0.5))),
-                  ),
               ],
               if (types.isEmpty)
                 const Padding(

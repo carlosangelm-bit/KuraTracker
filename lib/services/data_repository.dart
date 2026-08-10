@@ -1937,6 +1937,30 @@ class DataRepository {
     }
   }
 
+  Site? siteById(String? siteId) {
+    if (siteId == null) return null;
+    final m = _store
+        .getAll(Collections.sites)
+        .where((s) => s['id'] == siteId);
+    return m.isEmpty ? null : Site.fromJson(m.first);
+  }
+
+  /// Fija el tipo de cita de Acuity de un SITIO (RPC 0081: master o admin del
+  /// centro dueño). null lo desasigna (hereda el del centro).
+  Future<void> setSiteAcuitySessionType(String siteId, int? typeId) async {
+    final store = _store;
+    if (store is SupabaseDataStore) {
+      await store.callRpc('set_site_acuity_session_type', {
+        'p_site': siteId,
+        'p_type_id': typeId,
+      });
+      await store.refreshCollection(Collections.sites);
+    } else {
+      await _store.updateRow(
+          Collections.sites, siteId, {'acuity_session_type_id': typeId});
+    }
+  }
+
   /// Pone una terminal en modo integrado (PDV) para que pueda recibir órdenes.
   Future<void> setPointDevicePdv(String deviceId) async {
     final store = _store;

@@ -9,6 +9,8 @@ class Site {
   // de esa organizacion puede operar en CUALQUIERA de sus sitios (no solo
   // en su primary_site_id, que es solo un default opcional).
   final String? organizationId;
+  // Tipo de cita de Acuity para las sesiones del plan en este sitio (0081).
+  final int? acuitySessionTypeId;
 
   const Site({
     required this.id,
@@ -17,6 +19,7 @@ class Site {
     this.address,
     this.isActive = true,
     this.organizationId,
+    this.acuitySessionTypeId,
   });
 
   factory Site.fromJson(Map<String, dynamic> json) => Site(
@@ -26,6 +29,7 @@ class Site {
         address: json['address'] as String?,
         isActive: json['is_active'] as bool? ?? true,
         organizationId: json['organization_id'] as String?,
+        acuitySessionTypeId: (json['acuity_session_type_id'] as num?)?.toInt(),
       );
 
   Map<String, dynamic> toJson() => {
@@ -35,5 +39,6 @@ class Site {
         'address': address,
         'is_active': isActive,
         'organization_id': organizationId,
+        'acuity_session_type_id': acuitySessionTypeId,
       };
 }

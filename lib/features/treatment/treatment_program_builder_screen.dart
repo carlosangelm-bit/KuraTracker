@@ -326,10 +326,11 @@ class _TreatmentProgramBuilderScreenState
   /// que fallen quedan internas. Devuelve un texto-resumen para el snack.
   Future<String> _pushSessionsToAcuity(
       DataRepository repo, String orgId, String programId) async {
-    final org = repo.organizationById(orgId);
-    final typeId = org?.acuitySessionTypeId;
+    // Tipo de cita: preferir el del SITIO del programa; fallback al del centro.
+    final typeId = repo.siteById(_siteId)?.acuitySessionTypeId ??
+        repo.organizationById(orgId)?.acuitySessionTypeId;
     if (typeId == null) {
-      return ' (configura el tipo de cita en Admin para agendarlas en Acuity)';
+      return ' (configura el tipo de cita del sitio en Admin para agendarlas en Acuity)';
     }
     final patient = repo.getPatient(widget.patientId);
     if (patient == null) return '';
