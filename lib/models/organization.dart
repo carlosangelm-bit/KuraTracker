@@ -24,6 +24,8 @@ class Organization {
   final String inventoryScope;
   // Terminal Mercado Pago Point asignada al centro (0074). NULL = sin terminal.
   final String? mpPointDeviceId;
+  // Tipo de cita de Acuity para las sesiones del plan (0080). NULL = sin config.
+  final int? acuitySessionTypeId;
 
   const Organization({
     required this.id,
@@ -38,6 +40,7 @@ class Organization {
     this.shopifyMirror = false,
     this.inventoryScope = 'site',
     this.mpPointDeviceId,
+    this.acuitySessionTypeId,
   });
 
   factory Organization.fromJson(Map<String, dynamic> json) => Organization(
@@ -53,6 +56,7 @@ class Organization {
         shopifyMirror: json['shopify_mirror'] as bool? ?? false,
         inventoryScope: (json['inventory_scope'] as String?) ?? 'site',
         mpPointDeviceId: json['mp_point_device_id'] as String?,
+        acuitySessionTypeId: (json['acuity_session_type_id'] as num?)?.toInt(),
       );
 
   Map<String, dynamic> toJson() => {
@@ -68,5 +72,6 @@ class Organization {
         'shopify_mirror': shopifyMirror,
         'inventory_scope': inventoryScope,
         'mp_point_device_id': mpPointDeviceId,
+        'acuity_session_type_id': acuitySessionTypeId,
       };
 }

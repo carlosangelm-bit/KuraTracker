@@ -1921,6 +1921,22 @@ class DataRepository {
     }
   }
 
+  /// Fija el tipo de cita de Acuity para las sesiones del plan (RPC 0080:
+  /// master o admin del centro). null lo desasigna.
+  Future<void> setAcuitySessionType(String organizationId, int? typeId) async {
+    final store = _store;
+    if (store is SupabaseDataStore) {
+      await store.callRpc('set_acuity_session_type', {
+        'p_org': organizationId,
+        'p_type_id': typeId,
+      });
+      await store.refreshCollection(Collections.organizations);
+    } else {
+      await _store.updateRow(Collections.organizations, organizationId,
+          {'acuity_session_type_id': typeId});
+    }
+  }
+
   /// Pone una terminal en modo integrado (PDV) para que pueda recibir órdenes.
   Future<void> setPointDevicePdv(String deviceId) async {
     final store = _store;

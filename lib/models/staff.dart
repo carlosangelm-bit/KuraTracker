@@ -18,6 +18,8 @@ class StaffMember {
   // null) que igualmente debe quedar resoluble a una organizacion. Ver
   // 0011_organizations.sql: staff.organization_id (not null).
   final String? organizationId;
+  // Calendario de Acuity del profesional (0016), para agendar en su calendario.
+  final int? acuityCalendarId;
 
   const StaffMember({
     required this.id,
@@ -31,6 +33,7 @@ class StaffMember {
     this.cedulaProfesional,
     this.especialidad,
     this.organizationId,
+    this.acuityCalendarId,
   });
 
   factory StaffMember.fromJson(Map<String, dynamic> json) => StaffMember(
@@ -45,6 +48,7 @@ class StaffMember {
         cedulaProfesional: json['cedula_profesional'] as String?,
         especialidad: json['especialidad'] as String?,
         organizationId: json['organization_id'] as String?,
+        acuityCalendarId: (json['acuity_calendar_id'] as num?)?.toInt(),
       );
 
   Map<String, dynamic> toJson() => {
