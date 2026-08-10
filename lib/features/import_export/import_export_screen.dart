@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:csv/csv.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../core/theme/kura_theme.dart';
 import '../../core/router/app_shell.dart' show UserMenuButton;
@@ -107,7 +108,37 @@ class _ImportExportScreenState extends State<ImportExportScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text('Importar CSV desde eKare',
+                        const Text('Importar historial de mediciones (eKare)',
+                            style: TextStyle(fontWeight: FontWeight.w700)),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Carga el export de mediciones de eKare (uno o varios '
+                          'CSV): crea pacientes, heridas y su historial. Omite '
+                          'pacientes que ya existan.',
+                          style: TextStyle(
+                              fontSize: 12,
+                              color: KuraColors.darkText.withOpacity(0.6)),
+                        ),
+                        const SizedBox(height: 12),
+                        FilledButton.icon(
+                          icon: const Icon(Icons.cloud_upload_outlined),
+                          label: const Text('Abrir importador de eKare'),
+                          style: FilledButton.styleFrom(
+                              backgroundColor: KuraColors.primary),
+                          onPressed: () => context.push('/ekare-import'),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('Importar CSV desde eKare (mapeo manual)',
                             style: TextStyle(fontWeight: FontWeight.w700)),
                         const SizedBox(height: 8),
                         Text(

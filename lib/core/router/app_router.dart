@@ -34,6 +34,7 @@ import '../../features/reports/reports_screen.dart';
 import '../../features/agenda/agenda_screen.dart';
 import '../../features/admin/admin_home_screen.dart';
 import '../../features/import_export/import_export_screen.dart';
+import '../../features/import_export/ekare_import_screen.dart';
 import '../../features/platform/platform_home_screen.dart';
 import '../../features/prevention_agenda/prevention_agenda_screen.dart';
 import '../../features/hospital_dashboard/hospital_dashboard_screen.dart';
@@ -395,6 +396,10 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: '/import-export',
             builder: (context, state) => const ImportExportScreen(),
+          ),
+          GoRoute(
+            path: '/ekare-import',
+            builder: (context, state) => const EkareImportScreen(),
           ),
         ],
       ),
