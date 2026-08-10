@@ -1,15 +1,13 @@
 import 'package:flutter/material.dart';
-import 'package:file_picker/file_picker.dart';
 import 'package:csv/csv.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/theme/kura_theme.dart';
 import '../../core/router/app_shell.dart' show UserMenuButton;
 import '../../services/data_repository.dart';
-import '../../engine/models/kura_engine_enums.dart';
 
-/// Interoperabilidad con eKare (sección 3): importación CSV de pacientes
-/// (con mapeo de campos configurable) y exportación CSV de mediciones.
+/// Interoperabilidad con eKare: importación del historial (pantalla dedicada
+/// `/ekare-import`) y exportación CSV de mediciones.
 class ImportExportScreen extends StatefulWidget {
   const ImportExportScreen({super.key});
 
@@ -18,32 +16,6 @@ class ImportExportScreen extends StatefulWidget {
 }
 
 class _ImportExportScreenState extends State<ImportExportScreen> {
-  List<List<dynamic>>? _previewRows;
-  String? _fileName;
-  final Map<String, String> _fieldMapping = {
-    'full_name': '',
-    'folio': '',
-    'birth_date': '',
-    'sex': '',
-  };
-
-  Future<void> _pickCsv() async {
-    final result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: ['csv'],
-      withData: true,
-    );
-    if (result == null || result.files.isEmpty) return;
-    final bytes = result.files.first.bytes;
-    if (bytes == null) return;
-    final content = String.fromCharCodes(bytes);
-    final rows = const CsvToListConverter().convert(content, eol: '\n');
-    setState(() {
-      _fileName = result.files.first.name;
-      _previewRows = rows.take(10).toList();
-    });
-  }
-
   Future<void> _exportMeasurementsCsv(DataRepository repo) async {
     final patients = repo.listAllPatients();
     final rows = <List<dynamic>>[
@@ -74,8 +46,6 @@ class _ImportExportScreenState extends State<ImportExportScreen> {
         builder: (dialogCtx) => AlertDialog(
           title: const Text('Exportación CSV generada'),
           content: SizedBox(
-            // Responsivo: en pantallas angostas llena el ancho disponible (lo
-            // acota el AlertDialog) en vez de forzar 500px y desbordar en movil.
             width: MediaQuery.sizeOf(context).width < 560 ? double.maxFinite : 500,
             child: SingleChildScrollView(child: Text(csv)),
           ),
@@ -113,8 +83,8 @@ class _ImportExportScreenState extends State<ImportExportScreen> {
                         const SizedBox(height: 8),
                         Text(
                           'Carga el export de mediciones de eKare (uno o varios '
-                          'CSV): crea pacientes, heridas y su historial. Omite '
-                          'pacientes que ya existan.',
+                          'CSV): crea pacientes, heridas y su historial de '
+                          'mediciones. Omite pacientes que ya existan.',
                           style: TextStyle(
                               fontSize: 12,
                               color: KuraColors.darkText.withOpacity(0.6)),
@@ -127,91 +97,6 @@ class _ImportExportScreenState extends State<ImportExportScreen> {
                               backgroundColor: KuraColors.primary),
                           onPressed: () => context.push('/ekare-import'),
                         ),
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text('Importar CSV desde eKare (mapeo manual)',
-                            style: TextStyle(fontWeight: FontWeight.w700)),
-                        const SizedBox(height: 8),
-                        Text(
-                          'Carga un archivo CSV de pacientes o mediciones exportado desde eKare. '
-                          'Podrás mapear las columnas a los campos internos.',
-                          style: TextStyle(fontSize: 12, color: KuraColors.darkText.withOpacity(0.6)),
-                        ),
-                        const SizedBox(height: 12),
-                        OutlinedButton.icon(
-                          icon: const Icon(Icons.upload_file),
-                          label: Text(_fileName ?? 'Seleccionar archivo CSV'),
-                          onPressed: _pickCsv,
-                        ),
-                        if (_previewRows != null) ...[
-                          const SizedBox(height: 16),
-                          const Text('Vista previa (primeras filas):',
-                              style: TextStyle(fontWeight: FontWeight.w600)),
-                          const SizedBox(height: 8),
-                          SingleChildScrollView(
-                            scrollDirection: Axis.horizontal,
-                            child: DataTable(
-                              columns: (_previewRows!.first)
-                                  .map((c) => DataColumn(label: Text('$c')))
-                                  .toList(),
-                              rows: _previewRows!
-                                  .skip(1)
-                                  .map((r) => DataRow(
-                                        cells: r.map((c) => DataCell(Text('$c'))).toList(),
-                                      ))
-                                  .toList(),
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                          Text('Mapeo de campos (configurable):',
-                              style: TextStyle(fontWeight: FontWeight.w600)),
-                          ..._fieldMapping.keys.map((field) => Padding(
-                                padding: const EdgeInsets.symmetric(vertical: 4),
-                                child: Row(
-                                  children: [
-                                    SizedBox(width: 140, child: Text(field)),
-                                    Expanded(
-                                      child: DropdownButtonFormField<String>(
-                                        value: _fieldMapping[field]!.isEmpty
-                                            ? null
-                                            : _fieldMapping[field],
-                                        items: (_previewRows!.first)
-                                            .map((c) => DropdownMenuItem(
-                                                  value: '$c',
-                                                  child: Text('$c'),
-                                                ))
-                                            .toList(),
-                                        onChanged: (v) =>
-                                            setState(() => _fieldMapping[field] = v ?? ''),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              )),
-                          const SizedBox(height: 12),
-                          FilledButton.icon(
-                            icon: const Icon(Icons.check),
-                            label: const Text('Importar con este mapeo'),
-                            style: FilledButton.styleFrom(backgroundColor: KuraColors.primary),
-                            onPressed: () {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text(
-                                      'Importación registrada (demo). En producción se crea un import_batch auditable.'),
-                                ),
-                              );
-                            },
-                          ),
-                        ],
                       ],
                     ),
                   ),
