@@ -105,7 +105,14 @@ class _BodyMapSelectorState extends State<BodyMapSelector> {
           ],
         ),
         const SizedBox(height: 12),
-        AspectRatio(
+        // KT-6: acota el tamaño y centra el modelo para que "se ajuste a
+        // pantalla" (a ancho completo, con aspectRatio 0.49, quedaba enorme en
+        // pantallas anchas). Los hotspots son relativos al tamaño, así que
+        // siguen alineados.
+        Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 240, maxHeight: 480),
+            child: AspectRatio(
           aspectRatio: 0.49,
           child: LayoutBuilder(
             builder: (context, constraints) {
@@ -153,6 +160,8 @@ class _BodyMapSelectorState extends State<BodyMapSelector> {
                 ],
               );
             },
+          ),
+            ),
           ),
         ),
         const SizedBox(height: 8),
