@@ -4761,6 +4761,19 @@ class DataRepository {
           .toList()
         ..sort((a, b) => a.scheduledAt.compareTo(b.scheduledAt));
 
+  /// Actualiza la cita/estado de una sesión (tras empujarla a Acuity).
+  Future<void> updateProgramSessionAcuity(
+    String sessionId, {
+    String? appointmentRef,
+    SessionStatus? status,
+  }) async {
+    await _store.updateRow(Collections.treatmentProgramSessions, sessionId, {
+      if (appointmentRef != null) 'appointment_ref': appointmentRef,
+      if (status != null) 'status': status.dbValue,
+      'updated_at': DateTime.now().toIso8601String(),
+    });
+  }
+
   /// Explosión de materiales MENSUAL: por cada insumo del plan, cantidad por
   /// sesión × nº de sesiones no canceladas. Para que atención a cliente reserve
   /// stock del mes.

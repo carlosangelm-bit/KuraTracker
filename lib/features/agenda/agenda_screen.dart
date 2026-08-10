@@ -168,9 +168,14 @@ class _AgendaScreenState extends ConsumerState<AgendaScreen> {
     // Sesiones del programa de tratamiento (0075) que se muestran en la agenda
     // junto a las citas de Acuity. Admin ve todas; el Kurador solo las suyas.
     final orgId = user?.organizationId;
+    // Solo sesiones INTERNAS (no empujadas a Acuity): las que ya tienen cita en
+    // Acuity se ven vía el espejo nativo (evita duplicado en la agenda).
     final sessions = (repo != null && orgId != null)
-        ? repo.listProgramSessionsForOrg(
-            organizationId: orgId, staffId: isAdmin ? null : user?.staffId)
+        ? repo
+            .listProgramSessionsForOrg(
+                organizationId: orgId, staffId: isAdmin ? null : user?.staffId)
+            .where((s) => !(s.appointmentRef?.startsWith('acuity:') ?? false))
+            .toList()
         : const <TreatmentProgramSession>[];
 
     return Scaffold(

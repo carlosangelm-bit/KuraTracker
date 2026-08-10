@@ -299,9 +299,17 @@ class _TreatmentProgramBuilderScreenState
         accept ? ProgramStatus.aceptado : ProgramStatus.borrador,
         acceptedAt: accept ? DateTime.now() : null,
       );
+
+      // Al ACEPTAR en un centro con Acuity: empuja las sesiones a Acuity
+      // (fuente de verdad). Si no está configurado o falla, quedan internas.
+      String extra = '';
+      if (accept && _acuityMode) {
+        extra = await _pushSessionsToAcuity(repo, orgId, program.id);
+      }
+
       if (!mounted) return;
       _snack(accept
-          ? 'Plan aceptado. Las sesiones quedaron registradas.'
+          ? 'Plan aceptado. Las sesiones quedaron registradas.$extra'
           : 'Borrador del plan guardado.');
       context.go('/patients/${widget.patientId}');
     } catch (e) {
@@ -310,6 +318,66 @@ class _TreatmentProgramBuilderScreenState
         _snack('$e'.replaceFirst('Exception: ', ''));
       }
     }
+  }
+
+  /// Empuja las sesiones (planeadas) del programa a Acuity con admin=true
+  /// (fuerza el horario), en el calendario del Kurador y con el paciente como
+  /// cliente. Guarda el ref `acuity:ID` y marca la sesión como agendada. Las
+  /// que fallen quedan internas. Devuelve un texto-resumen para el snack.
+  Future<String> _pushSessionsToAcuity(
+      DataRepository repo, String orgId, String programId) async {
+    final org = repo.organizationById(orgId);
+    final typeId = org?.acuitySessionTypeId;
+    if (typeId == null) {
+      return ' (configura el tipo de cita en Admin para agendarlas en Acuity)';
+    }
+    final patient = repo.getPatient(widget.patientId);
+    if (patient == null) return '';
+    final parts = patient.fullName.trim().split(RegExp(r'\s+'));
+    final firstName = parts.isEmpty ? 'Paciente' : parts.first;
+    final lastName =
+        parts.length > 1 ? parts.sublist(1).join(' ') : 'KuraTracker';
+    final email = (patient.email?.trim().isNotEmpty ?? false)
+        ? patient.email!.trim()
+        : 'kura+${patient.id}@kuramas.com';
+    final calendarId =
+        _staffId == null ? null : repo.getStaff(_staffId!)?.acuityCalendarId;
+
+    final svc = ref.read(acuityServiceProvider);
+    final sessions = repo
+        .listProgramSessions(programId)
+        .where((s) => s.status == SessionStatus.planeada)
+        .toList();
+    var ok = 0, fail = 0;
+    for (final s in sessions) {
+      try {
+        final appt = await svc.createAppointmentAdmin(
+          appointmentTypeID: typeId,
+          datetime: s.scheduledAt.toIso8601String(),
+          firstName: firstName,
+          lastName: lastName,
+          email: email,
+          calendarID: calendarId,
+          phone: patient.mobilePhone,
+        );
+        final id = appt['id'];
+        if (id == null) {
+          fail++;
+          continue;
+        }
+        await repo.updateProgramSessionAcuity(
+          s.id,
+          appointmentRef: 'acuity:$id',
+          status: SessionStatus.agendada,
+        );
+        ok++;
+      } catch (_) {
+        fail++;
+      }
+    }
+    if (ok == 0 && fail == 0) return '';
+    if (fail == 0) return ' $ok cita(s) creada(s) en Acuity.';
+    return ' $ok en Acuity, $fail quedaron internas (revisar).';
   }
 
   void _snack(String m) => ScaffoldMessenger.of(context)
