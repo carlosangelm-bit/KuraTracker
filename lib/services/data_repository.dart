@@ -4634,6 +4634,7 @@ class DataRepository {
               String? inventoryItemId,
               String name,
               double quantityPerSession,
+              bool isMonthly,
               double? unitCost,
               double? unitPrice,
               String? currency
@@ -4660,6 +4661,7 @@ class DataRepository {
         'inventory_item_id': s.inventoryItemId,
         'name': s.name,
         'quantity_per_session': s.quantityPerSession,
+        'is_monthly': s.isMonthly,
         'unit_cost': s.unitCost,
         'unit_price': s.unitPrice,
         'currency': s.currency ?? 'MXN',
@@ -4754,7 +4756,10 @@ class DataRepository {
         (
           name: sup.name,
           inventoryItemId: sup.inventoryItemId,
-          totalQuantity: sup.quantityPerSession * sessions,
+          // Multidosis: la cantidad ya es la del mes (no se multiplica por
+          // sesiones); consumibles por sesión sí se multiplican.
+          totalQuantity:
+              sup.isMonthly ? sup.quantityPerSession : sup.quantityPerSession * sessions,
           unitCost: sup.unitCost,
           unitPrice: sup.unitPrice,
         ),
