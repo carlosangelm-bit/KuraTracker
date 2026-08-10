@@ -619,6 +619,18 @@ class _WoundCaptureScreenState extends ConsumerState<WoundCaptureScreen> {
                   formState.esExtremidadInferior = formState.isLowerExtremityLocation;
                 }),
               ),
+              const SizedBox(height: 8),
+              // KT-9: zona específica en texto abierto (complementa el mapa).
+              TextFormField(
+                initialValue: formState.bodyLocationSecondary,
+                decoration: const InputDecoration(
+                  labelText: 'Zona específica (opcional)',
+                  hintText: 'p. ej. maléolo externo derecho, sacro…',
+                  isDense: true,
+                ),
+                onChanged: (v) => formState.bodyLocationSecondary =
+                    v.trim().isEmpty ? null : v.trim(),
+              ),
               const SizedBox(height: 12),
               Row(
                 children: [
