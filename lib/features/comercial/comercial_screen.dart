@@ -12,6 +12,7 @@ import '../../core/router/app_shell.dart'
 import '../../models/commercial.dart';
 import '../../models/inventory.dart';
 import '../../models/patient.dart';
+import 'materials_explosion_screen.dart';
 import '../../services/acuity_service.dart';
 import '../../services/data_repository.dart';
 import '../insumos/dashboard_charts.dart';
@@ -1207,6 +1208,14 @@ class _ResumenTab extends StatelessWidget {
           title: 'Servicios',
           subtitle: 'Catálogo de honorarios del centro.',
           onTap: () => onOpenSection(3),
+        ),
+        _ProcessCard(
+          icon: Icons.inventory_outlined,
+          title: 'Reserva de stock (mes)',
+          subtitle:
+              'Explosión de materiales de los planes aceptados vs. stock.',
+          onTap: () => Navigator.of(context).push(MaterialPageRoute(
+              builder: (_) => const MaterialsExplosionScreen())),
         ),
       ],
     );

@@ -4831,6 +4831,46 @@ class DataRepository {
     return added;
   }
 
+  /// Explosión de materiales del CENTRO: agrega la explosión mensual de TODOS
+  /// los programas aceptados de la organización, por producto, y la compara con
+  /// el stock actual. Para que atención a cliente reserve/compre el mes.
+  List<
+      ({
+        String name,
+        String? inventoryItemId,
+        double needed,
+        int onHand,
+      })> centerMaterialsExplosion(String organizationId) {
+    final programs = _store
+        .getAll(Collections.treatmentPrograms)
+        .map(TreatmentProgram.fromJson)
+        .where((p) =>
+            p.organizationId == organizationId &&
+            p.status == ProgramStatus.aceptado);
+    final agg = <String, ({String name, String? inventoryItemId, double needed})>{};
+    for (final p in programs) {
+      for (final e in monthlyExplosion(p.id)) {
+        final key = e.inventoryItemId ?? e.name;
+        final prev = agg[key];
+        agg[key] = (
+          name: e.name,
+          inventoryItemId: e.inventoryItemId,
+          needed: (prev?.needed ?? 0) + e.totalQuantity,
+        );
+      }
+    }
+    final out = [
+      for (final v in agg.values)
+        (
+          name: v.name,
+          inventoryItemId: v.inventoryItemId,
+          needed: v.needed,
+          onHand: v.inventoryItemId == null ? 0 : onHandFor(v.inventoryItemId!),
+        ),
+    ]..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+    return out;
+  }
+
   /// Actualiza la cita/estado de una sesión (tras empujarla a Acuity).
   Future<void> updateProgramSessionAcuity(
     String sessionId, {
