@@ -4719,6 +4719,22 @@ class DataRepository {
     }
   }
 
+  /// Sesiones de programas de un centro (para la agenda), no canceladas.
+  /// `staffId` filtra por Kurador; null = todas las del centro.
+  List<TreatmentProgramSession> listProgramSessionsForOrg({
+    required String organizationId,
+    String? staffId,
+  }) =>
+      _store
+          .getAll(Collections.treatmentProgramSessions)
+          .map(TreatmentProgramSession.fromJson)
+          .where((s) =>
+              s.organizationId == organizationId &&
+              s.status != SessionStatus.cancelada &&
+              (staffId == null || s.staffId == staffId))
+          .toList()
+        ..sort((a, b) => a.scheduledAt.compareTo(b.scheduledAt));
+
   /// Explosión de materiales MENSUAL: por cada insumo del plan, cantidad por
   /// sesión × nº de sesiones no canceladas. Para que atención a cliente reserve
   /// stock del mes.

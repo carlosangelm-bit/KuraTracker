@@ -17,6 +17,7 @@ import '../../models/app_user.dart';
 import '../../models/appointment.dart';
 import '../../models/manual_appointment.dart';
 import '../../models/patient.dart';
+import '../../models/treatment_program.dart';
 import '../../services/acuity_service.dart';
 import '../../services/data_repository.dart';
 import '../../services/photo_upload_service.dart';
@@ -164,6 +165,14 @@ class _AgendaScreenState extends ConsumerState<AgendaScreen> {
 
     final service = ref.watch(acuityServiceProvider);
 
+    // Sesiones del programa de tratamiento (0075) que se muestran en la agenda
+    // junto a las citas de Acuity. Admin ve todas; el Kurador solo las suyas.
+    final orgId = user?.organizationId;
+    final sessions = (repo != null && orgId != null)
+        ? repo.listProgramSessionsForOrg(
+            organizationId: orgId, staffId: isAdmin ? null : user?.staffId)
+        : const <TreatmentProgramSession>[];
+
     return Scaffold(
       appBar: AppBar(
         title: Text(isAdmin ? 'Agenda del centro' : 'Mi agenda'),
@@ -186,7 +195,7 @@ class _AgendaScreenState extends ConsumerState<AgendaScreen> {
                     .where((a) => !a.isCanceled && a.datetime != null)
                     .toList()
                   ..sort((a, b) => a.datetime!.compareTo(b.datetime!));
-                return _buildContent(context, all, isAdmin, service);
+                return _buildContent(context, all, isAdmin, service, sessions);
               },
             ),
       floatingActionButton: service.isAvailable
@@ -204,6 +213,7 @@ class _AgendaScreenState extends ConsumerState<AgendaScreen> {
     List<Appointment> all,
     bool isAdmin,
     AcuityService service,
+    List<TreatmentProgramSession> sessions,
   ) {
     final width = MediaQuery.sizeOf(context).width;
     final isWide = width >= 900;
@@ -222,6 +232,9 @@ class _AgendaScreenState extends ConsumerState<AgendaScreen> {
     final filtered = _kuradorFilter == null
         ? all
         : all.where((a) => a.staffId == _kuradorFilter).toList();
+    final filteredSessions = _kuradorFilter == null
+        ? sessions
+        : sessions.where((s) => s.staffId == _kuradorFilter).toList();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -251,6 +264,7 @@ class _AgendaScreenState extends ConsumerState<AgendaScreen> {
           child: view == _AgendaView.dia
               ? _DayAgenda(
                   appointments: filtered,
+                  sessions: filteredSessions,
                   showHistory: _showHistory,
                   isAdmin: isAdmin,
                   staffNames: staffNames,
@@ -518,6 +532,7 @@ class _Controls extends StatelessWidget {
 
 class _DayAgenda extends StatelessWidget {
   final List<Appointment> appointments;
+  final List<TreatmentProgramSession> sessions;
   final bool showHistory;
   final bool isAdmin;
   final Map<String, String> staffNames;
@@ -526,6 +541,7 @@ class _DayAgenda extends StatelessWidget {
 
   const _DayAgenda({
     required this.appointments,
+    this.sessions = const [],
     required this.showHistory,
     required this.isAdmin,
     required this.staffNames,
@@ -539,23 +555,39 @@ class _DayAgenda extends StatelessWidget {
     final visible = showHistory
         ? appointments
         : appointments.where((a) => !_dayStart(a.datetime!).isBefore(today)).toList();
-    if (visible.isEmpty) {
+    final visibleSessions = showHistory
+        ? sessions
+        : sessions
+            .where((s) => !_dayStart(s.scheduledAt).isBefore(today))
+            .toList();
+    if (visible.isEmpty && visibleSessions.isEmpty) {
       return _AgendaEmpty(
         message: showHistory ? 'Sin citas registradas.' : 'Sin citas próximas',
       );
     }
 
-    // Agrupar por día conservando el orden (asc). En modo historial se
-    // muestra de más reciente a más antiguo para que lo último quede arriba.
-    final ordered = showHistory ? visible.reversed.toList() : visible;
-    final groups = <DateTime, List<Appointment>>{};
-    for (final a in ordered) {
-      groups.putIfAbsent(_dayStart(a.datetime!), () => []).add(a);
+    // Días combinados (citas + sesiones del plan), ordenados; historial al revés.
+    final dayKeys = <DateTime>{
+      for (final a in visible) _dayStart(a.datetime!),
+      for (final s in visibleSessions) _dayStart(s.scheduledAt),
+    }.toList()
+      ..sort((a, b) => showHistory ? b.compareTo(a) : a.compareTo(b));
+
+    final apptsByDay = <DateTime, List<Appointment>>{};
+    for (final a in visible) {
+      apptsByDay.putIfAbsent(_dayStart(a.datetime!), () => []).add(a);
+    }
+    final sessByDay = <DateTime, List<TreatmentProgramSession>>{};
+    for (final s in visibleSessions) {
+      sessByDay.putIfAbsent(_dayStart(s.scheduledAt), () => []).add(s);
     }
 
     final children = <Widget>[];
-    groups.forEach((day, appts) {
-      children.add(_DayHeader(day: day, count: appts.length));
+    for (final day in dayKeys) {
+      final appts = apptsByDay[day] ?? const [];
+      final sess = (sessByDay[day] ?? const <TreatmentProgramSession>[])
+        ..sort((a, b) => a.scheduledAt.compareTo(b.scheduledAt));
+      children.add(_DayHeader(day: day, count: appts.length + sess.length));
       for (final a in appts) {
         children.add(_AppointmentTile(
           appointment: a,
@@ -564,11 +596,59 @@ class _DayAgenda extends StatelessWidget {
           repo: repo,
         ));
       }
-    });
+      for (final s in sess) {
+        children.add(_SessionTile(
+          session: s,
+          patientName: repo?.getPatient(s.patientId)?.fullName ?? 'Paciente',
+          kuradorName: isAdmin ? staffNames[s.staffId] : null,
+        ));
+      }
+    }
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
       children: children,
+    );
+  }
+}
+
+/// Tile de una SESIÓN del plan de tratamiento (0075) en la agenda. Distinta de
+/// una cita de Acuity: es interna, ligada al programa. Tap → ficha del paciente
+/// (iniciar el seguimiento pre-cargado se cablea en la fase 3).
+class _SessionTile extends StatelessWidget {
+  final TreatmentProgramSession session;
+  final String patientName;
+  final String? kuradorName;
+  const _SessionTile({
+    required this.session,
+    required this.patientName,
+    this.kuradorName,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final t = session.scheduledAt;
+    final hh = t.hour.toString().padLeft(2, '0');
+    final mm = t.minute.toString().padLeft(2, '0');
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      child: ListTile(
+        leading: Container(
+          width: 44,
+          alignment: Alignment.center,
+          child: Text('$hh:$mm',
+              style: const TextStyle(
+                  fontWeight: FontWeight.w700, color: KuraColors.primary)),
+        ),
+        title: Text(patientName,
+            style: const TextStyle(fontWeight: FontWeight.w700)),
+        subtitle: Text([
+          'Sesión de tratamiento',
+          if (kuradorName != null) kuradorName!,
+        ].join(' · ')),
+        trailing: const Icon(Icons.spa_outlined, color: KuraColors.primary),
+        onTap: () => context.go('/patients/${session.patientId}'),
+      ),
     );
   }
 }
