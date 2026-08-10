@@ -2902,51 +2902,89 @@ class DataRepository {
     String? apnpNotes,
     String folioPrefix = 'EXP',
   }) async {
-    final existing = _store.getAll(Collections.patients);
     final year = DateTime.now().year;
-    final countThisYear = existing
-        .where((p) => (p['folio'] as String).contains('$year'))
-        .length;
-    final folio = '$folioPrefix$year-${(countThisYear + 1).toString().padLeft(4, '0')}';
+    final id = _uuid.v4();
 
-    final data = {
-      'id': _uuid.v4(),
-      'folio': folio,
-      'full_name': fullName,
-      'birth_date': birthDate?.toIso8601String().substring(0, 10),
-      'sex': sex,
-      'primary_site_id': primarySiteId,
-      'mobility': mobility,
-      'has_identified_caregiver': hasIdentifiedCaregiver,
-      'caregiver_name': caregiverName,
-      'caregiver_phone': caregiverPhone,
-      'fragile_patient': fragilePatient,
-      'background_notes': backgroundNotes,
-      'active_medications': activeMedications,
-      'allergies': allergies,
-      'ekare_external_id': null,
-      'email': email,
-      'mobile_phone': mobilePhone,
-      'curp': curp,
-      'address': address,
-      'occupation': occupation,
-      'responsible_name': responsibleName,
-      'responsible_relationship': responsibleRelationship,
-      'responsible_phone': responsiblePhone,
-      'weight_kg': weightKg,
-      'height_cm': heightCm,
-      'family_history': familyHistory.map((e) => e.dbValue).toList(),
-      'family_history_notes': familyHistoryNotes,
-      'smoking': smoking?.dbValue,
-      'alcohol': alcohol?.dbValue,
-      'physical_activity': physicalActivity?.dbValue,
-      'apnp_notes': apnpNotes,
-      'is_active': true,
-      'created_at': DateTime.now().toIso8601String(),
-      'organization_id': organizationId,
-    };
-    final saved = await _store.insertRow(Collections.patients, data);
-    return Patient.fromJson(saved);
+    // Siguiente número de folio del año a partir de la cache. En Supabase la
+    // cache está acotada por RLS y `folio` es ÚNICO GLOBAL, así que este número
+    // puede quedar corto y colisionar (KT-2) → se reintenta con el siguiente.
+    int nextFolioNumber() =>
+        _store
+            .getAll(Collections.patients)
+            .where((p) => (p['folio'] as String? ?? '').contains('$year'))
+            .length +
+        1;
+
+    Map<String, dynamic> buildData(String folio) => {
+          'id': id,
+          'folio': folio,
+          'full_name': fullName,
+          'birth_date': birthDate?.toIso8601String().substring(0, 10),
+          'sex': sex,
+          'primary_site_id': primarySiteId,
+          'mobility': mobility,
+          'has_identified_caregiver': hasIdentifiedCaregiver,
+          'caregiver_name': caregiverName,
+          'caregiver_phone': caregiverPhone,
+          'fragile_patient': fragilePatient,
+          'background_notes': backgroundNotes,
+          'active_medications': activeMedications,
+          'allergies': allergies,
+          'ekare_external_id': null,
+          'email': email,
+          'mobile_phone': mobilePhone,
+          'curp': curp,
+          'address': address,
+          'occupation': occupation,
+          'responsible_name': responsibleName,
+          'responsible_relationship': responsibleRelationship,
+          'responsible_phone': responsiblePhone,
+          'weight_kg': weightKg,
+          'height_cm': heightCm,
+          'family_history': familyHistory.map((e) => e.dbValue).toList(),
+          'family_history_notes': familyHistoryNotes,
+          'smoking': smoking?.dbValue,
+          'alcohol': alcohol?.dbValue,
+          'physical_activity': physicalActivity?.dbValue,
+          'apnp_notes': apnpNotes,
+          'is_active': true,
+          'created_at': DateTime.now().toIso8601String(),
+          'organization_id': organizationId,
+        };
+
+    String folioFor(int n) =>
+        '$folioPrefix$year-${n.toString().padLeft(4, '0')}';
+
+    // Demo (LocalStore): sin índice único → un solo intento.
+    final store = _store;
+    if (store is! SupabaseDataStore) {
+      final saved = await _store
+          .insertRow(Collections.patients, buildData(folioFor(nextFolioNumber())));
+      return Patient.fromJson(saved);
+    }
+
+    // Prod: reintento ante choque de folio único (23505) hasta hallar uno libre.
+    var n = nextFolioNumber();
+    Object? lastErr;
+    for (var attempt = 0; attempt < 30; attempt++) {
+      try {
+        final saved =
+            await store.insertRow(Collections.patients, buildData(folioFor(n)));
+        return Patient.fromJson(saved);
+      } catch (e) {
+        lastErr = e;
+        final s = e.toString().toLowerCase();
+        if (s.contains('23505') ||
+            s.contains('duplicate') ||
+            s.contains('unique')) {
+          n++; // folio ocupado (fuera del alcance de la cache): prueba el siguiente
+          continue;
+        }
+        rethrow;
+      }
+    }
+    throw Exception(
+        'No se pudo generar un folio único para el paciente. $lastErr');
   }
 
   /// Actualiza los datos del expediente de un paciente EXISTENTE (edición /
@@ -4111,6 +4149,12 @@ class DataRepository {
   Future<void> updateConsultationFields(
       String consultationId, Map<String, dynamic> patch) async {
     await _store.updateRow(Collections.consultations, consultationId, patch);
+    // KT-1: confirma contra el servidor que el cambio quedó (evita el detalle
+    // fantasma "Consulta no encontrada" por cache desincronizada).
+    final store = _store;
+    if (store is SupabaseDataStore) {
+      await store.refreshCollection(Collections.consultations);
+    }
   }
 
   /// Elimina una consulta EN BORRADOR y su captura de herida asociada (fotos/
@@ -4184,6 +4228,12 @@ class DataRepository {
       'transcript': transcript,
     };
     final saved = await _store.insertRow(Collections.consultations, data);
+    // KT-1: refresca la colección tras crear para que el detalle (que lee de
+    // cache) encuentre la consulta recién guardada y se confirme la persistencia.
+    final store = _store;
+    if (store is SupabaseDataStore) {
+      await store.refreshCollection(Collections.consultations);
+    }
     return Consultation.fromJson(saved);
   }
 
