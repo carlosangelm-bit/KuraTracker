@@ -433,17 +433,17 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
                 const SizedBox(height: 20),
                 if (repo != null && wound != null) _phase0Profile(repo, wound),
                 _phaseHeader(1, 'Procedimiento físico',
-                    'Limpiar → foto después de limpiar → medir (+ foto con medición)'),
-                Text('Fotografía 1: después de limpiar', style: _sectionStyle(context)),
+                    'Limpiar → fotografiar la herida → medir'),
+                Text('Fotografía de la herida', style: _sectionStyle(context)),
                 const SizedBox(height: 4),
                 const Text(
-                  'Protocolo de Fotografías §1.2: se toma justo después de limpiar '
-                  'la herida, ANTES de evaluar el lecho o medir. Sin medición.',
+                  'Protocolo de Fotografías §1.2: se toma después de limpiar la '
+                  'herida, ANTES de evaluar el lecho o medir.',
                   style: TextStyle(fontSize: 12, color: KuraColors.darkText),
                 ),
                 const SizedBox(height: 12),
                 _photoTile(
-                  label: '1. Después de limpiar (sin medición) *',
+                  label: 'Fotografía de la herida *',
                   bytes: _photoAfterCleaningBytes,
                   hasPhoto: _photoAfterCleaning != null,
                   onPick: () => _pickPhoto(withMeasurement: false),
@@ -565,23 +565,6 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
                     ),
                   ),
                 ],
-
-                const SizedBox(height: 24),
-                Text('Fotografía 2: con medición (opcional)',
-                    style: _sectionStyle(context)),
-                const SizedBox(height: 4),
-                const Text(
-                  'Protocolo de Fotografías §1.2: se toma justo después de registrar '
-                  'las medidas, con la regla/referencia visible junto a la herida.',
-                  style: TextStyle(fontSize: 12, color: KuraColors.darkText),
-                ),
-                const SizedBox(height: 12),
-                _photoTile(
-                  label: '2. Con medición *',
-                  bytes: _photoWithMeasurementBytes,
-                  hasPhoto: _photoWithMeasurement != null,
-                  onPick: () => _pickPhoto(withMeasurement: true),
-                ),
 
                 const SizedBox(height: 24),
                 _phaseHeader(2, 'Estado actual',
