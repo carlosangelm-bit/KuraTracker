@@ -594,6 +594,36 @@ class _PatientHeaderCard extends StatelessWidget {
               const SizedBox(height: 8),
               _InfoItem(label: 'Domicilio', value: patient.address!),
             ],
+            // KT-17: sugerencia de derivación por edad. ≥65 → geriatría; <65 se
+            // sugiere valorar derivación sin asumir la especialidad (según cuadro).
+            if (patient.age != null) ...[
+              const SizedBox(height: 10),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: KuraColors.infoBlue.withOpacity(0.08),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.medical_information_outlined,
+                        size: 18, color: KuraColors.infoBlue),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        patient.age! >= 65
+                            ? 'Paciente ≥65 años: sugerir derivación a geriatría.'
+                            : 'Paciente <65 años: valorar derivación a especialista según el cuadro clínico.',
+                        style: TextStyle(
+                            fontSize: 12,
+                            color: KuraColors.darkText.withOpacity(0.8)),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
             if ((patient.backgroundNotes ?? '').trim().isNotEmpty) ...[
               const SizedBox(height: 12),
               const Divider(),
