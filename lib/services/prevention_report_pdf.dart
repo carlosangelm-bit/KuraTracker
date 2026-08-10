@@ -221,7 +221,11 @@ Future<void> generatePreventionReportPdf({
     );
   }
 
-  await Printing.layoutPdf(onLayout: (format) => doc.save());
+  // Descarga real (web: descarga el archivo; móvil: hoja de compartir).
+  await Printing.sharePdf(
+    bytes: await doc.save(),
+    filename: 'reporte-prevencion-kura.pdf',
+  );
 }
 
 // ---------------------------------------------------------------------------
