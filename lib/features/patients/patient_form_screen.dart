@@ -399,7 +399,11 @@ class _PatientFormScreenState extends ConsumerState<PatientFormScreen> {
                         value: _mobility,
                         decoration: const InputDecoration(labelText: 'Movilidad'),
                         items: const [
-                          DropdownMenuItem(value: 'ambulatorio', child: Text('Ambulatorio')),
+                          DropdownMenuItem(
+                              value: 'ambulatorio',
+                              child: Text('Ambulatorio (deambula)')),
+                          DropdownMenuItem(
+                              value: 'postrado', child: Text('Postrado')),
                           DropdownMenuItem(
                               value: 'silla_ruedas', child: Text('Silla de ruedas')),
                           DropdownMenuItem(value: 'encamado', child: Text('Encamado')),
