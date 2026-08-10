@@ -30,6 +30,7 @@ class _PatientFormScreenState extends ConsumerState<PatientFormScreen> {
   // Identificación NOM-004 (Fase 2).
   final _emailCtrl = TextEditingController();
   final _mobileCtrl = TextEditingController();
+  final _surgicalCtrl = TextEditingController();
   final _curpCtrl = TextEditingController();
   final _addressCtrl = TextEditingController();
   final _occupationCtrl = TextEditingController();
@@ -67,6 +68,7 @@ class _PatientFormScreenState extends ConsumerState<PatientFormScreen> {
     _notesCtrl.dispose();
     _emailCtrl.dispose();
     _mobileCtrl.dispose();
+    _surgicalCtrl.dispose();
     _curpCtrl.dispose();
     _addressCtrl.dispose();
     _occupationCtrl.dispose();
@@ -156,6 +158,7 @@ class _PatientFormScreenState extends ConsumerState<PatientFormScreen> {
       ..addAll(_splitTags(p.allergies));
     _emailCtrl.text = p.email ?? '';
     _mobileCtrl.text = p.mobilePhone ?? '';
+    _surgicalCtrl.text = p.surgicalHistory ?? '';
     _curpCtrl.text = p.curp ?? '';
     _addressCtrl.text = p.address ?? '';
     _occupationCtrl.text = p.occupation ?? '';
@@ -497,6 +500,15 @@ class _PatientFormScreenState extends ConsumerState<PatientFormScreen> {
                         tags: _allergiesTags,
                         ctrl: _allergiesCtrl,
                       ),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: _surgicalCtrl,
+                        maxLines: 2,
+                        decoration: const InputDecoration(
+                          labelText: 'Antecedentes quirúrgicos',
+                          hintText: 'Cirugías previas relevantes',
+                        ),
+                      ),
                       const SizedBox(height: 20),
                       Text('Comorbilidades (antecedentes personales patológicos)',
                           style: Theme.of(context)
@@ -656,6 +668,10 @@ class _PatientFormScreenState extends ConsumerState<PatientFormScreen> {
                                       mobilePhone: _mobileCtrl.text.trim().isEmpty
                                           ? null
                                           : _mobileCtrl.text.trim(),
+                                      surgicalHistory:
+                                          _surgicalCtrl.text.trim().isEmpty
+                                              ? null
+                                              : _surgicalCtrl.text.trim(),
                                       curp: _curpCtrl.text.trim().isEmpty
                                           ? null
                                           : _curpCtrl.text.trim().toUpperCase(),
@@ -743,6 +759,10 @@ class _PatientFormScreenState extends ConsumerState<PatientFormScreen> {
                                     mobilePhone: _mobileCtrl.text.trim().isEmpty
                                         ? null
                                         : _mobileCtrl.text.trim(),
+                                    surgicalHistory:
+                                        _surgicalCtrl.text.trim().isEmpty
+                                            ? null
+                                            : _surgicalCtrl.text.trim(),
                                     curp: _curpCtrl.text.trim().isEmpty
                                         ? null
                                         : _curpCtrl.text.trim().toUpperCase(),
