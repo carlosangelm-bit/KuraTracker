@@ -620,12 +620,13 @@ class _WoundCaptureScreenState extends ConsumerState<WoundCaptureScreen> {
                 }),
               ),
               const SizedBox(height: 8),
-              // KT-9: zona específica en texto abierto (complementa el mapa).
+              // KT-9/KT-14: zona específica en texto abierto para precisar
+              // dentro del área seleccionada (p. ej. qué dedo del pie).
               TextFormField(
                 initialValue: formState.bodyLocationSecondary,
                 decoration: const InputDecoration(
-                  labelText: 'Zona específica (opcional)',
-                  hintText: 'p. ej. maléolo externo derecho, sacro…',
+                  labelText: 'Zona específica (dentro del área)',
+                  hintText: 'p. ej. 2º dedo del pie derecho, maléolo externo, coxis…',
                   isDense: true,
                 ),
                 onChanged: (v) => formState.bodyLocationSecondary =
