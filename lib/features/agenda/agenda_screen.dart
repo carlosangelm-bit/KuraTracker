@@ -606,6 +606,7 @@ class _DayAgenda extends StatelessWidget {
           session: s,
           patientName: repo?.getPatient(s.patientId)?.fullName ?? 'Paciente',
           kuradorName: isAdmin ? staffNames[s.staffId] : null,
+          woundId: repo?.programById(s.programId)?.woundId,
         ));
       }
     }
@@ -624,10 +625,12 @@ class _SessionTile extends StatelessWidget {
   final TreatmentProgramSession session;
   final String patientName;
   final String? kuradorName;
+  final String? woundId;
   const _SessionTile({
     required this.session,
     required this.patientName,
     this.kuradorName,
+    this.woundId,
   });
 
   @override
@@ -652,7 +655,11 @@ class _SessionTile extends StatelessWidget {
           if (kuradorName != null) kuradorName!,
         ].join(' · ')),
         trailing: const Icon(Icons.spa_outlined, color: KuraColors.primary),
-        onTap: () => context.go('/patients/${session.patientId}'),
+        // Iniciar el seguimiento de la herida del plan (viene pre-cargado con
+        // los insumos por sesión). Si no se resuelve la herida, va al paciente.
+        onTap: () => context.go(woundId != null
+            ? '/patients/${session.patientId}/wound/$woundId/follow-up'
+            : '/patients/${session.patientId}'),
       ),
     );
   }
