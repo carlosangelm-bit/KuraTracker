@@ -17,6 +17,9 @@ class Patient {
   final String? activeMedications; // medicamentos que toma actualmente
   final String? allergies; // alergias
   final String? ekareExternalId;
+  // Contacto propio del paciente (0079): cliente en Acuity / recordatorios.
+  final String? email;
+  final String? mobilePhone; // celular
   // Identificación NOM-004 (Fase 2, migración 0031).
   final String? curp;
   final String? address; // domicilio
@@ -56,6 +59,8 @@ class Patient {
     this.activeMedications,
     this.allergies,
     this.ekareExternalId,
+    this.email,
+    this.mobilePhone,
     this.curp,
     this.address,
     this.occupation,
@@ -112,6 +117,8 @@ class Patient {
         activeMedications: json['active_medications'] as String?,
         allergies: json['allergies'] as String?,
         ekareExternalId: json['ekare_external_id'] as String?,
+        email: json['email'] as String?,
+        mobilePhone: json['mobile_phone'] as String?,
         curp: json['curp'] as String?,
         address: json['address'] as String?,
         occupation: json['occupation'] as String?,
@@ -151,6 +158,8 @@ class Patient {
         'active_medications': activeMedications,
         'allergies': allergies,
         'ekare_external_id': ekareExternalId,
+        'email': email,
+        'mobile_phone': mobilePhone,
         'curp': curp,
         'address': address,
         'occupation': occupation,
