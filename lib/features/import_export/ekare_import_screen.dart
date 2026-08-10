@@ -179,7 +179,7 @@ class _EkareImportScreenState extends ConsumerState<EkareImportScreen> {
     final orgId = ref.read(sessionProvider).user?.organizationId;
     if (repo == null || orgId == null) return;
     setState(() => _busy = true);
-    var created = 0, skipped = 0, wounds = 0, measures = 0;
+    var created = 0, skipped = 0, wounds = 0, measures = 0, measureErrors = 0;
     try {
       // Índice de pacientes existentes por nombre+dob para dedup.
       final existing = <String>{
@@ -212,26 +212,42 @@ class _EkareImportScreenState extends ConsumerState<EkareImportScreen> {
           });
           wounds++;
           for (final m in w.measures) {
-            await repo.createMeasurement({
-              'wound_id': wound.id,
-              'consultation_id': null,
-              'measured_at': m.date.toIso8601String(),
-              'length_cm': m.l,
-              'width_cm': m.w,
-              'area_cm2': m.a,
-              'depth_cm': m.depth,
-              'volume_cm3': m.volume > 0 ? m.volume : null,
-              'granulation_pct': m.red,
-              'slough_pct': m.yellow,
-              'necrosis_pct': m.black,
-            });
-            measures++;
+            // Composición del lecho: eKare da Red/Yellow/Black en %. La BD exige
+            // granulación+esfacelo+necrosis+epitelización ≤ 100.01; por redondeo
+            // eKare a veces suma 100.1 → se normaliza a 100 si se pasa.
+            var r = m.red, y = m.yellow, b = m.black;
+            final tot = r + y + b;
+            if (tot > 100.01 && tot > 0) {
+              final f = 100 / tot;
+              r *= f;
+              y *= f;
+              b *= f;
+            }
+            try {
+              await repo.createMeasurement({
+                'wound_id': wound.id,
+                'consultation_id': null,
+                'measured_at': m.date.toIso8601String(),
+                'length_cm': m.l,
+                'width_cm': m.w,
+                'area_cm2': m.a,
+                'depth_cm': m.depth,
+                'volume_cm3': m.volume > 0 ? m.volume : null,
+                'granulation_pct': r,
+                'slough_pct': y,
+                'necrosis_pct': b,
+              });
+              measures++;
+            } catch (_) {
+              measureErrors++;
+            }
           }
         }
       }
       setState(() {
         _result = 'Importados: $created pacientes, $wounds heridas, $measures '
-            'mediciones. Omitidos (ya existían): $skipped.';
+            'mediciones. Omitidos (ya existían): $skipped.'
+            '${measureErrors > 0 ? ' Mediciones con error (omitidas): $measureErrors.' : ''}';
         _patients.clear();
         _files.clear();
       });
