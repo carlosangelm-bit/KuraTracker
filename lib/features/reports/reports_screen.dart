@@ -757,7 +757,12 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
         );
       }
 
-      await Printing.layoutPdf(onLayout: (format) => doc.save());
+      // Descarga real del archivo (en web dispara la descarga; en móvil, hoja
+      // de compartir). layoutPdf solo abría el diálogo de impresión → "no
+      // descarga" (KT-4).
+      final bytes = await doc.save();
+      final stamp = DateFormat('yyyyMMdd').format(DateTime.now());
+      await Printing.sharePdf(bytes: bytes, filename: 'reporte-kura-$stamp.pdf');
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context)
