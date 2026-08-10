@@ -930,6 +930,35 @@ class _SuppliesUsedSection extends ConsumerStatefulWidget {
 
 class _SuppliesUsedSectionState extends ConsumerState<_SuppliesUsedSection> {
   String _money(double v) => '\$${v.toStringAsFixed(2)} MXN';
+  bool _preloadTried = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Pre-carga los insumos del plan mensual (por sesión) la primera vez que se
+    // abre el seguimiento, si aún no hay insumos. Post-frame para no tocar
+    // estado durante el build.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _maybePreload());
+  }
+
+  Future<void> _maybePreload() async {
+    if (_preloadTried) return;
+    _preloadTried = true;
+    final repo = ref.read(dataRepositoryProvider).valueOrNull;
+    final orgId = widget.organizationId;
+    if (repo == null || orgId == null || !repo.premiumInsumosFor(orgId)) return;
+    final n = await repo.preloadProgramSuppliesIntoConsultation(
+      consultationId: widget.consultationId,
+      organizationId: orgId,
+      patientId: widget.patientId,
+      createdBy: ref.read(sessionProvider).user?.id,
+    );
+    if (n > 0 && mounted) {
+      setState(() {});
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Se pre-cargaron $n insumo(s) del plan mensual.')));
+    }
+  }
 
   @override
   Widget build(BuildContext context) {

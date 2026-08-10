@@ -4632,6 +4632,14 @@ class DataRepository {
     return TreatmentProgram.fromJson(saved);
   }
 
+  TreatmentProgram? programById(String? id) {
+    if (id == null) return null;
+    final m = _store
+        .getAll(Collections.treatmentPrograms)
+        .where((p) => p['id'] == id);
+    return m.isEmpty ? null : TreatmentProgram.fromJson(m.first);
+  }
+
   TreatmentProgram? programForConsultation(String consultationId) {
     final rows = _store
         .getAll(Collections.treatmentPrograms)
@@ -4784,6 +4792,44 @@ class DataRepository {
               (staffId == null || s.staffId == staffId))
           .toList()
         ..sort((a, b) => a.scheduledAt.compareTo(b.scheduledAt));
+
+  /// Pre-carga en un SEGUIMIENTO los insumos POR SESIÓN del plan mensual
+  /// aceptado de la herida, si la consulta aún no tiene insumos. Así el
+  /// seguimiento llega con los insumos listos (el especialista solo captura
+  /// herida + notas y al final ajusta/cobra). Los insumos MENSUALES (multidosis)
+  /// NO se auto-cargan por sesión (evita sobre-cobro; se manejan aparte).
+  /// Devuelve cuántos se agregaron. Idempotente: no hace nada si ya hay insumos.
+  Future<int> preloadProgramSuppliesIntoConsultation({
+    required String consultationId,
+    required String organizationId,
+    required String? patientId,
+    String? createdBy,
+  }) async {
+    if (listSupplyUsageForConsultation(consultationId).isNotEmpty) return 0;
+    final woundId = woundIdForConsultation(consultationId);
+    if (woundId == null) return 0;
+    final program = activeProgramForWound(woundId);
+    if (program == null || program.status != ProgramStatus.aceptado) return 0;
+    var added = 0;
+    for (final s in listProgramSupplies(program.id)) {
+      if (s.inventoryItemId == null || s.isMonthly) continue;
+      await addSupplyUsage(
+        organizationId: organizationId,
+        consultationId: consultationId,
+        patientId: patientId,
+        name: s.name,
+        inventoryItemId: s.inventoryItemId,
+        quantity:
+            s.quantityPerSession <= 0 ? 1 : s.quantityPerSession.ceil(),
+        unitCost: s.unitCost,
+        unitPrice: s.unitPrice,
+        currency: s.currency,
+        createdBy: createdBy,
+      );
+      added++;
+    }
+    return added;
+  }
 
   /// Actualiza la cita/estado de una sesión (tras empujarla a Acuity).
   Future<void> updateProgramSessionAcuity(
