@@ -90,6 +90,37 @@ class AcuityService {
     });
   }
 
+  /// Crea una cita en Acuity forzando el horario (admin=true, salta la
+  /// validación de disponibilidad) — para agendar en lote las sesiones del plan
+  /// de tratamiento. Devuelve el objeto de la cita creada (incluye `id`).
+  /// [calendarID] agenda en el calendario del Kurador; [phone] habilita
+  /// recordatorios por SMS/WhatsApp del lado de Acuity.
+  Future<Map<String, dynamic>> createAppointmentAdmin({
+    required int appointmentTypeID,
+    required String datetime,
+    required String firstName,
+    required String lastName,
+    required String email,
+    int? calendarID,
+    String? phone,
+  }) async {
+    final data = await _proxy(
+      'POST',
+      '/appointments',
+      query: {'admin': true},
+      payload: {
+        'appointmentTypeID': appointmentTypeID,
+        'datetime': datetime,
+        'firstName': firstName,
+        'lastName': lastName,
+        'email': email,
+        if (calendarID != null) 'calendarID': calendarID,
+        if (phone != null && phone.isNotEmpty) 'phone': phone,
+      },
+    );
+    return (data as Map?)?.cast<String, dynamic>() ?? const {};
+  }
+
   /// Signed URL (1 h) para mostrar la foto de herida guardada en el bucket
   /// privado acuity-intake (ver 0019). Devuelve null si no hay ruta válida o
   /// falla la firma.

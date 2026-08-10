@@ -22,6 +22,7 @@ import '../../services/csv_download.dart';
 import '../../services/data_repository.dart';
 import 'protocol_kura_screen.dart';
 import 'protocol_product_rules_screen.dart';
+import 'acuity_session_type_screen.dart';
 import '../../services/photo_upload_service.dart';
 
 /// Panel de administración: gestión de personal sanitario, sitios y
@@ -1526,6 +1527,19 @@ class _NoteCatalogTabState extends State<NoteCatalogTab> {
                       ),
                       icon: const Icon(Icons.inventory_2_outlined, size: 18),
                       label: const Text('Productos del protocolo'),
+                    ),
+                    // Tipo de cita de Acuity para las sesiones del plan (0080).
+                    FilledButton.tonalIcon(
+                      onPressed: () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => AcuitySessionTypeScreen(
+                            repo: widget.repo,
+                            organizationId: widget.organizationId,
+                          ),
+                        ),
+                      ),
+                      icon: const Icon(Icons.event_repeat_outlined, size: 18),
+                      label: const Text('Tipo de cita (sesiones)'),
                     ),
                   ],
                 ),
