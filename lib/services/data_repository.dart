@@ -1937,6 +1937,35 @@ class DataRepository {
     }
   }
 
+  /// Guarda el mapeo tipo de cita de Acuity (por nombre) → tipo de visita Kura
+  /// (0083: master o admin del centro). [map] = {"<nombre>": "valoracion"|"seguimiento"}.
+  Future<void> setAcuityTypeVisitMap(
+      String organizationId, Map<String, String> map) async {
+    final store = _store;
+    if (store is SupabaseDataStore) {
+      await store.callRpc('set_acuity_type_visit_map', {
+        'p_org': organizationId,
+        'p_map': map,
+      });
+      await store.refreshCollection(Collections.organizations);
+    } else {
+      await _store.updateRow(Collections.organizations, organizationId,
+          {'acuity_type_visit_map': map});
+    }
+  }
+
+  /// Tipo de visita Kura mapeado para el nombre de un tipo de cita de Acuity, o
+  /// null si ese tipo no está mapeado en el centro.
+  VisitType? visitTypeForAcuityTypeName(String? organizationId, String? typeName) {
+    if (organizationId == null || typeName == null || typeName.isEmpty) {
+      return null;
+    }
+    final v = organizationById(organizationId)?.acuityTypeVisitMap[typeName];
+    if (v == 'valoracion') return VisitType.valoracion;
+    if (v == 'seguimiento') return VisitType.seguimiento;
+    return null;
+  }
+
   Site? siteById(String? siteId) {
     if (siteId == null) return null;
     final m = _store
