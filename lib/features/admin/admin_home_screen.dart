@@ -26,6 +26,7 @@ import 'acuity_session_type_screen.dart';
 import 'acuity_visit_type_map_screen.dart';
 import 'scale_toggles_screen.dart';
 import 'recommendations_reference_screen.dart';
+import 'patient_cleanup_screen.dart';
 import '../../services/photo_upload_service.dart';
 
 /// Panel de administración: gestión de personal sanitario, sitios y
@@ -1580,6 +1581,21 @@ class _NoteCatalogTabState extends State<NoteCatalogTab> {
                       ),
                       icon: const Icon(Icons.menu_book_outlined, size: 18),
                       label: const Text('Fuente de recomendaciones'),
+                    ),
+                    // Depuración de expedientes (0086): archiva pacientes que ya
+                    // no se atienden (p. ej. import histórico de Acuity).
+                    FilledButton.tonalIcon(
+                      onPressed: () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => PatientCleanupScreen(
+                            repo: widget.repo,
+                            organizationId: widget.organizationId,
+                          ),
+                        ),
+                      ),
+                      icon: const Icon(Icons.cleaning_services_outlined,
+                          size: 18),
+                      label: const Text('Depurar expedientes'),
                     ),
                   ],
                 ),

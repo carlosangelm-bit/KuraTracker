@@ -2889,8 +2889,36 @@ class DataRepository {
 
   // ---------------- Pacientes ----------------
 
-  List<Patient> listAllPatients() =>
-      _store.getAll(Collections.patients).map(Patient.fromJson).toList();
+  /// Lista pacientes. Por defecto EXCLUYE los archivados (depuración 0086): un
+  /// expediente archivado no aparece en listas, tableros ni reportes. La
+  /// pantalla de depuración pasa [includeArchived]=true para poder revisarlos y
+  /// restaurarlos.
+  List<Patient> listAllPatients({bool includeArchived = false}) {
+    final all = _store.getAll(Collections.patients).map(Patient.fromJson);
+    return (includeArchived ? all : all.where((p) => !p.isArchived)).toList();
+  }
+
+  /// Pacientes actualmente archivados (para restaurar desde la depuración).
+  List<Patient> listArchivedPatients({String? organizationId}) =>
+      listAllPatients(includeArchived: true)
+          .where((p) => p.isArchived)
+          .where((p) =>
+              organizationId == null || p.organizationId == organizationId)
+          .toList();
+
+  /// Archiva (oculta) un expediente. Reversible con [unarchivePatient]; no borra
+  /// datos ligados. RLS: patients_update exige admin del centro (o clínico
+  /// asignado). Se escribe archived_at = ahora (UTC).
+  Future<void> archivePatient(String patientId) async {
+    await _store.updateRow(Collections.patients, patientId,
+        {'archived_at': DateTime.now().toUtc().toIso8601String()});
+  }
+
+  /// Restaura un expediente archivado (vuelve a listas/tableros).
+  Future<void> unarchivePatient(String patientId) async {
+    await _store
+        .updateRow(Collections.patients, patientId, {'archived_at': null});
+  }
 
   Patient? getPatient(String id) {
     final match = _store.getAll(Collections.patients).where((p) => p['id'] == id);
