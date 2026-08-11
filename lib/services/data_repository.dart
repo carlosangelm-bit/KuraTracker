@@ -5197,6 +5197,9 @@ class DataRepository {
     String? siteId,
     String? staffId,
     int weeks = 4,
+    String cadenceMode = 'weekly',
+    int? intervalHours,
+    int? sessionCount,
     String? createdBy,
   }) async {
     final now = DateTime.now().toIso8601String();
@@ -5209,6 +5212,9 @@ class DataRepository {
       'site_id': siteId,
       'staff_id': staffId,
       'weeks': weeks,
+      'cadence_mode': cadenceMode,
+      'interval_hours': intervalHours,
+      'session_count': sessionCount,
       'status': 'borrador',
       'created_by': createdBy,
       'created_at': now,

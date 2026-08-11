@@ -31,6 +31,10 @@ class TreatmentProgram {
   final String? siteId;
   final String? staffId;
   final int weeks;
+  // Cadencia (0088): 'weekly' (días de la semana) | 'hourly' (cada N horas).
+  final String cadenceMode;
+  final int? intervalHours; // horas entre sesiones si cadenceMode='hourly'
+  final int? sessionCount; // nº de sesiones si cadenceMode='hourly'
   final ProgramStatus status;
   final String? notes;
   final DateTime? acceptedAt;
@@ -45,6 +49,9 @@ class TreatmentProgram {
     this.siteId,
     this.staffId,
     this.weeks = 4,
+    this.cadenceMode = 'weekly',
+    this.intervalHours,
+    this.sessionCount,
     this.status = ProgramStatus.borrador,
     this.notes,
     this.acceptedAt,
@@ -60,6 +67,9 @@ class TreatmentProgram {
         siteId: j['site_id'] as String?,
         staffId: j['staff_id'] as String?,
         weeks: (j['weeks'] as num?)?.toInt() ?? 4,
+        cadenceMode: (j['cadence_mode'] as String?) ?? 'weekly',
+        intervalHours: (j['interval_hours'] as num?)?.toInt(),
+        sessionCount: (j['session_count'] as num?)?.toInt(),
         status: programStatusFromDb(j['status'] as String?),
         notes: j['notes'] as String?,
         acceptedAt: j['accepted_at'] == null
