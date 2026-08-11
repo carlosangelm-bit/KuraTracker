@@ -12,6 +12,8 @@ import '../../engine/risk/braden_scale.dart';
 import '../../engine/risk/scale_applicability.dart';
 import 'braden_scale_sheet.dart';
 import 'globiad_sheet.dart';
+import 'istap_sheet.dart';
+import 'star_sheet.dart';
 import 'triage_sheet.dart';
 import '../../models/app_user.dart';
 import '../../models/patient.dart';
@@ -74,16 +76,30 @@ class _PatientRiskScreenState extends ConsumerState<PatientRiskScreen> {
     if (mounted) setState(() {});
   }
 
-  /// GLOBIAD (DAI): captura (guiada o manual), guarda la valoración de escala y,
-  /// en centros hospital, traduce 2A/2B a control de humedad en la bitácora.
-  Future<void> _assessGlobiad(DataRepository repo) async {
-    final res = await showGlobiadSheet(context);
+  /// Captura de una escala (guiada o manual), guarda la valoración y aplica su
+  /// tratamiento a la bitácora si corresponde. Un dispatcher por scaleId: agregar
+  /// una escala nueva = un case aquí + su hoja + su regla de aplicabilidad.
+  Future<void> _assessScale(DataRepository repo, String scaleId) async {
+    ({String category, Map<String, dynamic> subscores, String? notes})? res;
+    switch (scaleId) {
+      case 'GLOBIAD':
+        res = await showGlobiadSheet(context);
+        break;
+      case 'ISTAP':
+        res = await showIstapSheet(context);
+        break;
+      case 'STAR':
+        res = await showStarSheet(context);
+        break;
+      default:
+        return;
+    }
     if (res == null || !mounted) return;
     final session = ref.read(sessionProvider);
     await repo.addScaleAssessment(
       patientId: widget.patientId,
       organizationId: session.user?.organizationId,
-      scaleId: 'GLOBIAD',
+      scaleId: scaleId,
       scaleVersion: '1.0',
       categoryResult: res.category,
       bandId: res.category,
@@ -91,22 +107,24 @@ class _PatientRiskScreenState extends ConsumerState<PatientRiskScreen> {
       notes: res.notes,
       staffId: await _staffId(repo),
     );
-    final catalog = ref.read(preventionRulesProvider).valueOrNull;
-    if (catalog != null) {
-      await repo.applyGlobiadTreatment(
-        widget.patientId,
-        res.category,
-        organizationId: session.user?.organizationId,
-        catalog: catalog,
-        createdBy: session.user?.id,
-      );
+    // Tratamiento a bitácora según la escala.
+    final orgId = session.user?.organizationId;
+    final by = session.user?.id;
+    if (scaleId == 'GLOBIAD') {
+      final catalog = ref.read(preventionRulesProvider).valueOrNull;
+      if (catalog != null) {
+        await repo.applyGlobiadTreatment(widget.patientId, res.category,
+            organizationId: orgId, catalog: catalog, createdBy: by);
+      }
+    } else if (scaleId == 'STAR') {
+      await repo.applyStarTreatment(widget.patientId, res.category,
+          organizationId: orgId, createdBy: by);
     }
     if (!mounted) return;
     setState(() {});
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text('GLOBIAD ${res.category} registrada'
-          '${res.category.startsWith('2') ? ' · control de humedad agendado en la bitácora' : ''}'),
-    ));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('$scaleId ${res.category} registrada')),
+    );
   }
 
   /// Triage de valoración: captura las señales y las guarda; la aplicabilidad se
@@ -176,9 +194,8 @@ class _PatientRiskScreenState extends ConsumerState<PatientRiskScreen> {
   Widget _scaleRow(DataRepository repo, ApplicableScale s) {
     final obligatoria = s.priority == ScalePriority.obligatoria;
     final chipColor = obligatoria ? KuraColors.danger : KuraColors.primary;
-    final doneCat = s.scaleId == 'GLOBIAD'
-        ? repo.latestScaleAssessment(widget.patientId, 'GLOBIAD')?.categoryResult
-        : null;
+    final doneCat =
+        repo.latestScaleAssessment(widget.patientId, s.scaleId)?.categoryResult;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 5),
       child: Row(
@@ -217,9 +234,9 @@ class _PatientRiskScreenState extends ConsumerState<PatientRiskScreen> {
               ],
             ),
           ),
-          if (s.implemented && s.scaleId == 'GLOBIAD')
+          if (s.implemented)
             TextButton(
-              onPressed: () => _assessGlobiad(repo),
+              onPressed: () => _assessScale(repo, s.scaleId),
               child: Text(doneCat != null ? 'Revalorar' : 'Valorar'),
             )
           else

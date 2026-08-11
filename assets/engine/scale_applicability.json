@@ -27,14 +27,14 @@
       "scale_id": "ISTAP",
       "label": "ISTAP · Desgarro cutáneo (skin tear)",
       "priority": "sugerida",
-      "implemented": false,
+      "implemented": true,
       "when": { "triage": "desgarro" }
     },
     {
       "scale_id": "STAR",
       "label": "STAR · Desgarro cutáneo (colgajo/color)",
       "priority": "sugerida",
-      "implemented": false,
+      "implemented": true,
       "when": { "triage": "desgarro" }
     },
     {

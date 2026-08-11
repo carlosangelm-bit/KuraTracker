@@ -3862,6 +3862,45 @@ class DataRepository {
     return created;
   }
 
+  /// STAR: color del colgajo comprometido (categoría 1b/2b/3) → agenda una
+  /// reevaluación del desgarro en 24–48 h (bitácora). Solo hospital. Idempotente
+  /// por rule_id 'star'.
+  Future<void> applyStarTreatment(
+    String patientId,
+    String category, {
+    required String? organizationId,
+    String? createdBy,
+  }) async {
+    if (centerTypeFor(organizationId) != CenterType.hospital) return;
+    final now = DateTime.now();
+    final existing = _store
+        .getAll(Collections.preventiveTasks)
+        .map(PreventiveTask.fromJson)
+        .where((t) =>
+            t.patientId == patientId &&
+            t.ruleId == 'star' &&
+            t.isPending &&
+            !t.scheduledAt.isBefore(now))
+        .toList();
+    for (final t in existing) {
+      await _store.deleteRow(Collections.preventiveTasks, t.id);
+    }
+    final comprometido = category.endsWith('b') || category == '3';
+    if (!comprometido) return;
+    await createPreventiveTask(
+      patientId: patientId,
+      organizationId: organizationId,
+      title: 'Reevaluar desgarro (STAR color comprometido)',
+      scheduledAt: now.add(const Duration(hours: 36)),
+      admissionId: activeAdmission(patientId)?.id,
+      ruleId: 'star',
+      actionId: 'reeval_desgarro',
+      actionLabel: 'Reevaluar desgarro (24–48 h)',
+      source: 'auto',
+      createdBy: createdBy,
+    );
+  }
+
   /// Computa el riesgo de un paciente AL VUELO (no se persiste): junta sus
   /// comorbilidades presentes + última Braden + heridas activas y aplica el
   /// catálogo de reglas. Devuelve nivel + alertas preventivas.
