@@ -213,6 +213,8 @@ class _PatientDetailScreenState extends ConsumerState<PatientDetailScreen> {
           );
           final caregiversCard = _CaregiversCard(
               patientId: patient.id, organizationId: patient.organizationId);
+          final assignmentCard = _AssignSpecialistCard(
+              patientId: patient.id, organizationId: patient.organizationId);
           final consentsCard =
               _ConsentsSummaryCard(patientId: patient.id, repo: repo);
           final cobrosCard = _CobrosCard(
@@ -352,6 +354,8 @@ class _PatientDetailScreenState extends ConsumerState<PatientDetailScreen> {
             const SizedBox(height: 16),
             labsCard,
             const SizedBox(height: 16),
+            assignmentCard,
+            const SizedBox(height: 16),
             caregiversCard,
             const SizedBox(height: 16),
             consentsCard,
@@ -393,6 +397,8 @@ class _PatientDetailScreenState extends ConsumerState<PatientDetailScreen> {
                 vacCard,
                 const SizedBox(height: 16),
               ],
+              assignmentCard,
+              const SizedBox(height: 16),
               caregiversCard,
               const SizedBox(height: 16),
               consentsCard,
@@ -780,6 +786,128 @@ class _ComorbidityCard extends StatelessWidget {
 /// Tarjeta (solo admin) para gestionar qué usuarios CUIDADOR pueden monitorear
 /// a este paciente (caregiver_patient_assignments, Fase 3). El cuidador solo ve
 /// —en modo lectura— a los pacientes que aquí se le asignen.
+/// Asignación del paciente a un especialista (Kurador/médico). Clave para los
+/// pacientes creados por Acuity/eKare que llegan sin dueño. Solo admin/master.
+class _AssignSpecialistCard extends ConsumerStatefulWidget {
+  final String patientId;
+  final String? organizationId;
+  const _AssignSpecialistCard(
+      {required this.patientId, required this.organizationId});
+  @override
+  ConsumerState<_AssignSpecialistCard> createState() =>
+      _AssignSpecialistCardState();
+}
+
+class _AssignSpecialistCardState extends ConsumerState<_AssignSpecialistCard> {
+  @override
+  Widget build(BuildContext context) {
+    final session = ref.watch(sessionProvider);
+    final isAdmin = session.user?.role == AppRole.admin;
+    final isMaster = session.user?.isMaster ?? false;
+    if (!isAdmin && !isMaster) return const SizedBox.shrink();
+    final repo = ref.watch(dataRepositoryProvider).valueOrNull;
+    if (repo == null) return const SizedBox.shrink();
+
+    final assigned = repo.staffForPatient(widget.patientId);
+
+    return Card(
+      margin: EdgeInsets.zero,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.badge_outlined, size: 20),
+                const SizedBox(width: 10),
+                const Expanded(
+                  child: Text('Especialista asignado',
+                      style: TextStyle(fontWeight: FontWeight.w700)),
+                ),
+                TextButton.icon(
+                  icon: const Icon(Icons.person_add_alt, size: 18),
+                  label: const Text('Asignar'),
+                  onPressed: () => _openAssign(repo),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            if (assigned.isEmpty)
+              Text('Sin especialista asignado.',
+                  style: Theme.of(context).textTheme.bodySmall)
+            else
+              ...assigned.map((s) => ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    dense: true,
+                    leading: const Icon(Icons.person_outline),
+                    title: Text(s.fullName),
+                    subtitle: Text(s.roleTitle),
+                    trailing: IconButton(
+                      tooltip: 'Quitar',
+                      icon: const Icon(Icons.close),
+                      onPressed: () async {
+                        await repo.unassignPatientFromStaff(
+                            widget.patientId, s.id);
+                        if (mounted) setState(() {});
+                      },
+                    ),
+                  )),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openAssign(DataRepository repo) async {
+    final assignedIds = repo
+        .staffForPatient(widget.patientId)
+        .map((s) => s.id)
+        .toSet();
+    final candidates = repo
+        .listStaff(organizationId: widget.organizationId)
+        .where((s) => s.isActive && !assignedIds.contains(s.id))
+        .toList()
+      ..sort((a, b) => a.fullName.toLowerCase().compareTo(b.fullName.toLowerCase()));
+    await showDialog<void>(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        title: const Text('Asignar especialista'),
+        content: SizedBox(
+          width: 380,
+          child: candidates.isEmpty
+              ? const Text('No hay personal disponible en el centro.')
+              : SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: candidates
+                        .map((s) => ListTile(
+                              leading: const Icon(Icons.person_outline),
+                              title: Text(s.fullName),
+                              subtitle: Text(s.roleTitle),
+                              onTap: () async {
+                                await repo.assignPatientToStaff(
+                                    widget.patientId, s.id);
+                                if (dialogCtx.mounted) {
+                                  Navigator.of(dialogCtx).pop();
+                                }
+                                if (mounted) setState(() {});
+                              },
+                            ))
+                        .toList(),
+                  ),
+                ),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.of(dialogCtx).pop(),
+              child: const Text('Cerrar')),
+        ],
+      ),
+    );
+  }
+}
+
 class _CaregiversCard extends ConsumerStatefulWidget {
   final String patientId;
   final String? organizationId;
