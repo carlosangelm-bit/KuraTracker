@@ -159,7 +159,7 @@ class _TourScopeState extends ConsumerState<TourScope> {
         bottom: 20,
         width: 384,
         height: h,
-        child: Offstage(offstage: !open, child: const SupportChatPanel()),
+        child: Offstage(offstage: !open, child: const _ChatOverlayHost()),
       );
     }
     return Positioned(
@@ -168,6 +168,23 @@ class _TourScopeState extends ConsumerState<TourScope> {
       top: mq.viewPadding.top + 8,
       bottom: mq.viewPadding.bottom + 8,
       child: Offstage(offstage: !open, child: const SupportChatPanel()),
+    );
+  }
+}
+
+/// El panel de chat vive en el `MaterialApp.builder` (por encima del Navigator),
+/// donde NO hay un `Overlay` — y `TextField`/`Tooltip` lo necesitan. Se le da su
+/// propio `Overlay` local. El Element persiste entre reconstrucciones (mismo tipo
+/// en la misma posición), así que la conversación se conserva al minimizar.
+class _ChatOverlayHost extends StatelessWidget {
+  const _ChatOverlayHost();
+
+  @override
+  Widget build(BuildContext context) {
+    return Overlay(
+      initialEntries: [
+        OverlayEntry(builder: (_) => const SupportChatPanel()),
+      ],
     );
   }
 }
