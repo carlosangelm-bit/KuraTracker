@@ -262,11 +262,22 @@ class _PatientRiskScreenState extends ConsumerState<PatientRiskScreen> {
   /// Triage de valoración: captura las señales y las guarda; la aplicabilidad se
   /// recalcula sola en el build.
   Future<void> _doTriage(DataRepository repo) async {
+    final cat = ref.read(scaleApplicabilityProvider).valueOrNull;
+    if (cat == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Cargando catálogo de escalas, intenta de nuevo.')));
+      return;
+    }
     final last = repo.latestTriage(widget.patientId)?.subscores;
     final initial = last == null
         ? null
         : {for (final e in last.entries) e.key: e.value == true};
-    final answers = await showTriageSheet(context, initial: initial);
+    final answers = await showTriageSheet(
+      context,
+      groups: cat.questionnaire,
+      factorLabel: cat.factorLabel,
+      initial: initial,
+    );
     if (answers == null || !mounted) return;
     final session = ref.read(sessionProvider);
     await repo.saveTriage(
@@ -278,8 +289,8 @@ class _PatientRiskScreenState extends ConsumerState<PatientRiskScreen> {
     if (mounted) setState(() {});
   }
 
-  Widget _scalesToDoCard(
-      DataRepository repo, List<ApplicableScale> applicable, bool hasTriage) {
+  Widget _scalesToDoCard(DataRepository repo, List<ApplicableScale> applicable,
+      bool hasTriage, ScaleApplicabilityCatalog? cat) {
     return Card(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(14, 10, 14, 12),
@@ -316,18 +327,22 @@ class _PatientRiskScreenState extends ConsumerState<PatientRiskScreen> {
                         color: KuraColors.darkText.withValues(alpha: 0.6))),
               )
             else
-              for (final s in applicable) _scaleRow(repo, s),
+              for (final s in applicable) _scaleRow(repo, s, cat),
           ],
         ),
       ),
     );
   }
 
-  Widget _scaleRow(DataRepository repo, ApplicableScale s) {
+  Widget _scaleRow(
+      DataRepository repo, ApplicableScale s, ScaleApplicabilityCatalog? cat) {
     final obligatoria = s.priority == ScalePriority.obligatoria;
     final chipColor = obligatoria ? KuraColors.danger : KuraColors.primary;
     final last = repo.latestScaleAssessment(widget.patientId, s.scaleId);
     final doneCat = last?.categoryResult ?? last?.totalScore?.toStringAsFixed(0);
+    final porque = (cat == null || s.matchedFactors.isEmpty)
+        ? null
+        : 'Por: ${s.matchedFactors.map(cat.factorLabel).join(' · ')}';
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 5),
       child: Row(
@@ -363,6 +378,14 @@ class _PatientRiskScreenState extends ConsumerState<PatientRiskScreen> {
                     ],
                   ],
                 ),
+                if (porque != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Text(porque,
+                        style: TextStyle(
+                            fontSize: 10.5,
+                            color: KuraColors.darkText.withValues(alpha: 0.6))),
+                  ),
               ],
             ),
           ),
@@ -606,7 +629,7 @@ class _PatientRiskScreenState extends ConsumerState<PatientRiskScreen> {
                   ),
                 const SizedBox(height: 16),
                 // Escalas a realizar: derivadas del triage + expediente.
-                _scalesToDoCard(repo, applicable, hasTriage),
+                _scalesToDoCard(repo, applicable, hasTriage, applicabilityCat),
                 const SizedBox(height: 16),
                 // Tarjetas de la ficha: en desktop refluyen a 2-3 columnas para
                 // aprovechar el ancho; en móvil quedan apiladas.

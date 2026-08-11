@@ -1,158 +1,257 @@
 {
-  "version": "0.1-draft",
-  "note": "Routing de aplicabilidad de escalas del módulo de hospitalización. Núcleo LCRD (GLOBIAD/ISTAP/STAR/PUSH/RESVECH) se dispara desde la banda/subescalas de Braden; las complementarias (Wagner/CEAP/…) por etiología/comorbilidad, en paralelo. 'implemented'=true significa que ya hay captura construida. Borrador PENDIENTE de validación clínica.",
+  "version": "0.2-draft",
+  "note": "Routing de aplicabilidad de escalas del modulo de hospitalizacion, POR PESO. A partir de los FACTORES DE RIESGO del paciente (unos del expediente [R], otros del cuestionario inicial que llena enfermeria [Q]) el motor decide que escalas se deben realizar. Cada escala: 'gate_any' (al menos uno de esos factores debe estar presente para siquiera considerarla), 'trigger' (cualquiera de esos factores la vuelve OBLIGATORIA por si solo), 'factors' (factor->peso) y 'thresholds' (suma de pesos: >=sugerida => sugerida, >=obligatoria => obligatoria). 'implemented'=true significa captura construida. TODOS los pesos/umbrales son BORRADOR pendiente de validacion clinica de Maria (basados en investigacion de incidencia/prevalencia + factores de riesgo).",
+  "factor_labels": {
+    "diabetes_mellitus": "Diabetes mellitus (R)",
+    "evp": "Enfermedad arterial periferica (R)",
+    "ivc": "Insuficiencia venosa cronica (R)",
+    "irc": "Insuficiencia renal cronica (R)",
+    "enf_cardiovascular": "Enfermedad cardiovascular (R)",
+    "inmunosupresion": "Inmunosupresion (R)",
+    "obesidad": "Obesidad (R)",
+    "tabaquismo": "Tabaquismo activo (R)",
+    "malnutricion": "Malnutricion / hipoalbuminemia (R)",
+    "movilidad_reducida": "Movilidad reducida (R)",
+    "edad_avanzada": "Edad >= 65 (R)",
+    "edad_muy_avanzada": "Edad >= 80 (R)",
+    "edad_pediatrica": "Edad < 6 (R)",
+    "braden_riesgo": "Braden <= 17 (R)",
+    "braden_bajo": "Braden <= 12 (R)",
+    "has_active_wound": "Herida activa en el expediente (R)",
+    "etio_lpp": "Herida activa etiologia LPP (R)",
+    "etio_vascular": "Herida activa etiologia vascular (R)",
+    "etio_quirurgica": "Herida activa etiologia quirurgica (R)",
+    "etio_pie_diabetico": "Herida activa pie diabetico (R)",
+    "estancia_prolongada": "Estancia hospitalaria prolongada (R)",
+    "unit_uci": "Paciente en UCI (R)",
+    "piel_fragil_seca": "Piel fragil / seca",
+    "equimosis_hematomas": "Equimosis o hematomas previos",
+    "desgarro_previo": "Desgarro cutaneo previo",
+    "movilidad_muy_limitada": "Movilidad muy limitada / encamado",
+    "dependencia_transferencia": "Dependencia total en transferencias",
+    "deterioro_cognitivo": "Deterioro cognitivo",
+    "incontinencia": "Incontinencia o piel humeda",
+    "humedad_prolongada": "Exposicion a humedad > 4 h",
+    "dispositivo_medico": "Presion por dispositivo medico (sonda, TET, mascarilla)",
+    "multiples_dispositivos": "Multiples dispositivos medicos",
+    "adhesivo_medico": "Uso de adhesivos medicos (cinta, aposito, electrodo)",
+    "uso_prolongado_adhesivo": "Uso prolongado / reiterado de adhesivos",
+    "lesion_pie": "Lesion en el pie",
+    "ulcera_pie_previa": "Ulcera de pie previa",
+    "deformidad_pie": "Deformidad del pie",
+    "neuropatia": "Neuropatia / perdida de sensibilidad",
+    "herida_quirurgica": "Herida quirurgica",
+    "cirugia_emergencia": "Cirugia de urgencia / emergencia",
+    "drenaje_quirurgico": "Drenaje quirurgico",
+    "iv_vesicante": "Terapia IV con vesicante / irritante",
+    "fragilidad_venosa": "Fragilidad venosa / venas esclerosadas",
+    "quemadura": "Quemadura",
+    "vasoactivos": "Farmacos vasoactivos / vasoconstrictores",
+    "ventilacion_mecanica": "Ventilacion mecanica",
+    "corticosteroides": "Uso de corticosteroides"
+  },
+  "questionnaire": [
+    { "group": "Piel y tejidos", "factors": ["piel_fragil_seca", "equimosis_hematomas", "desgarro_previo"] },
+    { "group": "Movilidad y cognicion", "factors": ["movilidad_muy_limitada", "dependencia_transferencia", "deterioro_cognitivo"] },
+    { "group": "Humedad y continencia", "factors": ["incontinencia", "humedad_prolongada"] },
+    { "group": "Dispositivos y adhesivos", "factors": ["dispositivo_medico", "multiples_dispositivos", "adhesivo_medico", "uso_prolongado_adhesivo"] },
+    { "group": "Pie y vascular", "factors": ["lesion_pie", "ulcera_pie_previa", "deformidad_pie", "neuropatia"] },
+    { "group": "Herida quirurgica, IV y quemadura", "factors": ["herida_quirurgica", "cirugia_emergencia", "drenaje_quirurgico", "iv_vesicante", "fragilidad_venosa", "quemadura"] },
+    { "group": "Tratamiento y soporte", "factors": ["vasoactivos", "ventilacion_mecanica", "corticosteroides"] }
+  ],
   "scales": [
     {
       "scale_id": "GLOBIAD",
       "label": "GLOBIAD · Dermatitis por humedad (DAI)",
-      "priority": "sugerida",
       "implemented": true,
-      "when": {
-        "bradenMax": 17,
-        "any": [
-          {
-            "triage": "incontinencia"
-          },
-          {
-            "comorbilidad": "incontinencia"
-          },
-          {
-            "bradenHumedadMax": 2
-          }
-        ]
-      }
+      "gate_any": ["braden_riesgo", "incontinencia", "humedad_prolongada"],
+      "trigger": [],
+      "factors": [
+        { "factor": "incontinencia", "weight": 3 },
+        { "factor": "humedad_prolongada", "weight": 2 },
+        { "factor": "movilidad_muy_limitada", "weight": 2 },
+        { "factor": "edad_avanzada", "weight": 1 },
+        { "factor": "obesidad", "weight": 1 },
+        { "factor": "diabetes_mellitus", "weight": 1 },
+        { "factor": "deterioro_cognitivo", "weight": 1 },
+        { "factor": "malnutricion", "weight": 1 }
+      ],
+      "thresholds": { "sugerida": 3, "obligatoria": 6 }
     },
     {
       "scale_id": "NPIAP",
-      "label": "NPIAP/EPUAP · Estadificación de LPP",
-      "priority": "sugerida",
+      "label": "NPIAP/EPUAP · Estadificacion de LPP",
       "implemented": true,
-      "when": {
-        "woundEtiology": "lpp"
-      }
+      "gate_any": ["etio_lpp"],
+      "trigger": ["etio_lpp"],
+      "factors": [],
+      "thresholds": { "sugerida": 1, "obligatoria": 1 }
     },
     {
       "scale_id": "ISTAP",
-      "label": "ISTAP · Desgarro cutáneo (skin tear)",
-      "priority": "sugerida",
+      "label": "ISTAP · Desgarro cutaneo (skin tear)",
       "implemented": true,
-      "when": {
-        "triage": "desgarro"
-      }
+      "gate_any": [],
+      "trigger": ["desgarro_previo"],
+      "factors": [
+        { "factor": "piel_fragil_seca", "weight": 2 },
+        { "factor": "edad_muy_avanzada", "weight": 2 },
+        { "factor": "equimosis_hematomas", "weight": 2 },
+        { "factor": "dependencia_transferencia", "weight": 1 },
+        { "factor": "deterioro_cognitivo", "weight": 1 },
+        { "factor": "braden_riesgo", "weight": 1 },
+        { "factor": "corticosteroides", "weight": 1 },
+        { "factor": "evp", "weight": 1 },
+        { "factor": "malnutricion", "weight": 1 }
+      ],
+      "thresholds": { "sugerida": 3, "obligatoria": 5 }
     },
     {
       "scale_id": "STAR",
-      "label": "STAR · Desgarro cutáneo (colgajo/color)",
-      "priority": "sugerida",
+      "label": "STAR · Desgarro cutaneo (colgajo/color)",
       "implemented": true,
-      "when": {
-        "triage": "desgarro"
-      }
+      "gate_any": [],
+      "trigger": ["desgarro_previo"],
+      "factors": [
+        { "factor": "piel_fragil_seca", "weight": 2 },
+        { "factor": "edad_muy_avanzada", "weight": 2 },
+        { "factor": "equimosis_hematomas", "weight": 2 },
+        { "factor": "dependencia_transferencia", "weight": 1 },
+        { "factor": "deterioro_cognitivo", "weight": 1 },
+        { "factor": "braden_riesgo", "weight": 1 },
+        { "factor": "corticosteroides", "weight": 1 },
+        { "factor": "evp", "weight": 1 },
+        { "factor": "malnutricion", "weight": 1 }
+      ],
+      "thresholds": { "sugerida": 3, "obligatoria": 5 }
     },
     {
       "scale_id": "PUSH",
-      "label": "PUSH · Seguimiento de cicatrización",
-      "priority": "sugerida",
+      "label": "PUSH · Seguimiento de cicatrizacion",
       "implemented": true,
-      "when": {
-        "hasActiveWound": true,
-        "bradenMax": 12
-      }
+      "gate_any": ["has_active_wound"],
+      "trigger": [],
+      "factors": [
+        { "factor": "has_active_wound", "weight": 1 },
+        { "factor": "braden_bajo", "weight": 2 }
+      ],
+      "thresholds": { "sugerida": 1, "obligatoria": 3 }
     },
     {
       "scale_id": "RESVECH",
-      "label": "RESVECH 2.0 · Valoración integral de la herida",
-      "priority": "sugerida",
+      "label": "RESVECH 2.0 · Valoracion integral de la herida",
       "implemented": true,
-      "when": {
-        "hasActiveWound": true,
-        "bradenMax": 12
-      }
+      "gate_any": ["has_active_wound"],
+      "trigger": [],
+      "factors": [
+        { "factor": "has_active_wound", "weight": 1 },
+        { "factor": "braden_bajo", "weight": 2 }
+      ],
+      "thresholds": { "sugerida": 1, "obligatoria": 3 }
     },
     {
       "scale_id": "WAGNER",
-      "label": "Wagner · Pie diabético",
-      "priority": "obligatoria",
+      "label": "Wagner · Pie diabetico",
       "implemented": true,
-      "when": {
-        "comorbilidad": "diabetesmellitus",
-        "any": [
-          {
-            "woundEtiology": "pieDiabetico"
-          },
-          {
-            "triage": "lesion_pie"
-          }
-        ]
-      }
+      "gate_any": ["diabetes_mellitus"],
+      "trigger": ["ulcera_pie_previa", "lesion_pie", "etio_pie_diabetico"],
+      "factors": [
+        { "factor": "neuropatia", "weight": 2 },
+        { "factor": "evp", "weight": 2 },
+        { "factor": "deformidad_pie", "weight": 2 },
+        { "factor": "tabaquismo", "weight": 1 }
+      ],
+      "thresholds": { "sugerida": 2, "obligatoria": 4 }
     },
     {
       "scale_id": "CEAP",
-      "label": "CEAP · Enfermedad venosa crónica",
-      "priority": "sugerida",
+      "label": "CEAP · Enfermedad venosa cronica",
       "implemented": true,
-      "when": {
-        "any": [
-          {
-            "woundEtiology": "vascular"
-          },
-          {
-            "comorbilidad": "insuficienciavenosacronica"
-          }
-        ]
-      }
+      "gate_any": [],
+      "trigger": ["etio_vascular", "ivc"],
+      "factors": [
+        { "factor": "obesidad", "weight": 1 },
+        { "factor": "edad_avanzada", "weight": 1 },
+        { "factor": "malnutricion", "weight": 1 }
+      ],
+      "thresholds": { "sugerida": 3, "obligatoria": 5 }
     },
     {
       "scale_id": "ASEPSIS",
-      "label": "ASEPSIS · Infección de sitio quirúrgico",
-      "priority": "sugerida",
+      "label": "ASEPSIS · Infeccion de sitio quirurgico",
       "implemented": true,
-      "when": {
-        "any": [
-          {
-            "woundEtiology": "quirurgica"
-          },
-          {
-            "triage": "herida_quirurgica"
-          }
-        ]
-      }
+      "gate_any": ["herida_quirurgica", "etio_quirurgica"],
+      "trigger": [],
+      "factors": [
+        { "factor": "herida_quirurgica", "weight": 1 },
+        { "factor": "diabetes_mellitus", "weight": 2 },
+        { "factor": "obesidad", "weight": 1 },
+        { "factor": "tabaquismo", "weight": 1 },
+        { "factor": "cirugia_emergencia", "weight": 2 },
+        { "factor": "drenaje_quirurgico", "weight": 1 },
+        { "factor": "malnutricion", "weight": 2 }
+      ],
+      "thresholds": { "sugerida": 1, "obligatoria": 5 }
     },
     {
       "scale_id": "EXTRAVASACION",
-      "label": "Extravasación · Lesión por vesicante/irritante",
-      "priority": "obligatoria",
+      "label": "Extravasacion · Lesion por vesicante/irritante",
       "implemented": true,
-      "when": {
-        "triage": "iv_vesicante"
-      }
+      "gate_any": ["iv_vesicante"],
+      "trigger": [],
+      "factors": [
+        { "factor": "iv_vesicante", "weight": 1 },
+        { "factor": "fragilidad_venosa", "weight": 2 },
+        { "factor": "edad_pediatrica", "weight": 1 },
+        { "factor": "edad_avanzada", "weight": 1 },
+        { "factor": "neuropatia", "weight": 1 }
+      ],
+      "thresholds": { "sugerida": 1, "obligatoria": 4 }
     },
     {
       "scale_id": "MDRPI",
-      "label": "MDRPI · LPP por dispositivo médico",
-      "priority": "sugerida",
+      "label": "MDRPI · LPP por dispositivo medico",
       "implemented": true,
-      "when": {
-        "triage": "dispositivo"
-      }
+      "gate_any": ["dispositivo_medico"],
+      "trigger": [],
+      "factors": [
+        { "factor": "dispositivo_medico", "weight": 1 },
+        { "factor": "multiples_dispositivos", "weight": 2 },
+        { "factor": "diabetes_mellitus", "weight": 1 },
+        { "factor": "braden_bajo", "weight": 1 },
+        { "factor": "vasoactivos", "weight": 1 },
+        { "factor": "ventilacion_mecanica", "weight": 1 },
+        { "factor": "estancia_prolongada", "weight": 1 },
+        { "factor": "edad_avanzada", "weight": 1 },
+        { "factor": "unit_uci", "weight": 1 }
+      ],
+      "thresholds": { "sugerida": 1, "obligatoria": 5 }
     },
     {
       "scale_id": "MARSI",
-      "label": "MARSI · Lesión por adhesivo médico",
-      "priority": "sugerida",
+      "label": "MARSI · Lesion por adhesivo medico",
       "implemented": true,
-      "when": {
-        "triage": "adhesivo"
-      }
+      "gate_any": ["adhesivo_medico"],
+      "trigger": [],
+      "factors": [
+        { "factor": "adhesivo_medico", "weight": 1 },
+        { "factor": "uso_prolongado_adhesivo", "weight": 2 },
+        { "factor": "piel_fragil_seca", "weight": 2 },
+        { "factor": "edad_avanzada", "weight": 1 },
+        { "factor": "equimosis_hematomas", "weight": 1 },
+        { "factor": "tabaquismo", "weight": 1 },
+        { "factor": "braden_riesgo", "weight": 1 }
+      ],
+      "thresholds": { "sugerida": 1, "obligatoria": 5 }
     },
     {
       "scale_id": "QUEMADURA",
-      "label": "Quemaduras · Profundidad + índice de Garcés",
-      "priority": "obligatoria",
+      "label": "Quemaduras · Profundidad + indice de Garces",
       "implemented": true,
-      "when": {
-        "triage": "quemadura"
-      }
+      "gate_any": ["quemadura"],
+      "trigger": ["quemadura"],
+      "factors": [],
+      "thresholds": { "sugerida": 1, "obligatoria": 1 }
     }
   ]
 }

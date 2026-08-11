@@ -2,11 +2,8 @@ import 'dart:convert';
 
 import 'package:flutter/services.dart' show rootBundle;
 
-/// Prioridad con la que una escala se ofrece tras el triage.
+/// Prioridad con la que una escala se ofrece tras evaluar los factores de riesgo.
 enum ScalePriority { obligatoria, sugerida }
-
-ScalePriority _priorityFromDb(String? s) =>
-    s == 'obligatoria' ? ScalePriority.obligatoria : ScalePriority.sugerida;
 
 /// Una escala que aplica para un paciente, según el motor de aplicabilidad.
 class ApplicableScale {
@@ -14,44 +11,88 @@ class ApplicableScale {
   final String label;
   final ScalePriority priority;
   final bool implemented; // ¿hay captura construida ya?
+  final int score; // suma de pesos de los factores de riesgo presentes
+  final List<String> matchedFactors; // factores que contribuyeron (ids)
   const ApplicableScale({
     required this.scaleId,
     required this.label,
     required this.priority,
     required this.implemented,
+    this.score = 0,
+    this.matchedFactors = const [],
   });
 }
 
-/// Regla declarativa de aplicabilidad de una escala (asset scale_applicability.json).
+/// Un grupo del cuestionario de factores de riesgo (para armar la hoja).
+class QuestionnaireGroup {
+  final String group;
+  final List<String> factors; // ids de factor
+  const QuestionnaireGroup(this.group, this.factors);
+}
+
+/// Factor con peso dentro de la regla de una escala.
+class _WeightedFactor {
+  final String factor;
+  final int weight;
+  const _WeightedFactor(this.factor, this.weight);
+  factory _WeightedFactor.fromJson(Map<String, dynamic> j) =>
+      _WeightedFactor(j['factor'] as String, (j['weight'] as num?)?.toInt() ?? 0);
+}
+
+/// Regla declarativa de aplicabilidad POR PESO (asset scale_applicability.json v0.2).
 class _ScaleRule {
   final String scaleId;
   final String label;
-  final ScalePriority priority;
   final bool implemented;
-  final Map<String, dynamic> when;
-  const _ScaleRule(
-      this.scaleId, this.label, this.priority, this.implemented, this.when);
+  final List<String> gateAny; // al menos uno presente para considerar la escala
+  final List<String> trigger; // cualquiera presente => obligatoria
+  final List<_WeightedFactor> factors;
+  final int sugeridaMin;
+  final int obligatoriaMin;
+  const _ScaleRule({
+    required this.scaleId,
+    required this.label,
+    required this.implemented,
+    required this.gateAny,
+    required this.trigger,
+    required this.factors,
+    required this.sugeridaMin,
+    required this.obligatoriaMin,
+  });
 
-  factory _ScaleRule.fromJson(Map<String, dynamic> j) => _ScaleRule(
-        j['scale_id'] as String,
-        (j['label'] as String?) ?? j['scale_id'] as String,
-        _priorityFromDb(j['priority'] as String?),
-        j['implemented'] as bool? ?? false,
-        (j['when'] as Map?)?.cast<String, dynamic>() ?? const {},
-      );
+  factory _ScaleRule.fromJson(Map<String, dynamic> j) {
+    final th = (j['thresholds'] as Map?)?.cast<String, dynamic>() ?? const {};
+    List<String> strs(dynamic v) =>
+        ((v as List?) ?? const []).map((e) => e.toString()).toList();
+    return _ScaleRule(
+      scaleId: j['scale_id'] as String,
+      label: (j['label'] as String?) ?? j['scale_id'] as String,
+      implemented: j['implemented'] as bool? ?? false,
+      gateAny: strs(j['gate_any']),
+      trigger: strs(j['trigger']),
+      factors: ((j['factors'] as List?) ?? const [])
+          .map((e) => _WeightedFactor.fromJson((e as Map).cast<String, dynamic>()))
+          .toList(),
+      sugeridaMin: (th['sugerida'] as num?)?.toInt() ?? 1,
+      obligatoriaMin: (th['obligatoria'] as num?)?.toInt() ?? 1,
+    );
+  }
 }
 
-/// Señales del paciente que evalúan las reglas de aplicabilidad. Se arman con
-/// datos del expediente (comorbilidades, heridas, Braden, internamiento) + las
-/// respuestas del TRIAGE (booleanos que no se derivan del expediente).
+/// Contexto del paciente para evaluar aplicabilidad: datos del expediente [R]
+/// (comorbilidades, heridas, Braden, edad, estancia, unidad) + las respuestas
+/// del CUESTIONARIO inicial [Q] (factores observables que llena enfermería). El
+/// motor normaliza todo a un set plano de "factores de riesgo" y con eso puntúa.
 class ScaleEvalContext {
-  final Set<String> comorbilidades; // códigos presentes (minúsculas)
+  final Set<String> comorbilidades; // enum.name en minúsculas (status presente)
   final Set<String> woundEtiologies; // etiologías de heridas activas (enum.name)
   final bool hasActiveWound;
   final int? braden; // total de la última valoración
   final int? bradenHumedad; // subescala humedad
-  final Map<String, bool> triage; // señal → bool
+  final Map<String, bool> triage; // factor Q → bool
   final String? unit; // servicio/unidad del internamiento
+  final int? age; // edad del paciente
+  final int? admissionDays; // días de estancia (desde el internamiento activo)
 
   const ScaleEvalContext({
     this.comorbilidades = const {},
@@ -61,18 +102,27 @@ class ScaleEvalContext {
     this.bradenHumedad,
     this.triage = const {},
     this.unit,
+    this.age,
+    this.admissionDays,
   });
 }
 
-/// Motor de aplicabilidad de escalas: a partir de las señales del paciente
-/// (triage + expediente) decide QUÉ escalas se deben realizar. Es routing puro,
-/// declarativo y parametrizable (asset), en paralelo al motor de riesgo de
-/// Braden. Núcleo LCRD (GLOBIAD/ISTAP/STAR/PUSH/RESVECH) cuelga de Braden; las
-/// complementarias (Wagner/CEAP/…) se disparan por etiología/comorbilidad.
+/// Motor de aplicabilidad de escalas POR FACTORES DE RIESGO: a partir de los
+/// factores del paciente (expediente + cuestionario) puntúa cada escala y decide
+/// cuáles se deben realizar (obligatoria/sugerida). Routing declarativo y
+/// parametrizable (asset); pesos y umbrales son BORRADOR pendiente de validación
+/// clínica de María.
 class ScaleApplicabilityCatalog {
   final String version;
   final List<_ScaleRule> _rules;
-  const ScaleApplicabilityCatalog._(this.version, this._rules);
+  final Map<String, String> factorLabels;
+  final List<QuestionnaireGroup> questionnaire;
+  const ScaleApplicabilityCatalog._(
+      this.version, this._rules, this.factorLabels, this.questionnaire);
+
+  /// Umbral (días) para considerar la estancia hospitalaria "prolongada".
+  /// BORRADOR (pendiente de validación clínica).
+  static const int estanciaProlongadaDias = 14;
 
   static ScaleApplicabilityCatalog? _cached;
 
@@ -85,8 +135,21 @@ class ScaleApplicabilityCatalog {
     final rules = ((json['scales'] as List?) ?? const [])
         .map((e) => _ScaleRule.fromJson((e as Map).cast<String, dynamic>()))
         .toList();
+    final labels = ((json['factor_labels'] as Map?) ?? const {})
+        .map((k, v) => MapEntry(k.toString(), v.toString()));
+    final groups = ((json['questionnaire'] as List?) ?? const [])
+        .map((e) {
+          final m = (e as Map).cast<String, dynamic>();
+          return QuestionnaireGroup(
+            (m['group'] as String?) ?? '',
+            ((m['factors'] as List?) ?? const [])
+                .map((f) => f.toString())
+                .toList(),
+          );
+        })
+        .toList();
     final catalog = ScaleApplicabilityCatalog._(
-        (json['version'] as String?) ?? '', rules);
+        (json['version'] as String?) ?? '', rules, labels, groups);
     _cached = catalog;
     return catalog;
   }
@@ -96,53 +159,127 @@ class ScaleApplicabilityCatalog {
   List<({String scaleId, String label})> get scales =>
       _rules.map((r) => (scaleId: r.scaleId, label: r.label)).toList();
 
-  /// Escalas aplicables para el contexto dado (obligatorias primero).
+  /// Etiqueta legible de un factor de riesgo (o el id si no hay etiqueta).
+  String factorLabel(String id) => factorLabels[id] ?? id;
+
+  /// Normaliza el contexto del paciente a un set plano de FACTORES DE RIESGO
+  /// (expediente [R] + cuestionario [Q]). Público para reutilizarlo en el plan
+  /// de cuidados (pre-marcado) y para explicar "por qué" aplica una escala.
+  Set<String> factorsFor(ScaleEvalContext c) {
+    final f = <String>{};
+
+    // --- Cuestionario [Q]: cada respuesta true es un factor ---
+    c.triage.forEach((k, v) {
+      if (v) f.add(k);
+    });
+
+    // --- Comorbilidades [R] (enum.name en minúsculas → id de factor) ---
+    const comorbToFactor = <String, String>{
+      'diabetesmellitus': 'diabetes_mellitus',
+      'enfermedadarterialperiferica': 'evp',
+      'insuficienciavenosacronica': 'ivc',
+      'insuficienciarenalcronica': 'irc',
+      'enfermedadcardiovascular': 'enf_cardiovascular',
+      'inmunosupresion': 'inmunosupresion',
+      'obesidad': 'obesidad',
+      'tabaquismoactivo': 'tabaquismo',
+      'malnutricion': 'malnutricion',
+      'movilidadreducida': 'movilidad_reducida',
+    };
+    for (final c0 in c.comorbilidades) {
+      final id = comorbToFactor[c0];
+      if (id != null) f.add(id);
+    }
+
+    // --- Heridas activas [R] ---
+    if (c.hasActiveWound) f.add('has_active_wound');
+    const etioToFactor = <String, String>{
+      'lpp': 'etio_lpp',
+      'vascular': 'etio_vascular',
+      'quirurgica': 'etio_quirurgica',
+      'pieDiabetico': 'etio_pie_diabetico',
+    };
+    for (final e in c.woundEtiologies) {
+      final id = etioToFactor[e];
+      if (id != null) f.add(id);
+    }
+
+    // --- Edad [R] ---
+    final age = c.age;
+    if (age != null) {
+      if (age >= 65) f.add('edad_avanzada');
+      if (age >= 80) f.add('edad_muy_avanzada');
+      if (age < 6) f.add('edad_pediatrica');
+    }
+
+    // --- Braden [R] ---
+    final b = c.braden;
+    if (b != null) {
+      if (b <= 17) f.add('braden_riesgo');
+      if (b <= 12) f.add('braden_bajo');
+    }
+    final hum = c.bradenHumedad;
+    if (hum != null && hum <= 2) f.add('incontinencia');
+
+    // --- Estancia / unidad [R] ---
+    if (c.admissionDays != null &&
+        c.admissionDays! >= estanciaProlongadaDias) {
+      f.add('estancia_prolongada');
+    }
+    final u = c.unit?.toLowerCase() ?? '';
+    if (u.contains('uci') || u.contains('terapia intensiva')) {
+      f.add('unit_uci');
+    }
+
+    return f;
+  }
+
+  /// Escalas aplicables para el contexto dado (obligatorias primero, luego por
+  /// puntaje descendente).
   List<ApplicableScale> evaluate(ScaleEvalContext c) {
+    final present = factorsFor(c);
     final out = <ApplicableScale>[];
     for (final r in _rules) {
-      if (_matches(r.when, c)) {
-        out.add(ApplicableScale(
-          scaleId: r.scaleId,
-          label: r.label,
-          priority: r.priority,
-          implemented: r.implemented,
-        ));
+      // Gate: si hay precondición y ningún factor de gate está presente, ni se
+      // considera la escala.
+      if (r.gateAny.isNotEmpty && !r.gateAny.any(present.contains)) continue;
+
+      final triggered = r.trigger.any(present.contains);
+      var score = 0;
+      final matched = <String>[];
+      for (final wf in r.factors) {
+        if (present.contains(wf.factor)) {
+          score += wf.weight;
+          matched.add(wf.factor);
+        }
       }
+      // Los factores de trigger presentes también se listan como "por qué".
+      for (final t in r.trigger) {
+        if (present.contains(t) && !matched.contains(t)) matched.add(t);
+      }
+
+      ScalePriority? priority;
+      if (triggered || score >= r.obligatoriaMin) {
+        priority = ScalePriority.obligatoria;
+      } else if (score >= r.sugeridaMin) {
+        priority = ScalePriority.sugerida;
+      }
+      if (priority == null) continue;
+
+      out.add(ApplicableScale(
+        scaleId: r.scaleId,
+        label: r.label,
+        priority: priority,
+        implemented: r.implemented,
+        score: score,
+        matchedFactors: matched,
+      ));
     }
-    out.sort((a, b) => a.priority.index.compareTo(b.priority.index));
+    out.sort((a, b) {
+      final p = a.priority.index.compareTo(b.priority.index);
+      if (p != 0) return p;
+      return b.score.compareTo(a.score);
+    });
     return out;
-  }
-
-  bool _matches(Map<String, dynamic> when, ScaleEvalContext c) {
-    for (final e in when.entries) {
-      if (!_predicate(e.key, e.value, c)) return false;
-    }
-    return true;
-  }
-
-  bool _predicate(String key, dynamic val, ScaleEvalContext c) {
-    switch (key) {
-      case 'comorbilidad':
-        return c.comorbilidades.contains((val as String).toLowerCase());
-      case 'woundEtiology':
-        return c.woundEtiologies.contains(val as String);
-      case 'hasActiveWound':
-        return c.hasActiveWound == (val as bool);
-      case 'bradenMax':
-        return c.braden != null && c.braden! <= (val as num).toInt();
-      case 'bradenHumedadMax':
-        return c.bradenHumedad != null &&
-            c.bradenHumedad! <= (val as num).toInt();
-      case 'triage':
-        return c.triage[val as String] == true;
-      case 'unitIn':
-        return c.unit != null &&
-            (val as List).map((e) => e.toString()).contains(c.unit);
-      case 'any':
-        return (val as List)
-            .any((sub) => _matches((sub as Map).cast<String, dynamic>(), c));
-      default:
-        return true; // predicado desconocido → permisivo
-    }
   }
 }

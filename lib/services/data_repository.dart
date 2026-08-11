@@ -3755,6 +3755,10 @@ class DataRepository {
       for (final e in (triageRow?.subscores ?? const {}).entries)
         if (e.value is bool) e.key: e.value as bool,
     };
+    final admission = activeAdmission(patientId);
+    final admissionDays = admission == null
+        ? null
+        : DateTime.now().difference(admission.admittedAt).inDays;
     final result = catalog.evaluate(ScaleEvalContext(
       comorbilidades: comorbilidades,
       woundEtiologies: etiologies,
@@ -3762,7 +3766,9 @@ class DataRepository {
       braden: braden?.bradenScore,
       bradenHumedad: (braden?.bradenSubscores?['humedad'] as num?)?.toInt(),
       triage: triage,
-      unit: activeAdmission(patientId)?.unit,
+      unit: admission?.unit,
+      age: getPatient(patientId)?.age,
+      admissionDays: admissionDays,
     ));
     // Filtro por las escalas habilitadas del centro (null = todas).
     final orgId = getPatient(patientId)?.organizationId;
