@@ -3110,6 +3110,29 @@ class DataRepository {
     }
   }
 
+  /// Especialistas (staff) asignados a un paciente.
+  List<StaffMember> staffForPatient(String patientId) {
+    final ids = _store
+        .getAll(Collections.staffPatientAssignments)
+        .where((a) => a['patient_id'] == patientId)
+        .map((a) => a['staff_id'])
+        .whereType<String>()
+        .toSet();
+    return ids.map(getStaff).whereType<StaffMember>().toList();
+  }
+
+  /// Quita la asignación de un paciente a un especialista (admin del centro).
+  Future<void> unassignPatientFromStaff(String patientId, String staffId) async {
+    final row = _store
+        .getAll(Collections.staffPatientAssignments)
+        .where((a) => a['patient_id'] == patientId && a['staff_id'] == staffId)
+        .toList();
+    if (row.isNotEmpty) {
+      await _store.deleteRow(
+          Collections.staffPatientAssignments, row.first['id'] as String);
+    }
+  }
+
   List<PatientComorbidity> listComorbidities(String patientId) {
     // Dedup por código (KT-5): si hay duplicados previos, muestra solo el más
     // reciente por código (red de seguridad además del fix en setComorbidity).
