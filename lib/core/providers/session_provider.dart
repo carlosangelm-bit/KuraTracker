@@ -9,6 +9,7 @@ import '../../services/data_repository.dart';
 import '../../engine/cie10_catalog.dart';
 import '../../engine/risk/prevention_risk_engine.dart';
 import '../../engine/risk/braden_scale.dart';
+import '../../engine/risk/scale_applicability.dart';
 import '../config/app_config.dart';
 
 /// Estado de sesion. En modo Supabase (produccion), refleja
@@ -272,4 +273,12 @@ final preventionRulesProvider = FutureProvider<PreventionRulesCatalog>((ref) {
 /// subescalas de la ficha de riesgo.
 final bradenScaleProvider = FutureProvider<BradenScale>((ref) {
   return BradenScale.load();
+});
+
+/// Motor de aplicabilidad de escalas (asset): a partir del triage + expediente
+/// decide qué escalas debe realizar cada paciente. Borrador PENDIENTE de
+/// validación clínica.
+final scaleApplicabilityProvider =
+    FutureProvider<ScaleApplicabilityCatalog>((ref) {
+  return ScaleApplicabilityCatalog.load();
 });

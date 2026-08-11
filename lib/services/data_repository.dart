@@ -46,6 +46,7 @@ import '../engine/models/kura_engine_enums.dart';
 import '../engine/cie10_catalog.dart';
 import '../engine/params/clinical_params.dart';
 import '../engine/risk/prevention_risk_engine.dart';
+import '../engine/risk/scale_applicability.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 
 import 'dart:typed_data';
@@ -3711,6 +3712,57 @@ class DataRepository {
   ScaleAssessment? latestScaleAssessment(String patientId, String scaleId) {
     final all = listScaleAssessments(patientId, scaleId: scaleId);
     return all.isEmpty ? null : all.first;
+  }
+
+  /// Última respuesta de TRIAGE del paciente (señales que no se derivan del
+  /// expediente: dispositivos, adhesivos, terapia IV vesicante, etc.).
+  ScaleAssessment? latestTriage(String patientId) =>
+      latestScaleAssessment(patientId, 'TRIAGE');
+
+  /// Escalas que DEBE realizar el paciente, según el triage + el expediente
+  /// (comorbilidades, heridas activas, Braden, internamiento). Routing puro.
+  List<ApplicableScale> applicableScales(
+      String patientId, ScaleApplicabilityCatalog catalog) {
+    final comorbilidades = listComorbidities(patientId)
+        .where((c) => c.status == ComorbilidadEstado.presente)
+        .map((c) => c.code.name.toLowerCase())
+        .toSet();
+    final activeWounds =
+        listWoundsForPatient(patientId).where((w) => w.isActive).toList();
+    final etiologies = activeWounds.map((w) => w.etiology.name).toSet();
+    final braden = latestRiskAssessment(patientId);
+    final triageRow = latestTriage(patientId);
+    final triage = <String, bool>{
+      for (final e in (triageRow?.subscores ?? const {}).entries)
+        if (e.value is bool) e.key: e.value as bool,
+    };
+    return catalog.evaluate(ScaleEvalContext(
+      comorbilidades: comorbilidades,
+      woundEtiologies: etiologies,
+      hasActiveWound: activeWounds.isNotEmpty,
+      braden: braden?.bradenScore,
+      bradenHumedad: (braden?.bradenSubscores?['humedad'] as num?)?.toInt(),
+      triage: triage,
+      unit: activeAdmission(patientId)?.unit,
+    ));
+  }
+
+  /// Guarda las respuestas del triage como una valoración de escala 'TRIAGE'
+  /// (subscores = mapa de señales booleanas).
+  Future<void> saveTriage(
+    String patientId, {
+    required String? organizationId,
+    required Map<String, bool> answers,
+    required String? staffId,
+  }) async {
+    await addScaleAssessment(
+      patientId: patientId,
+      organizationId: organizationId,
+      scaleId: 'TRIAGE',
+      scaleVersion: '0.1',
+      subscores: answers,
+      staffId: staffId,
+    );
   }
 
   Future<ScaleAssessment> addScaleAssessment({
