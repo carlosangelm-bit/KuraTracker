@@ -13,6 +13,7 @@ import '../../engine/sheehan_decision_style.dart';
 import '../../models/app_user.dart';
 import '../../models/patient.dart';
 import '../../services/data_repository.dart';
+import '../admin/patient_cleanup_screen.dart';
 import '../risk/risk_board_screen.dart' show bradenBandLevel;
 import 'patient_grid_card.dart';
 import 'patient_list_tile.dart';
@@ -146,6 +147,22 @@ class PatientsListScreenState extends ConsumerState<PatientsListScreen> {
       appBar: AppBar(
         title: const Text('Pacientes'),
         actions: [
+          // Depurar expedientes (0086): solo admin/master. Archiva pacientes
+          // que ya no se atienden (p. ej. import histórico de Acuity).
+          if ((user?.role == AppRole.admin || user?.role == AppRole.master) &&
+              repoAsync.valueOrNull != null)
+            IconButton(
+              tooltip: 'Depurar expedientes',
+              icon: const Icon(Icons.cleaning_services_outlined),
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => PatientCleanupScreen(
+                    repo: repoAsync.value!,
+                    organizationId: user?.organizationId,
+                  ),
+                ),
+              ),
+            ),
           if (_prefsLoaded)
             _ViewModeToggle(
               value: _prefs.viewMode,
