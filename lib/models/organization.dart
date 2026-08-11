@@ -26,6 +26,9 @@ class Organization {
   final String? mpPointDeviceId;
   // Tipo de cita de Acuity para las sesiones del plan (0080). NULL = sin config.
   final int? acuitySessionTypeId;
+  // Mapeo nombre de tipo de cita de Acuity → tipo de visita Kura (0083):
+  // {"<nombre>": "valoracion"|"seguimiento"}. Vacío = sin mapear.
+  final Map<String, String> acuityTypeVisitMap;
 
   const Organization({
     required this.id,
@@ -41,6 +44,7 @@ class Organization {
     this.inventoryScope = 'site',
     this.mpPointDeviceId,
     this.acuitySessionTypeId,
+    this.acuityTypeVisitMap = const {},
   });
 
   factory Organization.fromJson(Map<String, dynamic> json) => Organization(
@@ -57,6 +61,9 @@ class Organization {
         inventoryScope: (json['inventory_scope'] as String?) ?? 'site',
         mpPointDeviceId: json['mp_point_device_id'] as String?,
         acuitySessionTypeId: (json['acuity_session_type_id'] as num?)?.toInt(),
+        acuityTypeVisitMap: (json['acuity_type_visit_map'] as Map?)?.map(
+                (k, v) => MapEntry(k.toString(), v.toString())) ??
+            const {},
       );
 
   Map<String, dynamic> toJson() => {
@@ -73,5 +80,6 @@ class Organization {
         'inventory_scope': inventoryScope,
         'mp_point_device_id': mpPointDeviceId,
         'acuity_session_type_id': acuitySessionTypeId,
+        'acuity_type_visit_map': acuityTypeVisitMap,
       };
 }
