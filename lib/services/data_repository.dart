@@ -32,6 +32,7 @@ import '../models/patient_admission.dart';
 import '../models/patient_diagnosis.dart';
 import '../models/preventive_action_log.dart';
 import '../models/risk_assessment.dart';
+import '../models/scale_assessment.dart';
 import '../models/referral.dart';
 import '../models/note_option_catalog.dart';
 import '../models/site.dart';
@@ -3691,6 +3692,122 @@ class DataRepository {
     };
     final saved = await _store.insertRow(Collections.riskAssessments, data);
     return RiskAssessment.fromJson(saved);
+  }
+
+  // -------------------- Escalas clínicas genéricas (0084) --------------------
+
+  /// Valoraciones de una escala para un paciente (más reciente primero).
+  List<ScaleAssessment> listScaleAssessments(String patientId, {String? scaleId}) {
+    final list = _store
+        .getAll(Collections.scaleAssessments)
+        .map(ScaleAssessment.fromJson)
+        .where((s) =>
+            s.patientId == patientId && (scaleId == null || s.scaleId == scaleId))
+        .toList()
+      ..sort((a, b) => b.assessedAt.compareTo(a.assessedAt));
+    return list;
+  }
+
+  ScaleAssessment? latestScaleAssessment(String patientId, String scaleId) {
+    final all = listScaleAssessments(patientId, scaleId: scaleId);
+    return all.isEmpty ? null : all.first;
+  }
+
+  Future<ScaleAssessment> addScaleAssessment({
+    required String patientId,
+    required String? organizationId,
+    String? woundId,
+    required String scaleId,
+    String? scaleVersion,
+    Map<String, dynamic>? subscores,
+    double? totalScore,
+    String? categoryResult,
+    String? bandId,
+    String? notes,
+    required String? staffId,
+  }) async {
+    final now = DateTime.now().toIso8601String();
+    final data = {
+      'id': _uuid.v4(),
+      'organization_id': organizationId,
+      'patient_id': patientId,
+      'wound_id': woundId,
+      'scale_id': scaleId,
+      'scale_version': scaleVersion,
+      'subscores': subscores,
+      'total_score': totalScore,
+      'category_result': categoryResult,
+      'band_id': bandId,
+      'assessed_at': now,
+      'assessed_by': staffId,
+      'notes': notes,
+      'created_at': now,
+    };
+    final saved = await _store.insertRow(Collections.scaleAssessments, data);
+    return ScaleAssessment.fromJson(saved);
+  }
+
+  /// Traduce el resultado de GLOBIAD (DAI) a tratamiento en la bitácora, SOLO en
+  /// centros hospital: 2A/2B (pérdida de piel) → intensifica el control de
+  /// humedad / barrera cutánea; subcategoría B (infección) → agrega vigilancia.
+  /// Idempotente por rule_id 'globiad' (no toca el plan preventivo de Braden).
+  Future<int> applyGlobiadTreatment(
+    String patientId,
+    String category, {
+    required String? organizationId,
+    required PreventionRulesCatalog catalog,
+    String? createdBy,
+  }) async {
+    if (centerTypeFor(organizationId) != CenterType.hospital) return 0;
+    final now = DateTime.now();
+    // Limpia tareas GLOBIAD futuras pendientes (refleja la valoración actual).
+    final existing = _store
+        .getAll(Collections.preventiveTasks)
+        .map(PreventiveTask.fromJson)
+        .where((t) =>
+            t.patientId == patientId &&
+            t.ruleId == 'globiad' &&
+            t.isPending &&
+            !t.scheduledAt.isBefore(now))
+        .toList();
+    for (final t in existing) {
+      await _store.deleteRow(Collections.preventiveTasks, t.id);
+    }
+    final perdida = category.startsWith('2'); // 2A/2B
+    final infeccion = category.endsWith('B'); // 1B/2B
+    if (!perdida && !infeccion) return 0;
+
+    final admissionId = activeAdmission(patientId)?.id;
+    var created = 0;
+    Future<void> materialize(String actionId, String title, int everyHours) async {
+      final count = (24 / everyHours).floor().clamp(1, 24);
+      for (var i = 1; i <= count; i++) {
+        await createPreventiveTask(
+          patientId: patientId,
+          organizationId: organizationId,
+          title: title,
+          scheduledAt: now.add(Duration(hours: everyHours * i)),
+          admissionId: admissionId,
+          ruleId: 'globiad',
+          actionId: actionId,
+          actionLabel: title,
+          source: 'auto',
+          createdBy: createdBy,
+        );
+        created++;
+      }
+    }
+
+    if (perdida) {
+      final c = catalog.cadenceFor('control_humedad');
+      await materialize('control_humedad',
+          c?.title ?? 'Control de humedad / barrera cutánea', c?.everyHours ?? 8);
+    }
+    if (infeccion) {
+      await materialize('vigilancia_infeccion_dai',
+          'Vigilancia/tratamiento de infección de la piel (DAI)', 12);
+    }
+    return created;
   }
 
   /// Computa el riesgo de un paciente AL VUELO (no se persiste): junta sus
