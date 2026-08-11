@@ -24,6 +24,7 @@ import 'protocol_kura_screen.dart';
 import 'protocol_product_rules_screen.dart';
 import 'acuity_session_type_screen.dart';
 import 'acuity_visit_type_map_screen.dart';
+import 'scale_toggles_screen.dart';
 import 'recommendations_reference_screen.dart';
 import '../../services/photo_upload_service.dart';
 
@@ -1556,6 +1557,19 @@ class _NoteCatalogTabState extends State<NoteCatalogTab> {
                       icon: const Icon(Icons.medical_information_outlined,
                           size: 18),
                       label: const Text('Tipos de consulta (Acuity)'),
+                    ),
+                    // Escalas del protocolo de hospitalización habilitadas (0085).
+                    FilledButton.tonalIcon(
+                      onPressed: () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => ScaleTogglesScreen(
+                            repo: widget.repo,
+                            organizationId: widget.organizationId,
+                          ),
+                        ),
+                      ),
+                      icon: const Icon(Icons.rule_folder_outlined, size: 18),
+                      label: const Text('Escalas del protocolo'),
                     ),
                     // KT-16: referencia de la fuente única de recomendaciones.
                     FilledButton.tonalIcon(

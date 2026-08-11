@@ -3719,8 +3719,27 @@ class DataRepository {
   ScaleAssessment? latestTriage(String patientId) =>
       latestScaleAssessment(patientId, 'TRIAGE');
 
+  /// Guarda las escalas habilitadas del protocolo del centro (0085). null =
+  /// todas. RPC set_enabled_scales (master o admin del centro).
+  Future<void> setEnabledScales(
+      String organizationId, List<String>? scales) async {
+    final store = _store;
+    if (store is SupabaseDataStore) {
+      await store.callRpc('set_enabled_scales', {
+        'p_org': organizationId,
+        'p_scales': scales,
+      });
+      await store.refreshCollection(Collections.organizations);
+    } else {
+      await _store.updateRow(Collections.organizations, organizationId,
+          {'enabled_scales': scales});
+    }
+  }
+
   /// Escalas que DEBE realizar el paciente, según el triage + el expediente
   /// (comorbilidades, heridas activas, Braden, internamiento). Routing puro.
+  /// Se filtran por las escalas HABILITADAS del centro (0085): una escala que el
+  /// admin apagó no se ofrece, aunque el triage la dispararía.
   List<ApplicableScale> applicableScales(
       String patientId, ScaleApplicabilityCatalog catalog) {
     final comorbilidades = listComorbidities(patientId)
@@ -3736,7 +3755,7 @@ class DataRepository {
       for (final e in (triageRow?.subscores ?? const {}).entries)
         if (e.value is bool) e.key: e.value as bool,
     };
-    return catalog.evaluate(ScaleEvalContext(
+    final result = catalog.evaluate(ScaleEvalContext(
       comorbilidades: comorbilidades,
       woundEtiologies: etiologies,
       hasActiveWound: activeWounds.isNotEmpty,
@@ -3745,6 +3764,11 @@ class DataRepository {
       triage: triage,
       unit: activeAdmission(patientId)?.unit,
     ));
+    // Filtro por las escalas habilitadas del centro (null = todas).
+    final orgId = getPatient(patientId)?.organizationId;
+    final enabled = organizationById(orgId)?.enabledScales;
+    if (enabled == null) return result;
+    return result.where((s) => enabled.contains(s.scaleId)).toList();
   }
 
   /// Guarda las respuestas del triage como una valoración de escala 'TRIAGE'
