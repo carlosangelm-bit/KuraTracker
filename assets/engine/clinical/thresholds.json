@@ -121,6 +121,96 @@
         "reviewed_by": "María",
         "reviewed_date": "2026-07-20"
       }
+    },
+    "garces_moderado_min": {
+      "value": 41,
+      "unit": "índice Garcés",
+      "source": {
+        "protocolo": "Módulo de hospitalización · Escala de Quemaduras (índice de Garcés)",
+        "rationale": "BORRADOR pendiente de validación clínica (María). Índice >= 41 => quemadura Moderada (< 41 = Leve). Índice = %A×1 + %AB×2 + %B×3 + edad.",
+        "reviewed_by": "Pendiente (borrador)",
+        "reviewed_date": "2026-08-11"
+      }
+    },
+    "garces_grave_min": {
+      "value": 71,
+      "unit": "índice Garcés",
+      "source": {
+        "protocolo": "Módulo de hospitalización · Escala de Quemaduras (índice de Garcés)",
+        "rationale": "BORRADOR pendiente de validación clínica (María). Índice >= 71 => quemadura Grave.",
+        "reviewed_by": "Pendiente (borrador)",
+        "reviewed_date": "2026-08-11"
+      }
+    },
+    "garces_critico_min": {
+      "value": 101,
+      "unit": "índice Garcés",
+      "source": {
+        "protocolo": "Módulo de hospitalización · Escala de Quemaduras (índice de Garcés)",
+        "rationale": "BORRADOR pendiente de validación clínica (María). Índice >= 101 => quemadura Crítica.",
+        "reviewed_by": "Pendiente (borrador)",
+        "reviewed_date": "2026-08-11"
+      }
+    },
+    "garces_mortal_above": {
+      "value": 150,
+      "unit": "índice Garcés",
+      "source": {
+        "protocolo": "Módulo de hospitalización · Escala de Quemaduras (índice de Garcés)",
+        "rationale": "BORRADOR pendiente de validación clínica (María). Índice > 150 => pronóstico Mortal.",
+        "reviewed_by": "Pendiente (borrador)",
+        "reviewed_date": "2026-08-11"
+      }
+    },
+    "aba_2do_grado_scq_above_pct": {
+      "value": 10,
+      "unit": "% SCQ",
+      "source": {
+        "protocolo": "Módulo de hospitalización · Criterio de hospitalización ABA (quemaduras)",
+        "rationale": "BORRADOR pendiente de validación clínica (María). 2º grado con SCQ > 10% en pacientes de edad extrema (< aba_edad_pediatrica_below o > aba_edad_adulto_mayor_above) cumple criterio de hospitalización ABA.",
+        "reviewed_by": "Pendiente (borrador)",
+        "reviewed_date": "2026-08-11"
+      }
+    },
+    "aba_3er_grado_scq_above_pct": {
+      "value": 5,
+      "unit": "% SCQ",
+      "source": {
+        "protocolo": "Módulo de hospitalización · Criterio de hospitalización ABA (quemaduras)",
+        "rationale": "BORRADOR pendiente de validación clínica (María). Cualquier 3er grado con SCQ > 5% cumple criterio de hospitalización ABA.",
+        "reviewed_by": "Pendiente (borrador)",
+        "reviewed_date": "2026-08-11"
+      }
+    },
+    "aba_edad_pediatrica_below": {
+      "value": 10,
+      "unit": "años",
+      "source": {
+        "protocolo": "Módulo de hospitalización · Criterio de hospitalización ABA (quemaduras)",
+        "rationale": "BORRADOR pendiente de validación clínica (María). Edad < 10 años = edad extrema pediátrica para el criterio ABA de 2º grado.",
+        "reviewed_by": "Pendiente (borrador)",
+        "reviewed_date": "2026-08-11"
+      }
+    },
+    "aba_edad_adulto_mayor_above": {
+      "value": 50,
+      "unit": "años",
+      "source": {
+        "protocolo": "Módulo de hospitalización · Criterio de hospitalización ABA (quemaduras)",
+        "rationale": "BORRADOR pendiente de validación clínica (María). Edad > 50 años = edad extrema adulto mayor para el criterio ABA de 2º grado.",
+        "reviewed_by": "Pendiente (borrador)",
+        "reviewed_date": "2026-08-11"
+      }
+    },
+    "asepsis_isq_above": {
+      "value": 20,
+      "unit": "puntos ASEPSIS",
+      "source": {
+        "protocolo": "Módulo de hospitalización · Escala ASEPSIS (infección de sitio quirúrgico)",
+        "rationale": "BORRADOR pendiente de validación clínica (María). Puntaje ASEPSIS > 20 => infección de sitio quirúrgico (agenda confirmar/tratar ISQ). Rango de la escala 0-55.",
+        "reviewed_by": "Pendiente (borrador)",
+        "reviewed_date": "2026-08-11"
+      }
     }
   },
   "compression_bands": {

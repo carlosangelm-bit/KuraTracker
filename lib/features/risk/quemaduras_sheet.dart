@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/theme/kura_theme.dart';
+import '../../engine/params/clinical_params.dart';
 
 /// Resultado de la escala de Quemaduras (profundidad + índice de Garcés).
 typedef QuemaduraResult = ({
@@ -11,12 +12,34 @@ typedef QuemaduraResult = ({
   String? notes,
 });
 
+// Cortes (índice de Garcés y criterio ABA) parametrizados en ClinicalParams
+// (assets/engine/clinical/thresholds.json) para que María los revise/ajuste sin
+// recompilar. Si ClinicalParams no está cargado (p. ej. algún test), se cae a los
+// valores por defecto del borrador.
 String _bandForIndex(double idx) {
-  if (idx > 150) return 'Mortal';
-  if (idx >= 101) return 'Crítico';
-  if (idx >= 71) return 'Grave';
-  if (idx >= 41) return 'Moderado';
+  final p = ClinicalParams.isLoaded ? ClinicalParams.instance : null;
+  if (idx > (p?.garcesMortalAbove ?? 150)) return 'Mortal';
+  if (idx >= (p?.garcesCriticoMin ?? 101)) return 'Crítico';
+  if (idx >= (p?.garcesGraveMin ?? 71)) return 'Grave';
+  if (idx >= (p?.garcesModeradoMin ?? 41)) return 'Moderado';
   return 'Leve';
+}
+
+/// Criterio de hospitalización ABA (borrador). Cortes en ClinicalParams.
+bool _abaCriterio({
+  required String? profundidad,
+  required double scq,
+  required int edad,
+}) {
+  final p = ClinicalParams.isLoaded ? ClinicalParams.instance : null;
+  final scq2 = p?.aba2doGradoScqAbovePct ?? 10;
+  final scq3 = p?.aba3erGradoScqAbovePct ?? 5;
+  final edadPed = p?.abaEdadPediatricaBelow ?? 10;
+  final edadAdm = p?.abaEdadAdultoMayorAbove ?? 50;
+  final segundo =
+      profundidad == 'SEGUNDO_SUP' || profundidad == 'SEGUNDO_PROF';
+  return (segundo && scq > scq2 && (edad < edadPed || edad > edadAdm)) ||
+      (profundidad == 'TERCER_GRADO' && scq > scq3);
 }
 
 /// Sheet de Quemaduras: profundidad (clasificación) + superficie por tipo (A/AB/B)
@@ -56,12 +79,9 @@ Future<QuemaduraResult?> showQuemadurasSheet(
         final indice = manual
             ? (double.tryParse(manualCtrl.text.trim().replaceAll(',', '.')))
             : indiceGuiado;
-        // Criterio ABA (aprox., borrador): 2º grado >10% SCQ en <10 o >50 años;
-        // cualquier 3er grado >5% SCQ.
-        final segundo =
-            profundidad == 'SEGUNDO_SUP' || profundidad == 'SEGUNDO_PROF';
-        final abaCrit = (segundo && scq > 10 && (edad < 10 || edad > 50)) ||
-            (profundidad == 'TERCER_GRADO' && scq > 5);
+        // Criterio ABA (borrador): cortes en ClinicalParams (revisables por María).
+        final abaCrit =
+            _abaCriterio(profundidad: profundidad, scq: scq, edad: edad);
         final valid = indice != null && (manual || profundidad != null);
         final band = indice == null ? null : _bandForIndex(indice);
         final critico = band == 'Crítico' || band == 'Mortal';
@@ -203,10 +223,8 @@ Future<QuemaduraResult?> showQuemadurasSheet(
       : (pa * 1 + pab * 2 + pb * 3 + edad);
   if (indice == null) return null;
   final scq = pa + pab + pb;
-  final segundo = profundidad == 'SEGUNDO_SUP' || profundidad == 'SEGUNDO_PROF';
   final abaCrit = !manual &&
-      ((segundo && scq > 10 && (edad < 10 || edad > 50)) ||
-          (profundidad == 'TERCER_GRADO' && scq > 5));
+      _abaCriterio(profundidad: profundidad, scq: scq, edad: edad);
   final notes = notesCtrl.text.trim().isEmpty ? null : notesCtrl.text.trim();
   return (
     band: _bandForIndex(indice),

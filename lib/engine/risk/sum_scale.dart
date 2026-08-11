@@ -2,6 +2,8 @@ import 'dart:convert';
 
 import 'package:flutter/services.dart' show rootBundle;
 
+import '../params/clinical_params.dart';
+
 /// Rango de área (cm²) → puntos, para ítems de tipo 'area' (PUSH). Se evalúa el
 /// primer rango cuyo `maxLtE` cubre el área; si ninguno, `overflowPoints`.
 class AreaRange {
@@ -101,16 +103,45 @@ class SumScaleDef {
     );
   }
 
+  /// Devuelve una copia con el [threshold] de interpretación sustituido.
+  SumScaleDef _withThreshold(int t) => SumScaleDef(
+        scaleId: scaleId,
+        title: title,
+        totalMin: totalMin,
+        totalMax: totalMax,
+        draft: draft,
+        items: items,
+        threshold: t,
+        aboveLabel: aboveLabel,
+      );
+
   static final Map<String, SumScaleDef> _cache = {};
 
+  /// Escalas cuyo umbral de interpretación es parametrizable vía ClinicalParams
+  /// (revisable por María). scale_id → clave de umbral en thresholds.json.
+  static const Map<String, String> _thresholdParamKey = {
+    'ASEPSIS': 'asepsis_isq_above',
+  };
+
   /// Carga la definición de una escala SUMA por su id (assets/engine/scales/<id>.json).
+  /// El asset se cachea sin cambios; el umbral parametrizable se resuelve desde
+  /// ClinicalParams en CADA llamada (así un cambio del master surte efecto sin
+  /// invalidar la caché del asset).
   static Future<SumScaleDef> load(String scaleId) async {
-    final cached = _cache[scaleId];
-    if (cached != null) return cached;
-    final raw = await rootBundle
-        .loadString('assets/engine/scales/${scaleId.toLowerCase()}.json');
-    final def = SumScaleDef.fromJson(jsonDecode(raw) as Map<String, dynamic>);
-    _cache[scaleId] = def;
+    var def = _cache[scaleId];
+    if (def == null) {
+      final raw = await rootBundle
+          .loadString('assets/engine/scales/${scaleId.toLowerCase()}.json');
+      def = SumScaleDef.fromJson(jsonDecode(raw) as Map<String, dynamic>);
+      _cache[scaleId] = def;
+    }
+    final paramKey = _thresholdParamKey[scaleId.toUpperCase()];
+    if (paramKey != null && ClinicalParams.isLoaded) {
+      final v = ClinicalParams.instance.thresholds[paramKey];
+      if (v != null && v.toInt() != def.threshold) {
+        def = def._withThreshold(v.toInt());
+      }
+    }
     return def;
   }
 }

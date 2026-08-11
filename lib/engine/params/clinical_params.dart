@@ -121,6 +121,12 @@ class ClinicalParams {
     return v;
   }
 
+  /// Como [_t] pero con valor por defecto si la clave no está presente. Se usa
+  /// para umbrales OPCIONALES (p. ej. escalas del módulo de hospitalización que
+  /// no forman parte de [_requiredThresholdKeys]): así un override guardado en
+  /// BD anterior a estas claves no rompe (cae al default del asset vigente).
+  num _tOr(String key, num fallback) => thresholds[key] ?? fallback;
+
   /// Esfacelo+necrosis mínimo (%) para desbridar.
   double get debridementCompositionMinPct =>
       _t('debridement_composition_min_pct').toDouble();
@@ -159,6 +165,45 @@ class ClinicalParams {
 
   /// Albúmina (g/dL) mínima para déficit leve (por debajo = déficit).
   double get albuminaMildMin => _t('albumina_mild_min').toDouble();
+
+  // --- Escalas del módulo de hospitalización (BORRADOR pendiente de validación
+  // clínica de María). Umbrales OPCIONALES con fallback: si un override en BD no
+  // los trae, se usa el valor por defecto. Consumidos por la escala de Quemaduras
+  // (índice de Garcés + criterio ABA) y ASEPSIS.
+
+  /// Índice de Garcés mínimo (inclusive) para banda "Moderado".
+  double get garcesModeradoMin => _tOr('garces_moderado_min', 41).toDouble();
+
+  /// Índice de Garcés mínimo (inclusive) para banda "Grave".
+  double get garcesGraveMin => _tOr('garces_grave_min', 71).toDouble();
+
+  /// Índice de Garcés mínimo (inclusive) para banda "Crítico".
+  double get garcesCriticoMin => _tOr('garces_critico_min', 101).toDouble();
+
+  /// Índice de Garcés por encima del cual (estricto) el pronóstico es "Mortal".
+  double get garcesMortalAbove => _tOr('garces_mortal_above', 150).toDouble();
+
+  /// SCQ (%) por encima del cual (estricto) un 2º grado cumple criterio ABA
+  /// (en edad extrema).
+  double get aba2doGradoScqAbovePct =>
+      _tOr('aba_2do_grado_scq_above_pct', 10).toDouble();
+
+  /// SCQ (%) por encima del cual (estricto) cualquier 3er grado cumple ABA.
+  double get aba3erGradoScqAbovePct =>
+      _tOr('aba_3er_grado_scq_above_pct', 5).toDouble();
+
+  /// Edad por debajo de la cual (estricto) se considera edad extrema pediátrica
+  /// para el criterio ABA.
+  int get abaEdadPediatricaBelow => _tOr('aba_edad_pediatrica_below', 10).toInt();
+
+  /// Edad por encima de la cual (estricto) se considera edad extrema adulto
+  /// mayor para el criterio ABA.
+  int get abaEdadAdultoMayorAbove =>
+      _tOr('aba_edad_adulto_mayor_above', 50).toInt();
+
+  /// Puntaje ASEPSIS por encima del cual (estricto) hay infección de sitio
+  /// quirúrgico.
+  double get asepsisIsqAbove => _tOr('asepsis_isq_above', 20).toDouble();
 
   /// Banda de compresión para un ITB medido [v]. Recorre las bandas de datos.
   ItbCompresionBand itbBandFor(double v) {
