@@ -41,14 +41,14 @@
       "scale_id": "PUSH",
       "label": "PUSH · Seguimiento de cicatrización",
       "priority": "sugerida",
-      "implemented": false,
+      "implemented": true,
       "when": { "hasActiveWound": true, "bradenMax": 12 }
     },
     {
       "scale_id": "RESVECH",
       "label": "RESVECH 2.0 · Valoración integral de la herida",
       "priority": "sugerida",
-      "implemented": false,
+      "implemented": true,
       "when": { "hasActiveWound": true, "bradenMax": 12 }
     },
     {

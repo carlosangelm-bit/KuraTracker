@@ -1,0 +1,84 @@
+{
+  "scale_id": "RESVECH",
+  "title": "RESVECH 2.0 · Valoración integral de la herida",
+  "total_min": 0,
+  "total_max": 35,
+  "draft": true,
+  "items": [
+    {
+      "id": "dimensiones",
+      "label": "Dimensiones de la lesión",
+      "type": "radio",
+      "options": [
+        { "score": 0, "label": "0 (cicatrizada)" },
+        { "score": 1, "label": "< 4 cm²" },
+        { "score": 2, "label": "4–16 cm²" },
+        { "score": 3, "label": "16–36 cm²" },
+        { "score": 4, "label": "36–64 cm²" },
+        { "score": 5, "label": "64–100 cm²" },
+        { "score": 6, "label": "> 100 cm²" }
+      ]
+    },
+    {
+      "id": "profundidad",
+      "label": "Profundidad / tejidos afectados",
+      "type": "radio",
+      "options": [
+        { "score": 0, "label": "Piel íntegra / cicatrizada" },
+        { "score": 1, "label": "Epidermis" },
+        { "score": 2, "label": "Dermis" },
+        { "score": 3, "label": "Tejido subcutáneo" },
+        { "score": 4, "label": "Fascia / músculo" },
+        { "score": 5, "label": "Hueso / estructuras" }
+      ]
+    },
+    {
+      "id": "bordes",
+      "label": "Bordes",
+      "type": "radio",
+      "options": [
+        { "score": 0, "label": "No distinguibles (cerrado)" },
+        { "score": 1, "label": "Difusos" },
+        { "score": 2, "label": "Delimitados" },
+        { "score": 3, "label": "Dañados" },
+        { "score": 4, "label": "Engrosados / evertidos" }
+      ]
+    },
+    {
+      "id": "tejido_lecho",
+      "label": "Tipo de tejido en el lecho",
+      "type": "radio",
+      "options": [
+        { "score": 0, "label": "Cerrado / epitelial" },
+        { "score": 1, "label": "Granulación" },
+        { "score": 2, "label": "Esfacelo" },
+        { "score": 3, "label": "Necrótico" },
+        { "score": 4, "label": "Necrótico + esfacelo" }
+      ]
+    },
+    {
+      "id": "exudado",
+      "label": "Exudado",
+      "type": "radio",
+      "options": [
+        { "score": 0, "label": "Ausente" },
+        { "score": 1, "label": "Ligero" },
+        { "score": 2, "label": "Moderado" },
+        { "score": 3, "label": "Abundante" },
+        { "score": 4, "label": "Muy abundante" }
+      ]
+    },
+    {
+      "id": "infeccion",
+      "label": "Infección / inflamación",
+      "type": "radio",
+      "options": [
+        { "score": 0, "label": "Sin signos" },
+        { "score": 3, "label": "Signos leves" },
+        { "score": 6, "label": "Signos moderados" },
+        { "score": 9, "label": "Signos marcados" },
+        { "score": 12, "label": "Infección / biofilm evidente" }
+      ]
+    }
+  ]
+}

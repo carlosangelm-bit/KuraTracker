@@ -10,10 +10,12 @@ import '../../models/center_type.dart';
 import '../../engine/risk/prevention_risk_engine.dart';
 import '../../engine/risk/braden_scale.dart';
 import '../../engine/risk/scale_applicability.dart';
+import '../../engine/risk/sum_scale.dart';
 import 'braden_scale_sheet.dart';
 import 'globiad_sheet.dart';
 import 'istap_sheet.dart';
 import 'star_sheet.dart';
+import 'sum_scale_sheet.dart';
 import 'triage_sheet.dart';
 import '../../models/app_user.dart';
 import '../../models/patient.dart';
@@ -80,6 +82,29 @@ class _PatientRiskScreenState extends ConsumerState<PatientRiskScreen> {
   /// tratamiento a la bitácora si corresponde. Un dispatcher por scaleId: agregar
   /// una escala nueva = un case aquí + su hoja + su regla de aplicabilidad.
   Future<void> _assessScale(DataRepository repo, String scaleId) async {
+    // Escalas tipo SUMA (PUSH/RESVECH/…): definición en asset, total 0..max.
+    if (scaleId == 'PUSH' || scaleId == 'RESVECH') {
+      final def = await SumScaleDef.load(scaleId);
+      if (!mounted) return;
+      final r = await showSumScaleSheet(context, def);
+      if (r == null || !mounted) return;
+      final session = ref.read(sessionProvider);
+      await repo.addScaleAssessment(
+        patientId: widget.patientId,
+        organizationId: session.user?.organizationId,
+        scaleId: scaleId,
+        scaleVersion: def.draft ? '2.0-draft' : '1.0',
+        totalScore: r.total,
+        subscores: r.subscores,
+        notes: r.notes,
+        staffId: await _staffId(repo),
+      );
+      if (!mounted) return;
+      setState(() {});
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('$scaleId total ${r.total.toStringAsFixed(0)} registrado')));
+      return;
+    }
     ({String category, Map<String, dynamic> subscores, String? notes})? res;
     switch (scaleId) {
       case 'GLOBIAD':
@@ -194,8 +219,8 @@ class _PatientRiskScreenState extends ConsumerState<PatientRiskScreen> {
   Widget _scaleRow(DataRepository repo, ApplicableScale s) {
     final obligatoria = s.priority == ScalePriority.obligatoria;
     final chipColor = obligatoria ? KuraColors.danger : KuraColors.primary;
-    final doneCat =
-        repo.latestScaleAssessment(widget.patientId, s.scaleId)?.categoryResult;
+    final last = repo.latestScaleAssessment(widget.patientId, s.scaleId);
+    final doneCat = last?.categoryResult ?? last?.totalScore?.toStringAsFixed(0);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 5),
       child: Row(
