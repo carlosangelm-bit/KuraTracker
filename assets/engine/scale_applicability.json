@@ -106,14 +106,14 @@
       "scale_id": "MARSI",
       "label": "MARSI · Lesión por adhesivo médico",
       "priority": "sugerida",
-      "implemented": false,
+      "implemented": true,
       "when": { "triage": "adhesivo" }
     },
     {
       "scale_id": "QUEMADURA",
       "label": "Quemaduras · Profundidad + índice de Garcés",
       "priority": "obligatoria",
-      "implemented": false,
+      "implemented": true,
       "when": { "triage": "quemadura" }
     }
   ]
