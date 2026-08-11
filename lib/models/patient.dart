@@ -39,6 +39,9 @@ class Patient {
   final ActividadFisica? physicalActivity; // APNP
   final String? apnpNotes; // APNP libre
   final bool isActive;
+  // Depuración de expedientes (0086): fecha en que se archivó (ocultó de listas
+  // y tableros). null = expediente vigente. Reversible; no borra datos ligados.
+  final DateTime? archivedAt;
   final DateTime createdAt;
   // Centro (organizacion) dueno del expediente. Ver 0011_organizations.sql:
   // patients.organization_id (not null) -- aisla el expediente entre
@@ -79,9 +82,13 @@ class Patient {
     this.physicalActivity,
     this.apnpNotes,
     this.isActive = true,
+    this.archivedAt,
     required this.createdAt,
     this.organizationId,
   });
+
+  /// Expediente archivado (depurado): oculto de listas y tableros. Reversible.
+  bool get isArchived => archivedAt != null;
 
   /// IMC calculado a partir de peso/talla basales (kg/m²), o null si faltan.
   double? get bmi {
@@ -142,6 +149,9 @@ class Patient {
             ActividadFisicaX.fromDb(json['physical_activity'] as String?),
         apnpNotes: json['apnp_notes'] as String?,
         isActive: json['is_active'] as bool? ?? true,
+        archivedAt: json['archived_at'] == null
+            ? null
+            : DateTime.parse(json['archived_at'] as String),
         createdAt: DateTime.parse(json['created_at'] as String),
         organizationId: json['organization_id'] as String?,
       );
@@ -180,6 +190,7 @@ class Patient {
         'physical_activity': physicalActivity?.dbValue,
         'apnp_notes': apnpNotes,
         'is_active': isActive,
+        'archived_at': archivedAt?.toIso8601String(),
         'created_at': createdAt.toIso8601String(),
         'organization_id': organizationId,
       };
