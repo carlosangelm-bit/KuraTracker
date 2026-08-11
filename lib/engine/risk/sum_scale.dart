@@ -70,6 +70,10 @@ class SumScaleDef {
   final int totalMax;
   final bool draft;
   final List<SumItem> items;
+  // Interpretación por umbral: si total > threshold → aboveLabel (p. ej. ASEPSIS
+  // > 20 = "Infección de sitio quirúrgico"). null = sin interpretación.
+  final int? threshold;
+  final String? aboveLabel;
   const SumScaleDef({
     required this.scaleId,
     required this.title,
@@ -77,18 +81,25 @@ class SumScaleDef {
     required this.totalMax,
     required this.draft,
     required this.items,
+    this.threshold,
+    this.aboveLabel,
   });
 
-  factory SumScaleDef.fromJson(Map<String, dynamic> j) => SumScaleDef(
-        scaleId: j['scale_id'] as String,
-        title: (j['title'] as String?) ?? j['scale_id'] as String,
-        totalMin: (j['total_min'] as num?)?.toInt() ?? 0,
-        totalMax: (j['total_max'] as num?)?.toInt() ?? 0,
-        draft: j['draft'] as bool? ?? false,
-        items: ((j['items'] as List?) ?? const [])
-            .map((e) => SumItem.fromJson((e as Map).cast<String, dynamic>()))
-            .toList(),
-      );
+  factory SumScaleDef.fromJson(Map<String, dynamic> j) {
+    final interp = (j['interpretation'] as Map?)?.cast<String, dynamic>();
+    return SumScaleDef(
+      scaleId: j['scale_id'] as String,
+      title: (j['title'] as String?) ?? j['scale_id'] as String,
+      totalMin: (j['total_min'] as num?)?.toInt() ?? 0,
+      totalMax: (j['total_max'] as num?)?.toInt() ?? 0,
+      draft: j['draft'] as bool? ?? false,
+      items: ((j['items'] as List?) ?? const [])
+          .map((e) => SumItem.fromJson((e as Map).cast<String, dynamic>()))
+          .toList(),
+      threshold: (interp?['threshold'] as num?)?.toInt(),
+      aboveLabel: interp?['above'] as String?,
+    );
+  }
 
   static final Map<String, SumScaleDef> _cache = {};
 

@@ -13,6 +13,7 @@ import '../../engine/risk/scale_applicability.dart';
 import '../../engine/risk/sum_scale.dart';
 import 'braden_scale_sheet.dart';
 import 'globiad_sheet.dart';
+import 'extravasacion_sheet.dart';
 import 'istap_sheet.dart';
 import 'marsi_sheet.dart';
 import 'quemaduras_sheet.dart';
@@ -84,8 +85,8 @@ class _PatientRiskScreenState extends ConsumerState<PatientRiskScreen> {
   /// tratamiento a la bitácora si corresponde. Un dispatcher por scaleId: agregar
   /// una escala nueva = un case aquí + su hoja + su regla de aplicabilidad.
   Future<void> _assessScale(DataRepository repo, String scaleId) async {
-    // Escalas tipo SUMA (PUSH/RESVECH/…): definición en asset, total 0..max.
-    if (scaleId == 'PUSH' || scaleId == 'RESVECH') {
+    // Escalas tipo SUMA (PUSH/RESVECH/ASEPSIS): definición en asset, total 0..max.
+    if (scaleId == 'PUSH' || scaleId == 'RESVECH' || scaleId == 'ASEPSIS') {
       final def = await SumScaleDef.load(scaleId);
       if (!mounted) return;
       final r = await showSumScaleSheet(context, def);
@@ -101,6 +102,11 @@ class _PatientRiskScreenState extends ConsumerState<PatientRiskScreen> {
         notes: r.notes,
         staffId: await _staffId(repo),
       );
+      if (scaleId == 'ASEPSIS') {
+        await repo.applyAsepsisTreatment(widget.patientId, r.total,
+            organizationId: session.user?.organizationId,
+            createdBy: session.user?.id);
+      }
       if (!mounted) return;
       setState(() {});
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -152,6 +158,9 @@ class _PatientRiskScreenState extends ConsumerState<PatientRiskScreen> {
       case 'MARSI':
         res = await showMarsiSheet(context);
         break;
+      case 'EXTRAVASACION':
+        res = await showExtravasacionSheet(context);
+        break;
       default:
         return;
     }
@@ -179,6 +188,9 @@ class _PatientRiskScreenState extends ConsumerState<PatientRiskScreen> {
       }
     } else if (scaleId == 'STAR') {
       await repo.applyStarTreatment(widget.patientId, res.category,
+          organizationId: orgId, createdBy: by);
+    } else if (scaleId == 'EXTRAVASACION') {
+      await repo.applyExtravasacionTreatment(widget.patientId, res.category,
           organizationId: orgId, createdBy: by);
     }
     if (!mounted) return;
