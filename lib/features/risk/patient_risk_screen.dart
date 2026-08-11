@@ -9,8 +9,10 @@ import '../../core/providers/session_provider.dart';
 import '../../models/center_type.dart';
 import '../../engine/risk/prevention_risk_engine.dart';
 import '../../engine/risk/braden_scale.dart';
+import '../../engine/risk/scale_applicability.dart';
 import 'braden_scale_sheet.dart';
 import 'globiad_sheet.dart';
+import 'triage_sheet.dart';
 import '../../models/app_user.dart';
 import '../../models/patient.dart';
 import '../../models/patient_admission.dart';
@@ -105,6 +107,129 @@ class _PatientRiskScreenState extends ConsumerState<PatientRiskScreen> {
       content: Text('GLOBIAD ${res.category} registrada'
           '${res.category.startsWith('2') ? ' · control de humedad agendado en la bitácora' : ''}'),
     ));
+  }
+
+  /// Triage de valoración: captura las señales y las guarda; la aplicabilidad se
+  /// recalcula sola en el build.
+  Future<void> _doTriage(DataRepository repo) async {
+    final last = repo.latestTriage(widget.patientId)?.subscores;
+    final initial = last == null
+        ? null
+        : {for (final e in last.entries) e.key: e.value == true};
+    final answers = await showTriageSheet(context, initial: initial);
+    if (answers == null || !mounted) return;
+    final session = ref.read(sessionProvider);
+    await repo.saveTriage(
+      widget.patientId,
+      organizationId: session.user?.organizationId,
+      answers: answers,
+      staffId: await _staffId(repo),
+    );
+    if (mounted) setState(() {});
+  }
+
+  Widget _scalesToDoCard(
+      DataRepository repo, List<ApplicableScale> applicable, bool hasTriage) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 10, 14, 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Expanded(
+                  child: Text('Escalas a realizar',
+                      style:
+                          TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
+                ),
+                TextButton.icon(
+                  onPressed: () => _doTriage(repo),
+                  icon: const Icon(Icons.fact_check_outlined, size: 18),
+                  label: Text(hasTriage ? 'Rehacer triage' : 'Triage'),
+                ),
+              ],
+            ),
+            if (!hasTriage)
+              Text(
+                  'Haz el triage para determinar las escalas del paciente '
+                  '(la diabetes, las heridas y el Braden ya se consideran).',
+                  style: TextStyle(
+                      fontSize: 12,
+                      color: KuraColors.darkText.withValues(alpha: 0.6))),
+            if (applicable.isEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Text('Sin escalas adicionales por ahora.',
+                    style: TextStyle(
+                        fontSize: 12,
+                        color: KuraColors.darkText.withValues(alpha: 0.6))),
+              )
+            else
+              for (final s in applicable) _scaleRow(repo, s),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _scaleRow(DataRepository repo, ApplicableScale s) {
+    final obligatoria = s.priority == ScalePriority.obligatoria;
+    final chipColor = obligatoria ? KuraColors.danger : KuraColors.primary;
+    final doneCat = s.scaleId == 'GLOBIAD'
+        ? repo.latestScaleAssessment(widget.patientId, 'GLOBIAD')?.categoryResult
+        : null;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 5),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(s.label,
+                    style: const TextStyle(
+                        fontSize: 13, fontWeight: FontWeight.w600)),
+                const SizedBox(height: 2),
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 6, vertical: 1),
+                      decoration: BoxDecoration(
+                        color: chipColor.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(obligatoria ? 'Obligatoria' : 'Sugerida',
+                          style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                              color: chipColor)),
+                    ),
+                    if (doneCat != null) ...[
+                      const SizedBox(width: 6),
+                      Text('Resultado: $doneCat',
+                          style: const TextStyle(
+                              fontSize: 11, color: KuraColors.primary)),
+                    ],
+                  ],
+                ),
+              ],
+            ),
+          ),
+          if (s.implemented && s.scaleId == 'GLOBIAD')
+            TextButton(
+              onPressed: () => _assessGlobiad(repo),
+              child: Text(doneCat != null ? 'Revalorar' : 'Valorar'),
+            )
+          else
+            Text('Próximamente',
+                style: TextStyle(
+                    fontSize: 12,
+                    color: KuraColors.darkText.withValues(alpha: 0.4))),
+        ],
+      ),
+    );
   }
 
   Future<void> _admit(DataRepository repo) async {
@@ -236,6 +361,7 @@ class _PatientRiskScreenState extends ConsumerState<PatientRiskScreen> {
     final repoAsync = ref.watch(dataRepositoryProvider);
     final rulesAsync = ref.watch(preventionRulesProvider);
     final scale = ref.watch(bradenScaleProvider).valueOrNull;
+    final applicabilityCat = ref.watch(scaleApplicabilityProvider).valueOrNull;
     // Solo clínico/admin pueden DEFINIR el plan de cuidados. Enfermería (y
     // cuidador) solo lo consultan y ejecutan las tareas en las rondas.
     final canDefinePlan = ref.watch(sessionProvider).user?.canDiagnose == true;
@@ -281,17 +407,13 @@ class _PatientRiskScreenState extends ConsumerState<PatientRiskScreen> {
             final admission = repo.activeAdmission(widget.patientId);
             final braden = repo.latestRiskAssessment(widget.patientId);
 
-            // Escalas aplicables (routing por características del paciente).
-            // GLOBIAD (DAI) aplica con piel húmeda (subescala humedad de Braden
-            // ≤2 = húmeda/muy húmeda) y riesgo ≥ MEDIO (Braden ≤17).
-            final humedadSub =
-                (braden?.bradenSubscores?['humedad'] as num?)?.toInt();
-            final globiadApplicable = humedadSub != null &&
-                humedadSub <= 2 &&
-                braden?.bradenScore != null &&
-                braden!.bradenScore! <= 17;
-            final lastGlobiad =
-                repo.latestScaleAssessment(widget.patientId, 'GLOBIAD');
+            // Escalas a realizar (routing por triage + expediente). El motor de
+            // aplicabilidad decide cuáles aplican; la captura de cada una vive en
+            // su escala (por ahora, GLOBIAD implementada).
+            final applicable = applicabilityCat == null
+                ? <ApplicableScale>[]
+                : repo.applicableScales(widget.patientId, applicabilityCat);
+            final hasTriage = repo.latestTriage(widget.patientId) != null;
 
             return ListView(
               padding: const EdgeInsets.all(20),
@@ -334,6 +456,9 @@ class _PatientRiskScreenState extends ConsumerState<PatientRiskScreen> {
                     onPressed: () => context.push('/prevention-agenda'),
                   ),
                 const SizedBox(height: 16),
+                // Escalas a realizar: derivadas del triage + expediente.
+                _scalesToDoCard(repo, applicable, hasTriage),
+                const SizedBox(height: 16),
                 // Tarjetas de la ficha: en desktop refluyen a 2-3 columnas para
                 // aprovechar el ancho; en móvil quedan apiladas.
                 ResponsiveColumns(
@@ -369,22 +494,6 @@ class _PatientRiskScreenState extends ConsumerState<PatientRiskScreen> {
                         child: const Text('Valorar'),
                       ),
                     ),
-                    // GLOBIAD (DAI): aparece cuando es aplicable (piel húmeda +
-                    // riesgo) o cuando ya hay una valoración previa.
-                    if (globiadApplicable || lastGlobiad != null)
-                      _InfoTile(
-                        icon: Icons.opacity_outlined,
-                        title: 'GLOBIAD · Dermatitis por humedad',
-                        body: lastGlobiad?.categoryResult != null
-                            ? 'Resultado: ${lastGlobiad!.categoryResult}'
-                                ' · ${_dateFmt.format(lastGlobiad.assessedAt)}'
-                            : 'Sugerida: piel húmeda con riesgo. Clasifica la DAI.',
-                        action: TextButton(
-                          onPressed: () => _assessGlobiad(repo),
-                          child: Text(
-                              lastGlobiad != null ? 'Revalorar' : 'Valorar'),
-                        ),
-                      ),
                     // Indicaciones libres del profesional para el cuidador (0044).
                     // No aplican en hospital (sin cuidador externo).
                     if (!isHospital)

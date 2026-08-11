@@ -79,6 +79,7 @@ flutter:
     - assets/engine/kura_clinical_adjustments.json
     - assets/engine/prevention_rules.json
     - assets/engine/braden_scale.json
+    - assets/engine/scale_applicability.json
     - assets/engine/clinical/thresholds.json
     - assets/engine/clinical/archetypes.json
     - assets/data/cie10_heridas.json

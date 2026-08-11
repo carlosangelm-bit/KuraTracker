@@ -1,0 +1,120 @@
+{
+  "version": "0.1-draft",
+  "note": "Routing de aplicabilidad de escalas del módulo de hospitalización. Núcleo LCRD (GLOBIAD/ISTAP/STAR/PUSH/RESVECH) se dispara desde la banda/subescalas de Braden; las complementarias (Wagner/CEAP/…) por etiología/comorbilidad, en paralelo. 'implemented'=true significa que ya hay captura construida. Borrador PENDIENTE de validación clínica.",
+  "scales": [
+    {
+      "scale_id": "GLOBIAD",
+      "label": "GLOBIAD · Dermatitis por humedad (DAI)",
+      "priority": "sugerida",
+      "implemented": true,
+      "when": {
+        "bradenMax": 17,
+        "any": [
+          { "triage": "incontinencia" },
+          { "comorbilidad": "incontinencia" },
+          { "bradenHumedadMax": 2 }
+        ]
+      }
+    },
+    {
+      "scale_id": "NPIAP",
+      "label": "NPIAP/EPUAP · Estadificación de LPP",
+      "priority": "sugerida",
+      "implemented": false,
+      "when": { "woundEtiology": "lpp" }
+    },
+    {
+      "scale_id": "ISTAP",
+      "label": "ISTAP · Desgarro cutáneo (skin tear)",
+      "priority": "sugerida",
+      "implemented": false,
+      "when": { "triage": "desgarro" }
+    },
+    {
+      "scale_id": "STAR",
+      "label": "STAR · Desgarro cutáneo (colgajo/color)",
+      "priority": "sugerida",
+      "implemented": false,
+      "when": { "triage": "desgarro" }
+    },
+    {
+      "scale_id": "PUSH",
+      "label": "PUSH · Seguimiento de cicatrización",
+      "priority": "sugerida",
+      "implemented": false,
+      "when": { "hasActiveWound": true, "bradenMax": 12 }
+    },
+    {
+      "scale_id": "RESVECH",
+      "label": "RESVECH 2.0 · Valoración integral de la herida",
+      "priority": "sugerida",
+      "implemented": false,
+      "when": { "hasActiveWound": true, "bradenMax": 12 }
+    },
+    {
+      "scale_id": "WAGNER",
+      "label": "Wagner · Pie diabético",
+      "priority": "obligatoria",
+      "implemented": false,
+      "when": {
+        "comorbilidad": "diabetesmellitus",
+        "any": [
+          { "woundEtiology": "pieDiabetico" },
+          { "triage": "lesion_pie" }
+        ]
+      }
+    },
+    {
+      "scale_id": "CEAP",
+      "label": "CEAP · Enfermedad venosa crónica",
+      "priority": "sugerida",
+      "implemented": false,
+      "when": {
+        "any": [
+          { "woundEtiology": "vascular" },
+          { "comorbilidad": "insuficienciavenosacronica" }
+        ]
+      }
+    },
+    {
+      "scale_id": "ASEPSIS",
+      "label": "ASEPSIS · Infección de sitio quirúrgico",
+      "priority": "sugerida",
+      "implemented": false,
+      "when": {
+        "any": [
+          { "woundEtiology": "quirurgica" },
+          { "triage": "herida_quirurgica" }
+        ]
+      }
+    },
+    {
+      "scale_id": "EXTRAVASACION",
+      "label": "Extravasación · Lesión por vesicante/irritante",
+      "priority": "obligatoria",
+      "implemented": false,
+      "when": { "triage": "iv_vesicante" }
+    },
+    {
+      "scale_id": "MDRPI",
+      "label": "MDRPI · LPP por dispositivo médico",
+      "priority": "sugerida",
+      "implemented": false,
+      "when": { "triage": "dispositivo" }
+    },
+    {
+      "scale_id": "MARSI",
+      "label": "MARSI · Lesión por adhesivo médico",
+      "priority": "sugerida",
+      "implemented": false,
+      "when": { "triage": "adhesivo" }
+    },
+    {
+      "scale_id": "QUEMADURA",
+      "label": "Quemaduras · Profundidad + índice de Garcés",
+      "priority": "obligatoria",
+      "implemented": false,
+      "when": { "triage": "quemadura" }
+    }
+  ]
+}
