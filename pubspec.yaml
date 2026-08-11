@@ -80,6 +80,7 @@ flutter:
     - assets/engine/prevention_rules.json
     - assets/engine/braden_scale.json
     - assets/engine/scale_applicability.json
+    - assets/engine/scales/
     - assets/engine/clinical/thresholds.json
     - assets/engine/clinical/archetypes.json
     - assets/data/cie10_heridas.json
