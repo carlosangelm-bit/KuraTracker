@@ -3941,6 +3941,91 @@ class DataRepository {
     );
   }
 
+  /// Limpia las tareas AUTO futuras pendientes de una regla (idempotencia por
+  /// scale/rule). Compartido por los tratamientos de escala.
+  Future<void> _clearFutureRuleTasks(String patientId, String ruleId) async {
+    final now = DateTime.now();
+    final existing = _store
+        .getAll(Collections.preventiveTasks)
+        .map(PreventiveTask.fromJson)
+        .where((t) =>
+            t.patientId == patientId &&
+            t.ruleId == ruleId &&
+            t.isPending &&
+            !t.scheduledAt.isBefore(now))
+        .toList();
+    for (final t in existing) {
+      await _store.deleteRow(Collections.preventiveTasks, t.id);
+    }
+  }
+
+  /// ASEPSIS: total > 20 → infección de sitio quirúrgico; agenda confirmar/tratar
+  /// ISQ. Solo hospital. Idempotente ('asepsis').
+  Future<void> applyAsepsisTreatment(
+    String patientId,
+    double total, {
+    required String? organizationId,
+    String? createdBy,
+  }) async {
+    if (centerTypeFor(organizationId) != CenterType.hospital) return;
+    await _clearFutureRuleTasks(patientId, 'asepsis');
+    if (total <= 20) return;
+    await createPreventiveTask(
+      patientId: patientId,
+      organizationId: organizationId,
+      title: 'Confirmar y tratar infección de sitio quirúrgico (ASEPSIS > 20)',
+      scheduledAt: DateTime.now().add(const Duration(hours: 2)),
+      admissionId: activeAdmission(patientId)?.id,
+      ruleId: 'asepsis',
+      actionId: 'tratar_isq',
+      actionLabel: 'Confirmar/tratar ISQ',
+      source: 'auto',
+      createdBy: createdBy,
+    );
+  }
+
+  /// Extravasación: grado 1–4 → monitorización cada 4 h (24 h) + interconsulta a
+  /// cirugía plástica. Solo hospital. Idempotente ('extravasacion').
+  Future<void> applyExtravasacionTreatment(
+    String patientId,
+    String grado, {
+    required String? organizationId,
+    String? createdBy,
+  }) async {
+    if (centerTypeFor(organizationId) != CenterType.hospital) return;
+    await _clearFutureRuleTasks(patientId, 'extravasacion');
+    final g = int.tryParse(grado) ?? 0;
+    if (g < 1) return;
+    final now = DateTime.now();
+    final admissionId = activeAdmission(patientId)?.id;
+    for (var i = 1; i <= 6; i++) {
+      await createPreventiveTask(
+        patientId: patientId,
+        organizationId: organizationId,
+        title: 'Monitorización de extravasación (cada 4 h)',
+        scheduledAt: now.add(Duration(hours: 4 * i)),
+        admissionId: admissionId,
+        ruleId: 'extravasacion',
+        actionId: 'monitoreo_extravasacion',
+        actionLabel: 'Monitorización c/4 h',
+        source: 'auto',
+        createdBy: createdBy,
+      );
+    }
+    await createPreventiveTask(
+      patientId: patientId,
+      organizationId: organizationId,
+      title: 'Interconsulta a cirugía plástica (extravasación grado $g)',
+      scheduledAt: now.add(const Duration(hours: 1)),
+      admissionId: admissionId,
+      ruleId: 'extravasacion',
+      actionId: 'interconsulta_plastica',
+      actionLabel: 'Interconsulta cirugía plástica',
+      source: 'auto',
+      createdBy: createdBy,
+    );
+  }
+
   /// Computa el riesgo de un paciente AL VUELO (no se persiste): junta sus
   /// comorbilidades presentes + última Braden + heridas activas y aplica el
   /// catálogo de reglas. Devuelve nivel + alertas preventivas.

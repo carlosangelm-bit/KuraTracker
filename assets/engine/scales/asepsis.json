@@ -1,0 +1,82 @@
+{
+  "scale_id": "ASEPSIS",
+  "title": "ASEPSIS · Infección de sitio quirúrgico",
+  "total_min": 0,
+  "total_max": 55,
+  "draft": true,
+  "interpretation": { "threshold": 20, "above": "Infección de sitio quirúrgico" },
+  "items": [
+    {
+      "id": "trat_adicional",
+      "label": "Tratamiento adicional (ATB / drenaje / desbridamiento)",
+      "type": "radio",
+      "options": [
+        { "score": 0, "label": "Ninguno" },
+        { "score": 5, "label": "Drenaje" },
+        { "score": 10, "label": "Antibióticos o desbridamiento" }
+      ]
+    },
+    {
+      "id": "exudado_seroso",
+      "label": "Exudado seroso",
+      "type": "radio",
+      "options": [
+        { "score": 0, "label": "Ausente" },
+        { "score": 1, "label": "< 20% de la herida" },
+        { "score": 3, "label": "20–40%" },
+        { "score": 5, "label": "> 40%" }
+      ]
+    },
+    {
+      "id": "eritema",
+      "label": "Eritema",
+      "type": "radio",
+      "options": [
+        { "score": 0, "label": "Ausente" },
+        { "score": 1, "label": "< 20% de la herida" },
+        { "score": 3, "label": "20–40%" },
+        { "score": 5, "label": "> 40%" }
+      ]
+    },
+    {
+      "id": "exudado_purulento",
+      "label": "Exudado purulento",
+      "type": "radio",
+      "options": [
+        { "score": 0, "label": "Ausente" },
+        { "score": 3, "label": "< 20% de la herida" },
+        { "score": 6, "label": "20–40%" },
+        { "score": 10, "label": "> 40%" }
+      ]
+    },
+    {
+      "id": "separacion_tejidos",
+      "label": "Separación de tejidos profundos (dehiscencia)",
+      "type": "radio",
+      "options": [
+        { "score": 0, "label": "Ausente" },
+        { "score": 3, "label": "< 20% de la herida" },
+        { "score": 6, "label": "20–40%" },
+        { "score": 10, "label": "> 40%" }
+      ]
+    },
+    {
+      "id": "aislamiento_bacterias",
+      "label": "Aislamiento de bacterias",
+      "type": "radio",
+      "options": [
+        { "score": 0, "label": "No" },
+        { "score": 10, "label": "Sí" }
+      ]
+    },
+    {
+      "id": "estancia_mayor_14d",
+      "label": "Estancia hospitalaria > 14 días",
+      "type": "radio",
+      "options": [
+        { "score": 0, "label": "No" },
+        { "score": 5, "label": "Sí" }
+      ]
+    }
+  ]
+}

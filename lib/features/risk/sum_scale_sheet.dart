@@ -177,12 +177,18 @@ Future<({double total, Map<String, dynamic> subscores, String? notes})?>
                       child: Text(
                         total == null
                             ? 'Completa la valoración'
-                            : 'Total: $total / ${def.totalMax}',
+                            : 'Total: $total / ${def.totalMax}'
+                                '${def.threshold != null && total > def.threshold! ? ' · ${def.aboveLabel ?? ''}' : ''}',
                         style: TextStyle(
                             fontWeight: FontWeight.w700,
-                            color: valid
-                                ? KuraColors.primary
-                                : KuraColors.darkText.withValues(alpha: 0.6)),
+                            color: (def.threshold != null &&
+                                    total != null &&
+                                    total > def.threshold!)
+                                ? KuraColors.danger
+                                : (valid
+                                    ? KuraColors.primary
+                                    : KuraColors.darkText
+                                        .withValues(alpha: 0.6))),
                       ),
                     ),
                     FilledButton(

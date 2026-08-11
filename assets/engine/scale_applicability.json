@@ -80,7 +80,7 @@
       "scale_id": "ASEPSIS",
       "label": "ASEPSIS · Infección de sitio quirúrgico",
       "priority": "sugerida",
-      "implemented": false,
+      "implemented": true,
       "when": {
         "any": [
           { "woundEtiology": "quirurgica" },
@@ -92,7 +92,7 @@
       "scale_id": "EXTRAVASACION",
       "label": "Extravasación · Lesión por vesicante/irritante",
       "priority": "obligatoria",
-      "implemented": false,
+      "implemented": true,
       "when": { "triage": "iv_vesicante" }
     },
     {
