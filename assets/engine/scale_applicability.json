@@ -10,9 +10,15 @@
       "when": {
         "bradenMax": 17,
         "any": [
-          { "triage": "incontinencia" },
-          { "comorbilidad": "incontinencia" },
-          { "bradenHumedadMax": 2 }
+          {
+            "triage": "incontinencia"
+          },
+          {
+            "comorbilidad": "incontinencia"
+          },
+          {
+            "bradenHumedadMax": 2
+          }
         ]
       }
     },
@@ -20,47 +26,63 @@
       "scale_id": "NPIAP",
       "label": "NPIAP/EPUAP · Estadificación de LPP",
       "priority": "sugerida",
-      "implemented": false,
-      "when": { "woundEtiology": "lpp" }
+      "implemented": true,
+      "when": {
+        "woundEtiology": "lpp"
+      }
     },
     {
       "scale_id": "ISTAP",
       "label": "ISTAP · Desgarro cutáneo (skin tear)",
       "priority": "sugerida",
       "implemented": true,
-      "when": { "triage": "desgarro" }
+      "when": {
+        "triage": "desgarro"
+      }
     },
     {
       "scale_id": "STAR",
       "label": "STAR · Desgarro cutáneo (colgajo/color)",
       "priority": "sugerida",
       "implemented": true,
-      "when": { "triage": "desgarro" }
+      "when": {
+        "triage": "desgarro"
+      }
     },
     {
       "scale_id": "PUSH",
       "label": "PUSH · Seguimiento de cicatrización",
       "priority": "sugerida",
       "implemented": true,
-      "when": { "hasActiveWound": true, "bradenMax": 12 }
+      "when": {
+        "hasActiveWound": true,
+        "bradenMax": 12
+      }
     },
     {
       "scale_id": "RESVECH",
       "label": "RESVECH 2.0 · Valoración integral de la herida",
       "priority": "sugerida",
       "implemented": true,
-      "when": { "hasActiveWound": true, "bradenMax": 12 }
+      "when": {
+        "hasActiveWound": true,
+        "bradenMax": 12
+      }
     },
     {
       "scale_id": "WAGNER",
       "label": "Wagner · Pie diabético",
       "priority": "obligatoria",
-      "implemented": false,
+      "implemented": true,
       "when": {
         "comorbilidad": "diabetesmellitus",
         "any": [
-          { "woundEtiology": "pieDiabetico" },
-          { "triage": "lesion_pie" }
+          {
+            "woundEtiology": "pieDiabetico"
+          },
+          {
+            "triage": "lesion_pie"
+          }
         ]
       }
     },
@@ -68,11 +90,15 @@
       "scale_id": "CEAP",
       "label": "CEAP · Enfermedad venosa crónica",
       "priority": "sugerida",
-      "implemented": false,
+      "implemented": true,
       "when": {
         "any": [
-          { "woundEtiology": "vascular" },
-          { "comorbilidad": "insuficienciavenosacronica" }
+          {
+            "woundEtiology": "vascular"
+          },
+          {
+            "comorbilidad": "insuficienciavenosacronica"
+          }
         ]
       }
     },
@@ -83,8 +109,12 @@
       "implemented": true,
       "when": {
         "any": [
-          { "woundEtiology": "quirurgica" },
-          { "triage": "herida_quirurgica" }
+          {
+            "woundEtiology": "quirurgica"
+          },
+          {
+            "triage": "herida_quirurgica"
+          }
         ]
       }
     },
@@ -93,28 +123,36 @@
       "label": "Extravasación · Lesión por vesicante/irritante",
       "priority": "obligatoria",
       "implemented": true,
-      "when": { "triage": "iv_vesicante" }
+      "when": {
+        "triage": "iv_vesicante"
+      }
     },
     {
       "scale_id": "MDRPI",
       "label": "MDRPI · LPP por dispositivo médico",
       "priority": "sugerida",
-      "implemented": false,
-      "when": { "triage": "dispositivo" }
+      "implemented": true,
+      "when": {
+        "triage": "dispositivo"
+      }
     },
     {
       "scale_id": "MARSI",
       "label": "MARSI · Lesión por adhesivo médico",
       "priority": "sugerida",
       "implemented": true,
-      "when": { "triage": "adhesivo" }
+      "when": {
+        "triage": "adhesivo"
+      }
     },
     {
       "scale_id": "QUEMADURA",
       "label": "Quemaduras · Profundidad + índice de Garcés",
       "priority": "obligatoria",
       "implemented": true,
-      "when": { "triage": "quemadura" }
+      "when": {
+        "triage": "quemadura"
+      }
     }
   ]
 }

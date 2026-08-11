@@ -12,6 +12,7 @@ import '../../engine/risk/braden_scale.dart';
 import '../../engine/risk/scale_applicability.dart';
 import '../../engine/risk/sum_scale.dart';
 import 'braden_scale_sheet.dart';
+import 'category_sheet.dart';
 import 'globiad_sheet.dart';
 import 'extravasacion_sheet.dart';
 import 'istap_sheet.dart';
@@ -161,6 +162,60 @@ class _PatientRiskScreenState extends ConsumerState<PatientRiskScreen> {
       case 'EXTRAVASACION':
         res = await showExtravasacionSheet(context);
         break;
+      case 'NPIAP':
+        res = await showCategorySheet(context,
+            title: 'NPIAP/EPUAP · Estadificación de LPP',
+            subtitle: 'Estadio de la lesión por presión establecida.',
+            options: const [
+              ('I', 'Estadio I · Eritema no blanqueable, piel intacta'),
+              ('II', 'Estadio II · Pérdida parcial de la dermis'),
+              ('III', 'Estadio III · Pérdida total de la piel, grasa visible'),
+              ('IV', 'Estadio IV · Hueso / tendón / músculo expuestos'),
+              ('NO_CLASIFICABLE',
+                  'No clasificable · profundidad oculta por esfacelo/escara'),
+              ('SOSPECHA_TEJIDO_PROFUNDO',
+                  'Sospecha de lesión tisular profunda'),
+            ]);
+        break;
+      case 'WAGNER':
+        res = await showCategorySheet(context,
+            title: 'Wagner · Pie diabético',
+            options: const [
+              ('0', 'Grado 0 · Pie de riesgo, sin úlcera'),
+              ('1', 'Grado 1 · Úlcera superficial'),
+              ('2', 'Grado 2 · Úlcera profunda (sin hueso), infectada'),
+              ('3', 'Grado 3 · Absceso / sospecha de osteomielitis'),
+              ('4', 'Grado 4 · Gangrena localizada'),
+              ('5', 'Grado 5 · Gangrena extensa'),
+            ]);
+        break;
+      case 'CEAP':
+        res = await showCategorySheet(context,
+            title: 'CEAP · Enfermedad venosa (clínica)',
+            options: const [
+              ('C0', 'C0 · Sin signos visibles ni palpables'),
+              ('C1', 'C1 · Telangiectasias / venas reticulares'),
+              ('C2', 'C2 · Venas varicosas'),
+              ('C3', 'C3 · Edema'),
+              ('C4', 'C4 · Cambios cutáneos (pigmentación, eccema…)'),
+              ('C5', 'C5 · Cambios cutáneos con úlcera cicatrizada'),
+              ('C6', 'C6 · Cambios cutáneos con úlcera activa'),
+            ],
+            footnote:
+                'La compresión sugerida depende de la clase C; descartar '
+                'arteriopatía antes de comprimir (recomendación, no auto-prescripción).');
+        break;
+      case 'MDRPI':
+        res = await showCategorySheet(context,
+            title: 'MDRPI · LPP por dispositivo médico',
+            options: const [
+              ('MDR_S', 'Piel (MDR-S) · se estadifica con NPIAP'),
+              ('MDR_MM',
+                  'Mucosa (MDR-MM) · registro descriptivo, sin estadio NPIAP'),
+            ],
+            footnote:
+                'Si es MDR-S (piel), clasifica también con NPIAP.');
+        break;
       default:
         return;
     }
@@ -191,6 +246,10 @@ class _PatientRiskScreenState extends ConsumerState<PatientRiskScreen> {
           organizationId: orgId, createdBy: by);
     } else if (scaleId == 'EXTRAVASACION') {
       await repo.applyExtravasacionTreatment(widget.patientId, res.category,
+          organizationId: orgId, createdBy: by);
+    } else if (const {'NPIAP', 'WAGNER', 'CEAP', 'MDRPI'}.contains(scaleId)) {
+      await repo.applyCategoricalScaleTreatment(
+          widget.patientId, scaleId, res.category,
           organizationId: orgId, createdBy: by);
     }
     if (!mounted) return;
