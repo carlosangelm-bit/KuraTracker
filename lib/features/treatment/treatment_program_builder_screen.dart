@@ -9,6 +9,7 @@ import '../../models/note_option_catalog.dart';
 import '../../models/protocol_product_rule.dart';
 import '../../models/supply_product_mapping.dart';
 import '../../models/appointment.dart';
+import 'week_scheduler.dart';
 import '../../models/treatment_program.dart';
 import '../../services/acuity_service.dart';
 import '../../services/data_repository.dart';
@@ -201,7 +202,39 @@ class _TreatmentProgramBuilderScreenState
   }
 
   // ---- Sesiones ----
-  List<DateTime> get _sessions {
+  // Sesiones movidas a mano (arrastre en la rejilla semanal). null = usar las
+  // generadas por la cadencia. Se resetea cuando cambia la cadencia.
+  List<DateTime>? _editedSessions;
+
+  /// Sesiones efectivas: las editadas a mano si existen, si no las generadas.
+  List<DateTime> get _sessions => _editedSessions ?? _generatedSessions;
+
+  /// Mueve la sesión [i] a un nuevo día/hora (arrastre) y refresca conflictos.
+  void _moveSession(int i, DateTime newStart) {
+    final base = List<DateTime>.from(_sessions);
+    if (i < 0 || i >= base.length) return;
+    base[i] = newStart;
+    setState(() => _editedSessions = base);
+    _refreshConflicts().then((_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  /// ¿La sesión [i] se empalma? Contra las propias sesiones del plan (±60 min)
+  /// o contra el calendario de Acuity del especialista.
+  bool _sessionConflictAt(int i) {
+    final all = _sessions;
+    if (i < 0 || i >= all.length) return false;
+    final s = all[i];
+    const w = Duration(minutes: 60);
+    for (var j = 0; j < all.length; j++) {
+      if (j == i) continue;
+      if (all[j].difference(s).abs() < w) return true;
+    }
+    return _conflicts(s);
+  }
+
+  List<DateTime> get _generatedSessions {
     final out = <DateTime>[];
     // Modo "cada N horas": desde la fecha/hora de inicio, sumando el intervalo.
     if (_hourlyMode) {
@@ -289,6 +322,9 @@ class _TreatmentProgramBuilderScreenState
   }
 
   Future<void> _onCadenceChanged() async {
+    // Al cambiar la cadencia se regeneran las sesiones: descarta los movimientos
+    // manuales previos (ya no aplican a la nueva grilla).
+    _editedSessions = null;
     setState(() {});
     await _refreshConflicts();
     if (mounted) setState(() {});
@@ -469,7 +505,10 @@ class _TreatmentProgramBuilderScreenState
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
     final sessions = _sessions;
-    final conflicts = sessions.where(_conflicts).length;
+    final conflicts = [
+      for (var i = 0; i < sessions.length; i++)
+        if (_sessionConflictAt(i)) i
+    ].length;
 
     // Insumos agrupados por procedimiento.
     final byMethod = <String, List<_SupplyRow>>{};
@@ -680,8 +719,9 @@ class _TreatmentProgramBuilderScreenState
             Padding(
               padding: const EdgeInsets.only(top: 4, bottom: 4),
               child: Text(
-                '$conflicts sesión(es) se empalman con el calendario de Acuity '
-                '(en rojo). Ajusta la hora/día o revísalas.',
+                '$conflicts sesión(es) se empalman (con otra sesión del plan o '
+                'con el calendario de Acuity). Arrástralas en la rejilla a otro '
+                'día/hora para reacomodarlas.',
                 style: const TextStyle(fontSize: 12, color: KuraColors.danger),
               ),
             ),
@@ -695,13 +735,10 @@ class _TreatmentProgramBuilderScreenState
                     fontSize: 12,
                     color: KuraColors.darkText.withValues(alpha: 0.5)))
           else
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                for (final s in sessions)
-                  _sessionChip(s, _conflicts(s)),
-              ],
+            WeekScheduler(
+              sessions: sessions,
+              isConflict: _sessionConflictAt,
+              onMove: _moveSession,
             ),
           const Divider(height: 28),
 
@@ -845,33 +882,6 @@ class _TreatmentProgramBuilderScreenState
             Icon(Icons.swap_horiz, size: 12, color: color.withValues(alpha: 0.6)),
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _sessionChip(DateTime s, bool conflict) {
-    final c = conflict ? KuraColors.danger : KuraColors.primary;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: c.withValues(alpha: 0.10),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: c.withValues(alpha: 0.4)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (conflict) ...[
-            const Icon(Icons.warning_amber_rounded,
-                size: 14, color: KuraColors.danger),
-            const SizedBox(width: 4),
-          ],
-          Text('${_fmtDay(s)} · ${_fmtTime(s)}',
-              style: TextStyle(
-                  fontSize: 12,
-                  color: c,
-                  fontWeight: conflict ? FontWeight.w700 : FontWeight.w500)),
-        ],
       ),
     );
   }
