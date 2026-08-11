@@ -29,6 +29,9 @@ class Organization {
   // Mapeo nombre de tipo de cita de Acuity → tipo de visita Kura (0083):
   // {"<nombre>": "valoracion"|"seguimiento"}. Vacío = sin mapear.
   final Map<String, String> acuityTypeVisitMap;
+  // Escalas del protocolo de hospital habilitadas por el centro (0085). null =
+  // todas habilitadas.
+  final List<String>? enabledScales;
 
   const Organization({
     required this.id,
@@ -45,6 +48,7 @@ class Organization {
     this.mpPointDeviceId,
     this.acuitySessionTypeId,
     this.acuityTypeVisitMap = const {},
+    this.enabledScales,
   });
 
   factory Organization.fromJson(Map<String, dynamic> json) => Organization(
@@ -64,6 +68,9 @@ class Organization {
         acuityTypeVisitMap: (json['acuity_type_visit_map'] as Map?)?.map(
                 (k, v) => MapEntry(k.toString(), v.toString())) ??
             const {},
+        enabledScales: (json['enabled_scales'] as List?)
+            ?.map((e) => e.toString())
+            .toList(),
       );
 
   Map<String, dynamic> toJson() => {
@@ -81,5 +88,6 @@ class Organization {
         'mp_point_device_id': mpPointDeviceId,
         'acuity_session_type_id': acuitySessionTypeId,
         'acuity_type_visit_map': acuityTypeVisitMap,
+        'enabled_scales': enabledScales,
       };
 }

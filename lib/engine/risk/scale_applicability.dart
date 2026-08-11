@@ -91,6 +91,11 @@ class ScaleApplicabilityCatalog {
     return catalog;
   }
 
+  /// Todas las escalas del catálogo (id + etiqueta), para configurarlas (p. ej.
+  /// el admin elige cuáles habilitar en su centro).
+  List<({String scaleId, String label})> get scales =>
+      _rules.map((r) => (scaleId: r.scaleId, label: r.label)).toList();
+
   /// Escalas aplicables para el contexto dado (obligatorias primero).
   List<ApplicableScale> evaluate(ScaleEvalContext c) {
     final out = <ApplicableScale>[];
