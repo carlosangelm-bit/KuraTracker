@@ -11,9 +11,15 @@ import '../../engine/models/kura_engine_enums.dart';
 import '../../models/wound.dart';
 
 /// Importador del export de mediciones de eKare (KT-3): carga uno o varios CSV
-/// y crea pacientes → heridas → historial de mediciones. Dedup por nombre+fecha
-/// de nacimiento (no re-crea pacientes existentes). La PII vive solo en runtime
-/// (no se commitea nada).
+/// y crea/actualiza pacientes → heridas → historial de mediciones.
+///
+/// Antes de importar, una PANTALLA DE VALIDACIÓN empata cada paciente del CSV
+/// contra los pacientes ya cargados del centro (por nombre normalizado, marcando
+/// los de ORIGEN ACUITY por su folio `PA…`), y el usuario decide por registro:
+/// VINCULAR (fusiona las heridas/mediciones al paciente existente — clave para
+/// los pacientes de Acuity, que no traen fecha de nacimiento) o CREAR NUEVO.
+///
+/// La PII vive solo en runtime (no se commitea nada).
 class EkareImportScreen extends ConsumerStatefulWidget {
   const EkareImportScreen({super.key});
   @override
@@ -48,11 +54,151 @@ class _ImpPatient {
   String get fullName => '$firstName $lastName'.trim();
 }
 
+/// Paciente existente del centro (candidato para vincular).
+class _Existing {
+  final String id;
+  final String name;
+  final String folio;
+  final String norm; // nombre normalizado (sin acentos/mayúsculas)
+  final bool isAcuity; // folio PA… → creado desde Acuity
+  _Existing(this.id, this.name, this.folio, this.norm, this.isAcuity);
+}
+
 class _EkareImportScreenState extends ConsumerState<EkareImportScreen> {
   final Map<String, _ImpPatient> _patients = {};
   final _files = <String>[];
+  // Pacientes existentes del centro (para el empate) y la decisión por paciente
+  // del CSV: id del existente a VINCULAR, o null = CREAR NUEVO.
+  List<_Existing> _existing = [];
+  final Map<String, String?> _decisions = {};
   bool _busy = false;
   String? _result;
+
+  /// Normaliza un nombre para comparar: minúsculas, sin acentos, sin espacios
+  /// repetidos. Así "José Pérez" empata con "jose perez".
+  static String _norm(String s) {
+    var out = s.toLowerCase().trim();
+    const from = 'áàäâãéèëêíìïîóòöôõúùüûñ';
+    const to = 'aaaaaeeeeiiiiooooouuuun';
+    final b = StringBuffer();
+    for (final ch in out.runes) {
+      final c = String.fromCharCode(ch);
+      final i = from.indexOf(c);
+      b.write(i >= 0 ? to[i] : c);
+    }
+    out = b.toString().replaceAll(RegExp(r'\s+'), ' ');
+    return out;
+  }
+
+  /// Tras parsear, arma el índice de pacientes existentes y una decisión por
+  /// defecto por paciente del CSV (vincular al match de Acuity si lo hay, luego
+  /// a cualquier match exacto de nombre; si no hay, crear nuevo).
+  void _buildDecisions() {
+    final repo = ref.read(dataRepositoryProvider).valueOrNull;
+    final orgId = ref.read(sessionProvider).user?.organizationId;
+    if (repo == null || orgId == null) return;
+    _existing = [
+      for (final p
+          in repo.listAllPatients().where((p) => p.organizationId == orgId))
+        _Existing(p.id, p.fullName, p.folio, _norm(p.fullName),
+            p.folio.toUpperCase().startsWith('PA')),
+    ];
+    _decisions.clear();
+    for (final p in _patients.values) {
+      final cands = _candidatesFor(p);
+      final acuity = cands.where((e) => e.isAcuity).toList();
+      _decisions[p.key] = acuity.isNotEmpty
+          ? acuity.first.id
+          : (cands.isNotEmpty ? cands.first.id : null);
+    }
+  }
+
+  /// Pacientes existentes que empatan por nombre normalizado con [p].
+  List<_Existing> _candidatesFor(_ImpPatient p) {
+    final n = _norm(p.fullName);
+    return _existing.where((e) => e.norm == n).toList();
+  }
+
+  List<_ImpPatient> get _sortedPatients {
+    final list = _patients.values.toList()
+      ..sort((a, b) =>
+          a.fullName.toLowerCase().compareTo(b.fullName.toLowerCase()));
+    return list;
+  }
+
+  /// Tarjeta de validación de un paciente del CSV: datos + selector de decisión.
+  Widget _patientTile(_ImpPatient p) {
+    final cands = _candidatesFor(p);
+    final wc = p.wounds.length;
+    final mc = p.wounds.values.fold<int>(0, (n, w) => n + w.measures.length);
+    final dob = p.dob == null
+        ? 'sin fecha'
+        : '${p.dob!.day.toString().padLeft(2, '0')}/'
+            '${p.dob!.month.toString().padLeft(2, '0')}/${p.dob!.year}';
+    final sel = _decisions[p.key];
+    final linking = sel != null;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(p.fullName,
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w700, fontSize: 14)),
+                ),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: (linking ? KuraColors.primary : KuraColors.success)
+                        .withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(linking ? 'vincular' : 'nuevo',
+                      style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color:
+                              linking ? KuraColors.primary : KuraColors.success)),
+                ),
+              ],
+            ),
+            Text('Nac: $dob · $wc herida(s) · $mc medición(es)',
+                style: TextStyle(
+                    fontSize: 12,
+                    color: KuraColors.darkText.withValues(alpha: 0.6))),
+            const SizedBox(height: 6),
+            DropdownButton<String?>(
+              isExpanded: true,
+              value: sel,
+              onChanged: _busy
+                  ? null
+                  : (v) => setState(() => _decisions[p.key] = v),
+              items: [
+                const DropdownMenuItem<String?>(
+                  value: null,
+                  child: Text('➕ Crear paciente nuevo'),
+                ),
+                for (final e in cands)
+                  DropdownMenuItem<String?>(
+                    value: e.id,
+                    child: Text(
+                      'Vincular a ${e.name} (${e.folio})'
+                      '${e.isAcuity ? ' · Acuity' : ''}',
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
   static double _num(dynamic v) {
     final s = v?.toString().trim() ?? '';
@@ -100,6 +246,7 @@ class _EkareImportScreenState extends ConsumerState<EkareImportScreen> {
       _files.add(f.name);
       _parse(utf8.decode(bytes, allowMalformed: true));
     }
+    _buildDecisions();
     setState(() => _result = null);
   }
 
@@ -179,31 +326,28 @@ class _EkareImportScreenState extends ConsumerState<EkareImportScreen> {
     final orgId = ref.read(sessionProvider).user?.organizationId;
     if (repo == null || orgId == null) return;
     setState(() => _busy = true);
-    var created = 0, skipped = 0, wounds = 0, measures = 0, measureErrors = 0;
+    var created = 0, linked = 0, wounds = 0, measures = 0, measureErrors = 0;
     try {
-      // Índice de pacientes existentes por nombre+dob para dedup.
-      final existing = <String>{
-        for (final p in repo.listAllPatients().where((p) => p.organizationId == orgId))
-          '${p.fullName.toLowerCase()}|${p.birthDate?.toIso8601String() ?? ''}'
-      };
       for (final p in _patients.values) {
-        final dedupKey =
-            '${p.fullName.toLowerCase()}|${p.dob?.toIso8601String() ?? ''}';
-        if (existing.contains(dedupKey)) {
-          skipped++;
-          continue;
+        // Decisión del usuario: vincular a un existente o crear nuevo.
+        final targetId = _decisions[p.key];
+        final String patientId;
+        if (targetId != null) {
+          patientId = targetId; // VINCULAR: fusiona historial al existente
+          linked++;
+        } else {
+          final patient = await repo.createPatient(
+            fullName: p.fullName,
+            organizationId: orgId,
+            birthDate: p.dob,
+            sex: p.sex == 'Female' ? 'F' : (p.sex == 'Male' ? 'M' : 'otro'),
+          );
+          patientId = patient.id;
+          created++;
         }
-        final patient = await repo.createPatient(
-          fullName: p.fullName,
-          organizationId: orgId,
-          birthDate: p.dob,
-          sex: p.sex == 'Female' ? 'F' : (p.sex == 'Male' ? 'M' : 'otro'),
-        );
-        created++;
-        existing.add(dedupKey);
         for (final w in p.wounds.values) {
           final wound = await repo.createWound({
-            'patient_id': patient.id,
+            'patient_id': patientId,
             'etiology': _etiology(w.primaryType).dbValue,
             'body_location_primary':
                 w.location.isEmpty ? 'no_especificado' : w.location,
@@ -245,11 +389,13 @@ class _EkareImportScreenState extends ConsumerState<EkareImportScreen> {
         }
       }
       setState(() {
-        _result = 'Importados: $created pacientes, $wounds heridas, $measures '
-            'mediciones. Omitidos (ya existían): $skipped.'
+        _result = 'Listo: $created paciente(s) nuevo(s), $linked vinculado(s), '
+            '$wounds heridas, $measures mediciones.'
             '${measureErrors > 0 ? ' Mediciones con error (omitidas): $measureErrors.' : ''}';
         _patients.clear();
         _files.clear();
+        _existing = [];
+        _decisions.clear();
       });
     } catch (e) {
       setState(() => _result = 'Error: $e'.replaceFirst('Exception: ', ''));
@@ -269,11 +415,12 @@ class _EkareImportScreenState extends ConsumerState<EkareImportScreen> {
             padding: const EdgeInsets.all(20),
             children: [
               Text(
-                'Carga el/los CSV de mediciones exportados de eKare. Se crearán '
-                'pacientes, heridas y su historial de mediciones. Los pacientes '
-                'que ya existan (mismo nombre y fecha de nacimiento) se omiten.',
+                'Carga el/los CSV de mediciones de eKare. Antes de importar, '
+                'revisa el empate con los pacientes ya cargados del centro (los '
+                'de Acuity se marcan) y decide, por paciente, VINCULAR (fusiona '
+                'el historial) o CREAR NUEVO.',
                 style: TextStyle(
-                    fontSize: 12, color: KuraColors.darkText.withOpacity(0.6)),
+                    fontSize: 12, color: KuraColors.darkText.withValues(alpha: 0.6)),
               ),
               const SizedBox(height: 16),
               OutlinedButton.icon(
@@ -281,27 +428,25 @@ class _EkareImportScreenState extends ConsumerState<EkareImportScreen> {
                 label: const Text('Seleccionar CSV (uno o varios)'),
                 onPressed: _busy ? null : _pick,
               ),
-              if (_files.isNotEmpty) ...[
+              if (_patients.isNotEmpty) ...[
                 const SizedBox(height: 12),
                 Text('Archivos: ${_files.join(', ')}',
                     style: const TextStyle(fontSize: 12)),
                 const SizedBox(height: 8),
-                Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('Listo para importar',
-                            style: const TextStyle(fontWeight: FontWeight.w800)),
-                        const SizedBox(height: 6),
-                        Text('Pacientes: ${_patients.length}'),
-                        Text('Heridas: $_woundCount'),
-                        Text('Mediciones: $_measureCount'),
-                      ],
-                    ),
-                  ),
-                ),
+                Builder(builder: (_) {
+                  final toLink =
+                      _decisions.values.where((v) => v != null).length;
+                  final toCreate = _patients.length - toLink;
+                  return Text(
+                    '${_patients.length} paciente(s) · $toCreate a crear · '
+                    '$toLink a vincular · $_woundCount heridas · '
+                    '$_measureCount mediciones',
+                    style: const TextStyle(
+                        fontWeight: FontWeight.w700, fontSize: 13),
+                  );
+                }),
+                const SizedBox(height: 8),
+                for (final p in _sortedPatients) _patientTile(p),
                 const SizedBox(height: 12),
                 FilledButton.icon(
                   icon: _busy
@@ -320,7 +465,7 @@ class _EkareImportScreenState extends ConsumerState<EkareImportScreen> {
                   width: double.infinity,
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: KuraColors.success.withOpacity(0.10),
+                    color: KuraColors.success.withValues(alpha: 0.10),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(_result!),
