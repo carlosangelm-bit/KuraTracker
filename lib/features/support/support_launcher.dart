@@ -4,27 +4,53 @@ import '../../core/providers/session_provider.dart';
 import '../../core/router/app_router.dart';
 import '../../models/center_type.dart';
 
-/// Abre el asistente de ayuda capturando el CONTEXTO NO SENSIBLE de la pantalla
-/// actual (rol, tipo de centro, ruta y una etiqueta legible de la pantalla) para
-/// que el agente detecte el perfil y el proceso del usuario. Nunca incluye datos
-/// del paciente; la ruta se limpia de ids en la Edge Function.
-///
-/// No depende del BuildContext para la ruta/navegación (usa el routerProvider),
-/// así funciona igual desde un menú o desde el overlay global de ayuda.
+/// Estado del panel de chat del asistente de ayuda (overlay flotante, no una
+/// ruta). `active` = el panel está montado (la conversación sigue viva aunque
+/// esté minimizado); `open` = el panel está visible. Minimizar mantiene
+/// `active` (conserva la conversación); cerrar la descarta.
+class SupportChatState {
+  final bool active;
+  final bool open;
+  final Map<String, String>? context; // {rol, centro, ruta, pantalla} — sin PHI
+  const SupportChatState({this.active = false, this.open = false, this.context});
+}
+
+class SupportChatController extends StateNotifier<SupportChatState> {
+  SupportChatController() : super(const SupportChatState());
+
+  /// Abre (o reabre) el panel actualizando el contexto de la pantalla actual.
+  void openFrom(Map<String, String> ctx) =>
+      state = SupportChatState(active: true, open: true, context: ctx);
+
+  /// Minimiza: oculta el panel pero conserva la conversación (sigue montado).
+  void minimize() =>
+      state = SupportChatState(active: true, open: false, context: state.context);
+
+  /// Cierra y descarta la conversación.
+  void close() => state = const SupportChatState();
+}
+
+final supportChatProvider =
+    StateNotifierProvider<SupportChatController, SupportChatState>(
+        (ref) => SupportChatController());
+
+/// Abre el asistente de ayuda como panel flotante, capturando el CONTEXTO NO
+/// SENSIBLE de la pantalla actual (rol, tipo de centro, ruta y una etiqueta
+/// legible) para que el agente detecte el perfil y el proceso. Nunca incluye
+/// datos del paciente; la ruta se limpia de ids en la Edge Function.
 void openSupportAssistant(WidgetRef ref) {
   final session = ref.read(sessionProvider);
   final user = session.user;
   if (user == null) return;
   final router = ref.read(routerProvider);
-  final location =
-      router.routerDelegate.currentConfiguration.uri.toString();
+  final location = router.routerDelegate.currentConfiguration.uri.toString();
   final ctx = <String, String>{
     'rol': user.role.name,
     'centro': session.activeCenterType.dbValue,
     'ruta': location,
     'pantalla': supportScreenLabelFor(location),
   };
-  router.push('/support', extra: ctx);
+  ref.read(supportChatProvider.notifier).openFrom(ctx);
 }
 
 /// Traduce la ruta actual a una etiqueta legible de la pantalla (el "proceso"
@@ -60,6 +86,7 @@ String supportScreenLabelFor(String location) {
   if (path.contains('/wound/') && path.endsWith('/capture')) {
     return 'Valoración: captura de herida';
   }
+  if (path.contains('/plan/')) return 'Plan del mes';
   if (path.contains('/follow-up/new') || path.contains('/follow-up/draft')) {
     return 'Registrar seguimiento (5 fases)';
   }

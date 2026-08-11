@@ -9,6 +9,7 @@ import '../../core/router/app_router.dart';
 import '../../core/router/app_shell.dart' show kFloatingNavBarHeight;
 import '../../core/theme/kura_theme.dart';
 import '../../models/app_user.dart';
+import '../support/support_chat_panel.dart';
 import '../support/support_launcher.dart';
 import 'tour_controller.dart';
 import 'tour_steps.dart';
@@ -96,9 +97,12 @@ class _TourScopeState extends ConsumerState<TourScope> {
 
     // Botón flotante de AYUDA (asistente): solo en producción (el asistente vive
     // detrás de Supabase). Nunca coincide con el lanzador del Tour, que es de la
-    // demo. Mismo anclaje bottom-left, elevado sobre la barra flotante.
+    // demo. Mismo anclaje bottom-left, elevado sobre la barra flotante. Se oculta
+    // cuando el panel de chat está abierto.
+    final chat = ref.watch(supportChatProvider);
     final showHelp = !_isDemo &&
         !tour.running &&
+        !chat.open &&
         ref.watch(sessionProvider).isAuthenticated;
 
     return Stack(
@@ -134,7 +138,36 @@ class _TourScopeState extends ConsumerState<TourScope> {
                 12,
             child: _HelpLauncher(onTap: () => openSupportAssistant(ref)),
           ),
+        // Panel de chat del asistente (overlay flotante, no ruta). Se mantiene
+        // MONTADO mientras esté activo (Offstage al minimizar) para conservar la
+        // conversación; al cerrar se desmonta y se descarta.
+        if (!_isDemo && chat.active) _chatPanel(context, chat.open),
       ],
+    );
+  }
+
+  /// Posiciona el panel de chat: en escritorio (≥900) un pop-up acotado abajo a
+  /// la derecha; en móvil casi a pantalla completa con márgenes. Offstage cuando
+  /// está minimizado (conserva el estado de la conversación).
+  Widget _chatPanel(BuildContext context, bool open) {
+    final mq = MediaQuery.of(context);
+    final wide = mq.size.width >= 900;
+    if (wide) {
+      final h = (mq.size.height - 120).clamp(420.0, 640.0);
+      return Positioned(
+        right: 20,
+        bottom: 20,
+        width: 384,
+        height: h,
+        child: Offstage(offstage: !open, child: const SupportChatPanel()),
+      );
+    }
+    return Positioned(
+      left: 8,
+      right: 8,
+      top: mq.viewPadding.top + 8,
+      bottom: mq.viewPadding.bottom + 8,
+      child: Offstage(offstage: !open, child: const SupportChatPanel()),
     );
   }
 }
@@ -238,7 +271,7 @@ class _TourOverlay extends StatelessWidget {
         Positioned.fill(
           child: GestureDetector(
             onTap: () {},
-            child: Container(color: Colors.black.withOpacity(0.45)),
+            child: Container(color: Colors.black.withValues(alpha: 0.45)),
           ),
         ),
         Positioned(
