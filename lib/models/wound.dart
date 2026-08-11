@@ -352,6 +352,11 @@ class WoundAssessment {
   // Complementa los campos estructurados de arriba; aplica tanto a
   // valoracion como a seguimiento (feat/clinical-free-notes).
   final String? clinicalNotes;
+  // Exploracion de miembros inferiores (vascular) y pie diabetico (0087):
+  // texto libre por visita. Distinto del ITB numerico de PerfusionNutritionData.
+  final String? itbTexto;
+  final String? pruebasSensibilidad;
+  final String? llenadoCapilar;
 
   const WoundAssessment({
     required this.id,
@@ -374,6 +379,9 @@ class WoundAssessment {
     this.perilesionalSkin = const {},
     this.lowAdherence = false,
     this.clinicalNotes,
+    this.itbTexto,
+    this.pruebasSensibilidad,
+    this.llenadoCapilar,
   });
 
   factory WoundAssessment.fromJson(Map<String, dynamic> json) => WoundAssessment(
@@ -411,6 +419,9 @@ class WoundAssessment {
             .toSet(),
         lowAdherence: json['low_adherence'] as bool? ?? false,
         clinicalNotes: json['clinical_notes'] as String?,
+        itbTexto: json['itb_texto'] as String?,
+        pruebasSensibilidad: json['pruebas_sensibilidad'] as String?,
+        llenadoCapilar: json['llenado_capilar'] as String?,
       );
 
   Map<String, dynamic> toJson() => {
@@ -434,6 +445,9 @@ class WoundAssessment {
         'perilesional_skin': perilesionalSkin.map((e) => e.name).toList(),
         'low_adherence': lowAdherence,
         'clinical_notes': clinicalNotes,
+        'itb_texto': itbTexto,
+        'pruebas_sensibilidad': pruebasSensibilidad,
+        'llenado_capilar': llenadoCapilar,
       };
 }
 

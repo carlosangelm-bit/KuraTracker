@@ -361,6 +361,9 @@ class _WoundCaptureScreenState extends ConsumerState<WoundCaptureScreen> {
           'clinical_notes': (formState.clinicalNotes?.trim().isEmpty ?? true)
               ? null
               : formState.clinicalNotes!.trim(),
+          'itb_texto': _trimOrNull(formState.itbTexto),
+          'pruebas_sensibilidad': _trimOrNull(formState.pruebasSensibilidad),
+          'llenado_capilar': _trimOrNull(formState.llenadoCapilar),
         });
 
         // Braden es del PACIENTE (riesgo de LPP), no de la visita: si se
@@ -659,6 +662,10 @@ class _WoundCaptureScreenState extends ConsumerState<WoundCaptureScreen> {
         ),
         const SizedBox(height: 12),
         _buildEtiologySpecificSection(formState, update),
+        if (formState.showLowerLimbExam) ...[
+          const SizedBox(height: 12),
+          _buildLowerLimbExamSection(formState, update),
+        ],
         const SizedBox(height: 12),
         _SectionCard(
           icon: Icons.monitor_heart_outlined,
@@ -1103,6 +1110,58 @@ class _WoundCaptureScreenState extends ConsumerState<WoundCaptureScreen> {
           }).toList(),
         ),
       ],
+    );
+  }
+
+  static String? _trimOrNull(String? s) {
+    final t = s?.trim() ?? '';
+    return t.isEmpty ? null : t;
+  }
+
+  /// Exploración de miembros inferiores (úlcera vascular / pie diabético):
+  /// ITB, pruebas de sensibilidad y llenado capilar como TEXTO LIBRE por visita
+  /// (petición de María). Distinto del ITB numérico que alimenta el motor.
+  Widget _buildLowerLimbExamSection(
+      WoundCaptureFormState formState, void Function(VoidCallback) update) {
+    return _SectionCard(
+      icon: Icons.medical_services_outlined,
+      title: 'Exploración de miembros inferiores',
+      subtitle: 'ITB, sensibilidad y llenado capilar (texto libre)',
+      initiallyExpanded: true,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          TextFormField(
+            initialValue: formState.itbTexto,
+            decoration: const InputDecoration(
+              labelText: 'ITB (índice tobillo-brazo)',
+              hintText: 'p. ej. Der. 0.9 / Izq. 0.85; sin claudicación…',
+            ),
+            onChanged: (v) => update(() => formState.itbTexto = v),
+          ),
+          const SizedBox(height: 12),
+          TextFormField(
+            initialValue: formState.pruebasSensibilidad,
+            maxLines: 3,
+            minLines: 2,
+            decoration: const InputDecoration(
+              labelText: 'Pruebas de sensibilidad',
+              hintText: 'Monofilamento 10 g, diapasón, sensibilidad protectora…',
+              alignLabelWithHint: true,
+            ),
+            onChanged: (v) => update(() => formState.pruebasSensibilidad = v),
+          ),
+          const SizedBox(height: 12),
+          TextFormField(
+            initialValue: formState.llenadoCapilar,
+            decoration: const InputDecoration(
+              labelText: 'Llenado capilar',
+              hintText: 'p. ej. < 2 s / > 3 s en primer ortejo…',
+            ),
+            onChanged: (v) => update(() => formState.llenadoCapilar = v),
+          ),
+        ],
+      ),
     );
   }
 

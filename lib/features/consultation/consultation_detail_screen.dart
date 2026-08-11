@@ -548,8 +548,24 @@ class _WoundSection extends StatelessWidget {
           const SizedBox(height: 4),
           Text(a.clinicalNotes!.trim(), style: const TextStyle(fontSize: 13)),
         ],
+        // Exploración de miembros inferiores (vascular / pie diabético, 0087).
+        ..._labeledText('ITB (índice tobillo-brazo)', a.itbTexto),
+        ..._labeledText('Pruebas de sensibilidad', a.pruebasSensibilidad),
+        ..._labeledText('Llenado capilar', a.llenadoCapilar),
         const SizedBox(height: 16),
       ];
+
+  /// Renglón etiqueta + texto libre; vacío si el valor no viene.
+  List<Widget> _labeledText(String label, String? value) {
+    if (value == null || value.trim().isEmpty) return const [];
+    return [
+      const SizedBox(height: 8),
+      Text(label,
+          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+      const SizedBox(height: 4),
+      Text(value.trim(), style: const TextStyle(fontSize: 13)),
+    ];
+  }
 
   List<Widget> _recommendationSection(Map<String, dynamic> rec) {
     final scenario = rec['dominant_scenario'] as String? ?? '-';

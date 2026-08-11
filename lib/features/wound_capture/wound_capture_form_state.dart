@@ -80,6 +80,13 @@ class WoundCaptureFormState {
   // No bloquea el guardado si esta vacio (feat/clinical-free-notes).
   String? clinicalNotes;
 
+  // Exploracion de miembros inferiores (vascular) y pie diabetico (0087):
+  // TEXTO LIBRE por visita. Distinto del ITB NUMERICO (abiRight/abiLeft) que
+  // alimenta el motor; aqui el clinico describe lo observado.
+  String? itbTexto;
+  String? pruebasSensibilidad;
+  String? llenadoCapilar;
+
   // ---- Medicion ----
   double lengthCm = 0;
   double widthCm = 0;
@@ -167,6 +174,12 @@ class WoundCaptureFormState {
 
   /// LPP (lesion por presion): gatea el campo obligatorio de Braden.
   bool get isLpp => etiologia == Etiologia.lpp;
+
+  /// Muestra la exploracion de miembros inferiores (ITB/sensibilidad/llenado
+  /// capilar, texto libre): ulcera vascular (miembros inferiores) o pie
+  /// diabetico.
+  bool get showLowerLimbExam =>
+      etiologia == Etiologia.vascular || etiologia == Etiologia.pieDiabetico;
 
   KuraEngineInput toEngineInput() {
     return KuraEngineInput(
