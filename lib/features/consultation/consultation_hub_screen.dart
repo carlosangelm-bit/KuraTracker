@@ -23,11 +23,15 @@ class ConsultationHubScreen extends ConsumerStatefulWidget {
   // "acuity:<id>" | "manual:<uuid>". Se pasa cuando se entra desde la agenda
   // con "Iniciar consulta"; la consulta creada queda ligada a esa cita.
   final String? scheduledAppointmentRef;
+  // El tipo ya lo decidió el tipo de la cita (mapeo 0083): se muestra de solo
+  // lectura y el usuario no lo elige.
+  final bool typeLocked;
   const ConsultationHubScreen({
     super.key,
     required this.patientId,
     this.initialVisitType = VisitType.valoracion,
     this.scheduledAppointmentRef,
+    this.typeLocked = false,
   });
 
   @override
@@ -38,6 +42,7 @@ class _ConsultationHubScreenState extends ConsumerState<ConsultationHubScreen> {
   DateTime _visitDate = DateTime.now();
   late VisitType _visitType = widget.initialVisitType;
   String? _siteId;
+  String? _acuityTypeName; // tipo de Acuity elegido (consulta directa, modo Acuity)
   bool _creating = false;
 
   /// Selector de herida para el seguimiento cuando el paciente tiene más de una
@@ -90,6 +95,23 @@ class _ConsultationHubScreenState extends ConsumerState<ConsultationHubScreen> {
           if (patient == null) {
             return const Center(child: Text('Paciente no encontrado.'));
           }
+
+          // Decisión del tipo de visita:
+          // - typeLocked: ya lo decidió el tipo de la cita (solo lectura).
+          // - consulta directa + modo Acuity + hay mapeo: se elige un tipo del
+          //   catálogo de Acuity y ese define valoración/seguimiento.
+          // - resto (modo manual, o cita con tipo sin mapear): dropdown Val/Seg.
+          final orgId = patient.organizationId;
+          final acuityMode = repo.schedulingModeFor(orgId) == 'acuity';
+          final typeMap =
+              repo.organizationById(orgId)?.acuityTypeVisitMap ?? const {};
+          final fromAppt = widget.scheduledAppointmentRef != null;
+          final useAcuityPicker = !widget.typeLocked &&
+              !fromAppt &&
+              acuityMode &&
+              typeMap.isNotEmpty;
+          final typeReady =
+              widget.typeLocked || !useAcuityPicker || _acuityTypeName != null;
 
           return Center(
             child: ConstrainedBox(
@@ -151,14 +173,66 @@ class _ConsultationHubScreenState extends ConsumerState<ConsultationHubScreen> {
                       onChanged: (v) => setState(() => _siteId = v),
                     ),
                     const SizedBox(height: 12),
-                    DropdownButtonFormField<VisitType>(
-                      value: _visitType,
-                      decoration: const InputDecoration(labelText: 'Tipo de visita *'),
-                      items: VisitType.values
-                          .map((v) => DropdownMenuItem(value: v, child: Text(v.label)))
-                          .toList(),
-                      onChanged: (v) => setState(() => _visitType = v ?? VisitType.valoracion),
-                    ),
+                    if (widget.typeLocked)
+                      InputDecorator(
+                        decoration:
+                            const InputDecoration(labelText: 'Tipo de visita'),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.lock_outline,
+                                size: 16, color: KuraColors.primary),
+                            const SizedBox(width: 8),
+                            Text('${_visitType.label} · definido por la cita'),
+                          ],
+                        ),
+                      )
+                    else if (useAcuityPicker)
+                      DropdownButtonFormField<String>(
+                        value: _acuityTypeName,
+                        isExpanded: true,
+                        decoration: const InputDecoration(
+                            labelText: 'Tipo de consulta (Acuity) *'),
+                        items: [
+                          for (final name in typeMap.keys)
+                            DropdownMenuItem(
+                              value: name,
+                              child: Text(
+                                '$name · ${typeMap[name] == 'seguimiento' ? 'Seguimiento' : 'Valoración'}',
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                        ],
+                        onChanged: (v) => setState(() {
+                          _acuityTypeName = v;
+                          _visitType = typeMap[v] == 'seguimiento'
+                              ? VisitType.seguimiento
+                              : VisitType.valoracion;
+                        }),
+                      )
+                    else ...[
+                      DropdownButtonFormField<VisitType>(
+                        value: _visitType,
+                        decoration: const InputDecoration(
+                            labelText: 'Tipo de visita *'),
+                        items: VisitType.values
+                            .map((v) => DropdownMenuItem(
+                                value: v, child: Text(v.label)))
+                            .toList(),
+                        onChanged: (v) => setState(
+                            () => _visitType = v ?? VisitType.valoracion),
+                      ),
+                      if (fromAppt)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 6),
+                          child: Text(
+                            'El tipo de esta cita no está mapeado. Elige el tipo; '
+                            'puedes mapearlo en Admin → “Tipos de consulta (Acuity)”.',
+                            style: TextStyle(
+                                fontSize: 11,
+                                color: KuraColors.darkText.withOpacity(0.6)),
+                          ),
+                        ),
+                    ],
                     const SizedBox(height: 24),
                     FilledButton.icon(
                       icon: _creating
@@ -178,7 +252,7 @@ class _ConsultationHubScreenState extends ConsumerState<ConsultationHubScreen> {
                         backgroundColor: KuraColors.primary,
                         padding: const EdgeInsets.symmetric(vertical: 14),
                       ),
-                      onPressed: _creating || _siteId == null
+                      onPressed: _creating || _siteId == null || !typeReady
                           ? null
                           : () async {
                               setState(() => _creating = true);

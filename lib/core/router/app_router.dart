@@ -217,6 +217,7 @@ final routerProvider = Provider<GoRouter>((ref) {
                 patientId: state.pathParameters['patientId']!,
                 initialVisitType: visitType,
                 scheduledAppointmentRef: state.uri.queryParameters['appt'],
+                typeLocked: state.uri.queryParameters['typeLocked'] == '1',
               );
             },
           ),
