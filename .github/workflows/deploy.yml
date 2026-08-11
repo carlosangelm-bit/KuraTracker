@@ -48,7 +48,10 @@ jobs:
       - uses: actions/checkout@v4
       - uses: supabase/setup-cli@v1
         with:
-          version: latest
+          # Fijado (no 'latest'): 'latest' resolvía dinámicamente y a veces tomaba
+          # una beta o fallaba el lookup → deploy_functions flaky. 2.113.0 = última
+          # estable al 2026-08-08. Subir a mano cuando haga falta.
+          version: 2.113.0
       - name: Verificar secrets
         run: |
           test -n "$SUPABASE_ACCESS_TOKEN" || { echo "Falta SUPABASE_ACCESS_TOKEN"; exit 1; }
@@ -64,7 +67,7 @@ jobs:
   # Deploy de Edge Functions en job SEPARADO que NO bloquea build_deploy: si
   # falla, la app igual se despliega y se itera aparte. Se usa --use-api (deploy
   # por Management API, sin bundling con Docker) porque el bundling local con
-  # setup-cli 'latest' resultó frágil. Deploy DIRIGIDO (no todas) para no
+  # Docker resultó frágil. Deploy DIRIGIDO (no todas) para no
   # re-habilitar verify_jwt en funciones con --no-verify-jwt (webhook Acuity).
   deploy_functions:
     needs: migrations
@@ -77,7 +80,10 @@ jobs:
       - uses: actions/checkout@v4
       - uses: supabase/setup-cli@v1
         with:
-          version: latest
+          # Fijado (no 'latest'): 'latest' resolvía dinámicamente y a veces tomaba
+          # una beta o fallaba el lookup → deploy_functions flaky. 2.113.0 = última
+          # estable al 2026-08-08. Subir a mano cuando haga falta.
+          version: 2.113.0
       - name: Deploy admin-create-user (--use-api)
         run: supabase functions deploy admin-create-user --use-api --project-ref "$SUPABASE_PROJECT_REF"
       # Acuity proxy: la app (web) lo invoca con JWT → verify_jwt por default.
