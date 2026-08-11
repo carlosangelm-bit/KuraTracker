@@ -4026,6 +4026,67 @@ class DataRepository {
     );
   }
 
+  /// Tratamiento a bitácora de las escalas categóricas de clasificación (NPIAP,
+  /// Wagner, CEAP, MDRPI): agenda la tarea/alerta que corresponde según el
+  /// resultado. Solo hospital. Idempotente por scale_id.
+  Future<void> applyCategoricalScaleTreatment(
+    String patientId,
+    String scaleId,
+    String category, {
+    required String? organizationId,
+    String? createdBy,
+  }) async {
+    if (centerTypeFor(organizationId) != CenterType.hospital) return;
+    final ruleId = scaleId.toLowerCase();
+    await _clearFutureRuleTasks(patientId, ruleId);
+    String? title;
+    String actionId = ruleId;
+    var hours = 2;
+    switch (scaleId) {
+      case 'NPIAP':
+        if (const {'III', 'IV', 'NO_CLASIFICABLE', 'SOSPECHA_TEJIDO_PROFUNDO'}
+            .contains(category)) {
+          title =
+              'Registro fotográfico + valoración especializada (LPP $category)';
+          actionId = 'lpp_alta_complejidad';
+        }
+        break;
+      case 'WAGNER':
+        final g = int.tryParse(category) ?? 0;
+        if (g >= 3) {
+          title = 'Valoración especializada del pie (sospecha osteomielitis/'
+              'gangrena, Wagner $g)';
+          actionId = 'wagner_especialista';
+          hours = 1;
+        }
+        break;
+      case 'CEAP':
+        if (category == 'C6') {
+          title = 'Seguimiento de úlcera venosa activa (CEAP C6)';
+          actionId = 'seguimiento_venosa';
+        }
+        break;
+      case 'MDRPI':
+        title = 'Inspección del sitio del dispositivo (por turno)';
+        actionId = 'inspeccion_dispositivo';
+        hours = 8;
+        break;
+    }
+    if (title == null) return;
+    await createPreventiveTask(
+      patientId: patientId,
+      organizationId: organizationId,
+      title: title,
+      scheduledAt: DateTime.now().add(Duration(hours: hours)),
+      admissionId: activeAdmission(patientId)?.id,
+      ruleId: ruleId,
+      actionId: actionId,
+      actionLabel: title,
+      source: 'auto',
+      createdBy: createdBy,
+    );
+  }
+
   /// Computa el riesgo de un paciente AL VUELO (no se persiste): junta sus
   /// comorbilidades presentes + última Braden + heridas activas y aplica el
   /// catálogo de reglas. Devuelve nivel + alertas preventivas.
