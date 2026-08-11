@@ -1009,11 +1009,68 @@ class _WeekChip extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(fontSize: 10, color: KuraColors.darkText.withOpacity(0.55))),
+            _ChipActions(
+              repo: repo,
+              patientId: appointment.patientId,
+              apptRef: 'acuity:${appointment.id}',
+              appointmentTypeName: appointment.appointmentType,
+            ),
           ],
         ),
       ),
     );
   }
+}
+
+/// Acciones compactas (Paciente / Iniciar-Ver consulta) para los chips de la
+/// vista Semana, donde no cabe la fila completa de botones (_BlockActions).
+class _ChipActions extends StatelessWidget {
+  final DataRepository? repo;
+  final String? patientId;
+  final String apptRef;
+  final String? appointmentTypeName;
+  const _ChipActions({
+    required this.repo,
+    required this.patientId,
+    required this.apptRef,
+    this.appointmentTypeName,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final consultaExists = repo?.consultationForAppointmentRef(apptRef) != null;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _btn(context, Icons.person_outline, 'Paciente',
+            () => _goToPatient(context, patientId)),
+        _btn(
+          context,
+          consultaExists ? Icons.open_in_new : Icons.play_circle_outline,
+          consultaExists ? 'Ver consulta' : 'Iniciar consulta',
+          () => _goToScheduledConsultation(
+            context: context,
+            repo: repo,
+            patientId: patientId,
+            apptRef: apptRef,
+            appointmentTypeName: appointmentTypeName,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _btn(
+          BuildContext context, IconData icon, String tip, VoidCallback onTap) =>
+      IconButton(
+        tooltip: tip,
+        icon: Icon(icon, size: 16),
+        color: KuraColors.primary,
+        visualDensity: VisualDensity.compact,
+        padding: EdgeInsets.zero,
+        constraints: const BoxConstraints(minWidth: 30, minHeight: 28),
+        onPressed: onTap,
+      );
 }
 
 // ---------------------------------------------------------------------------
@@ -2197,6 +2254,11 @@ class _ManualAgendaState extends ConsumerState<_ManualAgenda> {
                                       overflow: TextOverflow.ellipsis,
                                       style: TextStyle(
                                           fontSize: 10, color: KuraColors.darkText.withOpacity(0.55))),
+                                _ChipActions(
+                                  repo: repo,
+                                  patientId: a.patientId,
+                                  apptRef: 'manual:${a.id}',
+                                ),
                               ],
                             ),
                           ),
