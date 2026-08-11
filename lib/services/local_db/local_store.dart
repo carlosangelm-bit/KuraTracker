@@ -165,6 +165,7 @@ class Collections {
   static const patientLabs = 'patient_labs';
   static const patientAdmissions = 'patient_admissions';
   static const riskAssessments = 'risk_assessments';
+  static const scaleAssessments = 'scale_assessments';
   static const preventiveActionLog = 'preventive_action_log';
   static const consultations = 'consultations';
   static const wounds = 'wounds';
@@ -223,6 +224,7 @@ class Collections {
     patientLabs,
     patientAdmissions,
     riskAssessments,
+    scaleAssessments,
     preventiveActionLog,
     consultations,
     wounds,

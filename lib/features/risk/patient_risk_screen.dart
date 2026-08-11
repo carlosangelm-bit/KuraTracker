@@ -10,6 +10,7 @@ import '../../models/center_type.dart';
 import '../../engine/risk/prevention_risk_engine.dart';
 import '../../engine/risk/braden_scale.dart';
 import 'braden_scale_sheet.dart';
+import 'globiad_sheet.dart';
 import '../../models/app_user.dart';
 import '../../models/patient.dart';
 import '../../models/patient_admission.dart';
@@ -69,6 +70,41 @@ class _PatientRiskScreenState extends ConsumerState<PatientRiskScreen> {
       );
     }
     if (mounted) setState(() {});
+  }
+
+  /// GLOBIAD (DAI): captura (guiada o manual), guarda la valoración de escala y,
+  /// en centros hospital, traduce 2A/2B a control de humedad en la bitácora.
+  Future<void> _assessGlobiad(DataRepository repo) async {
+    final res = await showGlobiadSheet(context);
+    if (res == null || !mounted) return;
+    final session = ref.read(sessionProvider);
+    await repo.addScaleAssessment(
+      patientId: widget.patientId,
+      organizationId: session.user?.organizationId,
+      scaleId: 'GLOBIAD',
+      scaleVersion: '1.0',
+      categoryResult: res.category,
+      bandId: res.category,
+      subscores: res.subscores,
+      notes: res.notes,
+      staffId: await _staffId(repo),
+    );
+    final catalog = ref.read(preventionRulesProvider).valueOrNull;
+    if (catalog != null) {
+      await repo.applyGlobiadTreatment(
+        widget.patientId,
+        res.category,
+        organizationId: session.user?.organizationId,
+        catalog: catalog,
+        createdBy: session.user?.id,
+      );
+    }
+    if (!mounted) return;
+    setState(() {});
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text('GLOBIAD ${res.category} registrada'
+          '${res.category.startsWith('2') ? ' · control de humedad agendado en la bitácora' : ''}'),
+    ));
   }
 
   Future<void> _admit(DataRepository repo) async {
@@ -245,6 +281,18 @@ class _PatientRiskScreenState extends ConsumerState<PatientRiskScreen> {
             final admission = repo.activeAdmission(widget.patientId);
             final braden = repo.latestRiskAssessment(widget.patientId);
 
+            // Escalas aplicables (routing por características del paciente).
+            // GLOBIAD (DAI) aplica con piel húmeda (subescala humedad de Braden
+            // ≤2 = húmeda/muy húmeda) y riesgo ≥ MEDIO (Braden ≤17).
+            final humedadSub =
+                (braden?.bradenSubscores?['humedad'] as num?)?.toInt();
+            final globiadApplicable = humedadSub != null &&
+                humedadSub <= 2 &&
+                braden?.bradenScore != null &&
+                braden!.bradenScore! <= 17;
+            final lastGlobiad =
+                repo.latestScaleAssessment(widget.patientId, 'GLOBIAD');
+
             return ListView(
               padding: const EdgeInsets.all(20),
               children: [
@@ -321,6 +369,22 @@ class _PatientRiskScreenState extends ConsumerState<PatientRiskScreen> {
                         child: const Text('Valorar'),
                       ),
                     ),
+                    // GLOBIAD (DAI): aparece cuando es aplicable (piel húmeda +
+                    // riesgo) o cuando ya hay una valoración previa.
+                    if (globiadApplicable || lastGlobiad != null)
+                      _InfoTile(
+                        icon: Icons.opacity_outlined,
+                        title: 'GLOBIAD · Dermatitis por humedad',
+                        body: lastGlobiad?.categoryResult != null
+                            ? 'Resultado: ${lastGlobiad!.categoryResult}'
+                                ' · ${_dateFmt.format(lastGlobiad.assessedAt)}'
+                            : 'Sugerida: piel húmeda con riesgo. Clasifica la DAI.',
+                        action: TextButton(
+                          onPressed: () => _assessGlobiad(repo),
+                          child: Text(
+                              lastGlobiad != null ? 'Revalorar' : 'Valorar'),
+                        ),
+                      ),
                     // Indicaciones libres del profesional para el cuidador (0044).
                     // No aplican en hospital (sin cuidador externo).
                     if (!isHospital)
@@ -352,7 +416,7 @@ class _PatientRiskScreenState extends ConsumerState<PatientRiskScreen> {
                   'Apoyo a la decisión (borrador clínico). No sustituye el juicio '
                   'profesional ni modifica el plan de tratamiento.',
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: KuraColors.darkText.withOpacity(0.6)),
+                      color: KuraColors.darkText.withValues(alpha: 0.6)),
                 ),
                 const SizedBox(height: 40),
               ],
@@ -374,7 +438,7 @@ class _RiskLevelBanner extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.12),
+        color: color.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(14),
         border: Border(left: BorderSide(color: color, width: 4)),
       ),
