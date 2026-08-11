@@ -63,6 +63,7 @@ void _goToScheduledConsultation({
   required DataRepository? repo,
   required String? patientId,
   required String apptRef,
+  String? appointmentTypeName,
 }) {
   if (patientId == null) {
     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
@@ -73,11 +74,16 @@ void _goToScheduledConsultation({
   final existing = repo?.consultationForAppointmentRef(apptRef);
   if (existing != null) {
     context.go('/patients/$patientId/consultation/${existing.id}');
-  } else {
-    context.go(
-      '/patients/$patientId/consultation/new?appt=${Uri.encodeQueryComponent(apptRef)}',
-    );
+    return;
   }
+  // El tipo de la cita decide valoración/seguimiento (mapeo 0083). El orgId se
+  // resuelve del paciente. Si el tipo está mapeado, se pasa ya decidido y
+  // bloqueado; si no, el hub pedirá el tipo.
+  final orgId = repo?.getPatient(patientId)?.organizationId;
+  final vt = repo?.visitTypeForAcuityTypeName(orgId, appointmentTypeName);
+  final base =
+      '/patients/$patientId/consultation/new?appt=${Uri.encodeQueryComponent(apptRef)}';
+  context.go(vt == null ? base : '$base&visitType=${vt.name}&typeLocked=1');
 }
 
 /// Fila de dos botones ("Paciente" + consulta) para el bloque de una cita.
@@ -85,10 +91,14 @@ class _BlockActions extends StatelessWidget {
   final DataRepository? repo;
   final String? patientId;
   final String apptRef;
+  // Nombre del tipo de cita de Acuity (para decidir valoración/seguimiento por
+  // el mapeo 0083). Null en manual → el hub pide el tipo.
+  final String? appointmentTypeName;
   const _BlockActions({
     required this.repo,
     required this.patientId,
     required this.apptRef,
+    this.appointmentTypeName,
   });
 
   @override
@@ -123,6 +133,7 @@ class _BlockActions extends StatelessWidget {
             repo: repo,
             patientId: patientId,
             apptRef: apptRef,
+            appointmentTypeName: appointmentTypeName,
           ),
         ),
       ],
@@ -1082,6 +1093,7 @@ class _AppointmentTile extends StatelessWidget {
                     repo: repo,
                     patientId: appointment.patientId,
                     apptRef: 'acuity:${appointment.id}',
+                    appointmentTypeName: appointment.appointmentType,
                   ),
                 ],
               ),
@@ -1176,6 +1188,7 @@ void _showAppointmentActions(
                 repo: repo,
                 patientId: a.patientId,
                 apptRef: apptRef,
+                appointmentTypeName: a.appointmentType,
               );
             },
           ),
