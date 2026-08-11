@@ -86,6 +86,11 @@ class _TreatmentProgramBuilderScreenState
   TimeOfDay _time = const TimeOfDay(hour: 10, minute: 0);
   int _weeks = 4;
   late DateTime _startDate;
+  // Modo de cadencia (0088): false = días de la semana; true = cada N horas.
+  bool _hourlyMode = false;
+  int _intervalHours = 72; // 24/48/72/96…
+  int _sessionCount = 8; // nº de sesiones en modo horas
+  static const List<int> _kIntervalPresets = [24, 48, 72, 96];
 
   List<Appointment> _acuityAppts = const [];
 
@@ -198,6 +203,18 @@ class _TreatmentProgramBuilderScreenState
   // ---- Sesiones ----
   List<DateTime> get _sessions {
     final out = <DateTime>[];
+    // Modo "cada N horas": desde la fecha/hora de inicio, sumando el intervalo.
+    if (_hourlyMode) {
+      final startDt = DateTime(_startDate.year, _startDate.month,
+          _startDate.day, _time.hour, _time.minute);
+      final n = _sessionCount.clamp(1, 60);
+      final step = _intervalHours.clamp(1, 24 * 30);
+      for (var k = 0; k < n; k++) {
+        out.add(startDt.add(Duration(hours: step * k)));
+      }
+      return out;
+    }
+    // Modo "días de la semana" (comportamiento original).
     if (_weekdays.isEmpty) return out;
     final start = DateTime(_startDate.year, _startDate.month, _startDate.day);
     for (var d = 0; d < _weeks * 7; d++) {
@@ -243,6 +260,34 @@ class _TreatmentProgramBuilderScreenState
     return false;
   }
 
+  /// Fila etiqueta + contador -/valor/+ acotado a [min].. [max].
+  Widget _counterRow({
+    required String label,
+    required int value,
+    required int min,
+    required int max,
+    required void Function(int) onChanged,
+  }) {
+    return Row(
+      children: [
+        Text(label,
+            style: TextStyle(
+                fontSize: 13,
+                color: KuraColors.darkText.withValues(alpha: 0.8))),
+        const Spacer(),
+        IconButton(
+          icon: const Icon(Icons.remove_circle_outline),
+          onPressed: value > min ? () => onChanged(value - 1) : null,
+        ),
+        Text('$value', style: const TextStyle(fontWeight: FontWeight.w700)),
+        IconButton(
+          icon: const Icon(Icons.add_circle_outline),
+          onPressed: value < max ? () => onChanged(value + 1) : null,
+        ),
+      ],
+    );
+  }
+
   Future<void> _onCadenceChanged() async {
     setState(() {});
     await _refreshConflicts();
@@ -255,7 +300,9 @@ class _TreatmentProgramBuilderScreenState
     final orgId = _orgId;
     if (repo == null || orgId == null) return;
     if (_sessions.isEmpty) {
-      _snack('Define al menos un día de la semana para generar sesiones.');
+      _snack(_hourlyMode
+          ? 'Define el intervalo y el número de sesiones.'
+          : 'Define al menos un día de la semana para generar sesiones.');
       return;
     }
     setState(() => _saving = true);
@@ -269,6 +316,9 @@ class _TreatmentProgramBuilderScreenState
         siteId: _siteId,
         staffId: _staffId,
         weeks: _weeks,
+        cadenceMode: _hourlyMode ? 'hourly' : 'weekly',
+        intervalHours: _hourlyMode ? _intervalHours : null,
+        sessionCount: _hourlyMode ? _sessionCount : null,
         createdBy: ref.read(sessionProvider).user?.id,
       );
       await repo.saveProgramSupplies(program.id, orgId, [
@@ -491,31 +541,76 @@ class _TreatmentProgramBuilderScreenState
           // ---- Cadencia ----
           _sectionTitle('Cadencia de sesiones', null),
           const SizedBox(height: 8),
-          Text('Días de la semana',
-              style: TextStyle(
-                  fontSize: 12, color: KuraColors.darkText.withValues(alpha: 0.7))),
-          const SizedBox(height: 6),
-          Wrap(
-            spacing: 6,
-            children: [
-              for (var wd = 1; wd <= 7; wd++)
-                FilterChip(
-                  label: Text(_kWeekdayLabels[wd - 1]),
-                  selected: _weekdays.contains(wd),
-                  onSelected: (sel) {
-                    setState(() {
-                      if (sel) {
-                        _weekdays.add(wd);
-                      } else {
-                        _weekdays.remove(wd);
-                      }
-                    });
-                    _onCadenceChanged();
-                  },
-                ),
+          // Selector de modo: días de la semana vs cada N horas (0088).
+          SegmentedButton<bool>(
+            segments: const [
+              ButtonSegment(
+                value: false,
+                label: Text('Días de la semana'),
+                icon: Icon(Icons.calendar_view_week, size: 16),
+              ),
+              ButtonSegment(
+                value: true,
+                label: Text('Cada N horas'),
+                icon: Icon(Icons.hourglass_bottom, size: 16),
+              ),
             ],
+            selected: {_hourlyMode},
+            onSelectionChanged: (s) {
+              setState(() => _hourlyMode = s.first);
+              _onCadenceChanged();
+            },
           ),
           const SizedBox(height: 12),
+          if (_hourlyMode) ...[
+            Text('Intervalo entre sesiones',
+                style: TextStyle(
+                    fontSize: 12,
+                    color: KuraColors.darkText.withValues(alpha: 0.7))),
+            const SizedBox(height: 6),
+            Wrap(
+              spacing: 6,
+              children: [
+                for (final h in _kIntervalPresets)
+                  ChoiceChip(
+                    label: Text('${h}h'),
+                    selected: _intervalHours == h,
+                    onSelected: (_) {
+                      setState(() => _intervalHours = h);
+                      _onCadenceChanged();
+                    },
+                  ),
+              ],
+            ),
+            const SizedBox(height: 12),
+          ] else ...[
+            Text('Días de la semana',
+                style: TextStyle(
+                    fontSize: 12,
+                    color: KuraColors.darkText.withValues(alpha: 0.7))),
+            const SizedBox(height: 6),
+            Wrap(
+              spacing: 6,
+              children: [
+                for (var wd = 1; wd <= 7; wd++)
+                  FilterChip(
+                    label: Text(_kWeekdayLabels[wd - 1]),
+                    selected: _weekdays.contains(wd),
+                    onSelected: (sel) {
+                      setState(() {
+                        if (sel) {
+                          _weekdays.add(wd);
+                        } else {
+                          _weekdays.remove(wd);
+                        }
+                      });
+                      _onCadenceChanged();
+                    },
+                  ),
+              ],
+            ),
+            const SizedBox(height: 12),
+          ],
           Row(
             children: [
               Expanded(
@@ -555,34 +650,28 @@ class _TreatmentProgramBuilderScreenState
             ],
           ),
           const SizedBox(height: 12),
-          Row(
-            children: [
-              Text('Semanas',
-                  style: TextStyle(
-                      fontSize: 13,
-                      color: KuraColors.darkText.withValues(alpha: 0.8))),
-              const Spacer(),
-              IconButton(
-                icon: const Icon(Icons.remove_circle_outline),
-                onPressed: _weeks > 1
-                    ? () {
-                        setState(() => _weeks--);
-                        _onCadenceChanged();
-                      }
-                    : null,
-              ),
-              Text('$_weeks', style: const TextStyle(fontWeight: FontWeight.w700)),
-              IconButton(
-                icon: const Icon(Icons.add_circle_outline),
-                onPressed: _weeks < 8
-                    ? () {
-                        setState(() => _weeks++);
-                        _onCadenceChanged();
-                      }
-                    : null,
-              ),
-            ],
-          ),
+          if (_hourlyMode)
+            _counterRow(
+              label: 'Número de sesiones',
+              value: _sessionCount,
+              min: 1,
+              max: 60,
+              onChanged: (v) {
+                setState(() => _sessionCount = v);
+                _onCadenceChanged();
+              },
+            )
+          else
+            _counterRow(
+              label: 'Semanas',
+              value: _weeks,
+              min: 1,
+              max: 8,
+              onChanged: (v) {
+                setState(() => _weeks = v);
+                _onCadenceChanged();
+              },
+            ),
           const Divider(height: 28),
 
           // ---- Sesiones generadas ----
@@ -598,7 +687,10 @@ class _TreatmentProgramBuilderScreenState
             ),
           const SizedBox(height: 4),
           if (sessions.isEmpty)
-            Text('Selecciona al menos un día para generar sesiones.',
+            Text(
+                _hourlyMode
+                    ? 'Define el intervalo y el número de sesiones.'
+                    : 'Selecciona al menos un día para generar sesiones.',
                 style: TextStyle(
                     fontSize: 12,
                     color: KuraColors.darkText.withValues(alpha: 0.5)))
