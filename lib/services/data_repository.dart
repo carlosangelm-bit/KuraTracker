@@ -3983,8 +3983,9 @@ class DataRepository {
     }
   }
 
-  /// ASEPSIS: total > 20 → infección de sitio quirúrgico; agenda confirmar/tratar
-  /// ISQ. Solo hospital. Idempotente ('asepsis').
+  /// ASEPSIS: total > corte ISQ → infección de sitio quirúrgico; agenda
+  /// confirmar/tratar ISQ. Solo hospital. Idempotente ('asepsis'). El corte
+  /// (asepsis_isq_above, borrador) vive en ClinicalParams para revisión de María.
   Future<void> applyAsepsisTreatment(
     String patientId,
     double total, {
@@ -3993,11 +3994,14 @@ class DataRepository {
   }) async {
     if (centerTypeFor(organizationId) != CenterType.hospital) return;
     await _clearFutureRuleTasks(patientId, 'asepsis');
-    if (total <= 20) return;
+    final cut =
+        ClinicalParams.isLoaded ? ClinicalParams.instance.asepsisIsqAbove : 20;
+    if (total <= cut) return;
     await createPreventiveTask(
       patientId: patientId,
       organizationId: organizationId,
-      title: 'Confirmar y tratar infección de sitio quirúrgico (ASEPSIS > 20)',
+      title:
+          'Confirmar y tratar infección de sitio quirúrgico (ASEPSIS > ${cut.toStringAsFixed(0)})',
       scheduledAt: DateTime.now().add(const Duration(hours: 2)),
       admissionId: activeAdmission(patientId)?.id,
       ruleId: 'asepsis',
