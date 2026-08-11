@@ -31,7 +31,7 @@ class DemoSeed {
   // una sola vez en instalaciones demo previas (wipeAll + _seed), evitando
   // duplicados y datos viejos. Cada rediseño del roster sube este número.
   // v12: roster curado por escenario (clínica 7 / hospital 5 / cuidadores 3).
-  static const String _seedFlag = 'seeded_v23';
+  static const String _seedFlag = 'seeded_v24';
 
   static Future<void> ensureSeeded(LocalStore store) async {
     if (store.getBool(_seedFlag)) return;
@@ -1289,6 +1289,9 @@ class DemoSeed {
       required List<Map<String, dynamic>> tasks,
       int admittedDaysAgo = 3,
       bool fragile = true,
+      // Subescalas de Braden (percepción, humedad, actividad, movilidad,
+      // nutrición, fricción). Humedad ≤2 activa la aplicabilidad de GLOBIAD.
+      Map<String, int>? bradenSubscores,
     }) async {
       final pid = _uuid.v4();
       final folio = 'HOSP-${hospSeq.toString().padLeft(4, '0')}';
@@ -1332,7 +1335,7 @@ class DemoSeed {
           'organization_id': organizationIdHospital,
           'patient_id': pid,
           'braden_score': braden,
-          'braden_subscores': null,
+          'braden_subscores': bradenSubscores,
           'assessed_at': iso(now.subtract(const Duration(days: 1))),
           'assessed_by': enfermeriaProfileId,
           'notes': bradenNotes,
@@ -1381,6 +1384,15 @@ class DemoSeed {
       sex: 'F',
       braden: 9,
       bradenNotes: 'Adulto mayor encamado, incontinencia; riesgo muy alto.',
+      // Humedad 1 (piel constantemente húmeda por incontinencia) → activa GLOBIAD.
+      bradenSubscores: const {
+        'percepcion_sensorial': 1,
+        'humedad': 1,
+        'actividad': 1,
+        'movilidad': 1,
+        'nutricion': 2,
+        'friccion_cizallamiento': 3,
+      },
       floor: '3',
       area: 'Medicina Interna',
       bed: '08',
@@ -1455,6 +1467,15 @@ class DemoSeed {
       sex: 'F',
       braden: 8,
       bradenNotes: 'Postoperatorio, encamada; riesgo muy alto de LPP.',
+      // Humedad 2 (piel muy húmeda) → activa GLOBIAD.
+      bradenSubscores: const {
+        'percepcion_sensorial': 1,
+        'humedad': 2,
+        'actividad': 1,
+        'movilidad': 1,
+        'nutricion': 2,
+        'friccion_cizallamiento': 1,
+      },
       floor: '2',
       area: 'Cirugía',
       bed: '09',
