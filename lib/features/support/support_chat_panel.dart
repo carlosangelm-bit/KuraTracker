@@ -3,35 +3,33 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/design/tokens.dart';
 import '../../core/providers/session_provider.dart';
+import 'support_launcher.dart';
 
-/// Chat con el asistente de SOPORTE de la plataforma (CustomGPT vía Edge
-/// Function support-bot). Recibe el contexto NO SENSIBLE del usuario
-/// ({rol, centro, ruta, pantalla}) capturado al abrir, y lo envía en cada
-/// mensaje para que el agente detecte el perfil y el proceso y personalice.
-class SupportBotScreen extends ConsumerStatefulWidget {
-  /// Contexto capturado en la pantalla desde la que se abrió la ayuda. Sin PHI.
-  final Map<String, String>? sessionContext;
-  const SupportBotScreen({super.key, this.sessionContext});
+/// Panel flotante del asistente de ayuda (CustomGPT vía Edge Function
+/// support-bot). Se renderiza como overlay (no ruta): en escritorio es un pop-up
+/// acotado; en móvil ocupa casi toda la pantalla. En ambos se puede MINIMIZAR
+/// (conserva la conversación) o CERRAR (la descarta). El contexto no sensible
+/// ({rol, centro, ruta, pantalla}) se lee del provider y se envía en cada
+/// mensaje para que el agente detecte el perfil y el proceso.
+class SupportChatPanel extends ConsumerStatefulWidget {
+  const SupportChatPanel({super.key});
 
   @override
-  ConsumerState<SupportBotScreen> createState() => _SupportBotScreenState();
+  ConsumerState<SupportChatPanel> createState() => _SupportChatPanelState();
 }
 
 class _Msg {
   final bool user;
   final String text;
-
-  /// Cuando es true, la "burbuja" no muestra texto sino una nota de contacto con
-  /// un humano (handoff informativo en la conversación).
   final bool handoff;
   const _Msg(this.user, this.text, {this.handoff = false});
 }
 
-/// Marca que el agente puede emitir (según sus instrucciones en CustomGPT) para
-/// ofrecer contacto con un humano. Se oculta del texto mostrado.
+/// Marca que el agente puede emitir para ofrecer contacto con un humano. Se
+/// oculta del texto mostrado.
 const _handoffMarker = '[[CONTACTAR_HUMANO]]';
 
-class _SupportBotScreenState extends ConsumerState<SupportBotScreen> {
+class _SupportChatPanelState extends ConsumerState<SupportChatPanel> {
   final _msgs = <_Msg>[];
   final _ctrl = TextEditingController();
   final _scroll = ScrollController();
@@ -85,6 +83,7 @@ class _SupportBotScreenState extends ConsumerState<SupportBotScreen> {
     if (text.isEmpty || _sessionId == null || _sending) return;
     final repo = ref.read(dataRepositoryProvider).valueOrNull;
     if (repo == null) return;
+    final ctx = ref.read(supportChatProvider).context;
     setState(() {
       _msgs.add(_Msg(true, text));
       _sending = true;
@@ -92,10 +91,8 @@ class _SupportBotScreenState extends ConsumerState<SupportBotScreen> {
     });
     _scrollDown();
     try {
-      final reply = await repo.supportBotSend(_sessionId!, text,
-          context: widget.sessionContext);
+      final reply = await repo.supportBotSend(_sessionId!, text, context: ctx);
       if (!mounted) return;
-      // El agente puede pedir el handoff con una marca; se oculta del texto.
       final markerHit =
           reply.toUpperCase().contains(_handoffMarker.toUpperCase());
       final clean = reply
@@ -130,18 +127,23 @@ class _SupportBotScreenState extends ConsumerState<SupportBotScreen> {
   @override
   Widget build(BuildContext context) {
     final t = BrandTokens.of(context);
-    return Scaffold(
-      appBar: AppBar(title: const Text('Asistente de ayuda')),
-      body: Column(
+    return Material(
+      elevation: 10,
+      borderRadius: BorderRadius.circular(16),
+      clipBehavior: Clip.antiAlias,
+      color: t.surface,
+      child: Column(
+        mainAxisSize: MainAxisSize.max,
         children: [
+          _header(t),
           Container(
             width: double.infinity,
-            color: t.statusNeutral.withValues(alpha: 0.10),
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            color: t.statusNeutral.withValues(alpha: 0.08),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
             child: Text(
               'Ayuda sobre el uso de la plataforma. No da consejo médico ni '
               'accede a datos de tus pacientes.',
-              style: TextStyle(fontSize: 12, color: t.textSecondary),
+              style: TextStyle(fontSize: 11, color: t.textSecondary),
             ),
           ),
           Expanded(
@@ -151,7 +153,7 @@ class _SupportBotScreenState extends ConsumerState<SupportBotScreen> {
                     ? _errorView(t)
                     : ListView.builder(
                         controller: _scroll,
-                        padding: const EdgeInsets.all(16),
+                        padding: const EdgeInsets.all(12),
                         itemCount: _msgs.length + (_sending ? 1 : 0),
                         itemBuilder: (_, i) {
                           if (i >= _msgs.length) return _typing(t);
@@ -166,9 +168,41 @@ class _SupportBotScreenState extends ConsumerState<SupportBotScreen> {
     );
   }
 
+  Widget _header(BrandTokens t) => Container(
+        color: t.brandPrimary,
+        padding: const EdgeInsets.fromLTRB(14, 8, 6, 8),
+        child: Row(
+          children: [
+            const Icon(Icons.support_agent_outlined,
+                color: Colors.white, size: 20),
+            const SizedBox(width: 8),
+            const Expanded(
+              child: Text('Asistente de ayuda',
+                  style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 15)),
+            ),
+            IconButton(
+              tooltip: 'Minimizar',
+              visualDensity: VisualDensity.compact,
+              icon: const Icon(Icons.remove, color: Colors.white),
+              onPressed: () =>
+                  ref.read(supportChatProvider.notifier).minimize(),
+            ),
+            IconButton(
+              tooltip: 'Cerrar',
+              visualDensity: VisualDensity.compact,
+              icon: const Icon(Icons.close, color: Colors.white),
+              onPressed: () => ref.read(supportChatProvider.notifier).close(),
+            ),
+          ],
+        ),
+      );
+
   Widget _errorView(BrandTokens t) => Center(
         child: Padding(
-          padding: const EdgeInsets.all(24),
+          padding: const EdgeInsets.all(20),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -201,9 +235,9 @@ class _SupportBotScreenState extends ConsumerState<SupportBotScreen> {
       alignment: align,
       child: Container(
         margin: const EdgeInsets.symmetric(vertical: 4),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
         constraints:
-            BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.78),
+            BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.72),
         decoration: BoxDecoration(
           color: color,
           borderRadius: BorderRadius.circular(14),
@@ -219,7 +253,7 @@ class _SupportBotScreenState extends ConsumerState<SupportBotScreen> {
           margin: const EdgeInsets.symmetric(vertical: 6),
           padding: const EdgeInsets.all(12),
           constraints:
-              BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.78),
+              BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.72),
           decoration: BoxDecoration(
             color: t.statusNeutral.withValues(alpha: 0.12),
             borderRadius: BorderRadius.circular(14),
@@ -262,7 +296,7 @@ class _SupportBotScreenState extends ConsumerState<SupportBotScreen> {
   Widget _inputBar(BrandTokens t) => SafeArea(
         top: false,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(12, 6, 12, 10),
+          padding: const EdgeInsets.fromLTRB(10, 6, 10, 8),
           child: Row(
             children: [
               Expanded(

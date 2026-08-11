@@ -7,7 +7,6 @@ import '../../models/app_user.dart';
 import '../../models/module_key.dart';
 import '../../features/auth/demo_persona_screen.dart';
 import '../../features/auth/login_screen.dart';
-import '../../features/support/support_bot_screen.dart';
 import '../../features/treatment/treatment_program_builder_screen.dart';
 import '../../features/comercial/payment_result_screen.dart';
 import '../../features/dashboard/dashboard_screen.dart';
@@ -115,11 +114,9 @@ final routerProvider = Provider<GoRouter>((ref) {
       } else if (loggedIn && isCaregiver) {
         // El cuidador solo puede estar en su área; cualquier otra ruta lo
         // regresa a '/caregiver' (defensa de UX; la RLS 0042 ya le niega el
-        // resto de los datos). Excepción: el asistente de ayuda ('/support')
-        // está permitido para todos los roles.
-        if (!location.startsWith('/caregiver') && location != '/support') {
-          return '/caregiver';
-        }
+        // resto de los datos). El asistente de ayuda es un overlay flotante, no
+        // una ruta, así que no lo afecta este redirect.
+        if (!location.startsWith('/caregiver')) return '/caregiver';
       } else if (loggedIn && location.startsWith('/caregiver')) {
         // Un no-cuidador que teclee '/caregiver' no tiene nada ahí.
         return '/';
@@ -365,12 +362,6 @@ final routerProvider = Provider<GoRouter>((ref) {
             path: '/vac/:therapyId/bot',
             builder: (context, state) => VacBotScreen(
               therapyId: state.pathParameters['therapyId']!,
-            ),
-          ),
-          GoRoute(
-            path: '/support',
-            builder: (context, state) => SupportBotScreen(
-              sessionContext: (state.extra as Map?)?.cast<String, String>(),
             ),
           ),
           GoRoute(
