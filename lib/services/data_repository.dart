@@ -3901,6 +3901,46 @@ class DataRepository {
     );
   }
 
+  /// Quemaduras: gravedad crítica/mortal o criterio ABA → agenda valoración por
+  /// unidad de quemados / hospitalización. Solo hospital. Idempotente ('quemadura').
+  Future<void> applyQuemaduraTreatment(
+    String patientId, {
+    required String band,
+    required bool criterioHospitalizacion,
+    required String? organizationId,
+    String? createdBy,
+  }) async {
+    if (centerTypeFor(organizationId) != CenterType.hospital) return;
+    final now = DateTime.now();
+    final existing = _store
+        .getAll(Collections.preventiveTasks)
+        .map(PreventiveTask.fromJson)
+        .where((t) =>
+            t.patientId == patientId &&
+            t.ruleId == 'quemadura' &&
+            t.isPending &&
+            !t.scheduledAt.isBefore(now))
+        .toList();
+    for (final t in existing) {
+      await _store.deleteRow(Collections.preventiveTasks, t.id);
+    }
+    final urgente =
+        band == 'Crítico' || band == 'Mortal' || criterioHospitalizacion;
+    if (!urgente) return;
+    await createPreventiveTask(
+      patientId: patientId,
+      organizationId: organizationId,
+      title: 'Valoración por unidad de quemados / hospitalización',
+      scheduledAt: now.add(const Duration(hours: 1)),
+      admissionId: activeAdmission(patientId)?.id,
+      ruleId: 'quemadura',
+      actionId: 'interconsulta_quemados',
+      actionLabel: 'Interconsulta a quemados',
+      source: 'auto',
+      createdBy: createdBy,
+    );
+  }
+
   /// Computa el riesgo de un paciente AL VUELO (no se persiste): junta sus
   /// comorbilidades presentes + última Braden + heridas activas y aplica el
   /// catálogo de reglas. Devuelve nivel + alertas preventivas.

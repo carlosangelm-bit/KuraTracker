@@ -14,6 +14,8 @@ import '../../engine/risk/sum_scale.dart';
 import 'braden_scale_sheet.dart';
 import 'globiad_sheet.dart';
 import 'istap_sheet.dart';
+import 'marsi_sheet.dart';
+import 'quemaduras_sheet.dart';
 import 'star_sheet.dart';
 import 'sum_scale_sheet.dart';
 import 'triage_sheet.dart';
@@ -105,6 +107,37 @@ class _PatientRiskScreenState extends ConsumerState<PatientRiskScreen> {
           content: Text('$scaleId total ${r.total.toStringAsFixed(0)} registrado')));
       return;
     }
+    // Quemaduras: FÓRMULA (índice de Garcés) → banda + índice.
+    if (scaleId == 'QUEMADURA') {
+      final edad = repo.getPatient(widget.patientId)?.age ?? 0;
+      final r = await showQuemadurasSheet(context, edad: edad);
+      if (r == null || !mounted) return;
+      final session = ref.read(sessionProvider);
+      await repo.addScaleAssessment(
+        patientId: widget.patientId,
+        organizationId: session.user?.organizationId,
+        scaleId: scaleId,
+        scaleVersion: '1.0',
+        categoryResult: r.band,
+        bandId: r.band,
+        totalScore: r.indice,
+        subscores: r.subscores,
+        notes: r.notes,
+        staffId: await _staffId(repo),
+      );
+      await repo.applyQuemaduraTreatment(
+        widget.patientId,
+        band: r.band,
+        criterioHospitalizacion: r.criterioHospitalizacion,
+        organizationId: session.user?.organizationId,
+        createdBy: session.user?.id,
+      );
+      if (!mounted) return;
+      setState(() {});
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Quemadura · ${r.band} (índice ${r.indice.toStringAsFixed(0)})')));
+      return;
+    }
     ({String category, Map<String, dynamic> subscores, String? notes})? res;
     switch (scaleId) {
       case 'GLOBIAD':
@@ -115,6 +148,9 @@ class _PatientRiskScreenState extends ConsumerState<PatientRiskScreen> {
         break;
       case 'STAR':
         res = await showStarSheet(context);
+        break;
+      case 'MARSI':
+        res = await showMarsiSheet(context);
         break;
       default:
         return;

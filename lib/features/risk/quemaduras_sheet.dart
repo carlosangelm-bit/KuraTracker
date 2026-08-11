@@ -1,0 +1,238 @@
+import 'package:flutter/material.dart';
+
+import '../../core/theme/kura_theme.dart';
+
+/// Resultado de la escala de Quemaduras (profundidad + índice de Garcés).
+typedef QuemaduraResult = ({
+  String band, // Leve|Moderado|Grave|Crítico|Mortal
+  double indice, // índice de Garcés
+  bool criterioHospitalizacion,
+  Map<String, dynamic> subscores,
+  String? notes,
+});
+
+String _bandForIndex(double idx) {
+  if (idx > 150) return 'Mortal';
+  if (idx >= 101) return 'Crítico';
+  if (idx >= 71) return 'Grave';
+  if (idx >= 41) return 'Moderado';
+  return 'Leve';
+}
+
+/// Sheet de Quemaduras: profundidad (clasificación) + superficie por tipo (A/AB/B)
+/// para el ÍNDICE DE GARCÉS = %A×1 + %AB×2 + %B×3 + edad. Modo REALIZAR (calcula)
+/// o CAPTURAR el índice manualmente. La [edad] alimenta la fórmula.
+Future<QuemaduraResult?> showQuemadurasSheet(
+  BuildContext context, {
+  required int edad,
+}) async {
+  var manual = false;
+  String? profundidad; // PRIMER_GRADO | SEGUNDO_SUP | SEGUNDO_PROF | TERCER_GRADO
+  final aCtrl = TextEditingController();
+  final abCtrl = TextEditingController();
+  final bCtrl = TextEditingController();
+  final manualCtrl = TextEditingController();
+  final notesCtrl = TextEditingController();
+
+  double num0(TextEditingController c) =>
+      double.tryParse(c.text.trim().replaceAll(',', '.')) ?? 0;
+
+  const profundidades = <(String, String)>[
+    ('PRIMER_GRADO', 'Primer grado (epidermis)'),
+    ('SEGUNDO_SUP', 'Segundo grado superficial'),
+    ('SEGUNDO_PROF', 'Segundo grado profundo'),
+    ('TERCER_GRADO', 'Tercer grado (espesor total)'),
+  ];
+
+  final saved = await showModalBottomSheet<bool>(
+    context: context,
+    isScrollControlled: true,
+    showDragHandle: true,
+    builder: (ctx) => StatefulBuilder(
+      builder: (ctx, setSheet) {
+        final pa = num0(aCtrl), pab = num0(abCtrl), pb = num0(bCtrl);
+        final scq = pa + pab + pb;
+        final indiceGuiado = pa * 1 + pab * 2 + pb * 3 + edad;
+        final indice = manual
+            ? (double.tryParse(manualCtrl.text.trim().replaceAll(',', '.')))
+            : indiceGuiado;
+        // Criterio ABA (aprox., borrador): 2º grado >10% SCQ en <10 o >50 años;
+        // cualquier 3er grado >5% SCQ.
+        final segundo =
+            profundidad == 'SEGUNDO_SUP' || profundidad == 'SEGUNDO_PROF';
+        final abaCrit = (segundo && scq > 10 && (edad < 10 || edad > 50)) ||
+            (profundidad == 'TERCER_GRADO' && scq > 5);
+        final valid = indice != null && (manual || profundidad != null);
+        final band = indice == null ? null : _bandForIndex(indice);
+        final critico = band == 'Crítico' || band == 'Mortal';
+        return Padding(
+          padding: EdgeInsets.only(
+            left: 16,
+            right: 16,
+            top: 4,
+            bottom: MediaQuery.of(ctx).viewInsets.bottom + 16,
+          ),
+          child: ConstrainedBox(
+            constraints:
+                BoxConstraints(maxHeight: MediaQuery.of(ctx).size.height * 0.85),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Quemaduras · Profundidad + índice de Garcés',
+                    style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
+                Text('Edad del paciente: $edad años (usada en la fórmula).',
+                    style: Theme.of(ctx).textTheme.bodySmall),
+                const SizedBox(height: 10),
+                SegmentedButton<bool>(
+                  segments: const [
+                    ButtonSegment(value: false, label: Text('Realizar')),
+                    ButtonSegment(value: true, label: Text('Ya tengo el índice')),
+                  ],
+                  selected: {manual},
+                  onSelectionChanged: (s) => setSheet(() => manual = s.first),
+                ),
+                const SizedBox(height: 14),
+                Flexible(
+                  child: SingleChildScrollView(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (!manual) ...[
+                          const Text('Profundidad',
+                              style: TextStyle(fontWeight: FontWeight.w600)),
+                          const SizedBox(height: 6),
+                          Wrap(
+                            spacing: 6,
+                            runSpacing: 6,
+                            children: [
+                              for (final p in profundidades)
+                                ChoiceChip(
+                                  label: Text(p.$2,
+                                      style: const TextStyle(fontSize: 12)),
+                                  selected: profundidad == p.$1,
+                                  onSelected: (_) =>
+                                      setSheet(() => profundidad = p.$1),
+                                ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          const Text('% de superficie corporal quemada por tipo',
+                              style: TextStyle(fontWeight: FontWeight.w600)),
+                          const SizedBox(height: 6),
+                          Row(
+                            children: [
+                              Expanded(
+                                  child: _pctField(aCtrl, 'A ×1',
+                                      () => setSheet(() {}))),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                  child: _pctField(abCtrl, 'AB ×2',
+                                      () => setSheet(() {}))),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                  child: _pctField(bCtrl, 'B ×3',
+                                      () => setSheet(() {}))),
+                            ],
+                          ),
+                        ] else
+                          TextField(
+                            controller: manualCtrl,
+                            keyboardType: TextInputType.number,
+                            onChanged: (_) => setSheet(() {}),
+                            decoration: const InputDecoration(
+                                labelText: 'Índice de Garcés',
+                                isDense: true,
+                                border: OutlineInputBorder()),
+                          ),
+                        const SizedBox(height: 8),
+                        TextField(
+                          controller: notesCtrl,
+                          decoration: const InputDecoration(
+                            labelText: 'Notas (opcional)',
+                            border: OutlineInputBorder(),
+                            isDense: true,
+                          ),
+                          maxLines: 2,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                if (abaCrit && !manual)
+                  Text('Cumple criterio de hospitalización (ABA).',
+                      style: TextStyle(fontSize: 11, color: KuraColors.danger)),
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        band == null
+                            ? 'Completa la valoración'
+                            : 'Índice: ${indice!.toStringAsFixed(0)} · $band',
+                        style: TextStyle(
+                            fontWeight: FontWeight.w700,
+                            color: critico
+                                ? KuraColors.danger
+                                : (valid
+                                    ? KuraColors.primary
+                                    : KuraColors.darkText
+                                        .withValues(alpha: 0.6))),
+                      ),
+                    ),
+                    FilledButton(
+                      onPressed:
+                          valid ? () => Navigator.of(ctx).pop(true) : null,
+                      child: const Text('Guardar'),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    ),
+  );
+
+  if (saved != true) return null;
+  final pa = num0(aCtrl), pab = num0(abCtrl), pb = num0(bCtrl);
+  final indice = manual
+      ? double.tryParse(manualCtrl.text.trim().replaceAll(',', '.'))
+      : (pa * 1 + pab * 2 + pb * 3 + edad);
+  if (indice == null) return null;
+  final scq = pa + pab + pb;
+  final segundo = profundidad == 'SEGUNDO_SUP' || profundidad == 'SEGUNDO_PROF';
+  final abaCrit = !manual &&
+      ((segundo && scq > 10 && (edad < 10 || edad > 50)) ||
+          (profundidad == 'TERCER_GRADO' && scq > 5));
+  final notes = notesCtrl.text.trim().isEmpty ? null : notesCtrl.text.trim();
+  return (
+    band: _bandForIndex(indice),
+    indice: indice,
+    criterioHospitalizacion: abaCrit,
+    subscores: <String, dynamic>{
+      'modo': manual ? 'manual' : 'guiada',
+      if (!manual) 'profundidad': profundidad,
+      if (!manual) 'pct_A': pa,
+      if (!manual) 'pct_AB': pab,
+      if (!manual) 'pct_B': pb,
+      'edad': edad,
+      'criterio_hospitalizacion': abaCrit,
+    },
+    notes: notes,
+  );
+}
+
+Widget _pctField(TextEditingController c, String label, VoidCallback onChanged) =>
+    TextField(
+      controller: c,
+      keyboardType: TextInputType.number,
+      onChanged: (_) => onChanged(),
+      decoration: InputDecoration(
+        labelText: label,
+        isDense: true,
+        border: const OutlineInputBorder(),
+      ),
+    );
