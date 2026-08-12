@@ -301,7 +301,14 @@ class _InventarioScreenState extends ConsumerState<InventarioScreen> {
           // Alcance del inventario (0053): 'center' = una sola bolsa (sitio
           // principal, sin selector); 'site' = por sitio con selector.
           final scope = repo.inventoryScopeFor(orgId);
-          final centerMode = scope == 'center';
+          // Espejo de Shopify = una sola tienda = un solo stock. Si el centro
+          // usa el espejo, el inventario se UNIFICA por centro (una sola bolsa,
+          // sites.first) sin importar el scope configurado: así, cuando el admin
+          // sincroniza con Shopify, TODOS los usuarios del centro ven el mismo
+          // inventario (antes cada usuario tenía que sincronizar su propio
+          // sitio, y María veía vacío si caía en otro sitio).
+          final mirrorUnified = repo.shopifyMirrorFor(orgId);
+          final centerMode = scope == 'center' || mirrorUnified;
           if (centerMode) {
             _siteId = sites.first.id;
           } else {
@@ -327,7 +334,10 @@ class _InventarioScreenState extends ConsumerState<InventarioScreen> {
                 low: lowCount,
                 value: invValue,
                 scope: scope,
-                canEditScope: isAdmin,
+                // Con espejo Shopify el inventario queda unificado por centro;
+                // el selector de scope no aplica (se oculta) para no confundir.
+                canEditScope: isAdmin && !mirrorUnified,
+                mirrorUnified: mirrorUnified,
                 onScope: (s) async {
                   await repo.setInventoryScope(orgId!, s);
                   if (mounted) setState(() {});
@@ -959,6 +969,7 @@ class _InvSummary extends StatelessWidget {
   final double value;
   final String scope; // 'site' | 'center'
   final bool canEditScope;
+  final bool mirrorUnified; // inventario unificado por espejo Shopify
   final ValueChanged<String> onScope;
   const _InvSummary({
     required this.total,
@@ -966,6 +977,7 @@ class _InvSummary extends StatelessWidget {
     required this.value,
     required this.scope,
     required this.canEditScope,
+    required this.mirrorUnified,
     required this.onScope,
   });
 
@@ -985,6 +997,25 @@ class _InvSummary extends StatelessWidget {
                 _kpi(context, _money(value), 'Valor', KuraColors.darkText),
               ],
             ),
+            if (mirrorUnified) ...[
+              const Divider(height: 16),
+              Row(
+                children: [
+                  const Icon(Icons.sync, size: 16, color: KuraColors.primary),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Inventario unificado por el espejo de Shopify: al '
+                      'sincronizar, el stock queda disponible para todos los '
+                      'usuarios del centro.',
+                      style: TextStyle(
+                          fontSize: 12,
+                          color: KuraColors.darkText.withValues(alpha: 0.7)),
+                    ),
+                  ),
+                ],
+              ),
+            ],
             if (canEditScope) ...[
               const Divider(height: 16),
               Row(

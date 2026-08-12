@@ -125,7 +125,10 @@ class _ConsumoScreenState extends ConsumerState<ConsumoScreen> {
     final sites = repo.listSites(organizationId: orgId).where((s) => s.isActive).toList();
     // Alcance del inventario (0053): en 'center' se usa el sitio principal como
     // bolsa única; en 'site' el del paciente.
-    final centerMode = repo.inventoryScopeFor(orgId) == 'center';
+    // Espejo Shopify unifica el inventario por centro (ver inventario_screen):
+    // el consumo baja del mismo stock que sincronizó el admin.
+    final centerMode = repo.inventoryScopeFor(orgId) == 'center' ||
+        repo.shopifyMirrorFor(orgId);
     final siteId = centerMode
         ? (sites.isNotEmpty ? sites.first.id : null)
         : (patient.primarySiteId ?? (sites.isNotEmpty ? sites.first.id : null));
