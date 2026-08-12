@@ -6,6 +6,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 
 import '../../core/theme/kura_theme.dart';
+import '../../core/utils/image_pick_error.dart';
 import '../../core/providers/session_provider.dart';
 import '../risk/braden_scale_sheet.dart';
 import '../../engine/models/kura_engine_enums.dart';
@@ -158,8 +159,12 @@ class _WoundCaptureScreenState extends ConsumerState<WoundCaptureScreen> {
         controller.state.photoBytesByPath[file.path] = bytes;
         controller.touch();
       }
-    } catch (_) {
-      // En web sin soporte de camara, el picker de galeria/archivo sigue funcionando.
+    } catch (e) {
+      // Antes se tragaba el error en silencio: el usuario "no podía" cargar la
+      // foto sin saber por qué (típicamente HEIC de iPhone). Ahora se avisa.
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(imagePickErrorMessage(e))));
     }
   }
 

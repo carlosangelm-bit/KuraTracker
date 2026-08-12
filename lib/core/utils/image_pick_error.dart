@@ -1,0 +1,12 @@
+/// Mensaje accionable cuando falla la selección/carga de una foto.
+///
+/// Causa más común en la clínica: fotos tomadas con iPhone que quedan en
+/// formato HEIC/HEIF, que el navegador (sobre todo en escritorio) no puede
+/// decodificar al subirlas desde la app web. En vez de un fallo silencioso, se
+/// le dice al usuario qué pasó y cómo resolverlo.
+String imagePickErrorMessage(Object error) {
+  return 'No se pudo cargar la imagen. Si la tomaste con un iPhone puede estar '
+      'en formato HEIC: cámbiala a JPG (en el iPhone: Ajustes › Cámara › '
+      'Formatos › "Más compatible") o elige/comparte la foto como JPG e '
+      'inténtalo de nuevo.';
+}

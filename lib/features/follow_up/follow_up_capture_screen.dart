@@ -8,6 +8,7 @@ import 'package:intl/intl.dart';
 
 import '../../core/providers/session_provider.dart';
 import '../../core/theme/kura_theme.dart';
+import '../../core/utils/image_pick_error.dart';
 import '../../core/utils/wound_volume.dart';
 import '../../engine/kura_protocol_engine.dart';
 import '../../engine/kura_sheehan_checkpoint.dart';
@@ -277,8 +278,11 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
           _photoAfterCleaningBytes = bytes;
         }
       });
-    } catch (_) {
-      // Sin soporte de camara/galeria en este dispositivo/navegador.
+    } catch (e) {
+      // Antes se ocultaba el error (típicamente HEIC de iPhone): ahora se avisa.
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(imagePickErrorMessage(e))));
     }
   }
 
