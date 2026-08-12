@@ -10,3 +10,14 @@ String imagePickErrorMessage(Object error) {
       'Formatos › "Más compatible") o elige/comparte la foto como JPG e '
       'inténtalo de nuevo.';
 }
+
+/// Devuelve un nombre de archivo con extensión .jpg (para fotos ya convertidas
+/// a JPEG en la app, cuyo nombre original podría ser p. ej. IMG_1234.HEIC).
+String jpgFileName(String? original, String fallback) {
+  final base = (original == null || original.trim().isEmpty)
+      ? fallback
+      : original.trim();
+  final dot = base.lastIndexOf('.');
+  final stem = dot > 0 ? base.substring(0, dot) : base;
+  return '$stem.jpg';
+}

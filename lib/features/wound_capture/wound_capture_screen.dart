@@ -5,8 +5,11 @@ import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
+
 import '../../core/theme/kura_theme.dart';
 import '../../core/utils/image_pick_error.dart';
+import '../../services/image_transcode.dart';
 import '../../core/providers/session_provider.dart';
 import '../risk/braden_scale_sheet.dart';
 import '../../engine/models/kura_engine_enums.dart';
@@ -148,12 +151,29 @@ class _WoundCaptureScreenState extends ConsumerState<WoundCaptureScreen> {
       return;
     }
     try {
+      // En web NO se piden imageQuality/maxWidth: ese re-escalado del plugin
+      // falla con HEIC de iPhone. Se traen los bytes crudos y se convierten a
+      // JPEG en el navegador (transcodeImageToJpeg, que además reescala).
       final file = await _picker.pickImage(
-          source: ImageSource.gallery, imageQuality: 85, maxWidth: 1600, maxHeight: 1600);
+        source: ImageSource.gallery,
+        imageQuality: kIsWeb ? null : 85,
+        maxWidth: kIsWeb ? null : 1600,
+        maxHeight: kIsWeb ? null : 1600,
+      );
       if (file != null) {
         // Se leen los bytes AHORA para poder subirlos a Storage al guardar
         // (en web file.path es una blob URL que no se puede leer luego).
-        final bytes = await file.readAsBytes();
+        final raw = await file.readAsBytes();
+        final jpeg = await transcodeImageToJpeg(raw, name: file.name);
+        // En web la conversión es obligatoria (los bytes crudos pueden ser HEIC
+        // no mostrable). Si no se pudo decodificar, se avisa y no se agrega.
+        if (jpeg == null && kIsWeb) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text(imagePickErrorMessage('formato'))));
+          return;
+        }
+        final bytes = jpeg ?? raw;
         final controller = ref.read(woundCaptureControllerProvider(_draftKey).notifier);
         controller.state.photoPaths.add(file.path);
         controller.state.photoBytesByPath[file.path] = bytes;

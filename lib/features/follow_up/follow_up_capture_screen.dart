@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -10,6 +11,7 @@ import '../../core/providers/session_provider.dart';
 import '../../core/theme/kura_theme.dart';
 import '../../core/utils/image_pick_error.dart';
 import '../../core/utils/wound_volume.dart';
+import '../../services/image_transcode.dart';
 import '../../engine/kura_protocol_engine.dart';
 import '../../engine/kura_sheehan_checkpoint.dart';
 import '../../engine/models/kura_engine_enums.dart';
@@ -265,10 +267,24 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
 
   Future<void> _pickPhoto({required bool withMeasurement}) async {
     try {
+      // Web: sin resize del plugin (falla con HEIC); bytes crudos + conversión
+      // a JPEG en el navegador (transcodeImageToJpeg). Nativo: como antes.
       final file = await _picker.pickImage(
-          source: ImageSource.gallery, imageQuality: 85, maxWidth: 1600, maxHeight: 1600);
+        source: ImageSource.gallery,
+        imageQuality: kIsWeb ? null : 85,
+        maxWidth: kIsWeb ? null : 1600,
+        maxHeight: kIsWeb ? null : 1600,
+      );
       if (file == null) return;
-      final bytes = await file.readAsBytes();
+      final raw = await file.readAsBytes();
+      final jpeg = await transcodeImageToJpeg(raw, name: file.name);
+      if (jpeg == null && kIsWeb) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(imagePickErrorMessage('formato'))));
+        return;
+      }
+      final bytes = jpeg ?? raw;
       setState(() {
         if (withMeasurement) {
           _photoWithMeasurement = file;
@@ -2293,13 +2309,13 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
 
       await savePhoto(
         _photoAfterCleaningBytes!,
-        _photoAfterCleaning?.name ?? 'seguimiento_despues_limpiar.jpg',
+        jpgFileName(_photoAfterCleaning?.name, 'seguimiento_despues_limpiar.jpg'),
         PhotoStage.despuesLimpiar.dbValue,
       );
       if (_photoWithMeasurementBytes != null) {
         await savePhoto(
           _photoWithMeasurementBytes!,
-          _photoWithMeasurement?.name ?? 'seguimiento_con_medicion.jpg',
+          jpgFileName(_photoWithMeasurement?.name, 'seguimiento_con_medicion.jpg'),
           PhotoStage.conMedicion.dbValue,
         );
       }
