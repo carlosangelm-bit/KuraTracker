@@ -63,7 +63,9 @@ class _ReabastoScreenState extends ConsumerState<ReabastoScreen> {
                     padding: EdgeInsets.all(32),
                     child: Text('Este centro no tiene sitios configurados.')));
           }
-          final centerMode = repo.inventoryScopeFor(orgId) == 'center';
+          // Espejo Shopify unifica el inventario por centro (ver inventario_screen).
+          final centerMode = repo.inventoryScopeFor(orgId) == 'center' ||
+              repo.shopifyMirrorFor(orgId);
           if (centerMode) {
             _siteId = sites.first.id;
           } else {
