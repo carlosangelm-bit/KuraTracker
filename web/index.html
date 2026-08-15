@@ -33,6 +33,22 @@
   <link rel="manifest" href="manifest.json">
 </head>
 <body>
+  <!-- Conversión HEIC/HEIF → JPEG en el navegador (heic2any, hospedado local
+       para no depender de un CDN). Trae su propio decodificador HEIF, así que
+       funciona donde el navegador no decodifica HEIC nativamente (Chrome,
+       Android). Dart lo invoca vía window.convertHeicToJpeg (image_transcode_web). -->
+  <script src="vendor/heic2any.min.js" defer></script>
+  <script>
+    window.convertHeicToJpeg = async function (blob, quality) {
+      var out = await heic2any({
+        blob: blob,
+        toType: "image/jpeg",
+        quality: (typeof quality === "number" && quality > 0) ? quality : 0.85,
+      });
+      // heic2any puede devolver un Blob o un arreglo (HEIC con varias imágenes).
+      return Array.isArray(out) ? out[0] : out;
+    };
+  </script>
   <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>
