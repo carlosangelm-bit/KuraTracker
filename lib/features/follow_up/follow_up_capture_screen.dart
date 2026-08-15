@@ -749,13 +749,14 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
                   children: [
                     Expanded(
                       child: DropdownButtonFormField<String>(
-                        value: _odor,
+                        // Olor binario (María): presente / no presente.
+                        value: _odor == 'ninguno' ? 'ninguno' : 'presente',
                         decoration: const InputDecoration(labelText: 'Olor'),
                         items: const [
-                          DropdownMenuItem(value: 'ninguno', child: Text('Ninguno')),
-                          DropdownMenuItem(value: 'leve', child: Text('Leve')),
-                          DropdownMenuItem(value: 'moderado', child: Text('Moderado')),
-                          DropdownMenuItem(value: 'fuerte', child: Text('Fuerte')),
+                          DropdownMenuItem(
+                              value: 'ninguno', child: Text('No presente')),
+                          DropdownMenuItem(
+                              value: 'presente', child: Text('Presente')),
                         ],
                         onChanged: (v) => setState(() => _odor = v ?? 'ninguno'),
                       ),
