@@ -834,13 +834,15 @@ class _WoundCaptureScreenState extends ConsumerState<WoundCaptureScreen> {
                 children: [
                   Expanded(
                     child: DropdownButtonFormField<String>(
-                      value: formState.odor,
+                      // Olor binario (María): presente / no presente. El guard
+                      // normaliza registros legacy (leve/moderado/fuerte).
+                      value: formState.odor == 'ninguno' ? 'ninguno' : 'presente',
                       decoration: const InputDecoration(labelText: 'Olor *'),
                       items: const [
-                        DropdownMenuItem(value: 'ninguno', child: Text('Ninguno')),
-                        DropdownMenuItem(value: 'leve', child: Text('Leve')),
-                        DropdownMenuItem(value: 'moderado', child: Text('Moderado')),
-                        DropdownMenuItem(value: 'fuerte', child: Text('Fuerte')),
+                        DropdownMenuItem(
+                            value: 'ninguno', child: Text('No presente')),
+                        DropdownMenuItem(
+                            value: 'presente', child: Text('Presente')),
                       ],
                       onChanged: (v) => update(() => formState.odor = v ?? 'ninguno'),
                     ),
