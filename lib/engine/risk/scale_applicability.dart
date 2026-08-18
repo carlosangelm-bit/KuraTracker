@@ -5,6 +5,10 @@ import 'package:flutter/services.dart' show rootBundle;
 /// Prioridad con la que una escala se ofrece tras evaluar los factores de riesgo.
 enum ScalePriority { obligatoria, sugerida }
 
+/// Origen de una escala en la propuesta: derivada del motor (auto) o añadida
+/// manualmente por el experto.
+enum ScaleSource { auto, manual }
+
 /// Una escala que aplica para un paciente, según el motor de aplicabilidad.
 class ApplicableScale {
   final String scaleId;
@@ -13,6 +17,7 @@ class ApplicableScale {
   final bool implemented; // ¿hay captura construida ya?
   final int score; // suma de pesos de los factores de riesgo presentes
   final List<String> matchedFactors; // factores que contribuyeron (ids)
+  final ScaleSource source; // auto (motor) | manual (añadida por el experto)
   const ApplicableScale({
     required this.scaleId,
     required this.label,
@@ -20,6 +25,7 @@ class ApplicableScale {
     required this.implemented,
     this.score = 0,
     this.matchedFactors = const [],
+    this.source = ScaleSource.auto,
   });
 }
 

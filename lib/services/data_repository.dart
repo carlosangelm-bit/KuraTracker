@@ -3824,8 +3824,133 @@ class DataRepository {
     // Filtro por las escalas habilitadas del centro (null = todas).
     final orgId = getPatient(patientId)?.organizationId;
     final enabled = organizationById(orgId)?.enabledScales;
-    if (enabled == null) return result;
-    return result.where((s) => enabled.contains(s.scaleId)).toList();
+    final autoFiltered = enabled == null
+        ? result
+        : result.where((s) => enabled.contains(s.scaleId)).toList();
+    // Overrides del experto (Fase 2): quita las EXCLUIDAS; añade las INCLUIDAS
+    // que el motor no propuso. La propuesta del motor sigue siendo la base.
+    final overrides = applicableSetState(patientId).overrides;
+    final merged = <ApplicableScale>[
+      for (final s in autoFiltered)
+        if (overrides[s.scaleId] != 'excluded') s,
+    ];
+    final present = merged.map((s) => s.scaleId).toSet();
+    for (final e in overrides.entries) {
+      if (e.value != 'included' || present.contains(e.key)) continue;
+      if (enabled != null && !enabled.contains(e.key)) continue;
+      final label = catalog.scales
+          .firstWhere((c) => c.scaleId == e.key,
+              orElse: () => (scaleId: e.key, label: e.key))
+          .label;
+      merged.add(ApplicableScale(
+        scaleId: e.key,
+        label: label,
+        priority: ScalePriority.sugerida,
+        implemented: true,
+        source: ScaleSource.manual,
+      ));
+    }
+    merged.sort((a, b) {
+      final p = a.priority.index.compareTo(b.priority.index);
+      return p != 0 ? p : b.score.compareTo(a.score);
+    });
+    return merged;
+  }
+
+  // ---- Propuesta editable de escalas (Fase 2): overrides del experto ----
+  // Se guarda como una fila scale_assessments scaleId='APPLICABLE_SET'
+  // (subscores = {overrides:{scaleId->included|excluded}, validated, ...}).
+  // Append-only: la más reciente gana.
+
+  /// Estado del conjunto editable: overrides + estado de validación.
+  ({
+    Map<String, String> overrides,
+    bool validated,
+    String? validatedBy,
+    DateTime? validatedAt,
+  }) applicableSetState(String patientId) {
+    final sub =
+        latestScaleAssessment(patientId, 'APPLICABLE_SET')?.subscores ??
+            const {};
+    final raw = (sub['overrides'] as Map?) ?? const {};
+    final overrides = <String, String>{
+      for (final e in raw.entries) e.key.toString(): e.value.toString(),
+    };
+    final at = sub['validated_at'] as String?;
+    return (
+      overrides: overrides,
+      validated: sub['validated'] == true,
+      validatedBy: sub['validated_by'] as String?,
+      validatedAt: at == null ? null : DateTime.tryParse(at),
+    );
+  }
+
+  Future<void> _saveApplicableSet(
+    String patientId,
+    String? organizationId,
+    Map<String, String> overrides, {
+    required bool validated,
+    String? validatedBy,
+    String? staffId,
+  }) async {
+    await addScaleAssessment(
+      patientId: patientId,
+      organizationId: organizationId,
+      scaleId: 'APPLICABLE_SET',
+      scaleVersion: '1.0',
+      subscores: {
+        'overrides': overrides,
+        'validated': validated,
+        'validated_by': validatedBy,
+        'validated_at': validated ? DateTime.now().toIso8601String() : null,
+      },
+      staffId: staffId,
+    );
+  }
+
+  /// El experto quita/añade una escala. status: 'included' | 'excluded' | null
+  /// (limpiar). Cualquier cambio invalida la validación previa.
+  Future<void> setApplicableOverride(
+    String patientId, {
+    required String? organizationId,
+    required String scaleId,
+    required String? status,
+    String? staffId,
+  }) async {
+    final cur = Map<String, String>.from(applicableSetState(patientId).overrides);
+    if (status == null) {
+      cur.remove(scaleId);
+    } else {
+      cur[scaleId] = status;
+    }
+    await _saveApplicableSet(patientId, organizationId, cur,
+        validated: false, staffId: staffId);
+  }
+
+  /// El experto VALIDA la propuesta actual (sella quién/cuándo).
+  Future<void> validateApplicableSet(
+    String patientId, {
+    required String? organizationId,
+    required String? staffId,
+  }) async {
+    await _saveApplicableSet(
+        patientId, organizationId, applicableSetState(patientId).overrides,
+        validated: true, validatedBy: staffId, staffId: staffId);
+  }
+
+  /// Escalas del catálogo (habilitadas en el centro) que NO están en la
+  /// propuesta actual, para que el experto pueda añadirlas.
+  List<({String scaleId, String label})> addableScales(
+      String patientId, ScaleApplicabilityCatalog catalog) {
+    final present =
+        applicableScales(patientId, catalog).map((s) => s.scaleId).toSet();
+    final enabled =
+        organizationById(getPatient(patientId)?.organizationId)?.enabledScales;
+    return catalog.scales
+        .where((c) =>
+            !present.contains(c.scaleId) &&
+            (enabled == null || enabled.contains(c.scaleId)))
+        .toList();
   }
 
   /// Guarda las respuestas del triage como una valoración de escala 'TRIAGE'
