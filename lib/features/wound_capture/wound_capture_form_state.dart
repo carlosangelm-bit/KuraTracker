@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import '../../core/utils/wound_volume.dart';
 import '../../engine/models/kura_engine_enums.dart';
 import '../../engine/models/kura_engine_input.dart';
+import '../../models/wound.dart' show enumByName;
 
 /// Estado mutable del formulario de captura de herida. Se recalcula el
 /// pronostico en vivo (seccion 6.1) cada vez que cambia un campo relevante.
@@ -218,4 +219,158 @@ class WoundCaptureFormState {
 
   /// Valida que los campos minimos esten completos para calcular pronostico.
   bool get hasMinimumDataForPrognosis => lengthCm > 0 && widthCm > 0;
+
+  /// Instantánea de los CAMPOS del formulario (no incluye fotos ni las
+  /// comorbilidades, que se recargan del paciente). Se guarda en un borrador de
+  /// valoración (consultations.draft_form_state) para reabrirlo editable.
+  Map<String, dynamic> toJson() => {
+        'etiologia': etiologia.name,
+        'subtype': subtype,
+        'bodyLocationPrimary': bodyLocationPrimary,
+        'bodyLocationSecondary': bodyLocationSecondary,
+        'onsetDate': onsetDate?.toIso8601String(),
+        'wagnerGrade': wagnerGrade?.name,
+        'wifiWound': wifiWound,
+        'wifiIschemia': wifiIschemia,
+        'wifiInfection': wifiInfection,
+        'ceapClass': ceapClass?.name,
+        'subtipoVascular': subtipoVascular?.name,
+        'noRevascularizable': noRevascularizable,
+        'wuwhsGrade': wuwhsGrade?.name,
+        'agenteCausal': agenteCausal?.name,
+        'bradenScore': bradenScore,
+        'bradenSubscores': bradenSubscores,
+        'updSubtipo': updSubtipo?.name,
+        'texasGrade': texasGrade?.name,
+        'texasStage': texasStage?.name,
+        'idsaIwgdf': idsaIwgdf?.name,
+        'sensibilidadProtectora': sensibilidadProtectora?.name,
+        'rutherford': rutherford?.name,
+        'npuapEstadio': npuapEstadio?.name,
+        'claseContaminacion': claseContaminacion?.name,
+        'tipoCierre': tipoCierre?.name,
+        'drenajeTipo': drenajeTipo?.name,
+        'suturaTipo': suturaTipo?.name,
+        'drenajeNum': drenajeNum,
+        'suturaNum': suturaNum,
+        'glucoseMgDl': glucoseMgDl,
+        'hba1cPct': hba1cPct,
+        'firstAssessmentDate': firstAssessmentDate?.toIso8601String(),
+        'edema': edema,
+        'pain': pain,
+        'painType': painType,
+        'painDuration': painDuration,
+        'painVas': painVas,
+        'exudadoTipo': exudadoTipo.name,
+        'exudadoCantidad': exudadoCantidad.name,
+        'infeccionCriterios': infeccionCriterios.map((e) => e.name).toList(),
+        'odor': odor,
+        'woundEdge': woundEdge,
+        'perilesionalSkin': perilesionalSkin.map((e) => e.name).toList(),
+        'clinicalNotes': clinicalNotes,
+        'itbTexto': itbTexto,
+        'pruebasSensibilidad': pruebasSensibilidad,
+        'llenadoCapilar': llenadoCapilar,
+        'lengthCm': lengthCm,
+        'widthCm': widthCm,
+        'depthCm': depthCm,
+        'volumeCm3': volumeCm3,
+        'tunneling': tunneling,
+        'undermining': undermining,
+        'granulacionPct': granulacionPct,
+        'esfaceloPct': esfaceloPct,
+        'necrosisPct': necrosisPct,
+        'epitelizacionPct': epitelizacionPct,
+        'capturedBeforeDebridement': capturedBeforeDebridement,
+        'esExtremidadInferior': esExtremidadInferior,
+        'abiRight': abiRight,
+        'abiLeft': abiLeft,
+        'albuminaGdl': albuminaGdl,
+        'entorno': entorno.name,
+      };
+
+  /// Rehidrata los campos desde una instantánea [j] (ver [toJson]). No toca
+  /// fotos ni comorbilidades. Tolerante: lo ausente conserva el valor actual.
+  void applyJson(Map<String, dynamic> j) {
+    double? d(Object? v) => (v as num?)?.toDouble();
+    int? i(Object? v) => (v as num?)?.toInt();
+    DateTime? dt(Object? v) => v == null ? null : DateTime.parse(v as String);
+    Set<T> setOf<T extends Enum>(List<T> values, Object? v) =>
+        ((v as List?) ?? const [])
+            .map((e) => enumByName(values, e))
+            .whereType<T>()
+            .toSet();
+
+    etiologia = enumByName(Etiologia.values, j['etiologia']) ?? etiologia;
+    subtype = j['subtype'] as String?;
+    bodyLocationPrimary = j['bodyLocationPrimary'] as String?;
+    bodyLocationSecondary = j['bodyLocationSecondary'] as String?;
+    onsetDate = dt(j['onsetDate']);
+    wagnerGrade = enumByName(WagnerGrade.values, j['wagnerGrade']);
+    wifiWound = i(j['wifiWound']);
+    wifiIschemia = i(j['wifiIschemia']);
+    wifiInfection = i(j['wifiInfection']);
+    ceapClass = enumByName(CeapClass.values, j['ceapClass']);
+    subtipoVascular = enumByName(SubtipoVascular.values, j['subtipoVascular']);
+    noRevascularizable = j['noRevascularizable'] as bool? ?? false;
+    wuwhsGrade = enumByName(WuwhsGrade.values, j['wuwhsGrade']);
+    agenteCausal = enumByName(AgenteCausal.values, j['agenteCausal']);
+    bradenScore = i(j['bradenScore']);
+    bradenSubscores = (j['bradenSubscores'] as Map?)
+        ?.map((k, v) => MapEntry(k.toString(), (v as num).toInt()));
+    updSubtipo = enumByName(UpdSubtipo.values, j['updSubtipo']);
+    texasGrade = enumByName(TexasGrade.values, j['texasGrade']);
+    texasStage = enumByName(TexasStage.values, j['texasStage']);
+    idsaIwgdf = enumByName(IdsaIwgdf.values, j['idsaIwgdf']);
+    sensibilidadProtectora =
+        enumByName(SensibilidadProtectora.values, j['sensibilidadProtectora']);
+    rutherford = enumByName(Rutherford.values, j['rutherford']);
+    npuapEstadio = enumByName(NpuapEstadio.values, j['npuapEstadio']);
+    claseContaminacion =
+        enumByName(ClaseContaminacion.values, j['claseContaminacion']);
+    tipoCierre = enumByName(TipoCierre.values, j['tipoCierre']);
+    drenajeTipo = enumByName(DrenajeTipo.values, j['drenajeTipo']);
+    suturaTipo = enumByName(SuturaTipo.values, j['suturaTipo']);
+    drenajeNum = i(j['drenajeNum']);
+    suturaNum = i(j['suturaNum']);
+    glucoseMgDl = d(j['glucoseMgDl']);
+    hba1cPct = d(j['hba1cPct']);
+    firstAssessmentDate = dt(j['firstAssessmentDate']);
+    edema = j['edema'] as String? ?? edema;
+    pain = j['pain'] as bool? ?? pain;
+    painType = j['painType'] as String?;
+    painDuration = j['painDuration'] as String?;
+    painVas = i(j['painVas']) ?? painVas;
+    exudadoTipo = enumByName(ExudadoTipo.values, j['exudadoTipo']) ?? exudadoTipo;
+    exudadoCantidad =
+        enumByName(ExudadoCantidad.values, j['exudadoCantidad']) ?? exudadoCantidad;
+    infeccionCriterios =
+        setOf(InfeccionCriterioIwii.values, j['infeccionCriterios']);
+    odor = j['odor'] as String? ?? odor;
+    woundEdge = j['woundEdge'] as String? ?? woundEdge;
+    perilesionalSkin =
+        setOf(PielPerilesionalEstado.values, j['perilesionalSkin']);
+    clinicalNotes = j['clinicalNotes'] as String?;
+    itbTexto = j['itbTexto'] as String?;
+    pruebasSensibilidad = j['pruebasSensibilidad'] as String?;
+    llenadoCapilar = j['llenadoCapilar'] as String?;
+    lengthCm = d(j['lengthCm']) ?? lengthCm;
+    widthCm = d(j['widthCm']) ?? widthCm;
+    depthCm = d(j['depthCm']) ?? depthCm;
+    volumeCm3 = d(j['volumeCm3']);
+    tunneling = j['tunneling'] as bool? ?? tunneling;
+    undermining = j['undermining'] as bool? ?? undermining;
+    granulacionPct = d(j['granulacionPct']) ?? granulacionPct;
+    esfaceloPct = d(j['esfaceloPct']) ?? esfaceloPct;
+    necrosisPct = d(j['necrosisPct']) ?? necrosisPct;
+    epitelizacionPct = d(j['epitelizacionPct']) ?? epitelizacionPct;
+    capturedBeforeDebridement =
+        j['capturedBeforeDebridement'] as bool? ?? capturedBeforeDebridement;
+    esExtremidadInferior =
+        j['esExtremidadInferior'] as bool? ?? esExtremidadInferior;
+    abiRight = d(j['abiRight']);
+    abiLeft = d(j['abiLeft']);
+    albuminaGdl = d(j['albuminaGdl']);
+    entorno = enumByName(Entorno.values, j['entorno']) ?? entorno;
+  }
 }

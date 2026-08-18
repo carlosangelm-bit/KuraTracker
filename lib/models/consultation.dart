@@ -73,6 +73,8 @@ class Consultation {
   final String? specialistNotes; // notas del especialista (0069)
   final String? visitSummary; // resumen de la consulta (Plaud AI)
   final String? transcript; // transcripción completa (solo admin)
+  // Instantánea del formulario para reabrir un borrador de valoración (0089).
+  final Map<String, dynamic>? draftFormState;
 
   const Consultation({
     required this.id,
@@ -97,6 +99,7 @@ class Consultation {
     this.specialistNotes,
     this.visitSummary,
     this.transcript,
+    this.draftFormState,
   });
 
   factory Consultation.fromJson(Map<String, dynamic> json) => Consultation(
@@ -124,6 +127,8 @@ class Consultation {
         specialistNotes: json['specialist_notes'] as String?,
         visitSummary: json['visit_summary'] as String?,
         transcript: json['transcript'] as String?,
+        draftFormState:
+            (json['draft_form_state'] as Map?)?.cast<String, dynamic>(),
       );
 
   Map<String, dynamic> toJson() => {
@@ -149,5 +154,6 @@ class Consultation {
         'specialist_notes': specialistNotes,
         'visit_summary': visitSummary,
         'transcript': transcript,
+        'draft_form_state': draftFormState,
       };
 }
