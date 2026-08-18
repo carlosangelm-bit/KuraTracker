@@ -2039,6 +2039,31 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
         _savedPhotoAfterCleaningPath = p.storagePath;
       }
     }
+    // Valoración clínica ya guardada en el borrador: se pre-carga para editar.
+    final asmts = repo
+        .listAssessmentsForWound(widget.woundId)
+        .where((a) => a.consultationId == id)
+        .toList();
+    if (asmts.isNotEmpty) {
+      final a = asmts.first;
+      _edema = a.edema ?? _edema;
+      _pain = a.pain ?? _pain;
+      _painType = a.painType ?? _painType;
+      _painDuration = a.painDuration ?? _painDuration;
+      _painVas = a.painVas ?? _painVas;
+      _exudadoCantidad = a.exudateAmount;
+      _exudadoTipo = a.exudateType ?? _exudadoTipo;
+      _infeccionCriterios
+        ..clear()
+        ..addAll(a.infectionCriteria);
+      _odor = a.odor ?? _odor;
+      _woundEdge = a.woundEdge ?? _woundEdge;
+      _perilesionalSkin
+        ..clear()
+        ..addAll(a.perilesionalSkin);
+      _lowAdherence = a.lowAdherence;
+      _clinicalNotesCtrl.text = a.clinicalNotes ?? '';
+    }
   }
 
   void _prefillSingle(NoteOptionField field, String? saved, DataRepository repo,
@@ -2232,6 +2257,27 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
           _savedPhotoWithMeasurementPath,
           PhotoStage.conMedicion,
           'seguimiento_con_medicion.jpg');
+      // El borrador CONSERVA la valoración clínica (edema/dolor/exudado/
+      // infección/olor/piel/notas), no solo la medición y las fotos.
+      await repo.createAssessment({
+        'consultation_id': consultationId,
+        'wound_id': widget.woundId,
+        'edema': _edema,
+        'pain': _pain,
+        'pain_type': _pain ? _painType : null,
+        'pain_duration': _pain ? _painDuration : null,
+        'pain_vas': _pain ? _painVas : 0,
+        'exudate_amount': _exudadoCantidad.name,
+        'exudate_type': _exudadoTipo.name,
+        'infection_criteria': _infeccionCriterios.map((e) => e.name).toList(),
+        'odor': _odor,
+        'wound_edge': _woundEdge,
+        'perilesional_skin': _perilesionalSkin.map((e) => e.name).toList(),
+        'low_adherence': _lowAdherence,
+        'clinical_notes': _clinicalNotesCtrl.text.trim().isEmpty
+            ? null
+            : _clinicalNotesCtrl.text.trim(),
+      });
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
             content: Text('Borrador guardado. Puedes cobrar y completar la '
