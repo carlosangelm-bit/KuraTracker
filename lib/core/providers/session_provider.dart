@@ -209,6 +209,12 @@ final sessionProvider = StateNotifierProvider<SessionController, SessionState>(
   (ref) => SessionController(),
 );
 
+/// true cuando Supabase emitió el evento passwordRecovery (el usuario abrió el
+/// enlace del correo de "restablecer contraseña"). El router lo usa para forzar
+/// la navegación a /reset-password aunque la app no tenga sesión propia; la
+/// pantalla lo limpia al terminar o cancelar.
+final passwordRecoveryProvider = StateProvider<bool>((ref) => false);
+
 final dataRepositoryProvider = FutureProvider<DataRepository>((ref) {
   return DataRepository.instance();
 });
