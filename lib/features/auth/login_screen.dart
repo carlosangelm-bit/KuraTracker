@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/theme/kura_theme.dart';
 import '../../core/providers/session_provider.dart';
@@ -55,6 +57,62 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       return;
     }
     await _doLogin(email, password: _claveCtrl.text);
+  }
+
+  /// Envía el correo de "restablecer contraseña" (Supabase). El enlace regresa
+  /// a la app y dispara el flujo de /reset-password (ver app_router). Mensaje
+  /// genérico por seguridad: no revela si el correo existe.
+  Future<void> _forgotPassword() async {
+    final ctrl = TextEditingController(text: _emailCtrl.text.trim());
+    final email = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Restablecer contraseña'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+                'Te enviaremos un enlace a tu correo para crear una nueva '
+                'contraseña.'),
+            const SizedBox(height: 12),
+            TextField(
+              controller: ctrl,
+              keyboardType: TextInputType.emailAddress,
+              autofocus: true,
+              decoration: const InputDecoration(
+                labelText: 'Correo electrónico',
+                prefixIcon: Icon(Icons.email_outlined),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancelar')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
+              child: const Text('Enviar')),
+        ],
+      ),
+    );
+    if (email == null || email.isEmpty || !mounted) return;
+    try {
+      await Supabase.instance.client.auth.resetPasswordForEmail(
+        email,
+        redirectTo: kIsWeb ? Uri.base.origin : null,
+      );
+    } catch (_) {
+      // No se revela si el correo existe (seguridad): mismo mensaje siempre.
+    }
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+            'Si el correo está registrado, te enviamos un enlace para '
+            'restablecer la contraseña.'),
+      ),
+    );
   }
 
   @override
@@ -204,6 +262,15 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                                 )
                               : const Text('Entrar'),
                         ),
+                        if (AppConfig.isSupabaseConfigured &&
+                            _mode == _LoginMode.personal) ...[
+                          const SizedBox(height: 4),
+                          TextButton(
+                            onPressed:
+                                session.isLoading ? null : _forgotPassword,
+                            child: const Text('¿Olvidaste tu contraseña?'),
+                          ),
+                        ],
                       ],
                     ),
                   ),
