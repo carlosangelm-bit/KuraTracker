@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -128,7 +129,64 @@ class _WoundCaptureScreenState extends ConsumerState<WoundCaptureScreen> {
         controller.state.comorbilidades[c.code] = c.status;
       }
     }
+    // Rehidratar un BORRADOR de valoración (0089): si la consulta trae una
+    // instantánea, se recarga el formulario (campos + fotos) para continuar
+    // editando. Es síncrono, así corre antes del primer _buildForm (los campos
+    // leen su initialValue de formState).
+    final cid = widget.consultationId;
+    if (cid != null) {
+      final snap = repo.getConsultation(cid)?.draftFormState;
+      final form = snap == null ? null : snap['form'];
+      if (form is Map) {
+        controller.state.photoPaths.clear();
+        controller.state.photoBytesByPath.clear();
+        controller.state.applyJson(form.cast<String, dynamic>());
+        final photos = snap!['photos'];
+        if (photos is List) {
+          for (var k = 0; k < photos.length; k++) {
+            try {
+              final key = 'draft_photo_\$k';
+              controller.state.photoPaths.add(key);
+              controller.state.photoBytesByPath[key] =
+                  base64Decode(photos[k] as String);
+            } catch (_) {}
+          }
+        }
+      }
+    }
     controller.touch();
+  }
+
+  /// Guarda el BORRADOR de valoración: una instantánea del formulario (campos +
+  /// fotos en base64) en consultations.draft_form_state, para reabrirlo editable.
+  /// No exige completitud ni consentimientos; guarda lo que haya.
+  Future<void> _saveDraft(BuildContext context) async {
+    final cid = widget.consultationId;
+    final messenger = ScaffoldMessenger.of(context);
+    if (cid == null) {
+      messenger.showSnackBar(const SnackBar(
+          content: Text('Este borrador no tiene una consulta asociada.')));
+      return;
+    }
+    try {
+      final repo = await DataRepository.instance();
+      final formState = ref.read(woundCaptureControllerProvider(_draftKey));
+      final photos = <String>[
+        for (final p in formState.photoPaths)
+          if (formState.photoBytesByPath[p] != null)
+            base64Encode(formState.photoBytesByPath[p]!),
+      ];
+      await repo.updateConsultationFields(cid, {
+        'draft_form_state': {'form': formState.toJson(), 'photos': photos},
+      });
+      if (!context.mounted) return;
+      messenger.showSnackBar(const SnackBar(
+          content: Text('Borrador guardado. Puedes continuarlo después.')));
+      context.go('/patients/\${widget.patientId}/consultation/\$cid');
+    } catch (e) {
+      messenger.showSnackBar(
+          SnackBar(content: Text('No se pudo guardar el borrador: \$e')));
+    }
   }
 
   Future<void> _pickImage() async {
@@ -202,11 +260,7 @@ class _WoundCaptureScreenState extends ConsumerState<WoundCaptureScreen> {
           TextButton.icon(
             icon: const Icon(Icons.save_outlined, size: 18),
             label: const Text('Guardar borrador'),
-            onPressed: () async {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Borrador guardado.')),
-              );
-            },
+            onPressed: () => _saveDraft(context),
           ),
         ],
       ),
@@ -480,7 +534,8 @@ class _WoundCaptureScreenState extends ConsumerState<WoundCaptureScreen> {
         // Finaliza el borrador: la valoración ya quedó completa, así que la
         // consulta deja de ser draft (si no, reaparecería como pendiente y
         // volvería a abrir la valoración).
-        await repo.updateConsultationFields(consultationId, {'is_draft': false});
+        await repo.updateConsultationFields(
+            consultationId, {'is_draft': false, 'draft_form_state': null});
         // La bitacora de auditoria de wound_measurements la genera el
         // trigger AFTER INSERT de Postgres (audit_trigger_fn), no una
         // llamada manual desde el cliente: asi se garantiza que nadie pueda
