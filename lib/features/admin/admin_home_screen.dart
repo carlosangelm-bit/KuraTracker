@@ -1,8 +1,10 @@
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:collection/collection.dart';
 import 'package:csv/csv.dart';
 import 'package:file_picker/file_picker.dart';
@@ -10,6 +12,7 @@ import 'package:image_picker/image_picker.dart';
 
 import '../../core/theme/kura_theme.dart';
 import '../../core/layout/responsive.dart';
+import '../../core/config/app_config.dart';
 import '../../core/providers/session_provider.dart';
 import '../../core/utils/caregiver_login.dart';
 import '../../core/router/app_shell.dart' show UserMenuButton;
@@ -167,7 +170,37 @@ class UsersTab extends StatefulWidget {
   State<UsersTab> createState() => _UsersTabState();
 }
 
+enum _UserStatus { todos, activos, inactivos }
+
 class _UsersTabState extends State<UsersTab> {
+  final _searchCtrl = TextEditingController();
+  String _search = '';
+  AppRole? _roleFilter;
+  _UserStatus _status = _UserStatus.todos;
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  /// Envía el correo de "restablecer/establecer contraseña" (Supabase) para que
+  /// la persona ponga su propia clave, en vez de compartir una temporal a mano.
+  Future<void> _sendPasswordEmail(String email) async {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await Supabase.instance.client.auth.resetPasswordForEmail(
+        email,
+        redirectTo: kIsWeb ? Uri.base.origin : null,
+      );
+      messenger.showSnackBar(SnackBar(
+          content: Text('Correo enviado a $email para establecer su contraseña.')));
+    } catch (e) {
+      messenger.showSnackBar(
+          SnackBar(content: Text('No se pudo enviar el correo: $e')));
+    }
+  }
+
   Future<void> _openCreateForm() async {
     final orgId = widget.organizationId;
     if (orgId == null) return;
@@ -238,6 +271,15 @@ class _UsersTabState extends State<UsersTab> {
           ],
         ),
         actions: [
+          if (AppConfig.isSupabaseConfigured && user.role != AppRole.cuidador)
+            TextButton.icon(
+              icon: const Icon(Icons.mail_outline, size: 18),
+              label: const Text('Enviar correo para contraseña'),
+              onPressed: () async {
+                Navigator.pop(dialogCtx);
+                await _sendPasswordEmail(user.email);
+              },
+            ),
           TextButton(
             onPressed: () => Navigator.pop(dialogCtx),
             child: const Text('Listo'),
@@ -281,108 +323,53 @@ class _UsersTabState extends State<UsersTab> {
 
   @override
   Widget build(BuildContext context) {
-    final users = widget.repo
+    final all = widget.repo
         .listUsers()
         .where((u) =>
-            widget.organizationId == null || u.organizationId == widget.organizationId)
+            widget.organizationId == null ||
+            u.organizationId == widget.organizationId)
         .toList();
+    final q = _search.trim().toLowerCase();
+    final users = all.where((u) {
+      if (_roleFilter != null && u.role != _roleFilter) return false;
+      if (_status == _UserStatus.activos && !u.isActive) return false;
+      if (_status == _UserStatus.inactivos && u.isActive) return false;
+      if (q.isNotEmpty &&
+          !u.fullName.toLowerCase().contains(q) &&
+          !u.email.toLowerCase().contains(q)) {
+        return false;
+      }
+      return true;
+    }).toList()
+      ..sort((a, b) =>
+          a.fullName.toLowerCase().compareTo(b.fullName.toLowerCase()));
+
     return Scaffold(
-      body: users.isEmpty
-          ? const _EmptyState(
-              icon: Icons.people_outline,
-              message: 'Aún no hay usuarios en este centro.\n'
-                  'Usa el botón "Nuevo usuario" para dar de alta al primero.',
-            )
-          : ListView.separated(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 88),
-              itemCount: users.length,
-              separatorBuilder: (_, __) => const SizedBox(height: 8),
-              itemBuilder: (context, i) {
-                final u = users[i];
-                final isSelf = u.id == widget.currentUserId;
-                return Card(
-                  child: ListTile(
-                    leading: CircleAvatar(
-                      backgroundColor: KuraColors.primary.withOpacity(0.12),
-                      child: Icon(
-                        u.role == AppRole.admin
-                            ? Icons.admin_panel_settings
-                            : Icons.medical_services,
-                        color: KuraColors.primary,
+      body: Column(
+        children: [
+          _filtersBar(all.length, users.length),
+          const Divider(height: 1),
+          Expanded(
+            child: all.isEmpty
+                ? const _EmptyState(
+                    icon: Icons.people_outline,
+                    message: 'Aún no hay usuarios en este centro.\n'
+                        'Usa el botón "Nuevo usuario" para dar de alta al primero.',
+                  )
+                : users.isEmpty
+                    ? const _EmptyState(
+                        icon: Icons.search_off,
+                        message: 'Ningún usuario coincide con los filtros.',
+                      )
+                    : ListView.separated(
+                        padding: const EdgeInsets.fromLTRB(16, 16, 16, 88),
+                        itemCount: users.length,
+                        separatorBuilder: (_, __) => const SizedBox(height: 8),
+                        itemBuilder: (context, i) => _userCard(users[i]),
                       ),
-                    ),
-                    title: Text('${u.fullName}${isSelf ? ' (tú)' : ''}'),
-                    subtitle: Text('${u.email} · ${u.role.label}'
-                        '${u.staffId == null ? '' : ' · vinculado a personal sanitario'}'),
-                    trailing: Wrap(
-                      spacing: 8,
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      children: [
-                        Column(
-                          children: [
-                            const Text('Activo', style: TextStyle(fontSize: 10)),
-                            Switch(
-                              value: u.isActive,
-                              activeColor: KuraColors.primary,
-                              onChanged: isSelf
-                                  ? null
-                                  : (v) async {
-                                      await widget.repo.setUserActive(u.id, v);
-                                      setState(() {});
-                                    },
-                            ),
-                          ],
-                        ),
-                        Column(
-                          children: [
-                            const Text('Premium', style: TextStyle(fontSize: 10)),
-                            Switch(
-                              value: u.premiumEnabled,
-                              activeColor: KuraColors.success,
-                              onChanged: (v) async {
-                                await widget.repo.setUserPremium(u.id, v);
-                                setState(() {});
-                              },
-                            ),
-                          ],
-                        ),
-                        // Cambio de rol: oculto para uno mismo (evita
-                        // auto-bloqueo) y para perfiles master (no se degradan
-                        // desde esta pantalla).
-                        if (!isSelf && u.role != AppRole.master)
-                          PopupMenuButton<AppRole>(
-                            tooltip: 'Cambiar rol',
-                            icon: const Icon(Icons.manage_accounts_outlined),
-                            onSelected: (r) => _changeRole(u, r),
-                            itemBuilder: (_) => [
-                              if (u.role != AppRole.admin)
-                                const PopupMenuItem(
-                                  value: AppRole.admin,
-                                  child: Text('Hacer administrador'),
-                                ),
-                              if (u.role != AppRole.clinico)
-                                const PopupMenuItem(
-                                  value: AppRole.clinico,
-                                  child: Text('Hacer personal sanitario'),
-                                ),
-                              if (u.role != AppRole.enfermeria)
-                                const PopupMenuItem(
-                                  value: AppRole.enfermeria,
-                                  child: Text('Hacer enfermería'),
-                                ),
-                              if (u.role != AppRole.cuidador)
-                                const PopupMenuItem(
-                                  value: AppRole.cuidador,
-                                  child: Text('Hacer cuidador'),
-                                ),
-                            ],
-                          ),
-                      ],
-                    ),
-                  ),
-                );
-              },
-            ),
+          ),
+        ],
+      ),
       floatingActionButton: FloatingActionButton.extended(
         backgroundColor: KuraColors.primary,
         icon: const Icon(Icons.person_add_alt_1),
@@ -391,6 +378,239 @@ class _UsersTabState extends State<UsersTab> {
       ),
     );
   }
+
+  Widget _filtersBar(int total, int shown) {
+    const roles = <AppRole?>[
+      null,
+      AppRole.admin,
+      AppRole.clinico,
+      AppRole.enfermeria,
+      AppRole.cuidador,
+    ];
+    String roleChip(AppRole? r) => switch (r) {
+          null => 'Todos',
+          AppRole.admin => 'Admin',
+          AppRole.clinico => 'Sanitario',
+          AppRole.enfermeria => 'Enfermería',
+          AppRole.cuidador => 'Cuidador',
+          _ => r!.label,
+        };
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          TextField(
+            controller: _searchCtrl,
+            onChanged: (v) => setState(() => _search = v),
+            decoration: InputDecoration(
+              isDense: true,
+              hintText: 'Buscar por nombre o correo…',
+              prefixIcon: const Icon(Icons.search, size: 20),
+              suffixIcon: _search.isEmpty
+                  ? null
+                  : IconButton(
+                      icon: const Icon(Icons.clear, size: 18),
+                      tooltip: 'Limpiar',
+                      onPressed: () {
+                        _searchCtrl.clear();
+                        setState(() => _search = '');
+                      },
+                    ),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              for (final r in roles)
+                FilterChip(
+                  label: Text(roleChip(r)),
+                  selected: _roleFilter == r,
+                  onSelected: (_) => setState(() => _roleFilter = r),
+                ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              Expanded(
+                child: Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: [
+                    for (final st in _UserStatus.values)
+                      ChoiceChip(
+                        label: Text(switch (st) {
+                          _UserStatus.todos => 'Todos',
+                          _UserStatus.activos => 'Activos',
+                          _UserStatus.inactivos => 'Inactivos',
+                        }),
+                        selected: _status == st,
+                        onSelected: (_) => setState(() => _status = st),
+                      ),
+                  ],
+                ),
+              ),
+              Text(
+                '$shown de $total',
+                style: TextStyle(
+                    fontSize: 12,
+                    color: KuraColors.darkText.withOpacity(0.5)),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _userCard(AppUser u) {
+    final isSelf = u.id == widget.currentUserId;
+    // El cuidador entra con teléfono + clave (correo sintético), no recibe
+    // correos reales; por eso el envío de "establecer contraseña" no aplica.
+    final canEmail =
+        AppConfig.isSupabaseConfigured && u.role != AppRole.cuidador;
+    final canRole = !isSelf && u.role != AppRole.master;
+    return Card(
+      child: ListTile(
+        isThreeLine: true,
+        leading: CircleAvatar(
+          backgroundColor: KuraColors.primary.withOpacity(0.12),
+          child: Icon(_roleIcon(u.role), color: KuraColors.primary),
+        ),
+        title: Text('${u.fullName}${isSelf ? ' (tú)' : ''}'),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(u.email, overflow: TextOverflow.ellipsis),
+            const SizedBox(height: 4),
+            Wrap(
+              spacing: 6,
+              runSpacing: 4,
+              children: [
+                _tag(u.role.label, KuraColors.primary),
+                if (!u.isActive) _tag('Inactivo', KuraColors.danger),
+                if (u.premiumEnabled) _tag('Premium', KuraColors.success),
+                if (u.staffId != null)
+                  _tag('Vinculado a personal',
+                      KuraColors.darkText.withOpacity(0.45)),
+              ],
+            ),
+          ],
+        ),
+        trailing: Wrap(
+          spacing: 4,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            _switchCol(
+              'Activo',
+              u.isActive,
+              KuraColors.primary,
+              isSelf
+                  ? null
+                  : (v) async {
+                      await widget.repo.setUserActive(u.id, v);
+                      setState(() {});
+                    },
+            ),
+            _switchCol(
+              'Premium',
+              u.premiumEnabled,
+              KuraColors.success,
+              (v) async {
+                await widget.repo.setUserPremium(u.id, v);
+                setState(() {});
+              },
+            ),
+            if (canEmail || canRole)
+              PopupMenuButton<String>(
+                tooltip: 'Más acciones',
+                icon: const Icon(Icons.more_vert),
+                onSelected: (v) {
+                  if (v == 'email') {
+                    _sendPasswordEmail(u.email);
+                  } else if (v == 'role:admin') {
+                    _changeRole(u, AppRole.admin);
+                  } else if (v == 'role:clinico') {
+                    _changeRole(u, AppRole.clinico);
+                  } else if (v == 'role:enfermeria') {
+                    _changeRole(u, AppRole.enfermeria);
+                  } else if (v == 'role:cuidador') {
+                    _changeRole(u, AppRole.cuidador);
+                  }
+                },
+                itemBuilder: (_) => [
+                  if (canEmail)
+                    const PopupMenuItem(
+                      value: 'email',
+                      child: Row(children: [
+                        Icon(Icons.mail_outline, size: 18),
+                        SizedBox(width: 8),
+                        Text('Enviar correo para establecer contraseña'),
+                      ]),
+                    ),
+                  if (canEmail && canRole) const PopupMenuDivider(),
+                  if (canRole) ...[
+                    if (u.role != AppRole.admin)
+                      const PopupMenuItem(
+                          value: 'role:admin',
+                          child: Text('Hacer administrador')),
+                    if (u.role != AppRole.clinico)
+                      const PopupMenuItem(
+                          value: 'role:clinico',
+                          child: Text('Hacer personal sanitario')),
+                    if (u.role != AppRole.enfermeria)
+                      const PopupMenuItem(
+                          value: 'role:enfermeria',
+                          child: Text('Hacer enfermería')),
+                    if (u.role != AppRole.cuidador)
+                      const PopupMenuItem(
+                          value: 'role:cuidador', child: Text('Hacer cuidador')),
+                  ],
+                ],
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _switchCol(
+      String label, bool value, Color color, ValueChanged<bool>? onChanged) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(label, style: const TextStyle(fontSize: 10)),
+        Switch(value: value, activeColor: color, onChanged: onChanged),
+      ],
+    );
+  }
+
+  Widget _tag(String text, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(text,
+          style: TextStyle(
+              fontSize: 10.5, fontWeight: FontWeight.w700, color: color)),
+    );
+  }
+
+  IconData _roleIcon(AppRole role) => switch (role) {
+        AppRole.admin => Icons.admin_panel_settings,
+        AppRole.enfermeria => Icons.vaccines_outlined,
+        AppRole.cuidador => Icons.volunteer_activism_outlined,
+        AppRole.master => Icons.hub_outlined,
+        _ => Icons.medical_services,
+      };
 }
 
 /// Formulario de alta de usuario con login. Devuelve el [CreatedUser] via
