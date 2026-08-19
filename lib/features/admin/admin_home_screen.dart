@@ -370,10 +370,9 @@ class _UsersTabState extends State<UsersTab> {
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        backgroundColor: KuraColors.primary,
-        icon: const Icon(Icons.person_add_alt_1),
-        label: const Text('Nuevo usuario'),
+      floatingActionButton: KuraPrimaryFab(
+        icon: Icons.person_add_alt_1,
+        label: 'Nuevo usuario',
         onPressed: widget.organizationId == null ? null : _openCreateForm,
       ),
     );

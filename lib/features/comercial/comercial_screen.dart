@@ -9,6 +9,7 @@ import '../../core/layout/responsive.dart';
 import '../../core/providers/session_provider.dart';
 import '../../core/router/app_shell.dart'
     show UserMenuButton, kFloatingNavBarHeight;
+import '../../core/widgets/kura_primary_fab.dart';
 import '../../models/commercial.dart';
 import '../../models/inventory.dart';
 import '../../models/patient.dart';
@@ -158,10 +159,10 @@ class _CobrosTabState extends ConsumerState<_CobrosTab> {
     final fmt = DateFormat('dd/MM/yyyy HH:mm');
 
     return Scaffold(
-      floatingActionButton: FloatingActionButton.extended(
+      floatingActionButton: KuraPrimaryFab(
         onPressed: () => _nuevoCobro(repo),
-        icon: const Icon(Icons.add),
-        label: const Text('Nuevo cobro'),
+        icon: Icons.add,
+        label: 'Nuevo cobro',
       ),
       body: Column(
       children: [
@@ -991,10 +992,10 @@ class _ServiciosTabState extends ConsumerState<_ServiciosTab> {
                 );
               },
             ),
-      floatingActionButton: FloatingActionButton.extended(
+      floatingActionButton: KuraPrimaryFab(
         onPressed: () => _edit(repo, null),
-        icon: const Icon(Icons.add),
-        label: const Text('Servicio'),
+        icon: Icons.add,
+        label: 'Servicio',
       ),
     );
   }
@@ -1522,10 +1523,10 @@ class _ConciliacionTabState extends ConsumerState<_ConciliacionTab> {
           ],
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
+      floatingActionButton: KuraPrimaryFab(
         onPressed: () => _addManual(repo),
-        icon: const Icon(Icons.add_card),
-        label: const Text('Registrar pago'),
+        icon: Icons.add_card,
+        label: 'Registrar pago',
       ),
     );
   }
