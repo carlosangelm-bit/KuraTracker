@@ -270,12 +270,44 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
       _materialsUsedComplete &&
       _evolutionFinal.isNotEmpty;
 
-  Future<void> _pickPhoto({required bool withMeasurement}) async {
+  /// Selector cámara/galería (igual que en la valoración): en móvil-web la
+  /// cámara abre la cámara del dispositivo; en escritorio-web se ignora y abre
+  /// el selector de archivos.
+  Future<void> _pickPhotoSource({required bool withMeasurement}) async {
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.photo_camera_outlined),
+              title: const Text('Tomar foto'),
+              onTap: () => Navigator.pop(ctx, ImageSource.camera),
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_library_outlined),
+              title: const Text('Elegir de la galería'),
+              onTap: () => Navigator.pop(ctx, ImageSource.gallery),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (source != null) {
+      await _pickPhoto(withMeasurement: withMeasurement, source: source);
+    }
+  }
+
+  Future<void> _pickPhoto(
+      {required bool withMeasurement,
+      ImageSource source = ImageSource.gallery}) async {
     try {
       // Web: sin resize del plugin (falla con HEIC); bytes crudos + conversión
       // a JPEG en el navegador (transcodeImageToJpeg). Nativo: como antes.
       final file = await _picker.pickImage(
-        source: ImageSource.gallery,
+        source: source,
         imageQuality: kIsWeb ? null : 85,
         maxWidth: kIsWeb ? null : 1600,
         maxHeight: kIsWeb ? null : 1600,
@@ -476,7 +508,7 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
                   hasPhoto: _photoAfterCleaning != null ||
                       _savedPhotoAfterCleaningPath != null,
                   savedPath: _savedPhotoAfterCleaningPath,
-                  onPick: () => _pickPhoto(withMeasurement: false),
+                  onPick: () => _pickPhotoSource(withMeasurement: false),
                 ),
 
                 // Medición 2D/3D/manual → inmediatamente después, la 2ª foto
