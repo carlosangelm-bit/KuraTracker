@@ -7,6 +7,7 @@ import 'package:intl/intl.dart';
 import '../../core/theme/kura_theme.dart';
 import '../../core/providers/session_provider.dart';
 import '../../core/router/app_shell.dart' show UserMenuButton;
+import '../../core/widgets/kura_primary_fab.dart';
 import '../../models/app_user.dart';
 import '../../models/inventory.dart';
 import '../../services/csv_download.dart';
@@ -394,10 +395,10 @@ class _InventarioScreenState extends ConsumerState<InventarioScreen> {
       ),
       floatingActionButton: repoAsync.valueOrNull != null &&
               repoAsync.value!.premiumInsumosFor(user?.organizationId)
-          ? FloatingActionButton.extended(
+          ? KuraPrimaryFab(
               onPressed: () => _addItem(repoAsync.value!, user?.organizationId),
-              icon: const Icon(Icons.add),
-              label: const Text('Agregar'),
+              icon: Icons.add,
+              label: 'Agregar',
             )
           : null,
     );
