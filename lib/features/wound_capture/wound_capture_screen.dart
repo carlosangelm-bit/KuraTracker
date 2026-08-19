@@ -15,6 +15,8 @@ import '../../core/providers/session_provider.dart';
 import '../risk/braden_scale_sheet.dart';
 import '../../engine/models/kura_engine_enums.dart';
 import '../../models/patient.dart';
+import '../../models/consultation.dart';
+import '../../models/app_user.dart';
 import '../../models/wound.dart' as wmodel;
 import '../../models/consent.dart';
 import '../../models/treatment_plan.dart';
@@ -51,6 +53,10 @@ class WoundCaptureScreen extends ConsumerStatefulWidget {
 
 class _WoundCaptureScreenState extends ConsumerState<WoundCaptureScreen> {
   late String _draftKey;
+  // Consulta (borrador) a la que se cuelga la valoración. Puede venir null si se
+  // entró por "Nueva valoración" desde el expediente; en ese caso se crea al
+  // vuelo en _ensureConsultation antes del primer guardado.
+  String? _consultationId;
   Timer? _debounce;
   bool _initialized = false;
   final _picker = ImagePicker();
@@ -68,6 +74,7 @@ class _WoundCaptureScreenState extends ConsumerState<WoundCaptureScreen> {
   void initState() {
     super.initState();
     _draftKey = widget.consultationId ?? 'draft-${widget.patientId}';
+    _consultationId = widget.consultationId;
   }
 
   @override
@@ -157,19 +164,47 @@ class _WoundCaptureScreenState extends ConsumerState<WoundCaptureScreen> {
     controller.touch();
   }
 
+  /// Garantiza que exista una consulta (borrador) a la que colgar la valoración.
+  /// Algunas entradas —p. ej. "Nueva valoración" desde el expediente— abren la
+  /// captura SIN consultationId; aquí se crea al vuelo (is_draft=true) con el
+  /// sitio del paciente y el staff de la sesión. Devuelve null solo si falta el
+  /// sitio del paciente o el staff (no se puede crear la consulta).
+  Future<String?> _ensureConsultation(DataRepository repo) async {
+    if (_consultationId != null) return _consultationId;
+    final session = ref.read(sessionProvider);
+    var staffId = session.user?.staffId;
+    if (staffId == null && session.user?.role == AppRole.admin) {
+      staffId = await repo.ensureAdminStaffId(session.user!);
+    }
+    final siteId = repo.getPatient(widget.patientId)?.primarySiteId;
+    if (staffId == null || siteId == null) return null;
+    final consultation = await repo.createConsultation(
+      patientId: widget.patientId,
+      staffId: staffId,
+      siteId: siteId,
+      visitType: VisitType.valoracion,
+      visitDate: DateTime.now(),
+      isDraft: true,
+    );
+    _consultationId = consultation.id;
+    return _consultationId;
+  }
+
   /// Guarda el BORRADOR de valoración: una instantánea del formulario (campos +
   /// fotos en base64) en consultations.draft_form_state, para reabrirlo editable.
   /// No exige completitud ni consentimientos; guarda lo que haya.
   Future<void> _saveDraft(BuildContext context) async {
-    final cid = widget.consultationId;
     final messenger = ScaffoldMessenger.of(context);
-    if (cid == null) {
-      messenger.showSnackBar(const SnackBar(
-          content: Text('Este borrador no tiene una consulta asociada.')));
-      return;
-    }
     try {
       final repo = await DataRepository.instance();
+      final cid = await _ensureConsultation(repo);
+      if (cid == null) {
+        messenger.showSnackBar(const SnackBar(
+            content: Text('No se pudo crear la consulta del borrador: el '
+                'paciente no tiene sitio asignado o tu usuario no está '
+                'vinculado a personal.')));
+        return;
+      }
       final formState = ref.read(woundCaptureControllerProvider(_draftKey));
       final photos = <String>[
         for (final p in formState.photoPaths)
@@ -189,7 +224,37 @@ class _WoundCaptureScreenState extends ConsumerState<WoundCaptureScreen> {
     }
   }
 
-  Future<void> _pickImage() async {
+  /// Ofrece TOMAR la foto con la cámara (en móvil-web abre la cámara del
+  /// dispositivo vía el atributo capture) o ELEGIR un archivo/foto existente.
+  /// En escritorio-web el capture se ignora y ambas abren el selector de
+  /// archivos. Antes solo existía galería, por eso en Android no se podía tomar
+  /// la foto desde la app.
+  Future<void> _pickPhotoSource() async {
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.photo_camera_outlined),
+              title: const Text('Tomar foto'),
+              onTap: () => Navigator.pop(ctx, ImageSource.camera),
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_library_outlined),
+              title: const Text('Elegir de la galería'),
+              onTap: () => Navigator.pop(ctx, ImageSource.gallery),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (source != null) await _pickImage(source);
+  }
+
+  Future<void> _pickImage(ImageSource source) async {
     // Gating (Protocolo "Expedientes clínicos"): la toma de fotografía requiere
     // el consentimiento de fotografía registrado.
     final repo = await DataRepository.instance();
@@ -213,7 +278,7 @@ class _WoundCaptureScreenState extends ConsumerState<WoundCaptureScreen> {
       // falla con HEIC de iPhone. Se traen los bytes crudos y se convierten a
       // JPEG en el navegador (transcodeImageToJpeg, que además reescala).
       final file = await _picker.pickImage(
-        source: ImageSource.gallery,
+        source: source,
         imageQuality: kIsWeb ? null : 85,
         maxWidth: kIsWeb ? null : 1600,
         maxHeight: kIsWeb ? null : 1600,
@@ -417,7 +482,7 @@ class _WoundCaptureScreenState extends ConsumerState<WoundCaptureScreen> {
         });
       }
 
-      consultationId = widget.consultationId;
+      consultationId = await _ensureConsultation(repo);
       if (consultationId != null) {
         await repo.createAssessment({
           'consultation_id': consultationId,
@@ -641,7 +706,7 @@ class _WoundCaptureScreenState extends ConsumerState<WoundCaptureScreen> {
                         ],
                       )),
                   InkWell(
-                    onTap: _pickImage,
+                    onTap: _pickPhotoSource,
                     child: Container(
                       width: 90,
                       height: 90,
