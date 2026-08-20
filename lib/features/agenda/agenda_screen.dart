@@ -601,7 +601,10 @@ class _DayAgenda extends StatelessWidget {
     final children = <Widget>[];
     for (final day in dayKeys) {
       final appts = apptsByDay[day] ?? const [];
-      final sess = (sessByDay[day] ?? const <TreatmentProgramSession>[])
+      // Copia modificable: si el día no tiene sesiones, el fallback antes era
+      // `const []` y `..sort()` lo intentaba mutar → "Cannot modify a constant
+      // list" (crash de la agenda en centros con citas pero sin sesiones).
+      final sess = [...?sessByDay[day]]
         ..sort((a, b) => a.scheduledAt.compareTo(b.scheduledAt));
       children.add(_DayHeader(day: day, count: appts.length + sess.length));
       for (final a in appts) {
