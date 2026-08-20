@@ -290,7 +290,14 @@ class _PatientRiskScreenState extends ConsumerState<PatientRiskScreen> {
   }
 
   Widget _scalesToDoCard(DataRepository repo, List<ApplicableScale> applicable,
-      bool hasTriage, ScaleApplicabilityCatalog? cat) {
+      bool hasTriage, ScaleApplicabilityCatalog? cat, bool canEdit,
+      String? orgId) {
+    final setInfo = repo.applicableSetState(widget.patientId);
+    final triageAt = repo.latestTriage(widget.patientId)?.assessedAt;
+    final staleValidation = setInfo.validated &&
+        triageAt != null &&
+        setInfo.validatedAt != null &&
+        triageAt.isAfter(setInfo.validatedAt!);
     return Card(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(14, 10, 14, 12),
@@ -304,6 +311,12 @@ class _PatientRiskScreenState extends ConsumerState<PatientRiskScreen> {
                       style:
                           TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
                 ),
+                if (canEdit && cat != null)
+                  TextButton.icon(
+                    onPressed: () => _addScaleDialog(repo, cat, orgId),
+                    icon: const Icon(Icons.add, size: 18),
+                    label: const Text('Agregar'),
+                  ),
                 TextButton.icon(
                   onPressed: () => _doTriage(repo),
                   icon: const Icon(Icons.fact_check_outlined, size: 18),
@@ -327,15 +340,103 @@ class _PatientRiskScreenState extends ConsumerState<PatientRiskScreen> {
                         color: KuraColors.darkText.withValues(alpha: 0.6))),
               )
             else
-              for (final s in applicable) _scaleRow(repo, s, cat),
+              for (final s in applicable)
+                _scaleRow(repo, s, cat, canEdit, orgId),
+            if (canEdit && applicable.isNotEmpty) ...[
+              const Divider(height: 18),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      setInfo.validated && !staleValidation
+                          ? 'Validado por el especialista.'
+                          : staleValidation
+                              ? 'La propuesta cambió tras el triage: re-valida.'
+                              : 'Propuesta del sistema, pendiente de validar.',
+                      style: TextStyle(
+                          fontSize: 11.5,
+                          color: setInfo.validated && !staleValidation
+                              ? KuraColors.primary
+                              : KuraColors.darkText.withValues(alpha: 0.7)),
+                    ),
+                  ),
+                  if (!setInfo.validated || staleValidation)
+                    FilledButton.tonalIcon(
+                      onPressed: () => _validateScales(repo, orgId),
+                      icon: const Icon(Icons.verified_outlined, size: 16),
+                      label: const Text('Validar'),
+                    )
+                  else
+                    const Icon(Icons.verified,
+                        color: KuraColors.primary, size: 20),
+                ],
+              ),
+            ],
           ],
         ),
       ),
     );
   }
 
-  Widget _scaleRow(
-      DataRepository repo, ApplicableScale s, ScaleApplicabilityCatalog? cat) {
+  Future<void> _addScaleDialog(
+      DataRepository repo, ScaleApplicabilityCatalog cat, String? orgId) async {
+    final options = repo.addableScales(widget.patientId, cat);
+    if (options.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('No hay más escalas del protocolo para agregar.')));
+      return;
+    }
+    final picked = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) => ListView(
+        shrinkWrap: true,
+        children: [
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 4, 16, 8),
+            child: Text('Agregar escala a la propuesta',
+                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
+          ),
+          for (final o in options)
+            ListTile(
+              dense: true,
+              title: Text(o.label, style: const TextStyle(fontSize: 14)),
+              onTap: () => Navigator.pop(ctx, o.scaleId),
+            ),
+        ],
+      ),
+    );
+    if (picked == null || !mounted) return;
+    await repo.setApplicableOverride(widget.patientId,
+        organizationId: orgId,
+        scaleId: picked,
+        status: 'included',
+        staffId: await _staffId(repo));
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _removeScale(
+      DataRepository repo, ApplicableScale s, String? orgId) async {
+    // Auto -> EXCLUIDA; manual -> se limpia el override (deja de estar añadida).
+    await repo.setApplicableOverride(widget.patientId,
+        organizationId: orgId,
+        scaleId: s.scaleId,
+        status: s.source == ScaleSource.manual ? null : 'excluded',
+        staffId: await _staffId(repo));
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _validateScales(DataRepository repo, String? orgId) async {
+    await repo.validateApplicableSet(widget.patientId,
+        organizationId: orgId, staffId: await _staffId(repo));
+    if (!mounted) return;
+    setState(() {});
+    ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Escalas validadas.')));
+  }
+
+  Widget _scaleRow(DataRepository repo, ApplicableScale s,
+      ScaleApplicabilityCatalog? cat, bool canEdit, String? orgId) {
     final obligatoria = s.priority == ScalePriority.obligatoria;
     final chipColor = obligatoria ? KuraColors.danger : KuraColors.primary;
     final last = repo.latestScaleAssessment(widget.patientId, s.scaleId);
@@ -370,6 +471,15 @@ class _PatientRiskScreenState extends ConsumerState<PatientRiskScreen> {
                               fontWeight: FontWeight.w700,
                               color: chipColor)),
                     ),
+                    if (s.source == ScaleSource.manual) ...[
+                      const SizedBox(width: 6),
+                      Text('Añadida',
+                          style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                              color:
+                                  KuraColors.darkText.withValues(alpha: 0.5))),
+                    ],
                     if (doneCat != null) ...[
                       const SizedBox(width: 6),
                       Text('Resultado: $doneCat',
@@ -399,6 +509,14 @@ class _PatientRiskScreenState extends ConsumerState<PatientRiskScreen> {
                 style: TextStyle(
                     fontSize: 12,
                     color: KuraColors.darkText.withValues(alpha: 0.4))),
+          if (canEdit)
+            IconButton(
+              tooltip: 'Quitar de la propuesta',
+              visualDensity: VisualDensity.compact,
+              icon: const Icon(Icons.close, size: 18),
+              color: KuraColors.darkText.withValues(alpha: 0.5),
+              onPressed: () => _removeScale(repo, s, orgId),
+            ),
         ],
       ),
     );
@@ -629,7 +747,8 @@ class _PatientRiskScreenState extends ConsumerState<PatientRiskScreen> {
                   ),
                 const SizedBox(height: 16),
                 // Escalas a realizar: derivadas del triage + expediente.
-                _scalesToDoCard(repo, applicable, hasTriage, applicabilityCat),
+                _scalesToDoCard(repo, applicable, hasTriage, applicabilityCat,
+                    canDefinePlan, patient.organizationId),
                 const SizedBox(height: 16),
                 // Tarjetas de la ficha: en desktop refluyen a 2-3 columnas para
                 // aprovechar el ancho; en móvil quedan apiladas.

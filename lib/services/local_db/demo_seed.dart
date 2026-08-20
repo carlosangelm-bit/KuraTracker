@@ -637,7 +637,7 @@ class DemoSeed {
           'pain_vas': 4,
           'exudate_amount': 'moderado',
           'infection_criteria': infectionCriteria,
-          'odor': infectionCriteria.isEmpty ? 'ninguno' : 'moderado',
+          'odor': infectionCriteria.isEmpty ? 'ninguno' : 'presente',
           'wound_edge': 'definido',
           'perilesional_skin': ['normal'],
         }
@@ -1208,7 +1208,7 @@ class DemoSeed {
           'pain_vas': 5,
           'exudate_amount': 'abundante',
           'infection_criteria': <String>[],
-          'odor': 'moderado',
+          'odor': 'presente',
           'wound_edge': 'macerado',
           'perilesional_skin': ['macerada'],
         }

@@ -4,6 +4,31 @@ import 'dart:typed_data';
 
 import 'package:web/web.dart' as web;
 
+/// Puente a la función JS `window.convertHeicToJpeg(blob, quality)` definida en
+/// web/index.html (heic2any). Convierte un HEIC/HEIF a un Blob JPEG usando el
+/// decodificador HEIF propio de la librería, para los navegadores que NO
+/// decodifican HEIC de forma nativa (Chrome de escritorio, Android). Si el
+/// script no cargó, invocarla lanza y el llamador cae al comportamiento previo.
+@JS('convertHeicToJpeg')
+external JSPromise<web.Blob> _convertHeicToJpeg(web.Blob blob, double quality);
+
+/// Decodifica [blob] a un ImageBitmap. Primero intenta el decodificador nativo
+/// del navegador (rápido; cubre JPEG/PNG/WebP y HEIC en Safari iOS). Si falla
+/// —típico con HEIC en Chrome/Android— reintenta convirtiendo con heic2any.
+Future<web.ImageBitmap?> _decodeToBitmap(web.Blob blob, String? name) async {
+  try {
+    return await web.window.createImageBitmap(blob).toDart;
+  } catch (_) {
+    // El navegador no pudo decodificar. Intentar heic2any (HEIC/HEIF).
+    try {
+      final jpegBlob = await _convertHeicToJpeg(blob, 0.9).toDart;
+      return await web.window.createImageBitmap(jpegBlob).toDart;
+    } catch (_) {
+      return null;
+    }
+  }
+}
+
 /// Convierte cualquier imagen que el NAVEGADOR pueda decodificar a JPEG,
 /// re-escalando a [maxDim] px por lado. Clave para la clínica: el Safari de
 /// iPhone decodifica HEIC/HEIF, así que esto convierte esas fotos a JPG —un
@@ -21,8 +46,8 @@ Future<Uint8List?> transcodeImageToJpeg(
 }) async {
   try {
     final blob = web.Blob([bytes.toJS].toJS);
-    final web.ImageBitmap bitmap =
-        await web.window.createImageBitmap(blob).toDart;
+    final web.ImageBitmap? bitmap = await _decodeToBitmap(blob, name);
+    if (bitmap == null) return null;
 
     var w = bitmap.width;
     var h = bitmap.height;

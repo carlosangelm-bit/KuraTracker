@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../providers/session_provider.dart';
 import '../../models/app_user.dart';
 import '../../models/module_key.dart';
 import '../../features/auth/demo_persona_screen.dart';
 import '../../features/auth/login_screen.dart';
+import '../../features/auth/reset_password_screen.dart';
 import '../../features/treatment/treatment_program_builder_screen.dart';
 import '../../features/comercial/payment_result_screen.dart';
 import '../../features/dashboard/dashboard_screen.dart';
@@ -67,6 +69,19 @@ final routerProvider = Provider<GoRouter>((ref) {
     refreshNotifier.ping();
   });
 
+  // Restablecer contraseña: al abrir el enlace del correo, Supabase deja una
+  // sesión de recuperación y emite passwordRecovery. Lo marcamos para que el
+  // redirect lleve al usuario a /reset-password aunque la app aún no tenga
+  // sesión propia. Solo en modo Supabase (en demo no hay auth real).
+  if (!isDemoMode) {
+    ref.listen(passwordRecoveryProvider, (_, __) => refreshNotifier.ping());
+    Supabase.instance.client.auth.onAuthStateChange.listen((data) {
+      if (data.event == AuthChangeEvent.passwordRecovery) {
+        ref.read(passwordRecoveryProvider.notifier).state = true;
+      }
+    });
+  }
+
   return GoRouter(
     initialLocation: isDemoMode ? '/demo' : '/login',
     refreshListenable: refreshNotifier,
@@ -79,6 +94,12 @@ final routerProvider = Provider<GoRouter>((ref) {
       // Rutas PÚBLICAS (sin sesión): páginas de resultado de pago a las que
       // Stripe redirige al PACIENTE. No deben pasar por el login ni la app.
       if (state.matchedLocation.startsWith('/pago-')) return null;
+      // Restablecer contraseña: ruta pública; y si Supabase emitió el evento,
+      // forzamos ir ahí hasta que el usuario termine o cancele.
+      if (state.matchedLocation.startsWith('/reset-password')) return null;
+      if (!isDemoMode && ref.read(passwordRecoveryProvider)) {
+        return '/reset-password';
+      }
       if (!loggedIn && !goingToLogin && !goingToDemo) {
         // En demo, la landing es la selección de perfil; en prod, el login.
         return isDemoMode ? '/demo' : '/login';
@@ -181,6 +202,9 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
           path: '/pago-cancelado',
           builder: (context, state) => const PaymentResultScreen(success: false)),
+      GoRoute(
+          path: '/reset-password',
+          builder: (context, state) => const ResetPasswordScreen()),
       ShellRoute(
         builder: (context, state, child) =>
             AppShell(currentPath: state.matchedLocation, child: child),

@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/design/tokens.dart';
 import '../../core/providers/session_provider.dart';
 import '../../core/router/app_shell.dart' show UserMenuButton;
+import '../../core/widgets/kura_primary_fab.dart';
 import '../../models/patient.dart';
 import '../../models/vac_therapy.dart';
 import '../../services/data_repository.dart';
@@ -34,10 +35,10 @@ class _VacTherapiesScreenState extends ConsumerState<VacTherapiesScreen> {
         title: const Text('Terapia VAC'),
         actions: const [UserMenuButton()],
       ),
-      floatingActionButton: FloatingActionButton.extended(
+      floatingActionButton: KuraPrimaryFab(
         onPressed: () => _newTherapy(orgId),
-        icon: const Icon(Icons.add),
-        label: const Text('Nueva terapia'),
+        icon: Icons.add,
+        label: 'Nueva terapia',
       ),
       body: repoAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),

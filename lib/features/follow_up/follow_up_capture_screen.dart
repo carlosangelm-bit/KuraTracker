@@ -143,6 +143,11 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
   Uint8List? _photoAfterCleaningBytes;
   XFile? _photoWithMeasurement;
   Uint8List? _photoWithMeasurementBytes;
+  // Fotos ya guardadas al reabrir un borrador (storage_path por etapa). Se
+  // muestran y, al re-guardar, se re-persisten con su MISMO path si el clínico
+  // no las vuelve a tomar (así el borrador conserva las fotografías).
+  String? _savedPhotoAfterCleaningPath;
+  String? _savedPhotoWithMeasurementPath;
   final _picker = ImagePicker();
 
   // ---- Nota de seguimiento obligatoria (conceptos desde catalogo del
@@ -265,12 +270,44 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
       _materialsUsedComplete &&
       _evolutionFinal.isNotEmpty;
 
-  Future<void> _pickPhoto({required bool withMeasurement}) async {
+  /// Selector cámara/galería (igual que en la valoración): en móvil-web la
+  /// cámara abre la cámara del dispositivo; en escritorio-web se ignora y abre
+  /// el selector de archivos.
+  Future<void> _pickPhotoSource({required bool withMeasurement}) async {
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.photo_camera_outlined),
+              title: const Text('Tomar foto'),
+              onTap: () => Navigator.pop(ctx, ImageSource.camera),
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_library_outlined),
+              title: const Text('Elegir de la galería'),
+              onTap: () => Navigator.pop(ctx, ImageSource.gallery),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (source != null) {
+      await _pickPhoto(withMeasurement: withMeasurement, source: source);
+    }
+  }
+
+  Future<void> _pickPhoto(
+      {required bool withMeasurement,
+      ImageSource source = ImageSource.gallery}) async {
     try {
       // Web: sin resize del plugin (falla con HEIC); bytes crudos + conversión
       // a JPEG en el navegador (transcodeImageToJpeg). Nativo: como antes.
       final file = await _picker.pickImage(
-        source: ImageSource.gallery,
+        source: source,
         imageQuality: kIsWeb ? null : 85,
         maxWidth: kIsWeb ? null : 1600,
         maxHeight: kIsWeb ? null : 1600,
@@ -289,9 +326,11 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
         if (withMeasurement) {
           _photoWithMeasurement = file;
           _photoWithMeasurementBytes = bytes;
+          _savedPhotoWithMeasurementPath = null;
         } else {
           _photoAfterCleaning = file;
           _photoAfterCleaningBytes = bytes;
+          _savedPhotoAfterCleaningPath = null;
         }
       });
     } catch (e) {
@@ -396,7 +435,8 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
     final canSave = !_saving &&
         _lengthCm > 0 &&
         _widthCm > 0 &&
-        _photoAfterCleaningBytes != null &&
+        (_photoAfterCleaningBytes != null ||
+                _savedPhotoAfterCleaningPath != null) &&
         _followUpNoteComplete &&
         _signedByReadOnly != null &&
         _signedByReadOnly!.isNotEmpty &&
@@ -465,8 +505,10 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
                 _photoTile(
                   label: 'Fotografía de la herida *',
                   bytes: _photoAfterCleaningBytes,
-                  hasPhoto: _photoAfterCleaning != null,
-                  onPick: () => _pickPhoto(withMeasurement: false),
+                  hasPhoto: _photoAfterCleaning != null ||
+                      _savedPhotoAfterCleaningPath != null,
+                  savedPath: _savedPhotoAfterCleaningPath,
+                  onPick: () => _pickPhotoSource(withMeasurement: false),
                 ),
 
                 // Medición 2D/3D/manual → inmediatamente después, la 2ª foto
@@ -749,13 +791,14 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
                   children: [
                     Expanded(
                       child: DropdownButtonFormField<String>(
-                        value: _odor,
+                        // Olor binario (María): presente / no presente.
+                        value: _odor == 'ninguno' ? 'ninguno' : 'presente',
                         decoration: const InputDecoration(labelText: 'Olor'),
                         items: const [
-                          DropdownMenuItem(value: 'ninguno', child: Text('Ninguno')),
-                          DropdownMenuItem(value: 'leve', child: Text('Leve')),
-                          DropdownMenuItem(value: 'moderado', child: Text('Moderado')),
-                          DropdownMenuItem(value: 'fuerte', child: Text('Fuerte')),
+                          DropdownMenuItem(
+                              value: 'ninguno', child: Text('No presente')),
+                          DropdownMenuItem(
+                              value: 'presente', child: Text('Presente')),
                         ],
                         onChanged: (v) => setState(() => _odor = v ?? 'ninguno'),
                       ),
@@ -963,7 +1006,8 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
 
   String _saveBlockedReason() {
     if (_lengthCm <= 0 || _widthCm <= 0) return 'Completa al menos largo y ancho para guardar.';
-    if (_photoAfterCleaningBytes == null) {
+    if (_photoAfterCleaningBytes == null &&
+        _savedPhotoAfterCleaningPath == null) {
       return 'Falta la fotografía de la herida.';
     }
     if (!_followUpNoteComplete) {
@@ -1931,6 +1975,7 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
     required Uint8List? bytes,
     required bool hasPhoto,
     required VoidCallback onPick,
+    String? savedPath,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1941,6 +1986,21 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
           ClipRRect(
             borderRadius: BorderRadius.circular(12),
             child: Image.memory(bytes, height: 160, fit: BoxFit.cover),
+          )
+        else if (savedPath != null)
+          ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: FutureBuilder<String>(
+              future: PhotoUploadService.resolveDisplayUrl(savedPath),
+              builder: (ctx, snap) => snap.hasData
+                  ? Image.network(snap.data!, height: 160, fit: BoxFit.cover)
+                  : Container(
+                      height: 160,
+                      color: KuraColors.chipBg,
+                      child: const Center(
+                          child: CircularProgressIndicator(strokeWidth: 2)),
+                    ),
+            ),
           )
         else
           Container(
@@ -1999,6 +2059,42 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
       _lengthCtrl.text = f(m.lengthCm);
       _widthCtrl.text = f(m.widthCm);
       _depthCtrl.text = f(m.depthCm);
+    }
+    // Fotos ya guardadas en el borrador: se muestran y se re-persisten al
+    // guardar de nuevo (aunque el clínico no las vuelva a tomar).
+    for (final p in repo
+        .listPhotosForWound(widget.woundId)
+        .where((p) => p.consultationId == id)) {
+      if (p.photoStage == PhotoStage.conMedicion) {
+        _savedPhotoWithMeasurementPath = p.storagePath;
+      } else {
+        _savedPhotoAfterCleaningPath = p.storagePath;
+      }
+    }
+    // Valoración clínica ya guardada en el borrador: se pre-carga para editar.
+    final asmts = repo
+        .listAssessmentsForWound(widget.woundId)
+        .where((a) => a.consultationId == id)
+        .toList();
+    if (asmts.isNotEmpty) {
+      final a = asmts.first;
+      _edema = a.edema ?? _edema;
+      _pain = a.pain ?? _pain;
+      _painType = a.painType ?? _painType;
+      _painDuration = a.painDuration ?? _painDuration;
+      _painVas = a.painVas ?? _painVas;
+      _exudadoCantidad = a.exudateAmount;
+      _exudadoTipo = a.exudateType ?? _exudadoTipo;
+      _infeccionCriterios
+        ..clear()
+        ..addAll(a.infectionCriteria);
+      _odor = a.odor ?? _odor;
+      _woundEdge = a.woundEdge ?? _woundEdge;
+      _perilesionalSkin
+        ..clear()
+        ..addAll(a.perilesionalSkin);
+      _lowAdherence = a.lowAdherence;
+      _clinicalNotesCtrl.text = a.clinicalNotes ?? '';
     }
   }
 
@@ -2065,6 +2161,46 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
     return patch;
   }
 
+  /// Persiste una foto de un borrador: sube los bytes nuevos, o RE-INSERTA el
+  /// storage_path ya guardado (para que sobreviva al borrado/recreación de
+  /// datos al re-guardar). Best-effort: si la subida falla por red, se encola
+  /// offline; si no hay foto ni path para esa etapa, no hace nada.
+  Future<void> _persistDraftPhoto(
+    DataRepository repo,
+    String consultationId,
+    String measurementId,
+    Uint8List? bytes,
+    XFile? file,
+    String? savedPath,
+    PhotoStage stage,
+    String defaultName,
+  ) async {
+    final meta = <String, dynamic>{
+      'wound_id': widget.woundId,
+      'consultation_id': consultationId,
+      'measurement_id': measurementId,
+      'taken_at': _visitDate.toIso8601String(),
+      'photo_stage': stage.dbValue,
+    };
+    if (bytes != null) {
+      final fileName = jpgFileName(file?.name, defaultName);
+      try {
+        final path = await PhotoUploadService.uploadWoundPhoto(
+          woundId: widget.woundId,
+          consultationId: consultationId,
+          bytes: bytes,
+          fileName: fileName,
+        );
+        await repo.createPhoto({...meta, 'storage_path': path});
+      } catch (e) {
+        await repo.enqueuePhotoIfOffline(
+            bytes: bytes, fileName: fileName, meta: meta, error: e);
+      }
+    } else if (savedPath != null) {
+      await repo.createPhoto({...meta, 'storage_path': savedPath});
+    }
+  }
+
   /// Guarda un BORRADOR ligero (consulta is_draft + medición) para terminar
   /// después. Solo requiere la medición (largo/ancho, que liga la herida); no
   /// exige foto/firma/nota completa. Si ya venía de un borrador, lo reemplaza.
@@ -2124,7 +2260,7 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
         consultationId = consultation.id;
       }
       // Medición: liga la herida (permite reabrir el borrador).
-      await repo.createMeasurement({
+      final draftMeasurement = await repo.createMeasurement({
         'wound_id': widget.woundId,
         'consultation_id': consultationId,
         'measured_at': _visitDate.toIso8601String().substring(0, 10),
@@ -2132,6 +2268,47 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
         'width_cm': _widthCm,
         'area_cm2': _areaCm2,
         'depth_cm': _depthCm,
+      });
+      // El borrador CONSERVA las fotos: sube las nuevas y re-persiste las ya
+      // guardadas (mismo storage_path) que el clínico no volvió a tomar.
+      await _persistDraftPhoto(
+          repo,
+          consultationId,
+          draftMeasurement.id,
+          _photoAfterCleaningBytes,
+          _photoAfterCleaning,
+          _savedPhotoAfterCleaningPath,
+          PhotoStage.despuesLimpiar,
+          'seguimiento_despues_limpiar.jpg');
+      await _persistDraftPhoto(
+          repo,
+          consultationId,
+          draftMeasurement.id,
+          _photoWithMeasurementBytes,
+          _photoWithMeasurement,
+          _savedPhotoWithMeasurementPath,
+          PhotoStage.conMedicion,
+          'seguimiento_con_medicion.jpg');
+      // El borrador CONSERVA la valoración clínica (edema/dolor/exudado/
+      // infección/olor/piel/notas), no solo la medición y las fotos.
+      await repo.createAssessment({
+        'consultation_id': consultationId,
+        'wound_id': widget.woundId,
+        'edema': _edema,
+        'pain': _pain,
+        'pain_type': _pain ? _painType : null,
+        'pain_duration': _pain ? _painDuration : null,
+        'pain_vas': _pain ? _painVas : 0,
+        'exudate_amount': _exudadoCantidad.name,
+        'exudate_type': _exudadoTipo.name,
+        'infection_criteria': _infeccionCriterios.map((e) => e.name).toList(),
+        'odor': _odor,
+        'wound_edge': _woundEdge,
+        'perilesional_skin': _perilesionalSkin.map((e) => e.name).toList(),
+        'low_adherence': _lowAdherence,
+        'clinical_notes': _clinicalNotesCtrl.text.trim().isEmpty
+            ? null
+            : _clinicalNotesCtrl.text.trim(),
       });
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
@@ -2307,17 +2484,37 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
         }
       }
 
-      await savePhoto(
-        _photoAfterCleaningBytes!,
-        jpgFileName(_photoAfterCleaning?.name, 'seguimiento_despues_limpiar.jpg'),
-        PhotoStage.despuesLimpiar.dbValue,
-      );
+      if (_photoAfterCleaningBytes != null) {
+        await savePhoto(
+          _photoAfterCleaningBytes!,
+          jpgFileName(_photoAfterCleaning?.name, 'seguimiento_despues_limpiar.jpg'),
+          PhotoStage.despuesLimpiar.dbValue,
+        );
+      } else if (_savedPhotoAfterCleaningPath != null) {
+        await repo.createPhoto({
+          'wound_id': widget.woundId,
+          'consultation_id': consultationId,
+          'measurement_id': measurement.id,
+          'taken_at': _visitDate.toIso8601String(),
+          'photo_stage': PhotoStage.despuesLimpiar.dbValue,
+          'storage_path': _savedPhotoAfterCleaningPath,
+        });
+      }
       if (_photoWithMeasurementBytes != null) {
         await savePhoto(
           _photoWithMeasurementBytes!,
           jpgFileName(_photoWithMeasurement?.name, 'seguimiento_con_medicion.jpg'),
           PhotoStage.conMedicion.dbValue,
         );
+      } else if (_savedPhotoWithMeasurementPath != null) {
+        await repo.createPhoto({
+          'wound_id': widget.woundId,
+          'consultation_id': consultationId,
+          'measurement_id': measurement.id,
+          'taken_at': _visitDate.toIso8601String(),
+          'photo_stage': PhotoStage.conMedicion.dbValue,
+          'storage_path': _savedPhotoWithMeasurementPath,
+        });
       }
       if (anyPhotoQueued && photoWarning == null) {
         photoWarning = 'Sin conexión: el seguimiento y la(s) foto(s) quedaron '

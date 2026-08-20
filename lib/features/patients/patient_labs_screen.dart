@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 
 import '../../core/theme/kura_theme.dart';
 import '../../core/providers/session_provider.dart';
+import '../../core/widgets/kura_primary_fab.dart';
 import '../../engine/labs/lab_domain_scoring.dart';
 import '../../models/patient_lab.dart';
 import '../../services/data_repository.dart';
@@ -79,11 +80,11 @@ class _PatientLabsScreenState extends ConsumerState<PatientLabsScreen> {
           );
         },
       ),
-      floatingActionButton: FloatingActionButton.extended(
+      floatingActionButton: KuraPrimaryFab(
         onPressed: () => _add(repoAsync.valueOrNull, user?.organizationId,
             user?.id),
-        icon: const Icon(Icons.add),
-        label: const Text('Registrar labs'),
+        icon: Icons.add,
+        label: 'Registrar labs',
       ),
     );
   }
