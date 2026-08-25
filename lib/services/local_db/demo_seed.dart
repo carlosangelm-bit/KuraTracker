@@ -31,7 +31,7 @@ class DemoSeed {
   // una sola vez en instalaciones demo previas (wipeAll + _seed), evitando
   // duplicados y datos viejos. Cada rediseño del roster sube este número.
   // v12: roster curado por escenario (clínica 7 / hospital 5 / cuidadores 3).
-  static const String _seedFlag = 'seeded_v24';
+  static const String _seedFlag = 'seeded_v25';
 
   static Future<void> ensureSeeded(LocalStore store) async {
     if (store.getBool(_seedFlag)) return;
@@ -1292,6 +1292,14 @@ class DemoSeed {
       // Subescalas de Braden (percepción, humedad, actividad, movilidad,
       // nutrición, fricción). Humedad ≤2 activa la aplicabilidad de GLOBIAD.
       Map<String, int>? bradenSubscores,
+      // Heridas activas y comorbilidades opcionales: dan a algunos pacientes
+      // hospitalarios una herida (etio_lpp/has_active_wound) y diabetes, para
+      // que el demo pueda ejercitar NPIAP/PUSH/RESVECH/Wagner (antes imposibles
+      // porque el seed hospitalario no tenía heridas ni comorbilidades).
+      // wounds: {etiology, subtype, location, wuwhs_grade?, wagner_grade?, onsetDaysAgo?}
+      // comorbid: [code, status]
+      List<Map<String, dynamic>> wounds = const [],
+      List<List<String>> comorbid = const [],
     }) async {
       final pid = _uuid.v4();
       final folio = 'HOSP-${hospSeq.toString().padLeft(4, '0')}';
@@ -1342,6 +1350,39 @@ class DemoSeed {
           'created_at': iso(now.subtract(const Duration(days: 1))),
         }
       ]);
+      if (comorbid.isNotEmpty) {
+        await appendRows(Collections.patientComorbidities, [
+          for (final c in comorbid)
+            {
+              'id': _uuid.v4(),
+              'patient_id': pid,
+              'code': c[0],
+              'status': c[1],
+            },
+        ]);
+      }
+      if (wounds.isNotEmpty) {
+        await appendRows(Collections.wounds, [
+          for (final w in wounds)
+            {
+              'id': _uuid.v4(),
+              'patient_id': pid,
+              'etiology': w['etiology'],
+              'subtype': w['subtype'],
+              'body_location_primary': w['location'],
+              'body_location_secondary': null,
+              'onset_date': isoDate(now.subtract(Duration(
+                  days: (w['onsetDaysAgo'] as int?) ?? admittedDaysAgo))),
+              'wagner_grade': w['wagner_grade'],
+              'ceap_class': null,
+              'wuwhs_grade': w['wuwhs_grade'],
+              'agente_causal': null,
+              'is_active': true,
+              'closed_at': null,
+              'created_at': iso(now.subtract(Duration(days: admittedDaysAgo))),
+            },
+        ]);
+      }
       await appendRows(Collections.preventiveTasks, [
         for (final t in tasks)
           {
@@ -1416,6 +1457,17 @@ class DemoSeed {
       floor: '2',
       area: 'Cirugía',
       bed: '04',
+      // LPP activa en talón: habilita NPIAP (etio_lpp) y PUSH/RESVECH
+      // (has_active_wound) en el demo.
+      wounds: const [
+        {
+          'etiology': 'lpp',
+          'subtype': 'Lesión por presión',
+          'location': 'talon_derecho',
+          'wuwhs_grade': 'g2',
+          'onsetDaysAgo': 6,
+        },
+      ],
       tasks: [
         rondaTask('Cambio postural', 'Cambios posturales cada 2 h', -2, 'done'),
         rondaTask('Cambio postural', 'Cambios posturales cada 2 h', 1, 'pending'),
@@ -1430,11 +1482,25 @@ class DemoSeed {
       birth: DateTime(1955, 10, 2),
       sex: 'M',
       braden: 15,
-      bradenNotes: 'Riesgo medio; deambula con apoyo.',
+      bradenNotes: 'Riesgo medio; deambula con apoyo. Diabético, úlcera de pie.',
       floor: '3',
       area: 'Medicina Interna',
       bed: '12',
       fragile: false,
+      // Diabetes + úlcera de pie diabético: habilita Wagner (diabetes_mellitus)
+      // y PUSH/RESVECH (has_active_wound) en el demo.
+      comorbid: const [
+        ['diabetes_mellitus', 'presente'],
+      ],
+      wounds: const [
+        {
+          'etiology': 'pie_diabetico',
+          'subtype': 'Úlcera de pie diabético',
+          'location': 'pie_derecho_planta',
+          'wagner_grade': 'g2',
+          'onsetDaysAgo': 10,
+        },
+      ],
       tasks: [
         rondaTask('Examen de piel', 'Examen diario de la piel', -4, 'done',
             action: 'exam_piel_diario'),
