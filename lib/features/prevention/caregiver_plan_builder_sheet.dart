@@ -18,6 +18,7 @@ Future<bool?> showCaregiverPlanBuilder(
 }) {
   return showModalBottomSheet<bool>(
     context: context,
+    useRootNavigator: true,
     isScrollControlled: true,
     showDragHandle: true,
     builder: (ctx) => _PlanBuilderSheet(

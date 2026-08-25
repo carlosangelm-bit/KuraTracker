@@ -217,6 +217,10 @@ class _PatientRiskScreenState extends ConsumerState<PatientRiskScreen> {
                 'Si es MDR-S (piel), clasifica también con NPIAP.');
         break;
       default:
+        // Salvaguarda: si el catálogo habilitara una escala sin hoja de captura,
+        // avisar en vez de que el botón no haga nada (hoy las 13 tienen case).
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Esta escala aún no está disponible para captura.')));
         return;
     }
     if (res == null || !mounted) return;
@@ -534,6 +538,7 @@ class _PatientRiskScreenState extends ConsumerState<PatientRiskScreen> {
         );
     final ok = await showModalBottomSheet<bool>(
       context: context,
+      useRootNavigator: true,
       isScrollControlled: true,
       showDragHandle: true,
       builder: (ctx) => Padding(

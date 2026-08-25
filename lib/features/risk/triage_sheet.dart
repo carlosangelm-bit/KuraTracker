@@ -21,6 +21,7 @@ Future<Map<String, bool>?> showTriageSheet(
 
   final ok = await showModalBottomSheet<bool>(
     context: context,
+    useRootNavigator: true,
     isScrollControlled: true,
     showDragHandle: true,
     builder: (ctx) => StatefulBuilder(
@@ -51,9 +52,8 @@ Future<Map<String, bool>?> showTriageSheet(
                     'la edad, el Braden y la estancia ya se toman del expediente.',
                     style: Theme.of(ctx).textTheme.bodySmall),
               ),
-              Flexible(
+              Expanded(
                 child: ListView(
-                  shrinkWrap: true,
                   children: [
                     for (final g in groups) ...[
                       Padding(
