@@ -138,7 +138,9 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                       16,
                       MediaQuery.of(context).viewPadding.bottom +
                           kFloatingNavBarHeight +
-                          32,
+                          // R5: holgura extra para que el FAB (que se eleva su
+                          // huella completa) no tape la última tarjeta.
+                          88,
                     ),
                     children: _hospitalChildren(context, repo, user),
                   );
@@ -170,7 +172,8 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                     16,
                     MediaQuery.of(context).viewPadding.bottom +
                         kFloatingNavBarHeight +
-                        32,
+                        // R5: holgura extra para que el FAB no tape la última tarjeta.
+                        88,
                   ),
                   // Dos layouts distintos según el rol (mismos tokens/componentes).
                   children: isAdmin
