@@ -161,6 +161,21 @@ class _PreventiveTasksViewState extends State<PreventiveTasksView> {
     final done = due.where((x) => x.status == PreventiveTaskStatus.done).length;
     final adherence = due.isEmpty ? null : (done * 100 / due.length).round();
 
+    // R1: en vista Día, tareas PENDIENTES de días ANTERIORES (vencidas) que no
+    // caen en el rango mostrado. Sin esto, "Sin tareas en este día" ocultaba
+    // vencidas reales. Se avisan con un banner enlazado a la vista Semana.
+    final overduePrior = _view == _View.dia
+        ? widget.tasks
+            .where((x) =>
+                x.status == PreventiveTaskStatus.pending &&
+                x.scheduledAt.isBefore(start) &&
+                (_patientFilter == null || x.patientId == _patientFilter) &&
+                (_floorFilter == null || floorOf[x.patientId] == _floorFilter) &&
+                (_areaFilter == null || areaOf[x.patientId] == _areaFilter) &&
+                (_riskFilter == null || bandOf[x.patientId] == _riskFilter))
+            .length
+        : 0;
+
     // Separar PENDIENTES (el foco del profesional) de las ya resueltas
     // (hechas/saltadas), que se mueven a una sección "Completadas" al final
     // para no estorbar ni obligar a hacer scroll.
@@ -253,6 +268,40 @@ class _PreventiveTasksViewState extends State<PreventiveTasksView> {
             ),
             child: Text('Adherencia: $adherence%  ·  $done/${due.length} realizadas',
                 style: TextStyle(fontWeight: FontWeight.w700, color: t.textPrimary)),
+          ),
+        if (overduePrior > 0)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+            child: Material(
+              color: t.statusDanger.withOpacity(0.08),
+              borderRadius: BorderRadius.circular(10),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(10),
+                onTap: () => setState(() => _view = _View.semana),
+                child: Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  child: Row(
+                    children: [
+                      Icon(Icons.warning_amber_rounded,
+                          size: 18, color: t.statusDanger),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          '$overduePrior ${overduePrior == 1 ? "tarea vencida" : "tareas vencidas"} de días anteriores',
+                          style: TextStyle(
+                              fontWeight: FontWeight.w700, color: t.textPrimary),
+                        ),
+                      ),
+                      Text('Ver semana',
+                          style: TextStyle(
+                              color: t.brandPrimary,
+                              fontWeight: FontWeight.w600)),
+                    ],
+                  ),
+                ),
+              ),
+            ),
           ),
         Expanded(
           child: inRange.isEmpty

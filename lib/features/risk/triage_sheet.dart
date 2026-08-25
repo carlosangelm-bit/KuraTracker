@@ -32,9 +32,11 @@ Future<Map<String, bool>?> showTriageSheet(
           top: 4,
           bottom: MediaQuery.of(ctx).viewInsets.bottom + 12,
         ),
-        child: ConstrainedBox(
-          constraints:
-              BoxConstraints(maxHeight: MediaQuery.of(ctx).size.height * 0.9),
+        child: SizedBox(
+          // Alto FIJO (no maxHeight): la hoja abre a su tamaño final desde el
+          // primer frame y ya no se reacomoda al primer toque (R4/F5) — antes
+          // el salto hacía que el toque cayera en otra fila del cuestionario.
+          height: MediaQuery.of(ctx).size.height * 0.9,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
