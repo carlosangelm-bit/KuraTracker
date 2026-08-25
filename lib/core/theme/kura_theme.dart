@@ -156,6 +156,12 @@ class KuraTheme {
         backgroundColor: tokens.textPrimary,
         contentTextStyle: const TextStyle(color: Colors.white),
         behavior: SnackBarBehavior.floating,
+        // R2: eleva el snackbar flotante por encima de la barra de navegación
+        // flotante (~64 px de kFloatingNavBarHeight) para que en móvil no quede
+        // sobre la barra ni sobre la última tarjeta, ni intercepte sus toques.
+        // No se puede usar MediaQuery aquí (contexto de tema), así que es una
+        // constante; en escritorio (rail lateral) solo lo sube un poco.
+        insetPadding: const EdgeInsets.only(left: 12, right: 12, bottom: 80),
       ),
     );
   }
