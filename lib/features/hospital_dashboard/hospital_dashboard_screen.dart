@@ -528,11 +528,13 @@ class _BarRow extends StatelessWidget {
                   child: Text(label,
                       style: const TextStyle(fontSize: 13),
                       overflow: TextOverflow.ellipsis)),
-              Text('$done/$expected · $pct%',
+              Text(expected == 0 ? '—' : '$done/$expected · $pct%',
                   style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w700,
-                      color: _pctColor(pct))),
+                      color: expected == 0
+                          ? KuraColors.darkText.withValues(alpha: 0.45)
+                          : _pctColor(pct))),
             ],
           ),
           const SizedBox(height: 4),
@@ -542,7 +544,7 @@ class _BarRow extends StatelessWidget {
               value: expected == 0 ? 0 : done / expected,
               minHeight: 6,
               backgroundColor: KuraColors.chipBg,
-              color: _pctColor(pct),
+              color: expected == 0 ? KuraColors.chipBg : _pctColor(pct),
             ),
           ),
         ],
