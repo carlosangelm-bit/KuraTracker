@@ -24,6 +24,7 @@ Future<bool?> showPreventiveAssessment(
 }) {
   return showModalBottomSheet<bool>(
     context: context,
+    useRootNavigator: true,
     isScrollControlled: true,
     showDragHandle: true,
     builder: (ctx) => _AssessmentSheet(

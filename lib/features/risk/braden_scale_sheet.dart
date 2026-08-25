@@ -17,6 +17,7 @@ Future<({int total, Map<String, int> subscores, String? notes})?>
 
   final result = await showModalBottomSheet<Map<String, int>>(
     context: context,
+    useRootNavigator: true,
     isScrollControlled: true,
     showDragHandle: true,
     builder: (ctx) => StatefulBuilder(

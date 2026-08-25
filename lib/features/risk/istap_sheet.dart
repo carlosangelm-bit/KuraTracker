@@ -19,6 +19,7 @@ Future<({String category, Map<String, dynamic> subscores, String? notes})?>
 
   final saved = await showModalBottomSheet<bool>(
     context: context,
+    useRootNavigator: true,
     isScrollControlled: true,
     showDragHandle: true,
     builder: (ctx) => StatefulBuilder(
@@ -29,7 +30,8 @@ Future<({String category, Map<String, dynamic> subscores, String? notes})?>
           top: 4,
           bottom: MediaQuery.of(ctx).viewInsets.bottom + 16,
         ),
-        child: Column(
+        child: SingleChildScrollView(
+          child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -76,6 +78,7 @@ Future<({String category, Map<String, dynamic> subscores, String? notes})?>
               ],
             ),
           ],
+        ),
         ),
       ),
     ),

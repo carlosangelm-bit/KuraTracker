@@ -37,6 +37,7 @@ Future<({String category, Map<String, dynamic> subscores, String? notes})?>
 
   final saved = await showModalBottomSheet<bool>(
     context: context,
+    useRootNavigator: true,
     isScrollControlled: true,
     showDragHandle: true,
     builder: (ctx) => StatefulBuilder(
@@ -56,7 +57,7 @@ Future<({String category, Map<String, dynamic> subscores, String? notes})?>
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('GLOBIAD · Dermatitis asociada a incontinencia',
+                const Text('GLOBIAD · Dermatitis por humedad (DAI)',
                     style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
                 const SizedBox(height: 2),
                 Text('Clasificación por inspección visual de la piel perineal/perianal.',

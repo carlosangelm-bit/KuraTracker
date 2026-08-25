@@ -44,6 +44,7 @@ Future<({double total, Map<String, dynamic> subscores, String? notes})?>
 
   final saved = await showModalBottomSheet<bool>(
     context: context,
+    useRootNavigator: true,
     isScrollControlled: true,
     showDragHandle: true,
     builder: (ctx) => StatefulBuilder(

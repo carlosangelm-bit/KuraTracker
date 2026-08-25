@@ -191,9 +191,7 @@ class HospitalSignalsRow extends StatelessWidget {
     final t = BrandTokens.of(context);
     final riskColor =
         info.riskLevel != null ? riskLevelColor(info.riskLevel!) : t.textDisabled;
-    final riskLabel = info.riskLevel != null
-        ? 'Riesgo ${info.riskLevel!.label.toLowerCase()}'
-        : 'Sin valoración';
+    final riskLabel = info.riskLevel?.label ?? 'Sin valoración';
     final chips = <Widget>[
       _MiniInfoChip(label: riskLabel, color: riskColor, filled: true),
       if (info.admission?.locationLabel.isNotEmpty ?? false)
