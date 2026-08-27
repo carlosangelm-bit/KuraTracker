@@ -78,9 +78,11 @@ class PatientListTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final activeWounds = summary.activeCount;
     final t = BrandTokens.of(context);
-    // En hospital, si el paciente no tiene heridas activas, las etiquetas
-    // relevantes son las de prevención, no las de herida.
-    final showHospital = hospitalInfo != null && !summary.hasActiveWounds;
+    // En hospital las señales de PREVENCIÓN (Braden + internamiento/cama) y las
+    // de HERIDA no son excluyentes: un paciente con LPP activa es el que más
+    // riesgo tiene de una segunda lesión, así que necesita ver AMBAS. Antes era
+    // un if/else que apagaba las señales de hospital al ganar herida.
+    final isHospital = hospitalInfo != null;
     final inner = InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(16),
@@ -108,9 +110,18 @@ class PatientListTile extends StatelessWidget {
                       style: TextStyle(fontSize: 12, color: t.textSecondary),
                     ),
                     const SizedBox(height: 6),
-                    if (showHospital)
-                      HospitalSignalsRow(info: hospitalInfo!)
-                    else ...[
+                    if (isHospital) ...[
+                      // Prevención: riesgo (Braden) + internamiento/cama.
+                      HospitalSignalsRow(info: hospitalInfo!),
+                      // Aditivo: si además tiene herida activa, también etiología
+                      // y avance (no se pierden al ganar herida).
+                      if (summary.hasActiveWounds) ...[
+                        const SizedBox(height: 6),
+                        _EtiologyChipsRow(summary: summary),
+                        const SizedBox(height: 6),
+                        ProgressStatusIndicator(status: progressStatus),
+                      ],
+                    ] else ...[
                       _EtiologyChipsRow(summary: summary),
                       const SizedBox(height: 6),
                       ProgressStatusIndicator(status: progressStatus),
@@ -130,9 +141,12 @@ class PatientListTile extends StatelessWidget {
                           message: 'Paciente frágil',
                           child: Icon(Icons.priority_high, color: t.statusWarning, size: 18),
                         ),
-                      if (showHospital)
-                        BradenBadge(info: hospitalInfo!)
-                      else
+                      // Braden visible en hospital SIEMPRE (con o sin herida).
+                      if (isHospital) BradenBadge(info: hospitalInfo!),
+                      // Conteo de heridas: fuera de hospital siempre; en hospital
+                      // solo si hay heridas activas (evita "0 heridas" en
+                      // pacientes de pura prevención).
+                      if (!isHospital || activeWounds > 0)
                         Chip(
                           label: Text(
                               '$activeWounds herida${activeWounds == 1 ? '' : 's'}'),
