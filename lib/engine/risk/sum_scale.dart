@@ -73,9 +73,11 @@ class SumScaleDef {
   final bool draft;
   final List<SumItem> items;
   // Interpretación por umbral: si total > threshold → aboveLabel (p. ej. ASEPSIS
-  // > 20 = "Infección de sitio quirúrgico"). null = sin interpretación.
+  // > 20 = "Infección de sitio quirúrgico"); si total ≤ threshold → belowLabel
+  // (opcional, lo llena María). null = sin interpretación.
   final int? threshold;
   final String? aboveLabel;
+  final String? belowLabel;
   const SumScaleDef({
     required this.scaleId,
     required this.title,
@@ -85,6 +87,7 @@ class SumScaleDef {
     required this.items,
     this.threshold,
     this.aboveLabel,
+    this.belowLabel,
   });
 
   factory SumScaleDef.fromJson(Map<String, dynamic> j) {
@@ -100,7 +103,17 @@ class SumScaleDef {
           .toList(),
       threshold: (interp?['threshold'] as num?)?.toInt(),
       aboveLabel: interp?['above'] as String?,
+      belowLabel: interp?['below'] as String?,
     );
+  }
+
+  /// Banda/categoría clínica para un [total], resuelta desde la interpretación
+  /// declarada en el asset. null si la escala aún no define interpretación
+  /// (p. ej. PUSH/RESVECH, pendientes de contenido de María) → se muestra solo
+  /// el puntaje.
+  String? bandFor(num total) {
+    if (threshold == null) return null;
+    return total > threshold! ? aboveLabel : belowLabel;
   }
 
   /// Devuelve una copia con el [threshold] de interpretación sustituido.
@@ -113,6 +126,7 @@ class SumScaleDef {
         items: items,
         threshold: t,
         aboveLabel: aboveLabel,
+        belowLabel: belowLabel,
       );
 
   static final Map<String, SumScaleDef> _cache = {};

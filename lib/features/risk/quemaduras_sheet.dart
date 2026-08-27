@@ -76,7 +76,13 @@ Future<QuemaduraResult?> showQuemadurasSheet(
       builder: (ctx, setSheet) {
         final pa = num0(aCtrl), pab = num0(abCtrl), pb = num0(bCtrl);
         final scq = pa + pab + pb;
-        final indiceGuiado = pa * 1 + pab * 2 + pb * 3 + edad;
+        // Sin superficie capturada no hay resultado: la fórmula de Garcés suma la
+        // edad, así que con el formulario vacío devolvía un índice "fantasma"
+        // (= edad) y una banda que parecía calculada. La edad sola NO cuenta como
+        // captura: se exige al menos un porcentaje de superficie.
+        final hasSurface = scq > 0;
+        final indiceGuiado =
+            hasSurface ? (pa * 1 + pab * 2 + pb * 3 + edad) : null;
         final indice = manual
             ? (double.tryParse(manualCtrl.text.trim().replaceAll(',', '.')))
             : indiceGuiado;

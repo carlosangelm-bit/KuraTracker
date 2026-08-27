@@ -93,12 +93,18 @@ class _PatientRiskScreenState extends ConsumerState<PatientRiskScreen> {
       final r = await showSumScaleSheet(context, def);
       if (r == null || !mounted) return;
       final session = ref.read(sessionProvider);
+      // Interpretación clínica del puntaje (banda/categoría), resuelta desde el
+      // asset de la escala. En escalas sin interpretación aún (PUSH/RESVECH)
+      // queda null → se muestra solo el puntaje.
+      final band = def.bandFor(r.total);
       await repo.addScaleAssessment(
         patientId: widget.patientId,
         organizationId: session.user?.organizationId,
         scaleId: scaleId,
         scaleVersion: def.draft ? '2.0-draft' : '1.0',
         totalScore: r.total,
+        categoryResult: band,
+        bandId: band,
         subscores: r.subscores,
         notes: r.notes,
         staffId: await _staffId(repo),
@@ -110,8 +116,11 @@ class _PatientRiskScreenState extends ConsumerState<PatientRiskScreen> {
       }
       if (!mounted) return;
       setState(() {});
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('$scaleId total ${r.total.toStringAsFixed(0)} registrado')));
+      final resumen = band == null
+          ? 'total ${r.total.toStringAsFixed(0)}'
+          : '${r.total.toStringAsFixed(0)} · $band';
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('$scaleId $resumen registrado')));
       return;
     }
     // Quemaduras: FÓRMULA (índice de Garcés) → banda + índice.
@@ -294,8 +303,8 @@ class _PatientRiskScreenState extends ConsumerState<PatientRiskScreen> {
   }
 
   Widget _scalesToDoCard(DataRepository repo, List<ApplicableScale> applicable,
-      bool hasTriage, ScaleApplicabilityCatalog? cat, bool canEdit,
-      String? orgId) {
+      bool hasTriage, ScaleApplicabilityCatalog? cat, bool canPropose,
+      bool canValidate, String? orgId) {
     final setInfo = repo.applicableSetState(widget.patientId);
     final triageAt = repo.latestTriage(widget.patientId)?.assessedAt;
     final staleValidation = setInfo.validated &&
@@ -315,7 +324,7 @@ class _PatientRiskScreenState extends ConsumerState<PatientRiskScreen> {
                       style:
                           TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
                 ),
-                if (canEdit && cat != null)
+                if (canPropose && cat != null)
                   TextButton.icon(
                     onPressed: () => _addScaleDialog(repo, cat, orgId),
                     icon: const Icon(Icons.add, size: 18),
@@ -345,15 +354,21 @@ class _PatientRiskScreenState extends ConsumerState<PatientRiskScreen> {
               )
             else
               for (final s in applicable)
-                _scaleRow(repo, s, cat, canEdit, orgId),
-            if (canEdit && applicable.isNotEmpty) ...[
+                // Quitar de la propuesta = permiso de diagnóstico (canValidate):
+                // no cualquiera puede retirar una escala obligatoria.
+                _scaleRow(repo, s, cat, canValidate, orgId),
+            if (applicable.isNotEmpty) ...[
               const Divider(height: 18),
               Row(
                 children: [
+                  // El TEXTO de estatus es visible para TODOS (incluida
+                  // enfermería): quien no valida igual debe VER si ya se validó
+                  // y por quién. Solo la ACCIÓN de validar se gatea.
                   Expanded(
                     child: Text(
                       setInfo.validated && !staleValidation
-                          ? 'Validado por el especialista.'
+                          ? _validatedLabel(
+                              repo, setInfo.validatedBy, setInfo.validatedAt)
                           : staleValidation
                               ? 'La propuesta cambió tras el triage: re-valida.'
                               : 'Propuesta del sistema, pendiente de validar.',
@@ -364,15 +379,15 @@ class _PatientRiskScreenState extends ConsumerState<PatientRiskScreen> {
                               : KuraColors.darkText.withValues(alpha: 0.7)),
                     ),
                   ),
-                  if (!setInfo.validated || staleValidation)
+                  if (setInfo.validated && !staleValidation)
+                    const Icon(Icons.verified,
+                        color: KuraColors.primary, size: 20)
+                  else if (canValidate)
                     FilledButton.tonalIcon(
                       onPressed: () => _validateScales(repo, orgId),
                       icon: const Icon(Icons.verified_outlined, size: 16),
                       label: const Text('Validar'),
-                    )
-                  else
-                    const Icon(Icons.verified,
-                        color: KuraColors.primary, size: 20),
+                    ),
                 ],
               ),
             ],
@@ -439,12 +454,39 @@ class _PatientRiskScreenState extends ConsumerState<PatientRiskScreen> {
         const SnackBar(content: Text('Escalas validadas.')));
   }
 
+  /// Etiqueta "Validada por X el DD/MM" (visible para todos). Resuelve el nombre
+  /// del validador desde staff/usuarios.
+  String _validatedLabel(DataRepository repo, String? by, DateTime? at) {
+    final name = _who(repo, by);
+    final date = at == null ? '' : DateFormat('dd/MM/yyyy').format(at);
+    final porX = name.isEmpty ? '' : ' por $name';
+    final elFecha = date.isEmpty ? '' : ' el $date';
+    return 'Validada$porX$elFecha';
+  }
+
+  String _who(DataRepository repo, String? id) {
+    if (id == null) return '';
+    final s = repo.getStaff(id);
+    if (s != null) return s.fullName;
+    for (final u in repo.listUsers()) {
+      if (u.id == id) return u.fullName;
+    }
+    return '';
+  }
+
   Widget _scaleRow(DataRepository repo, ApplicableScale s,
-      ScaleApplicabilityCatalog? cat, bool canEdit, String? orgId) {
+      ScaleApplicabilityCatalog? cat, bool canRemove, String? orgId) {
     final obligatoria = s.priority == ScalePriority.obligatoria;
     final chipColor = obligatoria ? KuraColors.danger : KuraColors.primary;
     final last = repo.latestScaleAssessment(widget.patientId, s.scaleId);
-    final doneCat = last?.categoryResult ?? last?.totalScore?.toStringAsFixed(0);
+    // Resultado mostrado: "puntaje · banda" cuando hay ambos (escalas de suma con
+    // interpretación); si solo hay uno, ese. Así una escala de suma no pierde su
+    // lectura clínica ni su número.
+    final lastScore = last?.totalScore?.toStringAsFixed(0);
+    final lastBand = last?.categoryResult;
+    final doneCat = (lastBand != null && lastScore != null)
+        ? '$lastScore · $lastBand'
+        : (lastBand ?? lastScore);
     final porque = (cat == null || s.matchedFactors.isEmpty)
         ? null
         : 'Por: ${s.matchedFactors.map(cat.factorLabel).join(' · ')}';
@@ -513,7 +555,7 @@ class _PatientRiskScreenState extends ConsumerState<PatientRiskScreen> {
                 style: TextStyle(
                     fontSize: 12,
                     color: KuraColors.darkText.withValues(alpha: 0.4))),
-          if (canEdit)
+          if (canRemove)
             IconButton(
               tooltip: 'Quitar de la propuesta',
               visualDensity: VisualDensity.compact,
@@ -660,6 +702,13 @@ class _PatientRiskScreenState extends ConsumerState<PatientRiskScreen> {
     // Solo clínico/admin pueden DEFINIR el plan de cuidados. Enfermería (y
     // cuidador) solo lo consultan y ejecutan las tareas en las rondas.
     final canDefinePlan = ref.watch(sessionProvider).user?.canDiagnose == true;
+    // Escalas de riesgo: se separa PROPONER de VALIDAR. Proponer (agregar una
+    // escala a la propuesta de trabajo) también lo puede hacer enfermería;
+    // VALIDAR el resultado clínico y QUITAR escalas de la propuesta es del
+    // médico (canDiagnose). El TEXTO de estatus es visible para todos.
+    final canValidate = canDefinePlan;
+    final canPropose =
+        canValidate || ref.watch(sessionProvider).user?.isNurse == true;
     // Hospital: manejo preventivo centrado en el paciente (no hay cuidador
     // externo), así que no aplican las indicaciones libres para el cuidador.
     final isHospital =
@@ -753,7 +802,7 @@ class _PatientRiskScreenState extends ConsumerState<PatientRiskScreen> {
                 const SizedBox(height: 16),
                 // Escalas a realizar: derivadas del triage + expediente.
                 _scalesToDoCard(repo, applicable, hasTriage, applicabilityCat,
-                    canDefinePlan, patient.organizationId),
+                    canPropose, canValidate, patient.organizationId),
                 const SizedBox(height: 16),
                 // Tarjetas de la ficha: en desktop refluyen a 2-3 columnas para
                 // aprovechar el ancho; en móvil quedan apiladas.
