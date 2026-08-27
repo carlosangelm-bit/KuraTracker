@@ -183,7 +183,9 @@ class _WoundCaptureScreenState extends ConsumerState<WoundCaptureScreen> {
       staffId: staffId,
       siteId: siteId,
       visitType: VisitType.valoracion,
-      visitDate: DateTime.now(),
+      // Fecha de la visita elegida en el formulario (editable; puede ser un día
+      // anterior a la captura). Se re-confirma en el patch de finalización.
+      visitDate: ref.read(woundCaptureControllerProvider(_draftKey)).visitDate,
       isDraft: true,
     );
     _consultationId = consultation.id;
@@ -528,7 +530,7 @@ class _WoundCaptureScreenState extends ConsumerState<WoundCaptureScreen> {
         final measurement = await repo.createMeasurement({
           'wound_id': wound.id,
           'consultation_id': consultationId,
-          'measured_at': DateTime.now().toIso8601String().substring(0, 10),
+          'measured_at': formState.visitDate.toIso8601String().substring(0, 10),
           'length_cm': formState.lengthCm,
           'width_cm': formState.widthCm,
           'area_cm2': formState.areaCm2,
@@ -567,7 +569,7 @@ class _WoundCaptureScreenState extends ConsumerState<WoundCaptureScreen> {
             'wound_id': wound.id,
             'consultation_id': consultationId,
             'measurement_id': measurement.id,
-            'taken_at': DateTime.now().toIso8601String(),
+            'taken_at': formState.visitDate.toIso8601String(),
             'is_baseline': i == 0,
             'photo_stage': PhotoStage.conMedicion.dbValue,
           };
@@ -599,8 +601,13 @@ class _WoundCaptureScreenState extends ConsumerState<WoundCaptureScreen> {
         // Finaliza el borrador: la valoración ya quedó completa, así que la
         // consulta deja de ser draft (si no, reaparecería como pendiente y
         // volvería a abrir la valoración).
-        await repo.updateConsultationFields(
-            consultationId, {'is_draft': false, 'draft_form_state': null});
+        await repo.updateConsultationFields(consultationId, {
+          'is_draft': false,
+          'draft_form_state': null,
+          // Confirma la fecha de visita elegida (la consulta se creó al vuelo
+          // con la fecha de ese momento; aquí queda la definitiva).
+          'visit_date': formState.visitDate.toIso8601String().substring(0, 10),
+        });
         // La bitacora de auditoria de wound_measurements la genera el
         // trigger AFTER INSERT de Postgres (audit_trigger_fn), no una
         // llamada manual desde el cliente: asi se garantiza que nadie pueda
@@ -656,6 +663,39 @@ class _WoundCaptureScreenState extends ConsumerState<WoundCaptureScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        // Fecha de la VISITA (consulta): editable, puede ser anterior al día de
+        // captura. Alimenta la consulta, la medición y las fotos. Distinta de la
+        // "fecha de inicio" de la herida (onsetDate).
+        Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: Row(
+            children: [
+              const Icon(Icons.event_available_outlined, size: 18),
+              const SizedBox(width: 8),
+              const Text('Fecha de la visita:',
+                  style: TextStyle(fontWeight: FontWeight.w600)),
+              const SizedBox(width: 8),
+              Expanded(
+                child: OutlinedButton.icon(
+                  icon: const Icon(Icons.calendar_today, size: 16),
+                  label: Text(
+                      DateFormat('dd/MM/yyyy').format(formState.visitDate)),
+                  onPressed: () async {
+                    final picked = await showDatePicker(
+                      context: context,
+                      initialDate: formState.visitDate,
+                      firstDate: DateTime(2020),
+                      lastDate: DateTime.now().add(const Duration(days: 1)),
+                    );
+                    if (picked != null) {
+                      update(() => formState.visitDate = picked);
+                    }
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
         // Gating (Protocolo "Expedientes clínicos"): la valoración y la
         // fotografía requieren consentimiento de privacidad + fotografía.
         ConsentGateBanner(

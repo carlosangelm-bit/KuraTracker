@@ -2030,6 +2030,138 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
       ?.copyWith(fontWeight: FontWeight.w700);
 
   /// Precarga los datos de un borrador al reabrirlo (una sola vez).
+  /// Instantánea COMPLETA del formulario para el borrador. Un borrador nunca
+  /// debe guardar un subconjunto elegido a mano (eso es pérdida de datos con
+  /// otro nombre): se serializa TODO el estado del formulario a
+  /// `consultations.draft_form_state` (jsonb, 0089), igual que la valoración
+  /// inicial (wound_capture_screen). Las fotos NO van aquí (se conservan en
+  /// wound_photos y se re-persisten aparte).
+  Map<String, dynamic> _formSnapshot() => {
+        'visit_date': _visitDate.toIso8601String(),
+        // Medición (los 10 campos que antes se perdían + L/A/P/volumen/nota).
+        'length': _lengthCtrl.text,
+        'width': _widthCtrl.text,
+        'depth': _depthCtrl.text,
+        'volume': _volumeCtrl.text,
+        'volume_auto_following': _volumeAutoFollowing,
+        'manual_measurement': _manualMeasurementCtrl.text,
+        'tunneling': _tunneling,
+        'undermining': _undermining,
+        'granulacion': _granulacion,
+        'esfacelo': _esfacelo,
+        'necrosis': _necrosis,
+        'epitelizacion': _epitelizacion,
+        'captured_before_debridement': _capturedBeforeDebridement,
+        // Evaluación clínica.
+        'edema': _edema,
+        'pain': _pain,
+        'pain_type': _painType,
+        'pain_duration': _painDuration,
+        'pain_vas': _painVas,
+        'exudado_cantidad': _exudadoCantidad.name,
+        'exudado_tipo': _exudadoTipo.name,
+        'infeccion_criterios': _infeccionCriterios.map((e) => e.name).toList(),
+        'odor': _odor,
+        'wound_edge': _woundEdge,
+        'perilesional_skin': _perilesionalSkin.map((e) => e.name).toList(),
+        'low_adherence': _lowAdherence,
+        'clinical_notes': _clinicalNotesCtrl.text,
+        // Notas de la consulta.
+        'specialist_notes': _specialistNotesCtrl.text,
+        'visit_summary': _visitSummaryCtrl.text,
+        // Nota de seguimiento (catálogo + "otro").
+        'care_type': _careTypeSelected,
+        'care_type_other': _careTypeOtherCtrl.text,
+        'procedure_desc': _procedureDescSelected.toList(),
+        'procedure_desc_other': _procedureDescOtherCtrl.text,
+        'materials_used': _materialsUsedSelected.toList(),
+        'materials_used_other': _materialsUsedOtherCtrl.text,
+        'evolution': _evolutionSelected,
+        'evolution_other': _evolutionOtherCtrl.text,
+        // Overrides del perfil (drivers del motor) + decisión de régimen.
+        'subtipo_override': _subtipoOverride?.name,
+        'no_revasc_override': _noRevascOverride,
+        'regimen_accepted': _regimenAccepted,
+      };
+
+  /// Restaura el formulario desde una instantánea de borrador. FUENTE DE VERDAD
+  /// al reabrir: se aplica sobre lo repoblado por fila (que puede venir
+  /// incompleto en borradores viejos sin instantánea).
+  void _applyFormSnapshot(Map<String, dynamic> s) {
+    E? en<E>(List<E> values, Object? name) {
+      if (name is! String) return null;
+      for (final v in values) {
+        if ((v as Enum).name == name) return v;
+      }
+      return null;
+    }
+
+    String txt(Object? v, String fb) => v is String ? v : fb;
+    double dbl(Object? v, double fb) => v is num ? v.toDouble() : fb;
+
+    final vd = s['visit_date'];
+    if (vd is String) _visitDate = DateTime.tryParse(vd) ?? _visitDate;
+    _lengthCtrl.text = txt(s['length'], _lengthCtrl.text);
+    _widthCtrl.text = txt(s['width'], _widthCtrl.text);
+    _depthCtrl.text = txt(s['depth'], _depthCtrl.text);
+    _volumeCtrl.text = txt(s['volume'], _volumeCtrl.text);
+    _volumeAutoFollowing = s['volume_auto_following'] as bool? ?? _volumeAutoFollowing;
+    _manualMeasurementCtrl.text = txt(s['manual_measurement'], _manualMeasurementCtrl.text);
+    _tunneling = s['tunneling'] as bool? ?? _tunneling;
+    _undermining = s['undermining'] as bool? ?? _undermining;
+    _granulacion = dbl(s['granulacion'], _granulacion);
+    _esfacelo = dbl(s['esfacelo'], _esfacelo);
+    _necrosis = dbl(s['necrosis'], _necrosis);
+    _epitelizacion = dbl(s['epitelizacion'], _epitelizacion);
+    _capturedBeforeDebridement = s['captured_before_debridement'] as bool? ?? _capturedBeforeDebridement;
+    _edema = txt(s['edema'], _edema);
+    _pain = s['pain'] as bool? ?? _pain;
+    _painType = txt(s['pain_type'], _painType);
+    _painDuration = txt(s['pain_duration'], _painDuration);
+    _painVas = (s['pain_vas'] as num?)?.toInt() ?? _painVas;
+    _exudadoCantidad = en(ExudadoCantidad.values, s['exudado_cantidad']) ?? _exudadoCantidad;
+    _exudadoTipo = en(ExudadoTipo.values, s['exudado_tipo']) ?? _exudadoTipo;
+    if (s['infeccion_criterios'] is List) {
+      _infeccionCriterios
+        ..clear()
+        ..addAll((s['infeccion_criterios'] as List)
+            .map((e) => en(InfeccionCriterioIwii.values, e))
+            .whereType<InfeccionCriterioIwii>());
+    }
+    _odor = txt(s['odor'], _odor);
+    _woundEdge = txt(s['wound_edge'], _woundEdge);
+    if (s['perilesional_skin'] is List) {
+      _perilesionalSkin
+        ..clear()
+        ..addAll((s['perilesional_skin'] as List)
+            .map((e) => en(PielPerilesionalEstado.values, e))
+            .whereType<PielPerilesionalEstado>());
+    }
+    _lowAdherence = s['low_adherence'] as bool? ?? _lowAdherence;
+    _clinicalNotesCtrl.text = txt(s['clinical_notes'], _clinicalNotesCtrl.text);
+    _specialistNotesCtrl.text = txt(s['specialist_notes'], _specialistNotesCtrl.text);
+    _visitSummaryCtrl.text = txt(s['visit_summary'], _visitSummaryCtrl.text);
+    _careTypeSelected = s['care_type'] as String? ?? _careTypeSelected;
+    _careTypeOtherCtrl.text = txt(s['care_type_other'], _careTypeOtherCtrl.text);
+    if (s['procedure_desc'] is List) {
+      _procedureDescSelected
+        ..clear()
+        ..addAll((s['procedure_desc'] as List).whereType<String>());
+    }
+    _procedureDescOtherCtrl.text = txt(s['procedure_desc_other'], _procedureDescOtherCtrl.text);
+    if (s['materials_used'] is List) {
+      _materialsUsedSelected
+        ..clear()
+        ..addAll((s['materials_used'] as List).whereType<String>());
+    }
+    _materialsUsedOtherCtrl.text = txt(s['materials_used_other'], _materialsUsedOtherCtrl.text);
+    _evolutionSelected = s['evolution'] as String? ?? _evolutionSelected;
+    _evolutionOtherCtrl.text = txt(s['evolution_other'], _evolutionOtherCtrl.text);
+    _subtipoOverride = en(SubtipoVascular.values, s['subtipo_override']) ?? _subtipoOverride;
+    _noRevascOverride = s['no_revasc_override'] as bool? ?? _noRevascOverride;
+    _regimenAccepted = s['regimen_accepted'] as bool? ?? _regimenAccepted;
+  }
+
   void _loadDraftIfNeeded(DataRepository repo, SessionState session) {
     if (_draftLoaded) return;
     _draftLoaded = true;
@@ -2037,6 +2169,9 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
     if (id == null) return;
     final c = repo.getConsultation(id);
     if (c == null) return;
+    // Fecha de la visita: se restaura la ORIGINAL del borrador (antes se quedaba
+    // en DateTime.now() y al re-guardar sobrescribía la fecha real en silencio).
+    _visitDate = c.visitDate;
     final org = session.user?.organizationId;
     _prefillSingle(NoteOptionField.careType, c.followUpCareType, repo, org,
         (v) => _careTypeSelected = v, _careTypeOtherCtrl);
@@ -2096,6 +2231,12 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
       _lowAdherence = a.lowAdherence;
       _clinicalNotesCtrl.text = a.clinicalNotes ?? '';
     }
+    // FUENTE DE VERDAD: si el borrador trae una instantánea completa del
+    // formulario, se aplica AL FINAL (sobre lo repoblado por fila). Recupera los
+    // campos de medición que la restauración por fila no traía (composición del
+    // lecho, tunelización/socavamiento, volumen y nota de medición manual).
+    final snap = c.draftFormState?['form'];
+    if (snap is Map) _applyFormSnapshot(snap.cast<String, dynamic>());
   }
 
   void _prefillSingle(NoteOptionField field, String? saved, DataRepository repo,
@@ -2158,6 +2299,10 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
       patch['follow_up_signature'] = _signatureController.toJsonString();
       patch['follow_up_signed_at'] = DateTime.now().toIso8601String();
     }
+    // Al FINALIZAR se limpia la instantánea del borrador (ya no es un borrador),
+    // igual que wound_capture_screen. En el guardado de borrador la instantánea
+    // se escribe aparte (ver _saveDraft).
+    if (!draft) patch['draft_form_state'] = null;
     return patch;
   }
 
@@ -2259,6 +2404,10 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
         );
         consultationId = consultation.id;
       }
+      // Instantánea COMPLETA del formulario (fuente de verdad al reabrir): así
+      // no se pierde ningún campo, incluida la composición del lecho.
+      await repo.updateConsultationFields(
+          consultationId, {'draft_form_state': {'form': _formSnapshot()}});
       // Medición: liga la herida (permite reabrir el borrador).
       final draftMeasurement = await repo.createMeasurement({
         'wound_id': widget.woundId,
