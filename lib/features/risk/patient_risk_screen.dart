@@ -93,12 +93,18 @@ class _PatientRiskScreenState extends ConsumerState<PatientRiskScreen> {
       final r = await showSumScaleSheet(context, def);
       if (r == null || !mounted) return;
       final session = ref.read(sessionProvider);
+      // Interpretación clínica del puntaje (banda/categoría), resuelta desde el
+      // asset de la escala. En escalas sin interpretación aún (PUSH/RESVECH)
+      // queda null → se muestra solo el puntaje.
+      final band = def.bandFor(r.total);
       await repo.addScaleAssessment(
         patientId: widget.patientId,
         organizationId: session.user?.organizationId,
         scaleId: scaleId,
         scaleVersion: def.draft ? '2.0-draft' : '1.0',
         totalScore: r.total,
+        categoryResult: band,
+        bandId: band,
         subscores: r.subscores,
         notes: r.notes,
         staffId: await _staffId(repo),
@@ -110,8 +116,11 @@ class _PatientRiskScreenState extends ConsumerState<PatientRiskScreen> {
       }
       if (!mounted) return;
       setState(() {});
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('$scaleId total ${r.total.toStringAsFixed(0)} registrado')));
+      final resumen = band == null
+          ? 'total ${r.total.toStringAsFixed(0)}'
+          : '${r.total.toStringAsFixed(0)} · $band';
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('$scaleId $resumen registrado')));
       return;
     }
     // Quemaduras: FÓRMULA (índice de Garcés) → banda + índice.
@@ -444,7 +453,14 @@ class _PatientRiskScreenState extends ConsumerState<PatientRiskScreen> {
     final obligatoria = s.priority == ScalePriority.obligatoria;
     final chipColor = obligatoria ? KuraColors.danger : KuraColors.primary;
     final last = repo.latestScaleAssessment(widget.patientId, s.scaleId);
-    final doneCat = last?.categoryResult ?? last?.totalScore?.toStringAsFixed(0);
+    // Resultado mostrado: "puntaje · banda" cuando hay ambos (escalas de suma con
+    // interpretación); si solo hay uno, ese. Así una escala de suma no pierde su
+    // lectura clínica ni su número.
+    final lastScore = last?.totalScore?.toStringAsFixed(0);
+    final lastBand = last?.categoryResult;
+    final doneCat = (lastBand != null && lastScore != null)
+        ? '$lastScore · $lastBand'
+        : (lastBand ?? lastScore);
     final porque = (cat == null || s.matchedFactors.isEmpty)
         ? null
         : 'Por: ${s.matchedFactors.map(cat.factorLabel).join(' · ')}';
