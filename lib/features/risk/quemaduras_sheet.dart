@@ -12,6 +12,20 @@ typedef QuemaduraResult = ({
   String? notes,
 });
 
+/// Índice de Garcés = %A×1 + %AB×2 + %B×3 + edad. **Fuente única** de la fórmula
+/// (la usan el builder y el bloque post-pop). Devuelve null si no hay superficie
+/// capturada: la fórmula suma la edad, así que sin superficie daría un índice
+/// "fantasma" (= edad) y una banda que parecería calculada. La edad sola NO
+/// cuenta como captura.
+double? garcesIndex(
+    {required double pa,
+    required double pab,
+    required double pb,
+    required int edad}) {
+  if (pa + pab + pb <= 0) return null;
+  return pa * 1 + pab * 2 + pb * 3 + edad;
+}
+
 // Cortes (índice de Garcés y criterio ABA) parametrizados en ClinicalParams
 // (assets/engine/clinical/thresholds.json) para que María los revise/ajuste sin
 // recompilar. Si ClinicalParams no está cargado (p. ej. algún test), se cae a los
@@ -76,13 +90,7 @@ Future<QuemaduraResult?> showQuemadurasSheet(
       builder: (ctx, setSheet) {
         final pa = num0(aCtrl), pab = num0(abCtrl), pb = num0(bCtrl);
         final scq = pa + pab + pb;
-        // Sin superficie capturada no hay resultado: la fórmula de Garcés suma la
-        // edad, así que con el formulario vacío devolvía un índice "fantasma"
-        // (= edad) y una banda que parecía calculada. La edad sola NO cuenta como
-        // captura: se exige al menos un porcentaje de superficie.
-        final hasSurface = scq > 0;
-        final indiceGuiado =
-            hasSurface ? (pa * 1 + pab * 2 + pb * 3 + edad) : null;
+        final indiceGuiado = garcesIndex(pa: pa, pab: pab, pb: pb, edad: edad);
         final indice = manual
             ? (double.tryParse(manualCtrl.text.trim().replaceAll(',', '.')))
             : indiceGuiado;
@@ -227,7 +235,7 @@ Future<QuemaduraResult?> showQuemadurasSheet(
   final pa = num0(aCtrl), pab = num0(abCtrl), pb = num0(bCtrl);
   final indice = manual
       ? double.tryParse(manualCtrl.text.trim().replaceAll(',', '.'))
-      : (pa * 1 + pab * 2 + pb * 3 + edad);
+      : garcesIndex(pa: pa, pab: pab, pb: pb, edad: edad);
   if (indice == null) return null;
   final scq = pa + pab + pb;
   final abaCrit = !manual &&
