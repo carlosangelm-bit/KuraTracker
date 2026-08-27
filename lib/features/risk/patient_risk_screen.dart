@@ -93,19 +93,29 @@ class _PatientRiskScreenState extends ConsumerState<PatientRiskScreen> {
       final r = await showSumScaleSheet(context, def);
       if (r == null || !mounted) return;
       final session = ref.read(sessionProvider);
-      // Interpretación clínica del puntaje (banda/categoría), resuelta desde el
-      // asset de la escala. En escalas sin interpretación aún (PUSH/RESVECH)
-      // queda null → se muestra solo el puntaje.
-      final band = def.bandFor(r.total);
+      // Valoración PREVIA — se lee ANTES de guardar (si se leyera después, la
+      // "anterior" sería la que acabamos de guardar). En modo tendencia
+      // (PUSH/RESVECH) alimenta la comparación; en bandas se ignora.
+      final prev = repo.latestScaleAssessment(widget.patientId, scaleId);
+      final reading = def.interpret(r.total, previousTotal: prev?.totalScore);
+      // band_id = CÓDIGO ESTABLE del asset (llave de reglas); category_result =
+      // etiqueta visible. El delta y el previo quedan en subscores como hecho de
+      // auditoría (y para renderizar sin una segunda consulta).
+      final subscores = <String, dynamic>{
+        ...r.subscores,
+        if (prev?.totalScore != null) 'previous_total': prev!.totalScore,
+        if (prev != null) 'previous_at': prev.assessedAt.toIso8601String(),
+        if (reading.delta != null) 'delta': reading.delta,
+      };
       await repo.addScaleAssessment(
         patientId: widget.patientId,
         organizationId: session.user?.organizationId,
         scaleId: scaleId,
         scaleVersion: def.draft ? '2.0-draft' : '1.0',
         totalScore: r.total,
-        categoryResult: band,
-        bandId: band,
-        subscores: r.subscores,
+        categoryResult: reading.label,
+        bandId: reading.bandId,
+        subscores: subscores,
         notes: r.notes,
         staffId: await _staffId(repo),
       );
@@ -116,9 +126,9 @@ class _PatientRiskScreenState extends ConsumerState<PatientRiskScreen> {
       }
       if (!mounted) return;
       setState(() {});
-      final resumen = band == null
+      final resumen = reading.label == null
           ? 'total ${r.total.toStringAsFixed(0)}'
-          : '${r.total.toStringAsFixed(0)} · $band';
+          : '${r.total.toStringAsFixed(0)} · ${reading.label}';
       ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('$scaleId $resumen registrado')));
       return;
@@ -484,9 +494,20 @@ class _PatientRiskScreenState extends ConsumerState<PatientRiskScreen> {
     // lectura clínica ni su número.
     final lastScore = last?.totalScore?.toStringAsFixed(0);
     final lastBand = last?.categoryResult;
-    final doneCat = (lastBand != null && lastScore != null)
-        ? '$lastScore · $lastBand'
-        : (lastBand ?? lastScore);
+    // Escalas de tendencia (PUSH/RESVECH): el delta guardado se muestra como
+    // flecha, p. ej. "9 · Cicatrizando (↓3)". Escalas con bandas: "34 ·
+    // Infección moderada". Primera valoración de tendencia: solo el puntaje.
+    final lastDelta = last?.subscores?['delta'] as num?;
+    final trendSuffix = (lastDelta != null && lastDelta != 0)
+        ? ' (${lastDelta < 0 ? '↓' : '↑'}${lastDelta.abs().toStringAsFixed(0)})'
+        : '';
+    final String? doneCat;
+    if (lastScore != null) {
+      doneCat =
+          lastBand != null ? '$lastScore · $lastBand$trendSuffix' : lastScore;
+    } else {
+      doneCat = lastBand;
+    }
     final porque = (cat == null || s.matchedFactors.isEmpty)
         ? null
         : 'Por: ${s.matchedFactors.map(cat.factorLabel).join(' · ')}';

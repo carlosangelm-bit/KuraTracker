@@ -54,6 +54,9 @@ Future<({double total, Map<String, dynamic> subscores, String? notes})?>
         final total = manual ? mTotal : gTotal;
         final valid =
             total != null && total >= def.totalMin && total <= def.totalMax;
+        // Vista previa de la interpretación (modo bandas). En modo tendencia no
+        // hay valoración previa aquí, así que no muestra lectura (solo el total).
+        final reading = total == null ? null : def.interpret(total);
         return Padding(
           padding: EdgeInsets.only(
             left: 16,
@@ -179,12 +182,10 @@ Future<({double total, Map<String, dynamic> subscores, String? notes})?>
                         total == null
                             ? 'Completa la valoración'
                             : 'Total: $total / ${def.totalMax}'
-                                '${def.threshold != null && total > def.threshold! ? ' · ${def.aboveLabel ?? ''}' : ''}',
+                                '${reading?.label != null ? ' · ${reading!.label}' : ''}',
                         style: TextStyle(
                             fontWeight: FontWeight.w700,
-                            color: (def.threshold != null &&
-                                    total != null &&
-                                    total > def.threshold!)
+                            color: reading?.severity == 'danger'
                                 ? KuraColors.danger
                                 : (valid
                                     ? KuraColors.primary
