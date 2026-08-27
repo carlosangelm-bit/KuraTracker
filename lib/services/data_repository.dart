@@ -5220,10 +5220,29 @@ class DataRepository {
 
   // ---------------- Mediciones ----------------
 
-  List<WoundMeasurement> listMeasurementsForWound(String woundId) {
+  /// Mediciones de una herida, ordenadas por fecha ascendente. Por defecto
+  /// EXCLUYE las de consultas en BORRADOR: una medición provisional de borrador
+  /// (ligera, sin composición del lecho → composición 0) NO debe entrar a la
+  /// evolución clínica (checkpoint de Sheehan, gráfica, pronóstico), o marcaría
+  /// "deterioro" falso hasta finalizar. [includeDrafts]=true solo donde se
+  /// necesita la medición del propio borrador (reabrir un borrador, ver el
+  /// detalle de esa consulta).
+  List<WoundMeasurement> listMeasurementsForWound(String woundId,
+      {bool includeDrafts = false}) {
+    Set<String> draftConsultationIds = const {};
+    if (!includeDrafts) {
+      draftConsultationIds = _store
+          .getAll(Collections.consultations)
+          .where((c) => c['is_draft'] == true)
+          .map((c) => c['id'] as String)
+          .toSet();
+    }
     final list = _store
         .getAll(Collections.woundMeasurements)
         .where((m) => m['wound_id'] == woundId)
+        .where((m) =>
+            includeDrafts ||
+            !draftConsultationIds.contains(m['consultation_id']))
         .map(WoundMeasurement.fromJson)
         .toList();
     list.sort((a, b) => a.measuredAt.compareTo(b.measuredAt));
