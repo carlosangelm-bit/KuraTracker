@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/theme/kura_theme.dart';
@@ -134,6 +135,14 @@ class _PlatformHomeScreenState extends ConsumerState<PlatformHomeScreen>
     final ClinicalParams next;
     try {
       parsed = ClinicalParamsCsv.parse(utf8.decode(bytes));
+      // `scale_bands` (bandas de escalas de suma, p. ej. ASEPSIS) NO viaja por
+      // el CSV —se edita en JSON—: se preserva del asset para que un round-trip
+      // de CSV no borre la interpretación clínica (etiqueta + disparo de tarea).
+      final assetThresholds = jsonDecode(await rootBundle
+          .loadString('assets/engine/clinical/thresholds.json')) as Map<String, dynamic>;
+      if (assetThresholds['scale_bands'] != null) {
+        parsed.thresholds['scale_bands'] = assetThresholds['scale_bands'];
+      }
       next = ClinicalParams.fromJsonStrings(
         thresholdsJson: jsonEncode(parsed.thresholds),
         archetypesJson: jsonEncode(parsed.archetypes),

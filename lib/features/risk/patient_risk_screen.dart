@@ -89,23 +89,25 @@ class _PatientRiskScreenState extends ConsumerState<PatientRiskScreen> {
     // Escalas tipo SUMA (PUSH/RESVECH/ASEPSIS): definición en asset, total 0..max.
     if (scaleId == 'PUSH' || scaleId == 'RESVECH' || scaleId == 'ASEPSIS') {
       final def = await SumScaleDef.load(scaleId);
+      // Valoración PREVIA — se lee ANTES de mostrar la hoja: alimenta la vista
+      // previa de tendencia y la interpretación al guardar. Si se leyera después
+      // de guardar, la "anterior" sería la que acabamos de registrar.
+      final prev = repo.latestScaleAssessment(widget.patientId, scaleId);
       if (!mounted) return;
-      final r = await showSumScaleSheet(context, def);
+      final r = await showSumScaleSheet(context, def,
+          previousTotal: prev?.totalScore);
       if (r == null || !mounted) return;
       final session = ref.read(sessionProvider);
-      // Valoración PREVIA — se lee ANTES de guardar (si se leyera después, la
-      // "anterior" sería la que acabamos de guardar). En modo tendencia
-      // (PUSH/RESVECH) alimenta la comparación; en bandas se ignora.
-      final prev = repo.latestScaleAssessment(widget.patientId, scaleId);
       final reading = def.interpret(r.total, previousTotal: prev?.totalScore);
-      // band_id = CÓDIGO ESTABLE del asset (llave de reglas); category_result =
-      // etiqueta visible. El delta y el previo quedan en subscores como hecho de
+      // band_id = CÓDIGO ESTABLE (llave de reglas); category_result = etiqueta
+      // visible. delta/previo/severidad quedan en subscores como hecho de
       // auditoría (y para renderizar sin una segunda consulta).
       final subscores = <String, dynamic>{
         ...r.subscores,
         if (prev?.totalScore != null) 'previous_total': prev!.totalScore,
         if (prev != null) 'previous_at': prev.assessedAt.toIso8601String(),
         if (reading.delta != null) 'delta': reading.delta,
+        if (reading.severity != null) 'severity': reading.severity,
       };
       await repo.addScaleAssessment(
         patientId: widget.patientId,
@@ -120,7 +122,8 @@ class _PatientRiskScreenState extends ConsumerState<PatientRiskScreen> {
         staffId: await _staffId(repo),
       );
       if (scaleId == 'ASEPSIS') {
-        await repo.applyAsepsisTreatment(widget.patientId, r.total,
+        await repo.applyAsepsisTreatment(widget.patientId,
+            severity: reading.severity,
             organizationId: session.user?.organizationId,
             createdBy: session.user?.id);
       }
@@ -550,8 +553,11 @@ class _PatientRiskScreenState extends ConsumerState<PatientRiskScreen> {
                     if (doneCat != null) ...[
                       const SizedBox(width: 6),
                       Text('Resultado: $doneCat',
-                          style: const TextStyle(
-                              fontSize: 11, color: KuraColors.primary)),
+                          style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: scaleSeverityColor(
+                                  last?.subscores?['severity'] as String?))),
                     ],
                   ],
                 ),

@@ -4165,25 +4165,24 @@ class DataRepository {
     }
   }
 
-  /// ASEPSIS: total > corte ISQ → infección de sitio quirúrgico; agenda
-  /// confirmar/tratar ISQ. Solo hospital. Idempotente ('asepsis'). El corte
-  /// (asepsis_isq_above, borrador) vive en ClinicalParams para revisión de María.
+  /// ASEPSIS: si la BANDA ya es de infección (severity warn/danger) → agenda
+  /// confirmar/tratar ISQ. Solo hospital. Idempotente ('asepsis'). Llavea por
+  /// banda, no por un corte numérico: FUENTE ÚNICA en scale_bands["ASEPSIS"]
+  /// (misma que la etiqueta que ve el clínico). Migración a comportamiento
+  /// idéntico: warn+danger empiezan en 21, igual que el antiguo total > 20.
   Future<void> applyAsepsisTreatment(
-    String patientId,
-    double total, {
+    String patientId, {
+    required String? severity,
     required String? organizationId,
     String? createdBy,
   }) async {
     if (centerTypeFor(organizationId) != CenterType.hospital) return;
     await _clearFutureRuleTasks(patientId, 'asepsis');
-    final cut =
-        ClinicalParams.isLoaded ? ClinicalParams.instance.asepsisIsqAbove : 20;
-    if (total <= cut) return;
+    if (severity != 'warn' && severity != 'danger') return;
     await createPreventiveTask(
       patientId: patientId,
       organizationId: organizationId,
-      title:
-          'Confirmar y tratar infección de sitio quirúrgico (ASEPSIS > ${cut.toStringAsFixed(0)})',
+      title: 'Confirmar y tratar infección de sitio quirúrgico (ASEPSIS)',
       scheduledAt: DateTime.now().add(const Duration(hours: 2)),
       admissionId: activeAdmission(patientId)?.id,
       ruleId: 'asepsis',

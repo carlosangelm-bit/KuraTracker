@@ -4,17 +4,7 @@
   "total_min": 0,
   "total_max": 55,
   "draft": true,
-  "interpretation": {
-    "mode": "bands",
-    "draft": true,
-    "bands": [
-      { "id": "asepsis_satisfactoria",      "min": 0,  "max": 10, "label": "Cicatrización satisfactoria",    "severity": "ok" },
-      { "id": "asepsis_alteracion",         "min": 11, "max": 20, "label": "Alteración de la cicatrización", "severity": "watch" },
-      { "id": "asepsis_infeccion_menor",    "min": 21, "max": 30, "label": "Infección menor",                "severity": "warn" },
-      { "id": "asepsis_infeccion_moderada", "min": 31, "max": 40, "label": "Infección moderada",             "severity": "danger" },
-      { "id": "asepsis_infeccion_severa",   "min": 41, "max": 55, "label": "Infección severa",               "severity": "danger" }
-    ]
-  },
+  "interpretation": { "mode": "bands", "bands_ref": "ASEPSIS" },
   "items": [
     {
       "id": "trat_adicional",
