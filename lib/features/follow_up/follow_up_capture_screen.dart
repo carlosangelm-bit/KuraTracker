@@ -2183,8 +2183,10 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
         org, _materialsUsedSelected, _materialsUsedOtherCtrl);
     _specialistNotesCtrl.text = c.specialistNotes ?? '';
     _visitSummaryCtrl.text = c.visitSummary ?? '';
+    // includeDrafts: la medición que buscamos es la del PROPIO borrador que se
+    // reabre (is_draft = true); el filtro por defecto la excluiría.
     final ms = repo
-        .listMeasurementsForWound(widget.woundId)
+        .listMeasurementsForWound(widget.woundId, includeDrafts: true)
         .where((m) => m.consultationId == id)
         .toList();
     if (ms.isNotEmpty) {

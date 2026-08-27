@@ -78,8 +78,10 @@ class ConsultationDetailScreen extends ConsumerWidget {
           final measurementsByWound = <String, WoundMeasurement>{};
           final assessmentsByWound = <String, WoundAssessment>{};
           for (final w in wounds) {
+            // includeDrafts: se muestra la medición de ESTA consulta, que puede
+            // ser un borrador (el detalle también se abre para borradores).
             final measurement = repo
-                .listMeasurementsForWound(w.id)
+                .listMeasurementsForWound(w.id, includeDrafts: true)
                 .where((m) => m.consultationId == consultationId);
             final assessment = repo
                 .listAssessmentsForWound(w.id)
