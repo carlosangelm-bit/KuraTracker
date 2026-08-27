@@ -3,6 +3,13 @@
   "title": "PUSH · Seguimiento de cicatrización",
   "total_min": 0,
   "total_max": 17,
+  "interpretation": {
+    "mode": "trend",
+    "draft": true,
+    "direction": "lower_is_better",
+    "min_delta": 1,
+    "labels": { "improving": "Cicatrizando", "stable": "Sin cambio", "worsening": "Deterioro" }
+  },
   "items": [
     {
       "id": "area",
