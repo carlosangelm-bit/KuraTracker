@@ -315,6 +315,50 @@ class _PatientRiskScreenState extends ConsumerState<PatientRiskScreen> {
     if (mounted) setState(() {});
   }
 
+  /// Aviso cuando el motor indica escalas OBLIGATORIAS que el centro tiene
+  /// desactivadas (`enabledScales`): antes desaparecían del listado sin rastro.
+  /// Nombres solo para admin/master; el conteo, para todos.
+  Widget _suppressedScalesBanner(
+      List<ApplicableScale> suppressed, bool showNames) {
+    return Container(
+      margin: const EdgeInsets.only(top: 8),
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: KuraColors.warning.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: KuraColors.warning.withValues(alpha: 0.4)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.report_gmailerrorred_outlined,
+              size: 18, color: KuraColors.warning),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '${suppressed.length} escala(s) indicada(s) están desactivadas '
+                  'en la configuración del centro.',
+                  style: const TextStyle(
+                      fontSize: 12, fontWeight: FontWeight.w700),
+                ),
+                if (showNames) ...[
+                  const SizedBox(height: 2),
+                  Text(suppressed.map((s) => s.label).join(' · '),
+                      style: TextStyle(
+                          fontSize: 11,
+                          color: KuraColors.darkText.withValues(alpha: 0.75))),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _scalesToDoCard(DataRepository repo, List<ApplicableScale> applicable,
       bool hasTriage, ScaleApplicabilityCatalog? cat, bool canPropose,
       bool canValidate, String? orgId) {
@@ -324,6 +368,12 @@ class _PatientRiskScreenState extends ConsumerState<PatientRiskScreen> {
         triageAt != null &&
         setInfo.validatedAt != null &&
         triageAt.isAfter(setInfo.validatedAt!);
+    // Escalas OBLIGATORIAS que el centro tiene desactivadas (se caían sin señal).
+    final suppressed = cat == null
+        ? const <ApplicableScale>[]
+        : repo.suppressedObligatoryScales(widget.patientId, cat);
+    final role = ref.read(sessionProvider).user?.role;
+    final isAdminOrMaster = role == AppRole.admin || role == AppRole.master;
     return Card(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(14, 10, 14, 12),
@@ -350,6 +400,8 @@ class _PatientRiskScreenState extends ConsumerState<PatientRiskScreen> {
                 ),
               ],
             ),
+            if (suppressed.isNotEmpty)
+              _suppressedScalesBanner(suppressed, isAdminOrMaster),
             if (!hasTriage)
               Text(
                   'Haz el triage para determinar las escalas del paciente '
