@@ -3791,7 +3791,10 @@ class DataRepository {
   /// (comorbilidades, heridas activas, Braden, internamiento). Routing puro.
   /// Se filtran por las escalas HABILITADAS del centro (0085): una escala que el
   /// admin apagó no se ofrece, aunque el triage la dispararía.
-  List<ApplicableScale> applicableScales(
+  /// Evaluación CRUDA del catálogo de aplicabilidad (antes de filtrar por la
+  /// configuración del centro y aplicar overrides). Compartida por
+  /// [applicableScales] y [suppressedObligatoryScales].
+  List<ApplicableScale> _rawApplicable(
       String patientId, ScaleApplicabilityCatalog catalog) {
     final comorbilidades = listComorbidities(patientId)
         .where((c) => c.status == ComorbilidadEstado.presente)
@@ -3810,7 +3813,7 @@ class DataRepository {
     final admissionDays = admission == null
         ? null
         : DateTime.now().difference(admission.admittedAt).inDays;
-    final result = catalog.evaluate(ScaleEvalContext(
+    return catalog.evaluate(ScaleEvalContext(
       comorbilidades: comorbilidades,
       woundEtiologies: etiologies,
       hasActiveWound: activeWounds.isNotEmpty,
@@ -3821,6 +3824,27 @@ class DataRepository {
       age: getPatient(patientId)?.age,
       admissionDays: admissionDays,
     ));
+  }
+
+  /// Escalas que un TRIGGER haría OBLIGATORIAS pero que están DESACTIVADAS en la
+  /// configuración del centro (`enabledScales`). Sin esto se caían del listado
+  /// sin dejar rastro (riesgo clínico silencioso, familia de H15): se exponen
+  /// para avisarlo en la tarjeta "Escalas a realizar".
+  List<ApplicableScale> suppressedObligatoryScales(
+      String patientId, ScaleApplicabilityCatalog catalog) {
+    final orgId = getPatient(patientId)?.organizationId;
+    final enabled = organizationById(orgId)?.enabledScales;
+    if (enabled == null) return const [];
+    return _rawApplicable(patientId, catalog)
+        .where((s) =>
+            s.priority == ScalePriority.obligatoria &&
+            !enabled.contains(s.scaleId))
+        .toList();
+  }
+
+  List<ApplicableScale> applicableScales(
+      String patientId, ScaleApplicabilityCatalog catalog) {
+    final result = _rawApplicable(patientId, catalog);
     // Filtro por las escalas habilitadas del centro (null = todas).
     final orgId = getPatient(patientId)?.organizationId;
     final enabled = organizationById(orgId)?.enabledScales;
@@ -4165,25 +4189,24 @@ class DataRepository {
     }
   }
 
-  /// ASEPSIS: total > corte ISQ → infección de sitio quirúrgico; agenda
-  /// confirmar/tratar ISQ. Solo hospital. Idempotente ('asepsis'). El corte
-  /// (asepsis_isq_above, borrador) vive en ClinicalParams para revisión de María.
+  /// ASEPSIS: si la BANDA ya es de infección (severity warn/danger) → agenda
+  /// confirmar/tratar ISQ. Solo hospital. Idempotente ('asepsis'). Llavea por
+  /// banda, no por un corte numérico: FUENTE ÚNICA en scale_bands["ASEPSIS"]
+  /// (misma que la etiqueta que ve el clínico). Migración a comportamiento
+  /// idéntico: warn+danger empiezan en 21, igual que el antiguo total > 20.
   Future<void> applyAsepsisTreatment(
-    String patientId,
-    double total, {
+    String patientId, {
+    required String? severity,
     required String? organizationId,
     String? createdBy,
   }) async {
     if (centerTypeFor(organizationId) != CenterType.hospital) return;
     await _clearFutureRuleTasks(patientId, 'asepsis');
-    final cut =
-        ClinicalParams.isLoaded ? ClinicalParams.instance.asepsisIsqAbove : 20;
-    if (total <= cut) return;
+    if (severity != 'warn' && severity != 'danger') return;
     await createPreventiveTask(
       patientId: patientId,
       organizationId: organizationId,
-      title:
-          'Confirmar y tratar infección de sitio quirúrgico (ASEPSIS > ${cut.toStringAsFixed(0)})',
+      title: 'Confirmar y tratar infección de sitio quirúrgico (ASEPSIS)',
       scheduledAt: DateTime.now().add(const Duration(hours: 2)),
       admissionId: activeAdmission(patientId)?.id,
       ruleId: 'asepsis',

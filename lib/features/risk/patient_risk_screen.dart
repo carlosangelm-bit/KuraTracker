@@ -89,23 +89,25 @@ class _PatientRiskScreenState extends ConsumerState<PatientRiskScreen> {
     // Escalas tipo SUMA (PUSH/RESVECH/ASEPSIS): definición en asset, total 0..max.
     if (scaleId == 'PUSH' || scaleId == 'RESVECH' || scaleId == 'ASEPSIS') {
       final def = await SumScaleDef.load(scaleId);
+      // Valoración PREVIA — se lee ANTES de mostrar la hoja: alimenta la vista
+      // previa de tendencia y la interpretación al guardar. Si se leyera después
+      // de guardar, la "anterior" sería la que acabamos de registrar.
+      final prev = repo.latestScaleAssessment(widget.patientId, scaleId);
       if (!mounted) return;
-      final r = await showSumScaleSheet(context, def);
+      final r = await showSumScaleSheet(context, def,
+          previousTotal: prev?.totalScore);
       if (r == null || !mounted) return;
       final session = ref.read(sessionProvider);
-      // Valoración PREVIA — se lee ANTES de guardar (si se leyera después, la
-      // "anterior" sería la que acabamos de guardar). En modo tendencia
-      // (PUSH/RESVECH) alimenta la comparación; en bandas se ignora.
-      final prev = repo.latestScaleAssessment(widget.patientId, scaleId);
       final reading = def.interpret(r.total, previousTotal: prev?.totalScore);
-      // band_id = CÓDIGO ESTABLE del asset (llave de reglas); category_result =
-      // etiqueta visible. El delta y el previo quedan en subscores como hecho de
+      // band_id = CÓDIGO ESTABLE (llave de reglas); category_result = etiqueta
+      // visible. delta/previo/severidad quedan en subscores como hecho de
       // auditoría (y para renderizar sin una segunda consulta).
       final subscores = <String, dynamic>{
         ...r.subscores,
         if (prev?.totalScore != null) 'previous_total': prev!.totalScore,
         if (prev != null) 'previous_at': prev.assessedAt.toIso8601String(),
         if (reading.delta != null) 'delta': reading.delta,
+        if (reading.severity != null) 'severity': reading.severity,
       };
       await repo.addScaleAssessment(
         patientId: widget.patientId,
@@ -120,7 +122,8 @@ class _PatientRiskScreenState extends ConsumerState<PatientRiskScreen> {
         staffId: await _staffId(repo),
       );
       if (scaleId == 'ASEPSIS') {
-        await repo.applyAsepsisTreatment(widget.patientId, r.total,
+        await repo.applyAsepsisTreatment(widget.patientId,
+            severity: reading.severity,
             organizationId: session.user?.organizationId,
             createdBy: session.user?.id);
       }
@@ -312,6 +315,50 @@ class _PatientRiskScreenState extends ConsumerState<PatientRiskScreen> {
     if (mounted) setState(() {});
   }
 
+  /// Aviso cuando el motor indica escalas OBLIGATORIAS que el centro tiene
+  /// desactivadas (`enabledScales`): antes desaparecían del listado sin rastro.
+  /// Nombres solo para admin/master; el conteo, para todos.
+  Widget _suppressedScalesBanner(
+      List<ApplicableScale> suppressed, bool showNames) {
+    return Container(
+      margin: const EdgeInsets.only(top: 8),
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: KuraColors.warning.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: KuraColors.warning.withValues(alpha: 0.4)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.report_gmailerrorred_outlined,
+              size: 18, color: KuraColors.warning),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '${suppressed.length} escala(s) indicada(s) están desactivadas '
+                  'en la configuración del centro.',
+                  style: const TextStyle(
+                      fontSize: 12, fontWeight: FontWeight.w700),
+                ),
+                if (showNames) ...[
+                  const SizedBox(height: 2),
+                  Text(suppressed.map((s) => s.label).join(' · '),
+                      style: TextStyle(
+                          fontSize: 11,
+                          color: KuraColors.darkText.withValues(alpha: 0.75))),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _scalesToDoCard(DataRepository repo, List<ApplicableScale> applicable,
       bool hasTriage, ScaleApplicabilityCatalog? cat, bool canPropose,
       bool canValidate, String? orgId) {
@@ -321,6 +368,12 @@ class _PatientRiskScreenState extends ConsumerState<PatientRiskScreen> {
         triageAt != null &&
         setInfo.validatedAt != null &&
         triageAt.isAfter(setInfo.validatedAt!);
+    // Escalas OBLIGATORIAS que el centro tiene desactivadas (se caían sin señal).
+    final suppressed = cat == null
+        ? const <ApplicableScale>[]
+        : repo.suppressedObligatoryScales(widget.patientId, cat);
+    final role = ref.read(sessionProvider).user?.role;
+    final isAdminOrMaster = role == AppRole.admin || role == AppRole.master;
     return Card(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(14, 10, 14, 12),
@@ -347,6 +400,8 @@ class _PatientRiskScreenState extends ConsumerState<PatientRiskScreen> {
                 ),
               ],
             ),
+            if (suppressed.isNotEmpty)
+              _suppressedScalesBanner(suppressed, isAdminOrMaster),
             if (!hasTriage)
               Text(
                   'Haz el triage para determinar las escalas del paciente '
@@ -550,8 +605,11 @@ class _PatientRiskScreenState extends ConsumerState<PatientRiskScreen> {
                     if (doneCat != null) ...[
                       const SizedBox(width: 6),
                       Text('Resultado: $doneCat',
-                          style: const TextStyle(
-                              fontSize: 11, color: KuraColors.primary)),
+                          style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: scaleSeverityColor(
+                                  last?.subscores?['severity'] as String?))),
                     ],
                   ],
                 ),

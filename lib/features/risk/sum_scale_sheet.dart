@@ -3,11 +3,26 @@ import 'package:flutter/material.dart';
 import '../../core/theme/kura_theme.dart';
 import '../../engine/risk/sum_scale.dart';
 
+/// Color por severidad de banda: danger→rojo, warn→ámbar de advertencia,
+/// watch/ok/null→neutro (color de marca). Compartido por la hoja de captura y la
+/// tarjeta de escalas para que el mismo resultado se lea igual en ambos lados.
+Color scaleSeverityColor(String? severity) {
+  switch (severity) {
+    case 'danger':
+      return KuraColors.danger;
+    case 'warn':
+      return KuraColors.warning;
+    default:
+      return KuraColors.primary;
+  }
+}
+
 /// Hoja genérica de una escala tipo SUMA (PUSH, RESVECH, ASEPSIS…) definida en un
 /// asset. Dos modos: REALIZAR (ítems radio + medición de área → total calculado)
 /// o CAPTURAR el total manualmente. Devuelve `(total, subscores, notes)` o null.
 Future<({double total, Map<String, dynamic> subscores, String? notes})?>
-    showSumScaleSheet(BuildContext context, SumScaleDef def) async {
+    showSumScaleSheet(BuildContext context, SumScaleDef def,
+        {num? previousTotal}) async {
   var manual = false;
   final selections = <String, int>{}; // itemId (radio) → score
   final areaCtrls = <String, (TextEditingController, TextEditingController)>{
@@ -54,9 +69,14 @@ Future<({double total, Map<String, dynamic> subscores, String? notes})?>
         final total = manual ? mTotal : gTotal;
         final valid =
             total != null && total >= def.totalMin && total <= def.totalMax;
-        // Vista previa de la interpretación (modo bandas). En modo tendencia no
-        // hay valoración previa aquí, así que no muestra lectura (solo el total).
-        final reading = total == null ? null : def.interpret(total);
+        // Vista previa de la interpretación: bandas y —si hay valoración
+        // previa— también la tendencia, para que el clínico la vea ANTES de
+        // guardar (no solo después).
+        final reading =
+            total == null ? null : def.interpret(total, previousTotal: previousTotal);
+        final trendSuffix = (reading?.delta != null && reading!.delta != 0)
+            ? ' (${reading.delta! < 0 ? '↓' : '↑'}${reading.delta!.abs().toStringAsFixed(0)})'
+            : '';
         return Padding(
           padding: EdgeInsets.only(
             left: 16,
@@ -182,15 +202,12 @@ Future<({double total, Map<String, dynamic> subscores, String? notes})?>
                         total == null
                             ? 'Completa la valoración'
                             : 'Total: $total / ${def.totalMax}'
-                                '${reading?.label != null ? ' · ${reading!.label}' : ''}',
+                                '${reading?.label != null ? ' · ${reading!.label}$trendSuffix' : ''}',
                         style: TextStyle(
                             fontWeight: FontWeight.w700,
-                            color: reading?.severity == 'danger'
-                                ? KuraColors.danger
-                                : (valid
-                                    ? KuraColors.primary
-                                    : KuraColors.darkText
-                                        .withValues(alpha: 0.6))),
+                            color: (total == null || !valid)
+                                ? KuraColors.darkText.withValues(alpha: 0.6)
+                                : scaleSeverityColor(reading?.severity)),
                       ),
                     ),
                     FilledButton(

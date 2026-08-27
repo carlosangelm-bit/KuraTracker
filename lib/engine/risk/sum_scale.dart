@@ -2,6 +2,8 @@ import 'dart:convert';
 
 import 'package:flutter/services.dart' show rootBundle;
 
+import '../params/clinical_params.dart';
+
 /// Rango de área (cm²) → puntos, para ítems de tipo 'area' (PUSH). Se evalúa el
 /// primer rango cuyo `maxLtE` cubre el área; si ninguno, `overflowPoints`.
 class AreaRange {
@@ -112,7 +114,8 @@ typedef ScaleReading = ({
 class ScaleInterpretation {
   final String mode; // 'bands' | 'trend'
   final bool draft;
-  final List<ScaleBand> bands; // modo bands
+  final List<ScaleBand> bands; // modo bands (en línea)
+  final String? bandsRef; // modo bands por referencia a ClinicalParams.scaleBands
   final String direction; // trend: lower_is_better | higher_is_better
   final num minDelta; // trend: |delta| < minDelta ⇒ sin cambio
   final String improvingLabel;
@@ -122,6 +125,7 @@ class ScaleInterpretation {
     required this.mode,
     this.draft = false,
     this.bands = const [],
+    this.bandsRef,
     this.direction = 'lower_is_better',
     this.minDelta = 1,
     this.improvingLabel = 'Mejorando',
@@ -149,6 +153,11 @@ class ScaleInterpretation {
         stableLabel: labels['stable'] as String? ?? 'Sin cambio',
         worseningLabel: labels['worsening'] as String? ?? 'Empeorando',
       );
+    }
+    // Bandas por referencia (FUENTE ÚNICA en ClinicalParams.scaleBands).
+    if (j['bands_ref'] != null) {
+      return ScaleInterpretation(
+          mode: 'bands', draft: draft, bandsRef: j['bands_ref'] as String);
     }
     if (mode == 'bands' || j['bands'] != null) {
       final bands = ((j['bands'] as List?) ?? const [])
@@ -195,6 +204,25 @@ class ScaleInterpretation {
           stable ? stableLabel : (improving ? improvingLabel : worseningLabel);
       final sev = stable ? 'watch' : (improving ? 'ok' : 'danger');
       return (bandId: null, label: label, severity: sev, delta: delta);
+    }
+    // Bandas por referencia: FUENTE ÚNICA en ClinicalParams (bordes abiertos/
+    // cerrados → un total double cae siempre en una banda). Fallback a las
+    // bandas en línea si el parámetro no está cargado o no existe la referencia.
+    if (bandsRef != null && ClinicalParams.isLoaded) {
+      final pbands = ClinicalParams.instance.scaleBandsFor(bandsRef!);
+      if (pbands != null && pbands.isNotEmpty) {
+        for (final b in pbands) {
+          if (b.contains(total)) {
+            return (
+              bandId: b.band,
+              label: b.label,
+              severity: b.severity,
+              delta: null
+            );
+          }
+        }
+        return (bandId: null, label: null, severity: null, delta: null);
+      }
     }
     for (final b in bands) {
       if (total >= b.min && total <= b.max) {

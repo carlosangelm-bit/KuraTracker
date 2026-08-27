@@ -23,6 +23,7 @@ class ClinicalParams {
     required this.version,
     required this.thresholds,
     required this.compressionBands,
+    required this.scaleBands,
     required this.wagnerDescarga,
     required this.wuwhsManejo,
     required this.compresionProducto,
@@ -35,6 +36,16 @@ class ClinicalParams {
 
   /// Bandas de compresión por ITB, ordenadas de menor a mayor.
   final List<CompressionBand> compressionBands;
+
+  /// Bandas de interpretación de escalas de suma, por scale_id (p. ej.
+  /// `ASEPSIS`). FUENTE ÚNICA del corte clínico: lo que ve el clínico (etiqueta
+  /// + band_id) y lo que dispara la acción salen de aquí. Con procedencia y
+  /// validadas (contiguas, sin huecos ni traslapes). Editable sin recompilar
+  /// vía thresholds.json.
+  final Map<String, List<ScaleBandParam>> scaleBands;
+
+  /// Bandas de interpretación de una escala de suma, o null si no hay.
+  List<ScaleBandParam>? scaleBandsFor(String scaleId) => scaleBands[scaleId];
 
   /// Mapa grado Wagner (`WagnerGrade.name`) -> dispositivo de descarga.
   final Map<String, String> wagnerDescarga;
@@ -201,9 +212,10 @@ class ClinicalParams {
   int get abaEdadAdultoMayorAbove =>
       _tOr('aba_edad_adulto_mayor_above', 50).toInt();
 
-  /// Puntaje ASEPSIS por encima del cual (estricto) hay infección de sitio
-  /// quirúrgico.
-  double get asepsisIsqAbove => _tOr('asepsis_isq_above', 20).toDouble();
+  // NOTA: `asepsisIsqAbove` (corte numérico suelto) se retiró en la ronda 6. El
+  // corte clínico de ASEPSIS es AHORA una sola fuente: las bandas en
+  // `scale_bands["ASEPSIS"]` (etiqueta + severidad). Lo que se muestra y lo que
+  // se agenda llavean por banda, no por un número.
 
   /// Banda de compresión para un ITB medido [v]. Recorre las bandas de datos.
   ItbCompresionBand itbBandFor(double v) {
@@ -336,6 +348,33 @@ class ClinicalParams {
         .toList();
     _validateBandContinuity(bands);
 
+    // --- Bandas de escalas de suma (opcional): mismo contrato que las de
+    // compresión (procedencia + contigüidad). Una sección por scale_id. ---
+    final scaleBands = <String, List<ScaleBandParam>>{};
+    final rawScaleBands = thresholds['scale_bands'];
+    if (rawScaleBands != null) {
+      if (rawScaleBands is! Map<String, dynamic>) {
+        throw const ClinicalParamsException(
+            'thresholds.json: "scale_bands" no es objeto.');
+      }
+      rawScaleBands.forEach((scaleId, node) {
+        final ctx = 'scale_bands["$scaleId"]';
+        if (node is! Map<String, dynamic>) {
+          throw ClinicalParamsException('$ctx no es objeto.');
+        }
+        _validateSource(node['source'], ctx);
+        final list = node['bands'];
+        if (list is! List || list.isEmpty) {
+          throw ClinicalParamsException('$ctx.bands vacío o ausente.');
+        }
+        final parsed = list
+            .map((e) => ScaleBandParam.fromJson(e as Map<String, dynamic>))
+            .toList();
+        _validateScaleBandContinuity(parsed, ctx);
+        scaleBands[scaleId] = parsed;
+      });
+    }
+
     // --- Arquetipos (mapeos) + procedencia por mapa ---
     final maps = archetypes['maps'];
     if (maps is! Map<String, dynamic>) {
@@ -358,10 +397,38 @@ class ClinicalParams {
       version: version,
       thresholds: values,
       compressionBands: bands,
+      scaleBands: scaleBands,
       wagnerDescarga: wagner,
       wuwhsManejo: wuwhs,
       compresionProducto: compresion,
     );
+  }
+
+  /// Continuidad de bandas de escala de suma: extremos abiertos en los bordes,
+  /// contiguas (techo de una == piso de la siguiente), sin frontera ambigua.
+  /// Mismo contrato que [_validateBandContinuity] pero para [ScaleBandParam].
+  static void _validateScaleBandContinuity(
+      List<ScaleBandParam> bands, String ctx) {
+    if (bands.first.from != null) {
+      throw ClinicalParamsException('$ctx: la primera banda debe tener "from": null.');
+    }
+    if (bands.last.to != null) {
+      throw ClinicalParamsException('$ctx: la última banda debe tener "to": null.');
+    }
+    for (var i = 0; i < bands.length - 1; i++) {
+      final cur = bands[i];
+      final next = bands[i + 1];
+      if (cur.to != next.from) {
+        throw ClinicalParamsException(
+            '$ctx: hueco/traslape entre ${cur.band} (to=${cur.to}) y '
+            '${next.band} (from=${next.from}).');
+      }
+      if (cur.toInclusive == next.fromInclusive) {
+        throw ClinicalParamsException(
+            '$ctx: frontera ambigua entre ${cur.band} y ${next.band}: '
+            'exactamente uno de los extremos debe ser inclusivo.');
+      }
+    }
   }
 
   static const List<String> _requiredThresholdKeys = [
@@ -514,6 +581,61 @@ class CompressionBand {
       fromInclusive: json['from_inclusive'] as bool? ?? false,
       to: (json['to'] as num?)?.toDouble(),
       toInclusive: json['to_inclusive'] as bool? ?? false,
+    );
+  }
+}
+
+/// Una banda de interpretación de una escala de suma (p. ej. ASEPSIS). Misma
+/// forma que [CompressionBand] (rangos con bordes abiertos/cerrados y extremos
+/// `null` = ±inf) pero con `band` = CÓDIGO ESTABLE (id) + `label` visible +
+/// `severity`. Los bordes abiertos/cerrados evitan por construcción el hueco de
+/// las bandas enteras frente a un total `double` (un 10.5 sí cae en una banda).
+class ScaleBandParam {
+  const ScaleBandParam({
+    required this.band,
+    required this.from,
+    required this.fromInclusive,
+    required this.to,
+    required this.toInclusive,
+    required this.label,
+    this.severity,
+  });
+
+  final String band; // id estable (llave de reglas); nunca se traduce
+  final double? from;
+  final bool fromInclusive;
+  final double? to;
+  final bool toInclusive;
+  final String label; // texto visible (español)
+  final String? severity; // ok | watch | warn | danger
+
+  bool contains(num v) {
+    if (from != null) {
+      if (fromInclusive ? v < from! : v <= from!) return false;
+    }
+    if (to != null) {
+      if (toInclusive ? v > to! : v >= to!) return false;
+    }
+    return true;
+  }
+
+  factory ScaleBandParam.fromJson(Map<String, dynamic> json) {
+    final id = json['band'];
+    if (id is! String || id.trim().isEmpty) {
+      throw ClinicalParamsException('scale_bands: banda sin "band" (id).');
+    }
+    final label = json['label'];
+    if (label is! String || label.trim().isEmpty) {
+      throw ClinicalParamsException('scale_bands: banda "$id" sin "label".');
+    }
+    return ScaleBandParam(
+      band: id,
+      from: (json['from'] as num?)?.toDouble(),
+      fromInclusive: json['from_inclusive'] as bool? ?? false,
+      to: (json['to'] as num?)?.toDouble(),
+      toInclusive: json['to_inclusive'] as bool? ?? false,
+      label: label,
+      severity: json['severity'] as String?,
     );
   }
 }
