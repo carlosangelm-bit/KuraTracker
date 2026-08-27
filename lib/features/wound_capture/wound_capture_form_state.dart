@@ -14,6 +14,10 @@ class WoundCaptureFormState {
   String? bodyLocationPrimary;
   String? bodyLocationSecondary;
   DateTime? onsetDate;
+  // Fecha de la VISITA (consulta), editable: la clínica puede capturar la
+  // valoración un día después de ver al paciente. Distinta de onsetDate (inicio
+  // de la herida). Viaja en la instantánea del borrador para no reescribirse.
+  DateTime visitDate = DateTime.now();
   Map<String, String> vitalSigns = {};
 
   // ---- Condicionales por etiologia ----
@@ -229,6 +233,7 @@ class WoundCaptureFormState {
         'bodyLocationPrimary': bodyLocationPrimary,
         'bodyLocationSecondary': bodyLocationSecondary,
         'onsetDate': onsetDate?.toIso8601String(),
+        'visitDate': visitDate.toIso8601String(),
         'wagnerGrade': wagnerGrade?.name,
         'wifiWound': wifiWound,
         'wifiIschemia': wifiIschemia,
@@ -306,6 +311,7 @@ class WoundCaptureFormState {
     bodyLocationPrimary = j['bodyLocationPrimary'] as String?;
     bodyLocationSecondary = j['bodyLocationSecondary'] as String?;
     onsetDate = dt(j['onsetDate']);
+    visitDate = dt(j['visitDate']) ?? visitDate;
     wagnerGrade = enumByName(WagnerGrade.values, j['wagnerGrade']);
     wifiWound = i(j['wifiWound']);
     wifiIschemia = i(j['wifiIschemia']);
