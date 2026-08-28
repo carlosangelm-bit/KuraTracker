@@ -32,12 +32,16 @@ on:
     branches: [main]
   workflow_dispatch: {}
 
-concurrency:
-  group: deploy-main
-  cancel-in-progress: false
-
+# Concurrencia a nivel de JOB (no de workflow): `migrations` (supabase db push)
+# y `deploy_functions` NUNCA se cancelan a media aplicación
+# (cancel-in-progress: false) — un push interrumpido dejaría el esquema/funciones
+# a medias sin aviso. Un `build_deploy` cancelado sí es inofensivo (se
+# re-despliega en el siguiente push).
 jobs:
   migrations:
+    concurrency:
+      group: db-migrations-main
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     environment: production
     env:
@@ -71,6 +75,9 @@ jobs:
   # re-habilitar verify_jwt en funciones con --no-verify-jwt (webhook Acuity).
   deploy_functions:
     needs: migrations
+    concurrency:
+      group: deploy-functions-main
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     environment: production
     env:
@@ -116,6 +123,9 @@ jobs:
 
   build_deploy:
     needs: migrations
+    concurrency:
+      group: build-deploy-main
+      cancel-in-progress: true
     runs-on: ubuntu-latest
     # Mismo environment que el job de migraciones: así este job también puede
     # leer los secrets scoped al environment "production" (SUPABASE_URL/ANON_KEY,
