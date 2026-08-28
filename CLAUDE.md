@@ -44,8 +44,11 @@ Lo que **no** viaja con el clone y hay que tener en la máquina nueva:
   2. `build_deploy` (depende de migrations): compila con Flutter 3.27.1 y publica en
      **Cloudflare Pages** — **prod** (con dart-defines de Supabase) y **demo** (sin
      credenciales, usa `LocalStore`).
-  3. `deploy_functions`: despliega **solo** `admin-create-user` con `--use-api` (no
-     desplegar todas las funciones: evita re-habilitar `verify_jwt` en el webhook de Acuity).
+  3. `deploy_functions`: despliega una lista ACOTADA de funciones con `--use-api`
+     (admin-create-user, acuity-proxy, mercadopago-webhook/-sync-charge/-point-intent,
+     stripe-create-checkout/-webhook, vac-bot, support-bot, shopify-sync-catalog/-inventory).
+     Los webhooks que deben quedar con la URL abierta (stripe-webhook, mercadopago-webhook)
+     se despliegan con `--no-verify-jwt` para no re-habilitar `verify_jwt`.
 - Los secrets de Cloudflare se llaman **`CLOUDFARE_API_TOKEN` / `CLOUDFARE_ACCOUNT_ID`**
   (sin la "L", intencional). El token Cloudflare requiere permiso *Account · Cloudflare
   Pages · Edit*.
@@ -111,5 +114,5 @@ Lo que **no** viaja con el clone y hay que tener en la máquina nueva:
 
 - Claves/tokens/contraseñas de cualquier tipo (anon key, service role, API keys de
   Acuity/Cloudflare, DB password). Van en GitHub Secrets / Supabase / dart-defines.
-- No tocar DNS (Google Cloud DNS). El deploy de funciones se dirige solo a
-  `admin-create-user`.
+- No tocar DNS (Google Cloud DNS). El deploy de funciones se dirige a una lista
+  acotada (ver `.github/workflows/deploy.yml`), no a todas.
