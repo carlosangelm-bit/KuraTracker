@@ -144,6 +144,20 @@ jobs:
 
       - run: flutter pub get
 
+      # Guardia contra el bug del `$` escapado en strings de Dart: `\$var` NO
+      # interpola (es un signo de pesos literal). Ya ocurrió 4 veces (perdía
+      # fotos del borrador, rompía rutas y mensajes de error). Excluye los `\$`
+      # legítimos de GraphQL en shopify_service.dart. Ver auditoría 28-ago-2026.
+      - name: Guardia contra interpolaciones con dolar escapado
+        run: |
+          hits=$(grep -rnE '\\\$[a-zA-Z_{]' lib/ | grep -v 'shopify_service.dart' || true)
+          if [ -n "$hits" ]; then
+            echo "Interpolacion con dolar escapado (no interpola). Quita la barra invertida:"
+            echo "$hits"
+            exit 1
+          fi
+          echo "OK: sin dolares escapados en interpolaciones."
+
       # ---------- PROD (con credenciales reales de Supabase) ----------
       - name: Build web (prod)
         run: |

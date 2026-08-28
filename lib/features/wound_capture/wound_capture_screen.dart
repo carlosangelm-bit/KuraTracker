@@ -152,7 +152,7 @@ class _WoundCaptureScreenState extends ConsumerState<WoundCaptureScreen> {
         if (photos is List) {
           for (var k = 0; k < photos.length; k++) {
             try {
-              final key = 'draft_photo_\$k';
+              final key = 'draft_photo_$k';
               controller.state.photoPaths.add(key);
               controller.state.photoBytesByPath[key] =
                   base64Decode(photos[k] as String);
@@ -219,10 +219,10 @@ class _WoundCaptureScreenState extends ConsumerState<WoundCaptureScreen> {
       if (!context.mounted) return;
       messenger.showSnackBar(const SnackBar(
           content: Text('Borrador guardado. Puedes continuarlo después.')));
-      context.go('/patients/\${widget.patientId}/consultation/\$cid');
+      context.go('/patients/${widget.patientId}/consultation/$cid');
     } catch (e) {
       messenger.showSnackBar(
-          SnackBar(content: Text('No se pudo guardar el borrador: \$e')));
+          SnackBar(content: Text('No se pudo guardar el borrador: $e')));
     }
   }
 

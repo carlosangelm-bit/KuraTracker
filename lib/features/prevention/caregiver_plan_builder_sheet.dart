@@ -205,7 +205,7 @@ class _PlanBuilderSheetState extends ConsumerState<_PlanBuilderSheet> {
     for (var k = 0; k < _custom.length; k++) {
       specs.add(ScheduledActionSpec(
         ruleId: 'profesional',
-        actionId: 'libre_\$k',
+        actionId: 'libre_$k',
         actionLabel: _custom[k].title,
         title: _custom[k].title,
         everyHours: _custom[k].hours,
