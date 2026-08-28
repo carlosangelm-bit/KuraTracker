@@ -1695,7 +1695,24 @@ class DataRepository {
     // el cobro a 'pagado' — fuente única que cubre app, webhooks (Stripe/MP),
     // sync manual y correcciones por SQL, sin duplicar. Aquí solo se descuenta
     // en el DEMO (LocalStore), donde no hay Postgres ni trigger.
-    if (_store is! LocalStoreDataStore) return;
+    final store = _store;
+    if (store is! LocalStoreDataStore) {
+      // Centro con espejo Shopify (Kura+): el trigger ya descontó local; se
+      // dispara la reconciliación del espejo (0092) para que la próxima sync no
+      // revierta el descuento (antes el pago manual empujaba vía
+      // addInventoryMovement). Best-effort; no-op si el centro no es espejo.
+      if (store is SupabaseDataStore &&
+          !wasPaid &&
+          shopifyMirrorFor(charge.organizationId)) {
+        try {
+          await store.invokeFunction('shopify-inventory',
+              {'action': 'reconcile_charge', 'chargeId': chargeId});
+        } catch (e) {
+          debugPrint('reconcile_charge (Shopify) falló; se reintenta luego: $e');
+        }
+      }
+      return;
+    }
     final consultId = charge.consultationId;
     if (consultId == null) {
       // Cobro DIRECTO (sin consulta): descuenta los productos del desglose que

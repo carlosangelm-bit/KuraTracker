@@ -209,6 +209,17 @@ serve(async (req) => {
         paid_at: dateApproved ?? nowIso,
         updated_at: nowIso,
       }).eq("id", charge["id"] as string);
+
+      // Espejo Shopify (Kura+): el trigger 0091 ya descontó local; esto empuja
+      // el consumo del cobro a Shopify para que la próxima sync no lo revierta.
+      // No-op si el centro no es espejo. Best-effort.
+      try {
+        await supabase.functions.invoke("shopify-inventory", {
+          body: { action: "reconcile_charge", chargeId: charge["id"] as string },
+        });
+      } catch (e) {
+        console.error("mercadopago-webhook: reconcile_charge (Shopify) falló:", e);
+      }
     }
 
     return ok200("ok");
