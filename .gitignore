@@ -12,3 +12,5 @@ build/
 .env
 .dev.vars
 .wrangler/
+# Artefactos generados / PDFs grandes: no van a Git (solo si se pide explícito).
+output/
