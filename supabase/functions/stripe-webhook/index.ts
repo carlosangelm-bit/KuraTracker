@@ -23,7 +23,15 @@ const supabase = createClient(SUPABASE_URL, SERVICE_ROLE, {
 // Verifica la firma de Stripe: header "Stripe-Signature: t=..,v1=..".
 // signed_payload = `${t}.${rawBody}`; HMAC-SHA256(payload, whsec) hex == algún v1.
 async function validStripeSignature(rawBody: string, sigHeader: string): Promise<boolean> {
-  if (!STRIPE_WEBHOOK_SECRET) return true; // modo prueba: sin secreto, no valida
+  if (!STRIPE_WEBHOOK_SECRET) {
+    // Secreto no configurado: se RECHAZA el evento (fallo diagnosticable, no
+    // silencioso). Con la URL abierta (--no-verify-jwt), no validar dejaría que
+    // cualquiera que conozca la URL liquide un cobro con un evento falso.
+    console.error(
+      "stripe-webhook: STRIPE_WEBHOOK_SECRET no configurado; se rechaza el evento.",
+    );
+    return false;
+  }
   if (!sigHeader) return false;
   const parts = sigHeader.split(",").map((p) => p.trim());
   const t = parts.find((p) => p.startsWith("t="))?.slice(2);

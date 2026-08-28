@@ -49,7 +49,15 @@ async function validSignature(
   xSignature: string,
   xRequestId: string,
 ): Promise<boolean> {
-  if (!MP_WEBHOOK_SECRET) return true; // modo prueba: sin secreto, no se valida
+  if (!MP_WEBHOOK_SECRET) {
+    // Secreto no configurado: se RECHAZA el evento (fallo diagnosticable, no
+    // silencioso). Con la URL abierta (--no-verify-jwt), no validar dejaría que
+    // cualquiera que conozca la URL liquide un cobro con un evento falso.
+    console.error(
+      "mercadopago-webhook: MP_WEBHOOK_SECRET no configurado; se rechaza el evento.",
+    );
+    return false;
+  }
   if (!xSignature) return false;
   const parts = Object.fromEntries(
     xSignature.split(",").map((p) => p.trim().split("=") as [string, string]),
