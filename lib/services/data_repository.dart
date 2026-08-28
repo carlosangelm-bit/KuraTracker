@@ -1691,6 +1691,11 @@ class DataRepository {
       if (mpStatus != null) 'mp_status': mpStatus,
     });
     // Descontar del inventario los insumos "descontar" no descontados.
+    // En PRODUCCIÓN esto lo hace un trigger de Postgres (0091) al transicionar
+    // el cobro a 'pagado' — fuente única que cubre app, webhooks (Stripe/MP),
+    // sync manual y correcciones por SQL, sin duplicar. Aquí solo se descuenta
+    // en el DEMO (LocalStore), donde no hay Postgres ni trigger.
+    if (_store is! LocalStoreDataStore) return;
     final consultId = charge.consultationId;
     if (consultId == null) {
       // Cobro DIRECTO (sin consulta): descuenta los productos del desglose que
