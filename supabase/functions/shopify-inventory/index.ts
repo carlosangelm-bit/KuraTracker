@@ -41,20 +41,27 @@ serve(async (req) => {
   });
   const jwt = (req.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "");
   if (!jwt) return json({ error: "No autenticado." }, 401);
-  const { data: caller, error: cErr } = await admin.auth.getUser(jwt);
-  if (cErr || !caller.user) return json({ error: "Sesión inválida." }, 401);
-  // Solo usuarios de un centro espejo (Kura+).
-  const { data: prof } = await admin
-    .from("profiles").select("organization_id, role").eq("id", caller.user.id).maybeSingle();
-  const orgId = prof?.organization_id as string | undefined;
-  let mirror = false;
-  if (orgId) {
-    const { data: org } = await admin
-      .from("organizations").select("shopify_mirror").eq("id", orgId).maybeSingle();
-    mirror = org?.shopify_mirror === true;
-  }
-  if (!mirror && prof?.role !== "master") {
-    return json({ error: "El espejo de inventario solo aplica al centro Kura+." }, 403);
+  // Llamada de SERVICIO (webhooks de pago con SERVICE_ROLE): confiable, sin
+  // usuario. Solo `reconcile_charge` la usa, y ahí el espejo se deriva del
+  // COBRO, no del llamador. Las demás acciones siguen exigiendo un usuario de
+  // un centro espejo (Kura+).
+  const isService = jwt === SERVICE_ROLE;
+  let orgId: string | undefined;
+  if (!isService) {
+    const { data: caller, error: cErr } = await admin.auth.getUser(jwt);
+    if (cErr || !caller.user) return json({ error: "Sesión inválida." }, 401);
+    const { data: prof } = await admin
+      .from("profiles").select("organization_id, role").eq("id", caller.user.id).maybeSingle();
+    orgId = prof?.organization_id as string | undefined;
+    let mirror = false;
+    if (orgId) {
+      const { data: org } = await admin
+        .from("organizations").select("shopify_mirror").eq("id", orgId).maybeSingle();
+      mirror = org?.shopify_mirror === true;
+    }
+    if (!mirror && prof?.role !== "master") {
+      return json({ error: "El espejo de inventario solo aplica al centro Kura+." }, 403);
+    }
   }
 
   if (!STORE_DOMAIN || (!(CLIENT_ID && CLIENT_SECRET) && !ADMIN_TOKEN)) {
@@ -165,6 +172,86 @@ serve(async (req) => {
         return json({ error: `Ajuste rechazado: ${JSON.stringify(b?.errors ?? errs).slice(0, 300)}` }, 502);
       }
       return json({ ok: true });
+    }
+
+    if (action === "reconcile_charge") {
+      // Empuja a Shopify el consumo de un cobro (movimientos del trigger 0091)
+      // para que la próxima sync no revierta el descuento. Idempotente por
+      // `shopify_pushed`. La disparan app y webhooks tras pagar (best-effort).
+      const chargeId = payload["chargeId"] as string | undefined;
+      if (!chargeId) return json({ error: "Falta chargeId." }, 400);
+
+      const { data: charge } = await admin
+        .from("charges").select("organization_id").eq("id", chargeId).maybeSingle();
+      const cOrg = (charge as Record<string, unknown> | null)?.organization_id as string | undefined;
+      if (!cOrg) return json({ ok: true, pushed: 0, skipped: "cobro no encontrado" });
+      const { data: org } = await admin
+        .from("organizations").select("shopify_mirror").eq("id", cOrg).maybeSingle();
+      if ((org as Record<string, unknown> | null)?.shopify_mirror !== true) {
+        return json({ ok: true, pushed: 0, skipped: "centro sin espejo" });
+      }
+      if (!isService && orgId !== cOrg) {
+        return json({ error: "El cobro es de otro centro." }, 403);
+      }
+
+      // Movimientos de consumo del cobro, aún no empujados, con item ligado.
+      const { data: moves } = await admin
+        .from("inventory_movements")
+        .select("id, delta, inventory_items!inner(shopify_inventory_item_id)")
+        .eq("charge_id", chargeId)
+        .eq("reason", "consumo")
+        .eq("shopify_pushed", false);
+      // deno-lint-ignore no-explicit-any
+      const rows = ((moves ?? []) as Array<any>).filter((m) =>
+        m.inventory_items?.shopify_inventory_item_id
+      );
+      if (rows.length === 0) return json({ ok: true, pushed: 0 });
+
+      // Ubicación activa (una vez para todo el cobro).
+      const locRes = await gql(`{ locations(first:5){ edges{ node{ id isActive } } } }`, {});
+      if (!locRes.r.ok || locRes.b?.errors) {
+        return json({ error: `No se pudo leer ubicaciones (HTTP ${locRes.r.status}).` }, 502);
+      }
+      const locs = (locRes.b?.data?.locations?.edges ?? []) as Array<Record<string, unknown>>;
+      const active = locs.find((e) => (e.node as Record<string, unknown>)?.isActive === true) ?? locs[0];
+      const locationId = (active?.node as Record<string, unknown>)?.id as string | undefined;
+      if (!locationId) return json({ error: "Sin ubicación en Shopify." }, 502);
+
+      const M = `mutation($input: InventoryAdjustQuantitiesInput!){
+        inventoryAdjustQuantities(input:$input){ userErrors{ field message } }
+      }`;
+      const pushedIds: string[] = [];
+      async function markPushed() {
+        if (pushedIds.length) {
+          await admin.from("inventory_movements")
+            .update({ shopify_pushed: true }).in("id", pushedIds);
+        }
+      }
+      for (const m of rows) {
+        const input = {
+          name: "available",
+          reason: "correction",
+          changes: [{
+            delta: Number(m.delta),
+            inventoryItemId: m.inventory_items.shopify_inventory_item_id,
+            locationId,
+          }],
+        };
+        const { r, b } = await gql(M, { input });
+        const errs = b?.data?.inventoryAdjustQuantities?.userErrors ?? [];
+        if (!r.ok || b?.errors || errs.length > 0) {
+          // Best-effort: marca lo ya empujado (idempotencia) y reporta; el resto
+          // sigue shopify_pushed=false y se reintenta en la próxima llamada.
+          await markPushed();
+          return json({
+            error: `Ajuste rechazado: ${JSON.stringify(b?.errors ?? errs).slice(0, 300)}`,
+            pushed: pushedIds.length,
+          }, 502);
+        }
+        pushedIds.push(m.id as string);
+      }
+      await markPushed();
+      return json({ ok: true, pushed: pushedIds.length });
     }
 
     return json({ error: "Acción no soportada." }, 400);
