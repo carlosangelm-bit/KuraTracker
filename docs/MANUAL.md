@@ -422,14 +422,19 @@ Título **"Reportes"**.
 - **Reporte clínico (no hospital):** casillas **Consultas / Seguimientos /
   Antecedentes**; **Evidencias** (Todas / Primera y última); **"Recomendaciones para el
   paciente"**; botón **"Generar reporte (PDF)"**.
-  - El PDF incluye, con el logo y color del centro: datos del paciente; antecedentes; y
-    por cada herida: diagnóstico/localización/severidad, condición actual (tamaño,
-    dimensiones, composición), **avance** (% de reducción), **gráfico de evolución del
-    área**, **checkpoint de Sheehan** (semana, % vs. objetivo, estado, factores que
-    penalizan), **tratamiento establecido**, y **evidencia fotográfica** (basal / más
-    reciente). Al final: lista de consultas, **notas de seguimiento** (tipo, procedimiento,
-    material, evolución, firma con cédula), las recomendaciones y la leyenda de apoyo a
-    la decisión clínica.
+  - **Encabezado repetido en todas las hojas** (trazabilidad): nombre, folio y fecha de
+    descarga; **pie con paginación** (Página X de Y). Datos del paciente en la portada
+    incluyen **fecha de nacimiento**, edad y sexo; antecedentes.
+  - Por cada herida: diagnóstico/localización, **clasificaciones** (WUWHS, Wagner, CEAP),
+    **fecha de valoración y especialista**; condición actual (tamaño, dimensiones,
+    composición, **socavamiento/tunelización**); **valoración clínica** de la última
+    evaluación (**signos de infección IWII, dolor, exudado, piel perilesional, nota
+    clínica**); **avance** (% de reducción), **gráfico de evolución del área**,
+    **checkpoint de Sheehan** (semana, % vs. objetivo, estado, factores que penalizan),
+    **tratamiento establecido**, y **evidencia fotográfica** con pie por foto (**fecha,
+    hora, área**; basal / más reciente). Al final: lista de consultas, **notas de
+    seguimiento** (tipo, procedimiento, material, evolución, firma con cédula), las
+    recomendaciones y la leyenda de apoyo a la decisión clínica.
 - **Reporte de prevención (hospital):** botón **"Generar reporte de prevención (PDF)"**;
   incluye internamiento, riesgo (Braden), comorbilidades, diagnósticos, cumplimiento de
   rondas, bitácora de prevención e indicaciones al cuidador.
