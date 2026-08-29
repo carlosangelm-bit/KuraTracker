@@ -1,6 +1,6 @@
 /// Enumeraciones de dominio clinico usadas por el motor "Protocolo Kura+".
 /// Ver docs/kura_protocol_engine.md para la especificacion completa.
-library kura_engine_enums;
+library;
 
 /// Etiologia de la herida. `pieDiabetico` y `otra` son la categoria base
 /// del modelo multinomial (todas las variables one-hot et_* quedan en 0).
@@ -109,6 +109,21 @@ enum Entorno { clinica, domicilio }
 
 enum ExudadoCantidad { ninguno, escaso, moderado, abundante }
 
+extension ExudadoCantidadX on ExudadoCantidad {
+  String get label {
+    switch (this) {
+      case ExudadoCantidad.ninguno:
+        return 'Ninguno';
+      case ExudadoCantidad.escaso:
+        return 'Escaso';
+      case ExudadoCantidad.moderado:
+        return 'Moderado';
+      case ExudadoCantidad.abundante:
+        return 'Abundante';
+    }
+  }
+}
+
 enum ExudadoTipo { serohematico, hematico, purulento, seropurulento, otro }
 
 extension ExudadoTipoX on ExudadoTipo {
@@ -138,6 +153,29 @@ enum PielPerilesionalEstado {
   eccematosa,
   hiperqueratosica,
   callosidad,
+}
+
+extension PielPerilesionalEstadoX on PielPerilesionalEstado {
+  String get label {
+    switch (this) {
+      case PielPerilesionalEstado.normal:
+        return 'Normal';
+      case PielPerilesionalEstado.seca:
+        return 'Seca';
+      case PielPerilesionalEstado.fragil:
+        return 'Frágil';
+      case PielPerilesionalEstado.macerada:
+        return 'Macerada';
+      case PielPerilesionalEstado.eritematosa:
+        return 'Eritematosa';
+      case PielPerilesionalEstado.eccematosa:
+        return 'Eccematosa';
+      case PielPerilesionalEstado.hiperqueratosica:
+        return 'Hiperqueratósica';
+      case PielPerilesionalEstado.callosidad:
+        return 'Callosidad';
+    }
+  }
 }
 
 /// Estado de una comorbilidad individual dentro del expediente.

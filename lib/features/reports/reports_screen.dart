@@ -683,12 +683,12 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                     clinicalRows.add('Dolor: ${p.isEmpty ? 'sí' : p.join(' · ')}.');
                   }
                   if (latestA.exudateAmount != ExudadoCantidad.ninguno) {
-                    clinicalRows.add('Exudado: ${latestA.exudateAmount.name}'
+                    clinicalRows.add('Exudado: ${latestA.exudateAmount.label}'
                         '${latestA.exudateType != null ? ' · ${latestA.exudateType!.label}' : ''}.');
                   }
                   if (latestA.perilesionalSkin.isNotEmpty) {
                     clinicalRows.add('Piel perilesional: '
-                        '${latestA.perilesionalSkin.map((e) => e.name).join(', ')}.');
+                        '${latestA.perilesionalSkin.map((e) => e.label).join(', ')}.');
                   }
                   if ((latestA.clinicalNotes ?? '').trim().isNotEmpty) {
                     clinicalRows.add('Nota clínica: ${latestA.clinicalNotes!.trim()}');
