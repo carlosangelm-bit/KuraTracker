@@ -487,13 +487,28 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
         final consultations = repo.listConsultationsForPatient(patientId);
 
         // Precarga de fotos por herida (async), según el modo de evidencia.
+        // Pie de foto: fecha, hora y área (de la medición ligada), y marca
+        // basal / más reciente para que quede claro cuál es cuál.
         final photosByWound = <String, List<pw.Widget>>{};
         for (final w in wounds) {
           final selected = _selectPhotos(repo.listPhotosForWound(w.id));
+          final measById = {
+            for (final m in repo.listMeasurementsForWound(w.id)) m.id: m
+          };
           final widgets = <pw.Widget>[];
-          for (final ph in selected) {
+          for (var i = 0; i < selected.length; i++) {
+            final ph = selected[i];
             final img = await _loadPhoto(ph.storagePath);
             if (img == null) continue;
+            final area = ph.measurementId == null
+                ? null
+                : measById[ph.measurementId]?.areaCm2;
+            final tag = ph.isBaseline
+                ? ' · basal'
+                : (_evidenceMode == 'primera_ultima' &&
+                        i == selected.length - 1
+                    ? ' · más reciente'
+                    : '');
             widgets.add(
               pw.Column(
                 crossAxisAlignment: pw.CrossAxisAlignment.start,
@@ -504,7 +519,8 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                     child: pw.Image(img, width: 150, height: 150, fit: pw.BoxFit.cover),
                   ),
                   pw.Text(
-                    '${_fmtDate.format(ph.takenAt)}${ph.isBaseline ? ' · basal' : ''}',
+                    '${DateFormat('dd/MM/yyyy HH:mm').format(ph.takenAt)}'
+                    '${area != null ? ' · ${area.toStringAsFixed(1)} cm²' : ''}$tag',
                     style: const pw.TextStyle(fontSize: 7),
                   ),
                 ],
@@ -520,6 +536,39 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
 
         doc.addPage(
           pw.MultiPage(
+            // Encabezado repetido en TODAS las hojas (trazabilidad: si una hoja
+            // suelta se separa del expediente, debe poder devolverse al paciente
+            // correcto): nombre, folio y fecha de descarga.
+            header: (context) => pw.Container(
+              margin: const pw.EdgeInsets.only(bottom: 8),
+              padding: const pw.EdgeInsets.only(bottom: 3),
+              decoration: pw.BoxDecoration(
+                border: pw.Border(
+                    bottom: pw.BorderSide(color: brandColor, width: 0.8)),
+              ),
+              child: pw.Row(
+                crossAxisAlignment: pw.CrossAxisAlignment.end,
+                children: [
+                  pw.Expanded(
+                    child: pw.Text(
+                      '${patient.fullName}  ·  Folio: ${patient.folio}',
+                      style: pw.TextStyle(
+                          fontSize: 9, fontWeight: pw.FontWeight.bold),
+                    ),
+                  ),
+                  pw.Text('Descarga: $generatedAt',
+                      style: const pw.TextStyle(fontSize: 8)),
+                ],
+              ),
+            ),
+            footer: (context) => pw.Container(
+              alignment: pw.Alignment.centerRight,
+              margin: const pw.EdgeInsets.only(top: 6),
+              child: pw.Text(
+                'Página ${context.pageNumber} de ${context.pagesCount}',
+                style: const pw.TextStyle(fontSize: 8),
+              ),
+            ),
             build: (context) => [
               pw.Container(
                 padding: const pw.EdgeInsets.all(10),
@@ -554,6 +603,9 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
               pw.Text(patient.fullName,
                   style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold)),
               pw.Text('Folio: ${patient.folio}'),
+              if (patient.birthDate != null)
+                pw.Text(
+                    'Fecha de nacimiento: ${_fmtDate.format(patient.birthDate!)}'),
               pw.Text('Edad: ${patient.age ?? '-'} · Sexo: ${patient.sex ?? '-'}'),
               if (_includeBackground &&
                   (patient.backgroundNotes ?? '').isNotEmpty) ...[
@@ -597,6 +649,52 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                   if (last.epithelializationPct > 0) comp.add('epitelización ${last.epithelializationPct.toStringAsFixed(0)}%');
                 }
 
+                // Valoración (consulta inicial + especialista) y campos clínicos
+                // de la ÚLTIMA valoración (existían en wound_assessments y no se
+                // imprimían). Se ordenan por la fecha de su consulta.
+                final consultsById = {for (final c in consultations) c.id: c};
+                final assessments = repo.listAssessmentsForWound(w.id).toList()
+                  ..sort((a, b) {
+                    final da = consultsById[a.consultationId]?.visitDate;
+                    final db = consultsById[b.consultationId]?.visitDate;
+                    if (da == null || db == null) return 0;
+                    return da.compareTo(db);
+                  });
+                final initialC = assessments.isEmpty
+                    ? null
+                    : consultsById[assessments.first.consultationId];
+                final especialista = initialC == null
+                    ? null
+                    : repo.getStaff(initialC.staffId)?.fullName;
+                final latestA = assessments.isEmpty ? null : assessments.last;
+                final clinicalRows = <String>[];
+                if (latestA != null) {
+                  if (latestA.infectionCriteria.isNotEmpty) {
+                    clinicalRows.add('Signos de infección (IWII): '
+                        '${latestA.infectionCriteria.map((e) => e.label).join(', ')}.');
+                  }
+                  if (latestA.pain == true || latestA.painVas != null) {
+                    final p = <String>[
+                      if (latestA.painVas != null) 'EVA ${latestA.painVas}/10',
+                      if ((latestA.painType ?? '').isNotEmpty) latestA.painType!,
+                      if ((latestA.painDuration ?? '').isNotEmpty)
+                        latestA.painDuration!,
+                    ];
+                    clinicalRows.add('Dolor: ${p.isEmpty ? 'sí' : p.join(' · ')}.');
+                  }
+                  if (latestA.exudateAmount != ExudadoCantidad.ninguno) {
+                    clinicalRows.add('Exudado: ${latestA.exudateAmount.name}'
+                        '${latestA.exudateType != null ? ' · ${latestA.exudateType!.label}' : ''}.');
+                  }
+                  if (latestA.perilesionalSkin.isNotEmpty) {
+                    clinicalRows.add('Piel perilesional: '
+                        '${latestA.perilesionalSkin.map((e) => e.name).join(', ')}.');
+                  }
+                  if ((latestA.clinicalNotes ?? '').trim().isNotEmpty) {
+                    clinicalRows.add('Nota clínica: ${latestA.clinicalNotes!.trim()}');
+                  }
+                }
+
                 pw.Widget label(String t) =>
                     pw.Text(t, style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 10, color: brandColor));
 
@@ -618,6 +716,17 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                       if (w.wuwhsGrade != null)
                         pw.Text('Grado de severidad (WUWHS): ${w.wuwhsGrade!.name.toUpperCase()}',
                             style: const pw.TextStyle(fontSize: 9)),
+                      if (w.wagnerGrade != null)
+                        pw.Text('Clasificación Wagner: ${w.wagnerGrade!.name.toUpperCase()}',
+                            style: const pw.TextStyle(fontSize: 9)),
+                      if (w.ceapClass != null)
+                        pw.Text('Clasificación CEAP: ${w.ceapClass!.name.toUpperCase()}',
+                            style: const pw.TextStyle(fontSize: 9)),
+                      if (initialC != null)
+                        pw.Text(
+                          'Fecha de valoración: ${_fmtDate.format(initialC.visitDate)}'
+                          '${especialista != null ? ' · Especialista: $especialista' : ''}',
+                          style: const pw.TextStyle(fontSize: 9)),
 
                       // Condición actual
                       pw.SizedBox(height: 6),
@@ -635,6 +744,21 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                       if (comp.isNotEmpty)
                         pw.Text('Composición del tejido: ${comp.join(', ')}.',
                             style: const pw.TextStyle(fontSize: 9)),
+                      if (last != null)
+                        pw.Text(
+                          'Socavamiento: ${last.undermining ? 'sí' : 'no'} · '
+                          'Tunelización: ${last.tunneling ? 'sí' : 'no'}.',
+                          style: const pw.TextStyle(fontSize: 9)),
+
+                      // Valoración clínica (última): infección (IWII), dolor,
+                      // exudado, piel perilesional y nota. Existían en
+                      // wound_assessments y no se imprimían.
+                      if (clinicalRows.isNotEmpty) ...[
+                        pw.SizedBox(height: 6),
+                        label('Valoración clínica'),
+                        ...clinicalRows.map((t) =>
+                            pw.Text(t, style: const pw.TextStyle(fontSize: 9))),
+                      ],
 
                       // Avance
                       if (progreso != null) ...[
