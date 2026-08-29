@@ -224,6 +224,36 @@ class Wound {
       };
 }
 
+/// Sitio de TUNELIZACIÓN (punto): un trayecto que sale en una dirección. Reloj
+/// 1–12, con las 12 en la CABEZA del paciente (0093).
+class TunnelingSite {
+  final int clock; // 1–12
+  final double depthCm;
+  const TunnelingSite({required this.clock, required this.depthCm});
+  factory TunnelingSite.fromJson(Map<String, dynamic> j) => TunnelingSite(
+        clock: (j['clock'] as num).toInt(),
+        depthCm: (j['depth_cm'] as num).toDouble(),
+      );
+  Map<String, dynamic> toJson() => {'clock': clock, 'depth_cm': depthCm};
+}
+
+/// Sitio de SOCAVAMIENTO (arco): despegue del borde a lo largo de un tramo. El
+/// arco PUEDE cruzar las 12 (de 11 a 2 es válido). Reloj 1–12 (12 = cabeza).
+class UnderminingSite {
+  final int clockFrom; // 1–12
+  final int clockTo; // 1–12
+  final double depthCm;
+  const UnderminingSite(
+      {required this.clockFrom, required this.clockTo, required this.depthCm});
+  factory UnderminingSite.fromJson(Map<String, dynamic> j) => UnderminingSite(
+        clockFrom: (j['clock_from'] as num).toInt(),
+        clockTo: (j['clock_to'] as num).toInt(),
+        depthCm: (j['depth_cm'] as num).toDouble(),
+      );
+  Map<String, dynamic> toJson() =>
+      {'clock_from': clockFrom, 'clock_to': clockTo, 'depth_cm': depthCm};
+}
+
 /// Medicion seriada de una herida (dimensiones + composicion del lecho).
 class WoundMeasurement {
   final String id;
@@ -236,6 +266,10 @@ class WoundMeasurement {
   final double depthCm;
   final bool tunneling;
   final bool undermining;
+  // Direccion (0093): el booleano dice SI hay; el arreglo dice DONDE y CUANTO.
+  // Arreglo vacio con el booleano en true = "hay, no se detallo" (historico).
+  final List<TunnelingSite> tunnelingSites;
+  final List<UnderminingSite> underminingSites;
   final double granulationPct;
   final double sloughPct; // esfacelo
   final double necrosisPct;
@@ -266,6 +300,8 @@ class WoundMeasurement {
     this.depthCm = 0,
     this.tunneling = false,
     this.undermining = false,
+    this.tunnelingSites = const [],
+    this.underminingSites = const [],
     this.granulationPct = 0,
     this.sloughPct = 0,
     this.necrosisPct = 0,
@@ -290,6 +326,14 @@ class WoundMeasurement {
         depthCm: (json['depth_cm'] as num?)?.toDouble() ?? 0,
         tunneling: json['tunneling'] as bool? ?? false,
         undermining: json['undermining'] as bool? ?? false,
+        tunnelingSites: ((json['tunneling_sites'] as List?) ?? const [])
+            .map((e) =>
+                TunnelingSite.fromJson((e as Map).cast<String, dynamic>()))
+            .toList(),
+        underminingSites: ((json['undermining_sites'] as List?) ?? const [])
+            .map((e) =>
+                UnderminingSite.fromJson((e as Map).cast<String, dynamic>()))
+            .toList(),
         granulationPct: (json['granulation_pct'] as num?)?.toDouble() ?? 0,
         sloughPct: (json['slough_pct'] as num?)?.toDouble() ?? 0,
         necrosisPct: (json['necrosis_pct'] as num?)?.toDouble() ?? 0,
@@ -311,6 +355,8 @@ class WoundMeasurement {
         'depth_cm': depthCm,
         'tunneling': tunneling,
         'undermining': undermining,
+        'tunneling_sites': tunnelingSites.map((e) => e.toJson()).toList(),
+        'undermining_sites': underminingSites.map((e) => e.toJson()).toList(),
         'granulation_pct': granulationPct,
         'slough_pct': sloughPct,
         'necrosis_pct': necrosisPct,

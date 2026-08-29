@@ -3,7 +3,7 @@ import 'dart:typed_data';
 import '../../core/utils/wound_volume.dart';
 import '../../engine/models/kura_engine_enums.dart';
 import '../../engine/models/kura_engine_input.dart';
-import '../../models/wound.dart' show enumByName;
+import '../../models/wound.dart' show enumByName, TunnelingSite, UnderminingSite;
 
 /// Estado mutable del formulario de captura de herida. Se recalcula el
 /// pronostico en vivo (seccion 6.1) cada vez que cambia un campo relevante.
@@ -107,6 +107,9 @@ class WoundCaptureFormState {
   double? volumeCm3;
   bool tunneling = false;
   bool undermining = false;
+  // Dirección estructurada (0093): puntos de tunelización y arcos de socavamiento.
+  List<TunnelingSite> tunnelingSites = [];
+  List<UnderminingSite> underminingSites = [];
   double granulacionPct = 100;
   double esfaceloPct = 0;
   double necrosisPct = 0;
@@ -282,6 +285,8 @@ class WoundCaptureFormState {
         'volumeCm3': volumeCm3,
         'tunneling': tunneling,
         'undermining': undermining,
+        'tunnelingSites': [for (final s in tunnelingSites) s.toJson()],
+        'underminingSites': [for (final s in underminingSites) s.toJson()],
         'granulacionPct': granulacionPct,
         'esfaceloPct': esfaceloPct,
         'necrosisPct': necrosisPct,
@@ -366,6 +371,17 @@ class WoundCaptureFormState {
     volumeCm3 = d(j['volumeCm3']);
     tunneling = j['tunneling'] as bool? ?? tunneling;
     undermining = j['undermining'] as bool? ?? undermining;
+    if (j['tunnelingSites'] != null) {
+      tunnelingSites = (j['tunnelingSites'] as List)
+          .map((e) => TunnelingSite.fromJson((e as Map).cast<String, dynamic>()))
+          .toList();
+    }
+    if (j['underminingSites'] != null) {
+      underminingSites = (j['underminingSites'] as List)
+          .map((e) =>
+              UnderminingSite.fromJson((e as Map).cast<String, dynamic>()))
+          .toList();
+    }
     granulacionPct = d(j['granulacionPct']) ?? granulacionPct;
     esfaceloPct = d(j['esfaceloPct']) ?? esfaceloPct;
     necrosisPct = d(j['necrosisPct']) ?? necrosisPct;

@@ -29,6 +29,7 @@ import '../../core/widgets/signature_pad.dart';
 import '../../models/consent.dart';
 import '../consents/consents_screen.dart';
 import '../wound_capture/widgets/bed_composition_sliders.dart';
+import '../wound_capture/widgets/undermining_tunneling_editor.dart';
 
 /// Formulario de "Registrar seguimiento" (visita visit_type='seguimiento'
 /// ligada a una herida existente).
@@ -113,6 +114,9 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
   final _visitSummaryCtrl = TextEditingController(); // resumen de la consulta
   bool _tunneling = false;
   bool _undermining = false;
+  // Dirección estructurada (0093): puntos de tunelización y arcos de socavamiento.
+  List<TunnelingSite> _tunnelingSites = [];
+  List<UnderminingSite> _underminingSites = [];
 
   double _granulacion = 100;
   double _esfacelo = 0;
@@ -602,7 +606,10 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
                         controlAffinity: ListTileControlAffinity.leading,
                         value: _tunneling,
                         title: const Text('Tunelización', style: TextStyle(fontSize: 13)),
-                        onChanged: (v) => setState(() => _tunneling = v ?? false),
+                        onChanged: (v) => setState(() {
+                          _tunneling = v ?? false;
+                          if (!_tunneling) _tunnelingSites = [];
+                        }),
                       ),
                     ),
                     Expanded(
@@ -611,12 +618,26 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
                         controlAffinity: ListTileControlAffinity.leading,
                         value: _undermining,
                         title: const Text('Socavamiento', style: TextStyle(fontSize: 13)),
-                        onChanged: (v) => setState(() => _undermining = v ?? false),
+                        onChanged: (v) => setState(() {
+                          _undermining = v ?? false;
+                          if (!_undermining) _underminingSites = [];
+                        }),
                       ),
                     ),
                   ],
                 ),
                 if (_tunneling || _undermining) ...[
+                  UnderminingTunnelingEditor(
+                    key: ValueKey('utedit-$_tunneling-$_undermining'),
+                    showTunneling: _tunneling,
+                    showUndermining: _undermining,
+                    tunnelingSites: _tunnelingSites,
+                    underminingSites: _underminingSites,
+                    onChanged: (tun, und) => setState(() {
+                      _tunnelingSites = tun;
+                      _underminingSites = und;
+                    }),
+                  ),
                   const SizedBox(height: 8),
                   TextField(
                     controller: _manualMeasurementCtrl,
@@ -2047,6 +2068,8 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
         'manual_measurement': _manualMeasurementCtrl.text,
         'tunneling': _tunneling,
         'undermining': _undermining,
+        'tunneling_sites': [for (final s in _tunnelingSites) s.toJson()],
+        'undermining_sites': [for (final s in _underminingSites) s.toJson()],
         'granulacion': _granulacion,
         'esfacelo': _esfacelo,
         'necrosis': _necrosis,
@@ -2109,6 +2132,17 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
     _manualMeasurementCtrl.text = txt(s['manual_measurement'], _manualMeasurementCtrl.text);
     _tunneling = s['tunneling'] as bool? ?? _tunneling;
     _undermining = s['undermining'] as bool? ?? _undermining;
+    if (s['tunneling_sites'] != null) {
+      _tunnelingSites = (s['tunneling_sites'] as List)
+          .map((e) => TunnelingSite.fromJson((e as Map).cast<String, dynamic>()))
+          .toList();
+    }
+    if (s['undermining_sites'] != null) {
+      _underminingSites = (s['undermining_sites'] as List)
+          .map((e) =>
+              UnderminingSite.fromJson((e as Map).cast<String, dynamic>()))
+          .toList();
+    }
     _granulacion = dbl(s['granulacion'], _granulacion);
     _esfacelo = dbl(s['esfacelo'], _esfacelo);
     _necrosis = dbl(s['necrosis'], _necrosis);
@@ -2561,6 +2595,10 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
         'depth_cm': _depthCm,
         'tunneling': _tunneling,
         'undermining': _undermining,
+        'tunneling_sites':
+            _tunneling ? [for (final s in _tunnelingSites) s.toJson()] : [],
+        'undermining_sites':
+            _undermining ? [for (final s in _underminingSites) s.toJson()] : [],
         'granulation_pct': _granulacion,
         'slough_pct': _esfacelo,
         'necrosis_pct': _necrosis,

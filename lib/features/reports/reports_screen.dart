@@ -744,10 +744,15 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                       if (comp.isNotEmpty)
                         pw.Text('Composición del tejido: ${comp.join(', ')}.',
                             style: const pw.TextStyle(fontSize: 9)),
-                      if (last != null)
+                      // Dirección (0093): reloj (12 = cabeza) + profundidad.
+                      // Arreglo vacío con el booleano en true = "hay, sin detalle".
+                      if (last != null && last.undermining)
                         pw.Text(
-                          'Socavamiento: ${last.undermining ? 'sí' : 'no'} · '
-                          'Tunelización: ${last.tunneling ? 'sí' : 'no'}.',
+                          'Socavamiento: ${last.underminingSites.isEmpty ? 'presente (sin detalle)' : last.underminingSites.map((s) => 'de las ${s.clockFrom} a las ${s.clockTo} (${s.depthCm.toStringAsFixed(1)} cm)').join('; ')}.',
+                          style: const pw.TextStyle(fontSize: 9)),
+                      if (last != null && last.tunneling)
+                        pw.Text(
+                          'Tunelización: ${last.tunnelingSites.isEmpty ? 'presente (sin detalle)' : last.tunnelingSites.map((s) => 'a las ${s.clock} (${s.depthCm.toStringAsFixed(1)} cm)').join('; ')}.',
                           style: const pw.TextStyle(fontSize: 9)),
 
                       // Valoración clínica (última): infección (IWII), dolor,
