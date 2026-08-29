@@ -26,6 +26,7 @@ import '../consents/consents_screen.dart';
 import 'wound_capture_controller.dart';
 import 'wound_capture_form_state.dart';
 import 'widgets/bed_composition_sliders.dart';
+import 'widgets/undermining_tunneling_editor.dart';
 import 'widgets/body_map_selector.dart';
 import 'widgets/live_prognosis_panel.dart';
 import '../treatment/treatment_step_screen.dart';
@@ -537,6 +538,12 @@ class _WoundCaptureScreenState extends ConsumerState<WoundCaptureScreen> {
           'depth_cm': formState.depthCm,
           'tunneling': formState.tunneling,
           'undermining': formState.undermining,
+          'tunneling_sites': formState.tunneling
+              ? [for (final s in formState.tunnelingSites) s.toJson()]
+              : [],
+          'undermining_sites': formState.undermining
+              ? [for (final s in formState.underminingSites) s.toJson()]
+              : [],
           'granulation_pct': formState.granulacionPct,
           'slough_pct': formState.esfaceloPct,
           'necrosis_pct': formState.necrosisPct,
@@ -1170,7 +1177,10 @@ class _WoundCaptureScreenState extends ConsumerState<WoundCaptureScreen> {
                       contentPadding: EdgeInsets.zero,
                       value: formState.tunneling,
                       title: const Text('Tunelización', style: TextStyle(fontSize: 13)),
-                      onChanged: (v) => update(() => formState.tunneling = v ?? false),
+                      onChanged: (v) => update(() {
+                        formState.tunneling = v ?? false;
+                        if (!formState.tunneling) formState.tunnelingSites = [];
+                      }),
                     ),
                   ),
                   Expanded(
@@ -1178,11 +1188,27 @@ class _WoundCaptureScreenState extends ConsumerState<WoundCaptureScreen> {
                       contentPadding: EdgeInsets.zero,
                       value: formState.undermining,
                       title: const Text('Socavamiento *', style: TextStyle(fontSize: 13)),
-                      onChanged: (v) => update(() => formState.undermining = v ?? false),
+                      onChanged: (v) => update(() {
+                        formState.undermining = v ?? false;
+                        if (!formState.undermining) formState.underminingSites = [];
+                      }),
                     ),
                   ),
                 ],
               ),
+              if (formState.tunneling || formState.undermining)
+                UnderminingTunnelingEditor(
+                  key: ValueKey(
+                      'utedit-${formState.tunneling}-${formState.undermining}'),
+                  showTunneling: formState.tunneling,
+                  showUndermining: formState.undermining,
+                  tunnelingSites: formState.tunnelingSites,
+                  underminingSites: formState.underminingSites,
+                  onChanged: (tun, und) => update(() {
+                    formState.tunnelingSites = tun;
+                    formState.underminingSites = und;
+                  }),
+                ),
               const SizedBox(height: 8),
               const Divider(),
               const SizedBox(height: 8),

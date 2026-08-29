@@ -305,7 +305,10 @@ vivo** está siempre visible (a un lado en pantallas anchas, arriba en móvil). 
 - **Zona de la herida (dimensiones):** **Longitud \***, **Anchura \***, Profundidad; el
   **Área se autocalcula**. En heridas profundas aparece el **Volumen (cm³)**
   autocalculado por la fórmula de **Kundin** (editable a mano). Casillas
-  **Tunelización** y **Socavamiento \***.
+  **Tunelización** y **Socavamiento \***. Al marcarlas aparece la **dirección**
+  estructurada (reloj + cm, con las **12 = cabeza del paciente**): la
+  tunelización se captura como **punto** ("a las N, cm") y el socavamiento como
+  **arco** ("de las N a las M, cm"); se pueden agregar varios sitios.
 - **Composición del lecho \*:** cuatro sliders 0-100% — **Granulación, Esfacelo,
   Necrosis, Epitelización** — con colores realistas del tejido. Casilla **"Confirmo que
   esta composición se capturó antes de curar/desbridar"**. Una barra de total avisa si
@@ -371,8 +374,9 @@ fases:
   subtipo vascular y "No revascularizable" para esta visita.
 - **Fase 1 · Procedimiento físico:** **Foto después de limpiar (sin medición) \***;
   **Medición** (Largo \*, Ancho \*, Profundidad; Área 2D automática; Volumen Kundin si
-  es profunda); casillas Tunelización/Socavamiento (y medición manual si aplica);
-  **Foto con medición**.
+  es profunda); casillas Tunelización/Socavamiento con su **dirección** (reloj +
+  cm, 12 = cabeza del paciente: tunelización = punto, socavamiento = arco) y
+  medición manual si aplica; **Foto con medición**.
 - **Fase 2 · Estado actual:** Composición del lecho (sliders), Estado clínico (Edema;
   Dolor tipo/duración/EVA; Exudado; **Criterios IWII**; Olor; Borde; Piel
   perilesional), casilla **"Baja adherencia al tratamiento"**, Notas.
