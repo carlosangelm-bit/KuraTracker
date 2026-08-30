@@ -145,6 +145,11 @@ class _ReabastoScreenState extends ConsumerState<ReabastoScreen> {
                                             fontWeight: FontWeight.w600),
                                       ),
                                     ),
+                                    TextButton(
+                                      onPressed: () => _cancelOrder(repo, o),
+                                      child: const Text('Cancelar'),
+                                    ),
+                                    const SizedBox(width: 4),
                                     FilledButton(
                                       onPressed: () => _receiveOrder(repo, o),
                                       child: const Text('Recibir'),
@@ -351,6 +356,34 @@ class _ReabastoScreenState extends ConsumerState<ReabastoScreen> {
       setState(() {});
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
           content: Text('Recepción registrada contra el pedido.')));
+    }
+  }
+
+  /// Cancela un pedido abierto (estado `cancelado`). No revierte lo ya recibido.
+  Future<void> _cancelOrder(DataRepository repo, SupplyOrder order) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Cancelar pedido'),
+        content: const Text(
+            '¿Cancelar este pedido? Lo ya recibido se conserva; solo se cierra '
+            'lo que falta por recibir.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('No')),
+          FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('Cancelar pedido')),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    await repo.cancelSupplyOrder(order.id);
+    if (mounted) {
+      setState(() {});
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Pedido cancelado.')));
     }
   }
 
