@@ -1284,6 +1284,16 @@ class DataRepository {
       throw Exception('El espejo requiere el entorno de producción.');
     }
     if (organizationId == null) throw Exception('Centro no resuelto.');
+    // ANTES de leer niveles y calcular deltas: empuja a Shopify los movimientos
+    // de consumo pendientes (los que reconcile_charge no alcanzó a reflejar). Si
+    // no, la sync haría delta = available - current y REVERTIRÍA el descuento.
+    // Best-effort; solo aplica a centros espejo (este método ya lo es). (0094)
+    try {
+      await store.invokeFunction(
+          'shopify-inventory', {'action': 'reconcile_pending'});
+    } catch (e) {
+      debugPrint('reconcile_pending (Shopify) falló; continúa la sync: $e');
+    }
     Map<String, dynamic> data;
     try {
       data = await store.invokeFunction('shopify-inventory', {'action': 'levels'});
