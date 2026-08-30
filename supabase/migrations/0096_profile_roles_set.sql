@@ -16,7 +16,12 @@
 --     lee `role` y se usa en ~12 políticas de 0045/0084
 --     (`current_user_role()::text = 'clinico' | in ('clinico','enfermeria')`).
 --     Aquí se DEJA como está: `role` sigue siendo el espejo primario, así que
---     esas políticas se comportan igual que hoy. Hacerlas set-aware es Fase B.
+--     esas políticas se comportan igual que hoy.
+--     MINA FASE B: current_user_role() NO se puede volver set-aware (devuelve un
+--     valor ÚNICO). Y varias de sus 11 políticas se generaron con
+--     execute format(...) en 0045:124 y :140, así que sus cuerpos YA están
+--     escritos en la BD: hay que DROP + recrearlas con un predicado has_role(),
+--     NO basta con cambiar la función.
 --   - La columna nueva abre un hueco de escalada; se extiende el guard de 0006.
 -- =============================================================================
 
@@ -37,7 +42,12 @@ update public.profiles
 
 -- 3. Sincronización role → roles (Fase A): cualquier escritura de `role` (app,
 --    RPCs como 0011, admin-create-user) mantiene el conjunto correcto SIN tocar
---    la app. FASE B: reemplazar por la sincronización inversa.
+--    la app.
+--    MINA FASE B: hay que ELIMINAR este trigger junto con la columna `role`. En
+--    cuanto la app escriba `roles` directamente, este trigger los MACHACA en
+--    silencio (síntoma: "puse los roles y se revirtieron solos", horrible de
+--    diagnosticar). Reescribe `roles` desde `role` en todo INSERT y en cada
+--    UPDATE que toque `role`.
 create or replace function public.sync_profile_roles()
 returns trigger
 language plpgsql
