@@ -3,7 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/theme/kura_theme.dart';
+import '../../core/providers/session_provider.dart';
 import '../../services/shopify_service.dart';
+import 'purchase_guard.dart';
 import 'cart_provider.dart';
 
 /// Tienda del módulo de Insumos: catálogo de productos de heridas (Shopify
@@ -45,6 +47,10 @@ class _TiendaScreenState extends ConsumerState<TiendaScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Compra = admin del centro (y master). Defensa en pantalla, no solo router.
+    if (!canPurchaseSupplies(ref.watch(sessionProvider).user)) {
+      return purchaseDeniedScaffold('Tienda de insumos');
+    }
     final service = ref.watch(shopifyServiceProvider);
     final count = ref.watch(cartCountProvider);
 

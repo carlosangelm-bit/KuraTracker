@@ -9,6 +9,7 @@ import '../../models/inventory.dart';
 import '../../models/supply_order.dart';
 import '../../services/data_repository.dart';
 import '../../services/shopify_service.dart';
+import 'purchase_guard.dart';
 
 /// Reabasto sugerido (Insumos, Fase 5 premium): los artículos bajo su umbral se
 /// juntan en una sugerencia de reorden. Para los de la tienda Kura+ se arma un
@@ -36,6 +37,7 @@ class _ReabastoScreenState extends ConsumerState<ReabastoScreen> {
   Widget build(BuildContext context) {
     final repoAsync = ref.watch(dataRepositoryProvider);
     final user = ref.watch(sessionProvider).user;
+    if (!canPurchaseSupplies(user)) return purchaseDeniedScaffold('Reabasto');
 
     return Scaffold(
       appBar: AppBar(

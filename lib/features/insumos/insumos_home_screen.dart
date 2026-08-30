@@ -8,6 +8,7 @@ import '../../core/router/app_shell.dart' show UserMenuButton;
 import '../../models/inventory.dart';
 import '../../services/data_repository.dart';
 import 'dashboard_charts.dart';
+import 'purchase_guard.dart';
 
 /// Módulo de Insumos (clínica de heridas): tienda de productos de heridas
 /// (Shopify) + —con licencia premium— mapeo insumo↔producto, inventario, costeo
@@ -32,6 +33,9 @@ class InsumosHomeScreen extends ConsumerWidget {
         error: (e, st) => Center(child: Text('Error: $e')),
         data: (repo) {
           final premium = repo.premiumInsumosFor(user?.organizationId);
+          // La compra es del admin del centro (y master); enfermería/clínico no
+          // ven tienda/inventario/reabasto/mapeo. Consumo (clínico) sí queda.
+          final canPurchase = canPurchaseSupplies(user);
           return ListView(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
             children: [
@@ -52,36 +56,39 @@ class InsumosHomeScreen extends ConsumerWidget {
               // Dashboard: gráficos (solo con datos/premium).
               if (premium) ..._insumosCharts(repo, user?.organizationId),
 
-              // Base (no premium) — YA disponible.
-              _SectionCard(
-                icon: Icons.storefront_outlined,
-                title: 'Tienda',
-                subtitle:
-                    'Catálogo de productos de heridas y compra con checkout seguro.',
-                status: _Status.disponible,
-                phase: 'Fase 1',
-                onTap: () => context.go('/insumos/tienda'),
-              ),
+              // Base (no premium) — YA disponible. Solo compradores (admin/master).
+              if (canPurchase)
+                _SectionCard(
+                  icon: Icons.storefront_outlined,
+                  title: 'Tienda',
+                  subtitle:
+                      'Catálogo de productos de heridas y compra con checkout seguro.',
+                  status: _Status.disponible,
+                  phase: 'Fase 1',
+                  onTap: () => context.go('/insumos/tienda'),
+                ),
 
               // Premium — Mapeo YA disponible (Fase 2) cuando hay licencia.
-              _SectionCard(
-                icon: Icons.link_outlined,
-                title: 'Mapeo insumo ↔ producto',
-                subtitle:
-                    'Liga cada insumo del protocolo a un producto concreto '
-                    '(p. ej. Apósito de espuma → Mepilex Border).',
-                status: premium ? _Status.disponible : _Status.premium,
-                phase: 'Fase 2',
-                onTap: premium ? () => context.go('/insumos/mapeo') : null,
-              ),
-              _SectionCard(
-                icon: Icons.inventory_2_outlined,
-                title: 'Inventario',
-                subtitle: 'Existencias por sitio con entradas, salidas y ajustes.',
-                status: premium ? _Status.disponible : _Status.premium,
-                phase: 'Fase 3',
-                onTap: premium ? () => context.go('/insumos/inventario') : null,
-              ),
+              if (canPurchase)
+                _SectionCard(
+                  icon: Icons.link_outlined,
+                  title: 'Mapeo insumo ↔ producto',
+                  subtitle:
+                      'Liga cada insumo del protocolo a un producto concreto '
+                      '(p. ej. Apósito de espuma → Mepilex Border).',
+                  status: premium ? _Status.disponible : _Status.premium,
+                  phase: 'Fase 2',
+                  onTap: premium ? () => context.go('/insumos/mapeo') : null,
+                ),
+              if (canPurchase)
+                _SectionCard(
+                  icon: Icons.inventory_2_outlined,
+                  title: 'Inventario',
+                  subtitle: 'Existencias por sitio con entradas, salidas y ajustes.',
+                  status: premium ? _Status.disponible : _Status.premium,
+                  phase: 'Fase 3',
+                  onTap: premium ? () => context.go('/insumos/inventario') : null,
+                ),
               _SectionCard(
                 icon: Icons.receipt_long_outlined,
                 title: 'Consumo y costeo por paciente',
@@ -92,15 +99,16 @@ class InsumosHomeScreen extends ConsumerWidget {
                 phase: 'Fase 4',
                 onTap: premium ? () => context.go('/insumos/consumo') : null,
               ),
-              _SectionCard(
-                icon: Icons.autorenew_outlined,
-                title: 'Reabasto sugerido',
-                subtitle:
-                    'Artículos bajo su umbral → carrito de reorden en tu tienda.',
-                status: premium ? _Status.disponible : _Status.premium,
-                phase: 'Fase 5',
-                onTap: premium ? () => context.go('/insumos/reabasto') : null,
-              ),
+              if (canPurchase)
+                _SectionCard(
+                  icon: Icons.autorenew_outlined,
+                  title: 'Reabasto sugerido',
+                  subtitle:
+                      'Artículos bajo su umbral → carrito de reorden en tu tienda.',
+                  status: premium ? _Status.disponible : _Status.premium,
+                  phase: 'Fase 5',
+                  onTap: premium ? () => context.go('/insumos/reabasto') : null,
+                ),
             ],
           );
         },

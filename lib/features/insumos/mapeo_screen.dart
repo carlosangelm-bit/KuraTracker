@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/theme/kura_theme.dart';
 import '../../core/providers/session_provider.dart';
 import '../../core/router/app_shell.dart' show UserMenuButton;
+import 'purchase_guard.dart';
 import '../../models/note_option_catalog.dart';
 import '../../models/supply_product_mapping.dart';
 import '../../services/data_repository.dart';
@@ -46,6 +47,9 @@ class _MapeoScreenState extends ConsumerState<MapeoScreen> {
   Widget build(BuildContext context) {
     final repoAsync = ref.watch(dataRepositoryProvider);
     final user = ref.watch(sessionProvider).user;
+    if (!canPurchaseSupplies(user)) {
+      return purchaseDeniedScaffold('Mapeo insumo ↔ producto');
+    }
 
     return Scaffold(
       appBar: AppBar(
