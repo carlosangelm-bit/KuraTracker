@@ -607,10 +607,14 @@ Suite de insumos para clínicas de heridas (respaldada por Shopify). **Inicio
   variantes concretos de Shopify (tamaños/marcas/SKUs). Se usa para costeo y reabasto.
 - **Reabasto sugerido:** artículos bajo umbral; **"De tu tienda Kura+"** con ± y recibir,
   **"Externos"** con proveedor y cantidad sugerida. **"Reabastecer N en la tienda"**
-  arma un carrito Shopify y abre el checkout. **"Confirmar recepción"** registra la
-  entrada.
+  arma un carrito Shopify y abre el checkout, y **registra un pedido** con lo
+  solicitado. La sección **"Pedidos por recibir"** lista los pedidos abiertos
+  (pendiente/parcial); **"Recibir"** cierra la recepción contra el pedido (registra la
+  entrada y actualiza su estado). Para externos sin pedido sigue existiendo **"Confirmar
+  recepción"**.
 - **CSV:** descarga el catálogo global (sku, nombre, proveedor, costo, precio, moneda,
-  cantidad, ids de Shopify), edítalo y cárgalo para crear/reabastecer.
+  cantidad, ids de Shopify, **umbral**), edítalo y cárgalo para crear/reabastecer y fijar
+  umbrales.
 
 ---
 

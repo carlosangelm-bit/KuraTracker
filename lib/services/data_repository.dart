@@ -24,6 +24,7 @@ import '../models/vac_therapy.dart';
 import '../models/product_catalog_item.dart';
 import '../models/patient_lab.dart';
 import '../models/inventory.dart';
+import '../models/supply_order.dart';
 import '../models/consultation_supply_usage.dart';
 import '../models/commercial.dart';
 import '../models/user_center_membership.dart';
@@ -1272,6 +1273,110 @@ class DataRepository {
     if (store is SupabaseDataStore) {
       await store.refreshCollection(Collections.organizations);
     }
+  }
+
+  // ---------------- Pedidos de insumos (0095) ------------------------------
+
+  /// Crea un pedido con lo solicitado (típicamente el carrito de Reabasto a
+  /// Kura+), contra el cual cierra la recepción. El pedido pertenece al CENTRO
+  /// que compra.
+  Future<void> createSupplyOrder({
+    required String organizationId,
+    String? siteId,
+    required List<({String itemId, String name, int qty})> lines,
+    String? createdBy,
+  }) async {
+    final filtered = lines.where((l) => l.qty > 0).toList();
+    if (filtered.isEmpty) return;
+    final orderId = _uuid.v4();
+    final now = DateTime.now().toIso8601String();
+    await _store.insertRow(Collections.supplyOrders, {
+      'id': orderId,
+      'organization_id': organizationId,
+      'site_id': siteId,
+      'status': 'pendiente',
+      'created_by': createdBy,
+      'created_at': now,
+      'updated_at': now,
+    });
+    for (final l in filtered) {
+      await _store.insertRow(Collections.supplyOrderItems, {
+        'id': _uuid.v4(),
+        'order_id': orderId,
+        'organization_id': organizationId,
+        'inventory_item_id': l.itemId,
+        'name': l.name,
+        'quantity_ordered': l.qty,
+        'quantity_received': 0,
+        'created_at': now,
+      });
+    }
+  }
+
+  /// Pedidos del centro (con sus items), más recientes primero. [openOnly] =
+  /// solo pendiente/parcial (los que faltan por recibir).
+  List<SupplyOrder> listSupplyOrders(String organizationId,
+      {bool openOnly = false}) {
+    final itemsByOrder = <String, List<SupplyOrderItem>>{};
+    for (final row in _store.getAll(Collections.supplyOrderItems)) {
+      final it = SupplyOrderItem.fromJson(row);
+      (itemsByOrder[it.orderId] ??= []).add(it);
+    }
+    return _store
+        .getAll(Collections.supplyOrders)
+        .where((o) => o['organization_id'] == organizationId)
+        .map((o) =>
+            SupplyOrder.fromJson(o, items: itemsByOrder[o['id']] ?? []))
+        .where((o) => !openOnly || o.isOpen)
+        .toList()
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+  }
+
+  /// Cierra la recepción de un pedido: por cada item recibido registra la
+  /// ENTRADA (compra) al inventario y suma quantity_received; recalcula el
+  /// estado (recibido / parcial). [receivedByItem] = id del order_item → qty.
+  Future<void> receiveSupplyOrder(
+    String orderId,
+    Map<String, int> receivedByItem, {
+    String? createdBy,
+  }) async {
+    final invById = {
+      for (final it in listInventoryItems(activeOnly: false)) it.id: it
+    };
+    final rows = _store
+        .getAll(Collections.supplyOrderItems)
+        .where((r) => r['order_id'] == orderId)
+        .toList();
+    for (final r in rows) {
+      final oi = SupplyOrderItem.fromJson(r);
+      final add = receivedByItem[oi.id] ?? 0;
+      if (add <= 0) continue;
+      final inv =
+          oi.inventoryItemId == null ? null : invById[oi.inventoryItemId];
+      if (inv != null) {
+        await addInventoryMovement(
+          item: inv,
+          delta: add,
+          reason: InventoryReason.compra,
+          unitCost: inv.unitCost,
+          note: 'Recepción de pedido',
+          createdBy: createdBy,
+        );
+      }
+      await _store.updateRow(Collections.supplyOrderItems, oi.id,
+          {'quantity_received': oi.quantityReceived + add});
+    }
+    final after = _store
+        .getAll(Collections.supplyOrderItems)
+        .where((r) => r['order_id'] == orderId)
+        .map(SupplyOrderItem.fromJson)
+        .toList();
+    final allDone = after.isNotEmpty && after.every((i) => i.fullyReceived);
+    final anyReceived = after.any((i) => i.quantityReceived > 0);
+    final status =
+        allDone ? 'recibido' : (anyReceived ? 'parcial' : 'pendiente');
+    await _store.updateRow(Collections.supplyOrders, orderId,
+        {'status': status, 'updated_at': DateTime.now().toIso8601String()});
   }
 
   /// Bajada del espejo: trae las existencias de Shopify y ajusta el inventario
