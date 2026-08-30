@@ -1379,6 +1379,16 @@ class DataRepository {
         {'status': status, 'updated_at': DateTime.now().toIso8601String()});
   }
 
+  /// Cancela un pedido abierto (estado `cancelado`, ya en el esquema 0095). No
+  /// revierte lo ya recibido (esos movimientos de inventario ya existen); solo
+  /// cierra lo pendiente para que deje de aparecer en "Pedidos por recibir".
+  Future<void> cancelSupplyOrder(String orderId) async {
+    await _store.updateRow(Collections.supplyOrders, orderId, {
+      'status': 'cancelado',
+      'updated_at': DateTime.now().toIso8601String(),
+    });
+  }
+
   /// Bajada del espejo: trae las existencias de Shopify y ajusta el inventario
   /// del sitio del centro Kura+ para que coincidan. Crea los artículos ligados
   /// que falten (con su inventory_item_id de Shopify para el push posterior).
@@ -1393,6 +1403,13 @@ class DataRepository {
     // de consumo pendientes (los que reconcile_charge no alcanzó a reflejar). Si
     // no, la sync haría delta = available - current y REVERTIRÍA el descuento.
     // Best-effort; solo aplica a centros espejo (este método ya lo es). (0094)
+    //
+    // HUECO CONOCIDO (0094): el backfill de 0094 marcó shopify_pushed=true en
+    // todo lo existente, incluidos los movimientos del trigger (0091/0092) creados
+    // ANTES del despliegue de 0094 cuyo reconcile_charge hubiera fallado. Esos
+    // quedaron "tapados" (pushed=true) y reconcile_pending NO los reintenta: si
+    // hubo alguno en esa ventana, Shopify puede quedar desfasado por ellos y se
+    // corrige con un ajuste manual. De aquí en adelante sí se recogen los nuevos.
     try {
       await store.invokeFunction(
           'shopify-inventory', {'action': 'reconcile_pending'});
