@@ -9,6 +9,7 @@ import '../../core/providers/session_provider.dart';
 import '../../core/router/app_shell.dart' show UserMenuButton;
 import '../../core/widgets/kura_primary_fab.dart';
 import '../../models/app_user.dart';
+import 'purchase_guard.dart';
 import '../../models/inventory.dart';
 import '../../services/csv_download.dart';
 import '../../services/data_repository.dart';
@@ -253,6 +254,7 @@ class _InventarioScreenState extends ConsumerState<InventarioScreen> {
   Widget build(BuildContext context) {
     final repoAsync = ref.watch(dataRepositoryProvider);
     final user = ref.watch(sessionProvider).user;
+    if (!canPurchaseSupplies(user)) return purchaseDeniedScaffold('Inventario');
 
     return Scaffold(
       appBar: AppBar(

@@ -153,6 +153,22 @@ final routerProvider = Provider<GoRouter>((ref) {
       // RLS 0045 ya se lo niega; esto pule la UX y evita pantallas de captura).
       // Puede: leer expediente, ficha de riesgo (reporte Braden), eventos
       // adversos (reporte) y agenda de prevención (ejecución).
+      // Compra de insumos: SOLO admin del centro (y master). Enfermería y
+      // clínico NO compran. Registrar CONSUMO clínico (/insumos/consumo) sí es
+      // parte del trabajo, así que no se bloquea. Dos capas (router + guarda en
+      // pantalla) porque en web una ruta por URL no es un candado.
+      final isAdmin = session.user?.role == AppRole.admin;
+      final canPurchase = isAdmin || isMaster;
+      if (loggedIn && !canPurchase) {
+        const purchaseRoutes = {
+          '/insumos/tienda',
+          '/insumos/inventario',
+          '/insumos/reabasto',
+          '/insumos/mapeo',
+        };
+        if (purchaseRoutes.contains(location)) return '/insumos';
+      }
+
       if (loggedIn && isNurse) {
         final blocked = location == '/patients/new' ||
             location.endsWith('/edit') ||

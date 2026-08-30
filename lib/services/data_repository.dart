@@ -423,6 +423,19 @@ class DataRepository {
     String roleTitle = 'Kurador',
     String? password,
   }) async {
+    // Regla: un centro no puede quedar sin admin (si no, nadie podría comprar
+    // insumos). El PRIMER usuario del centro —o cualquiera mientras el centro no
+    // tenga aún un admin/master— debe crearse como admin. Evita que el problema
+    // reaparezca en silencio al dar de alta un centro nuevo.
+    if (role != AppRole.admin) {
+      final hasAdmin = listUsers().any((u) =>
+          u.organizationId == organizationId &&
+          (u.role == AppRole.admin || u.role == AppRole.master));
+      if (!hasAdmin) {
+        throw Exception('El primer usuario del centro debe ser administrador: '
+            'un centro no puede quedar sin admin.');
+      }
+    }
     final store = _store;
     if (store is SupabaseDataStore) {
       Map<String, dynamic> data;
