@@ -64,6 +64,7 @@ class _InventarioScreenState extends ConsumerState<InventarioScreen> {
     'cantidad',
     'shopify_product_id',
     'shopify_variant_id',
+    'umbral',
   ];
 
   /// Descarga un CSV con el catálogo global completo (para que el centro ajuste
@@ -83,6 +84,7 @@ class _InventarioScreenState extends ConsumerState<InventarioScreen> {
         '', // cantidad inicial (lo llena el centro)
         p.shopifyProductId,
         p.shopifyVariantId ?? '',
+        '', // umbral de reorden (lo llena el centro)
       ]);
     }
     // Fila-ejemplo de producto NUEVO (sin ids de Shopify = externo).
@@ -96,6 +98,7 @@ class _InventarioScreenState extends ConsumerState<InventarioScreen> {
       '0',
       '',
       '',
+      '5', // umbral de reorden (ejemplo)
     ]);
     final content = const ListToCsvConverter().convert(rows);
     try {
@@ -141,7 +144,8 @@ class _InventarioScreenState extends ConsumerState<InventarioScreen> {
           iCur = col('moneda'),
           iQty = col('cantidad'),
           iPid = col('shopify_product_id'),
-          iVid = col('shopify_variant_id');
+          iVid = col('shopify_variant_id'),
+          iUmbral = col('umbral');
       if (iName < 0) throw 'Falta la columna "nombre".';
 
       final existing =
@@ -165,6 +169,7 @@ class _InventarioScreenState extends ConsumerState<InventarioScreen> {
         final cur = cell(r, iCur);
         final sku = cell(r, iSku);
         final prov = cell(r, iProv);
+        final threshold = int.tryParse(cell(r, iUmbral) ?? '');
 
         // ¿Ya existe? (por producto de Shopify si hay id; si no, por nombre.)
         InventoryItem? match;
@@ -190,6 +195,7 @@ class _InventarioScreenState extends ConsumerState<InventarioScreen> {
             unitPrice: price,
             currency: cur,
             supplier: (prov != null && prov.isNotEmpty) ? prov : null,
+            reorderThreshold: threshold,
             notes: (sku != null && sku.isNotEmpty) ? 'SKU: $sku' : null,
             createdBy: uid,
           );
@@ -204,18 +210,26 @@ class _InventarioScreenState extends ConsumerState<InventarioScreen> {
               createdBy: uid,
             );
           }
-        } else if (qty > 0) {
-          await repo.addInventoryMovement(
-            item: match,
-            delta: qty,
-            reason: InventoryReason.compra,
-            unitCost: cost,
-            note: 'Reabasto (CSV)',
-            createdBy: uid,
-          );
-          restocked++;
         } else {
-          skipped++;
+          // Actualiza el umbral del artículo existente si el CSV lo trae (así
+          // el centro que ya cargó todo puede fijar umbrales re-subiendo el CSV).
+          if (threshold != null && match.reorderThreshold != threshold) {
+            await repo.updateInventoryItem(match.id,
+                reorderThreshold: threshold);
+          }
+          if (qty > 0) {
+            await repo.addInventoryMovement(
+              item: match,
+              delta: qty,
+              reason: InventoryReason.compra,
+              unitCost: cost,
+              note: 'Reabasto (CSV)',
+              createdBy: uid,
+            );
+            restocked++;
+          } else {
+            skipped++;
+          }
         }
       }
       if (mounted) {
@@ -279,6 +293,12 @@ class _InventarioScreenState extends ConsumerState<InventarioScreen> {
               onPressed: _importing
                   ? null
                   : () => _uploadCsv(repoAsync.value!, user?.organizationId),
+            ),
+            IconButton(
+              tooltip: 'Fijar umbral de reorden en lote',
+              icon: const Icon(Icons.rule),
+              onPressed: () =>
+                  _batchThreshold(repoAsync.valueOrNull, user?.organizationId),
             ),
           ],
           const UserMenuButton(),
@@ -565,16 +585,88 @@ class _InventarioScreenState extends ConsumerState<InventarioScreen> {
 
   /// Editar costo y precio del insumo (solo admin). El precio es el que se cobra
   /// al paciente; al cambiar el costo se sugiere costo +30% (editable).
+  /// Fija el umbral de reorden en LOTE para el sitio actual. Recupera al centro
+  /// que cargó su inventario sin umbral (por CSV) y hoy no ve nada en Reabasto,
+  /// sin tener que re-dar de alta cada artículo.
+  Future<void> _batchThreshold(DataRepository? repo, String? orgId) async {
+    if (repo == null || orgId == null || _siteId == null) return;
+    final valueCtrl = TextEditingController();
+    var onlyMissing = true;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setD) => AlertDialog(
+          title: const Text('Umbral de reorden en lote'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                  'Fija el umbral (existencia mínima) de varios artículos de '
+                  'este sitio a la vez.',
+                  style: TextStyle(fontSize: 13)),
+              const SizedBox(height: 8),
+              TextField(
+                controller: valueCtrl,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(labelText: 'Umbral'),
+              ),
+              RadioListTile<bool>(
+                contentPadding: EdgeInsets.zero,
+                value: true,
+                groupValue: onlyMissing,
+                title: const Text('Solo a los que no tienen umbral'),
+                onChanged: (v) => setD(() => onlyMissing = v ?? true),
+              ),
+              RadioListTile<bool>(
+                contentPadding: EdgeInsets.zero,
+                value: false,
+                groupValue: onlyMissing,
+                title: const Text('A todos los del sitio'),
+                onChanged: (v) => setD(() => onlyMissing = v ?? false),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.of(ctx).pop(false),
+                child: const Text('Cancelar')),
+            FilledButton(
+                onPressed: () => Navigator.of(ctx).pop(true),
+                child: const Text('Aplicar')),
+          ],
+        ),
+      ),
+    );
+    if (ok != true) return;
+    final value = int.tryParse(valueCtrl.text.trim());
+    if (value == null || value < 0) return;
+    final items = repo
+        .listInventoryItems(organizationId: orgId, siteId: _siteId)
+        .where((it) => !onlyMissing || it.reorderThreshold == null)
+        .toList();
+    for (final it in items) {
+      await repo.updateInventoryItem(it.id, reorderThreshold: value);
+    }
+    if (mounted) {
+      setState(() {});
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content:
+              Text('Umbral $value aplicado a ${items.length} artículo(s).')));
+    }
+  }
+
   Future<void> _editPrices(DataRepository repo, InventoryItem item) async {
     final costCtrl = TextEditingController(
         text: item.unitCost == null ? '' : '${item.unitCost}');
     final priceCtrl = TextEditingController(
         text: item.unitPrice == null ? '' : '${item.unitPrice}');
+    final thresholdCtrl = TextEditingController(
+        text: item.reorderThreshold?.toString() ?? '');
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setD) => AlertDialog(
-          title: const Text('Costo y precio'),
+          title: const Text('Costo, precio y umbral'),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -598,6 +690,13 @@ class _InventarioScreenState extends ConsumerState<InventarioScreen> {
                 decoration: const InputDecoration(
                     labelText: 'Precio de venta (al paciente)'),
               ),
+              TextField(
+                controller: thresholdCtrl,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                    labelText: 'Umbral de reorden (existencia mínima)',
+                    helperText: 'Debajo de este nivel aparece en Reabasto'),
+              ),
             ],
           ),
           actions: [
@@ -616,6 +715,7 @@ class _InventarioScreenState extends ConsumerState<InventarioScreen> {
       item.id,
       unitCost: double.tryParse(costCtrl.text.trim()),
       unitPrice: double.tryParse(priceCtrl.text.trim()),
+      reorderThreshold: int.tryParse(thresholdCtrl.text.trim()),
     );
     if (mounted) setState(() {});
   }
