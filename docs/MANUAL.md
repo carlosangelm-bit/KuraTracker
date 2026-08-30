@@ -597,7 +597,10 @@ Suite de insumos para clínicas de heridas (respaldada por Shopify). **Inicio
   de artículos (imagen, nombre, "Externo" o "Tienda Kura+", proveedor, costo/precio,
   stock coloreado verde/ámbar/rojo). **"Agregar"**: producto de la tienda Kura+ o
   externo (nombre, proveedor, costo, precio [auto costo +30%], umbral de reorden). El
-  detalle permite movimientos **Entrada / Salida / Ajuste** y ver el log.
+  detalle permite movimientos **Entrada / Salida / Ajuste** y ver el log. El **umbral
+  de reorden** también se edita en el diálogo de costo/precio, viene como **columna
+  en el CSV** de carga masiva, y puede fijarse **en lote** (acción del encabezado, para
+  el centro que cargó su inventario sin umbral).
 - **Consumo:** elige un paciente, ve "Costo de insumos consumidos", chips de sugerencia
   del plan y **"Registrar consumo"** (descuenta stock).
 - **Mapeo:** por cada método del protocolo, liga el insumo genérico a productos/
