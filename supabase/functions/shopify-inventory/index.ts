@@ -254,6 +254,75 @@ serve(async (req) => {
       return json({ ok: true, pushed: pushedIds.length });
     }
 
+    if (action === "reconcile_pending") {
+      // Barre los movimientos de consumo del centro aún NO empujados a Shopify y
+      // los empuja (idempotente por shopify_pushed). Se llama al INICIO de la
+      // sincronización, ANTES de calcular deltas, para que la sync no revierta
+      // un descuento que reconcile_charge no alcanzó a reflejar. Solo aplica a
+      // centros espejo (el gate de usuario ya lo verificó).
+      const targetOrg = isService
+        ? (payload["organizationId"] as string | undefined)
+        : orgId;
+      if (!targetOrg) return json({ ok: true, pushed: 0 });
+
+      const { data: moves } = await admin
+        .from("inventory_movements")
+        .select("id, delta, inventory_items!inner(shopify_inventory_item_id)")
+        .eq("organization_id", targetOrg)
+        .eq("reason", "consumo")
+        .eq("shopify_pushed", false)
+        .limit(200);
+      // deno-lint-ignore no-explicit-any
+      const rows = ((moves ?? []) as Array<any>).filter((m) =>
+        m.inventory_items?.shopify_inventory_item_id
+      );
+      if (rows.length === 0) return json({ ok: true, pushed: 0 });
+
+      const locRes = await gql(
+        `{ locations(first:5){ edges{ node{ id isActive } } } }`, {});
+      if (!locRes.r.ok || locRes.b?.errors) {
+        return json({ error: `No se pudo leer ubicaciones (HTTP ${locRes.r.status}).` }, 502);
+      }
+      const locs = (locRes.b?.data?.locations?.edges ?? []) as Array<Record<string, unknown>>;
+      const active = locs.find((e) => (e.node as Record<string, unknown>)?.isActive === true) ?? locs[0];
+      const locationId = (active?.node as Record<string, unknown>)?.id as string | undefined;
+      if (!locationId) return json({ error: "Sin ubicación en Shopify." }, 502);
+
+      const M = `mutation($input: InventoryAdjustQuantitiesInput!){
+        inventoryAdjustQuantities(input:$input){ userErrors{ field message } }
+      }`;
+      const pushedIds: string[] = [];
+      async function markPending() {
+        if (pushedIds.length) {
+          await admin.from("inventory_movements")
+            .update({ shopify_pushed: true }).in("id", pushedIds);
+        }
+      }
+      for (const m of rows) {
+        const input = {
+          name: "available",
+          reason: "correction",
+          changes: [{
+            delta: Number(m.delta),
+            inventoryItemId: m.inventory_items.shopify_inventory_item_id,
+            locationId,
+          }],
+        };
+        const { r, b } = await gql(M, { input });
+        const errs = b?.data?.inventoryAdjustQuantities?.userErrors ?? [];
+        if (!r.ok || b?.errors || errs.length > 0) {
+          await markPending();
+          return json({
+            error: `Ajuste rechazado: ${JSON.stringify(b?.errors ?? errs).slice(0, 300)}`,
+            pushed: pushedIds.length,
+          }, 502);
+        }
+        pushedIds.push(m.id as string);
+      }
+      await markPending();
+      return json({ ok: true, pushed: pushedIds.length });
+    }
+
     return json({ error: "Acción no soportada." }, 400);
   } catch (e) {
     console.error("shopify-inventory error", e);
