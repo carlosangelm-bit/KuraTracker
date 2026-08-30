@@ -193,6 +193,8 @@ class Collections {
   static const supplyProductMappings = 'supply_product_mappings';
   static const inventoryItems = 'inventory_items';
   static const inventoryMovements = 'inventory_movements';
+  static const supplyOrders = 'supply_orders';
+  static const supplyOrderItems = 'supply_order_items';
   static const consultationSupplyUsage = 'consultation_supply_usage';
   static const serviceCatalog = 'service_catalog';
   static const charges = 'charges';
@@ -252,6 +254,8 @@ class Collections {
     supplyProductMappings,
     inventoryItems,
     inventoryMovements,
+    supplyOrders,
+    supplyOrderItems,
     consultationSupplyUsage,
     serviceCatalog,
     charges,

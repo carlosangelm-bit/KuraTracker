@@ -6,6 +6,7 @@ import '../../core/theme/kura_theme.dart';
 import '../../core/providers/session_provider.dart';
 import '../../core/router/app_shell.dart' show UserMenuButton;
 import '../../models/inventory.dart';
+import '../../models/supply_order.dart';
 import '../../services/data_repository.dart';
 import '../../services/shopify_service.dart';
 
@@ -85,6 +86,9 @@ class _ReabastoScreenState extends ConsumerState<ReabastoScreen> {
           final externalLow = low
               .where((it) => it.isExternal || it.shopifyVariantId == null)
               .toList();
+          final openOrders = orgId == null
+              ? <SupplyOrder>[]
+              : repo.listSupplyOrders(orgId, openOnly: true);
 
           final purchases = repo.listRecentPurchases(_siteId!, limit: 15);
           final nameById = {for (final it in items) it.id: it.name};
@@ -117,6 +121,46 @@ class _ReabastoScreenState extends ConsumerState<ReabastoScreen> {
                 child: ListView(
                   padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
                   children: [
+                    if (openOrders.isNotEmpty) ...[
+                      const Text('Pedidos por recibir',
+                          style: TextStyle(fontWeight: FontWeight.w700)),
+                      Text('Cierra la recepción contra el pedido que armaste.',
+                          style: Theme.of(context).textTheme.bodySmall),
+                      const SizedBox(height: 8),
+                      for (final o in openOrders)
+                        Card(
+                          margin: const EdgeInsets.only(bottom: 8),
+                          child: Padding(
+                            padding: const EdgeInsets.all(12),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        'Pedido ${o.createdAt.day}/${o.createdAt.month}/${o.createdAt.year}'
+                                        '${o.status == 'parcial' ? ' · parcial' : ''}',
+                                        style: const TextStyle(
+                                            fontWeight: FontWeight.w600),
+                                      ),
+                                    ),
+                                    FilledButton(
+                                      onPressed: () => _receiveOrder(repo, o),
+                                      child: const Text('Recibir'),
+                                    ),
+                                  ],
+                                ),
+                                for (final it in o.items)
+                                  Text(
+                                      '· ${it.name}: ${it.quantityReceived}/${it.quantityOrdered}',
+                                      style: const TextStyle(fontSize: 12)),
+                              ],
+                            ),
+                          ),
+                        ),
+                      const Divider(height: 24),
+                    ],
                     if (low.isEmpty)
                       const Padding(
                         padding: EdgeInsets.symmetric(vertical: 24),
@@ -248,6 +292,68 @@ class _ReabastoScreenState extends ConsumerState<ReabastoScreen> {
     }
   }
 
+  /// Cierra la recepción de un pedido: por cada item, la cantidad recibida
+  /// (prellenada con lo pendiente). Registra la entrada y actualiza el estado.
+  Future<void> _receiveOrder(DataRepository repo, SupplyOrder order) async {
+    final pend = order.items.where((i) => i.pending > 0).toList();
+    if (pend.isEmpty) return;
+    final ctrls = {
+      for (final it in pend) it.id: TextEditingController(text: '${it.pending}'),
+    };
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Recibir pedido'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (final it in pend)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: Row(
+                    children: [
+                      Expanded(
+                          child: Text(it.name,
+                              style: const TextStyle(fontSize: 13))),
+                      SizedBox(
+                        width: 70,
+                        child: TextField(
+                          controller: ctrls[it.id],
+                          keyboardType: TextInputType.number,
+                          decoration: InputDecoration(
+                              isDense: true, hintText: '${it.pending}'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Cancelar')),
+          FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('Confirmar')),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    final received = <String, int>{
+      for (final e in ctrls.entries) e.key: int.tryParse(e.value.text.trim()) ?? 0,
+    };
+    await repo.receiveSupplyOrder(order.id, received,
+        createdBy: ref.read(sessionProvider).user?.id);
+    if (mounted) {
+      setState(() {});
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Recepción registrada contra el pedido.')));
+    }
+  }
+
   Future<void> _checkout(
       DataRepository repo, List<InventoryItem> storeLow, Map<String, int> onHand) async {
     final lines = <String, int>{};
@@ -262,6 +368,25 @@ class _ReabastoScreenState extends ConsumerState<ReabastoScreen> {
       final ok = await launchUrl(Uri.parse(cart.checkoutUrl),
           mode: LaunchMode.externalApplication, webOnlyWindowName: '_blank');
       if (!ok) throw ShopifyException('No se pudo abrir el checkout.');
+      // Registra el PEDIDO con lo solicitado; la recepción cerrará contra él
+      // (0095), en vez de capturar una entrada "de la nada".
+      final orgId = ref.read(sessionProvider).user?.organizationId;
+      if (orgId != null) {
+        await repo.createSupplyOrder(
+          organizationId: orgId,
+          siteId: _siteId,
+          lines: [
+            for (final it in storeLow)
+              if ((_qty[it.id] ?? _suggested(it, onHand[it.id] ?? 0)) > 0)
+                (
+                  itemId: it.id,
+                  name: it.name,
+                  qty: _qty[it.id] ?? _suggested(it, onHand[it.id] ?? 0)
+                ),
+          ],
+          createdBy: ref.read(sessionProvider).user?.id,
+        );
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context)
