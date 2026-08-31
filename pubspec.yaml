@@ -67,6 +67,9 @@ dependencies:
   # Voz -> texto (dictado)
   speech_to_text: ^7.0.0
 
+  # Entrega en carpetas de archivos (paquete de salida): ZIP por streaming
+  archive: ^3.6.1
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
