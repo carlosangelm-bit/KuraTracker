@@ -90,6 +90,19 @@ class AppUser {
   /// oficina sin rol clínico no diagnostica ni firma notas).
   bool get canDiagnose => hasRole(AppRole.clinico);
 
+  /// Enfermería RESTRINGIDA: tiene el rol enfermería y NADA que conceda algo más
+  /// amplio (diagnóstico/admin/master). Es la forma correcta para una RESTRICCIÓN
+  /// (p. ej. bloquear rutas de escritura): un {clinico,enfermeria} NO debe quedar
+  /// bloqueado por tener también enfermería — su rol clínico manda (punto 6 §0).
+  bool get isRestrictedNurse =>
+      hasRole(AppRole.enfermeria) && !canDiagnose && !isAdmin && !isMaster;
+
+  /// Cuidador EXCLUSIVO: su único rol es cuidador. El punto 7 impone la
+  /// exclusividad en el servidor; se escribe explícito para no depender de esa
+  /// garantía en las restricciones de UI (punto 6 §0/§2).
+  bool get isCaregiverOnly =>
+      hasRole(AppRole.cuidador) && effectiveRoles.length == 1;
+
   factory AppUser.fromJson(Map<String, dynamic> json) => AppUser(
         id: json['id'] as String,
         role: AppRoleLabel.fromDb(json['role'] as String),
@@ -132,4 +145,37 @@ class AppUser {
         staffId: staffId ?? this.staffId,
         organizationId: organizationId,
       );
+}
+
+/// Espejo escalar por precedencia (master>admin>clinico>enfermeria>cuidador),
+/// igual que `primary_role()` en la BD (0098). Para derivar el `role` mirror en
+/// modo demo (sin trigger) o para mostrar el rol principal.
+AppRole primaryRoleOf(Set<AppRole> roles) {
+  const precedence = [
+    AppRole.master,
+    AppRole.admin,
+    AppRole.clinico,
+    AppRole.enfermeria,
+    AppRole.cuidador,
+  ];
+  for (final r in precedence) {
+    if (roles.contains(r)) return r;
+  }
+  return AppRole.clinico;
+}
+
+/// Valida un conjunto de roles con la MISMA regla que la Edge Function
+/// admin-create-user (punto 7): no vacío, sin `master` por esta vía, `cuidador`
+/// exclusivo. Devuelve un mensaje de error legible, o null si es válido. La BD
+/// (RLS + trigger prevent_profile_privilege_escalation, 0096) rechaza la
+/// escalada aunque el cliente falle; esto es solo para dar buen error en la UI.
+String? validateRoleSet(Set<AppRole> roles) {
+  if (roles.isEmpty) return 'Selecciona al menos un rol.';
+  if (roles.contains(AppRole.master)) {
+    return "No se puede otorgar 'master' por esta vía.";
+  }
+  if (roles.contains(AppRole.cuidador) && roles.length > 1) {
+    return "'Cuidador' es exclusivo: no puede combinarse con otros roles.";
+  }
+  return null;
 }

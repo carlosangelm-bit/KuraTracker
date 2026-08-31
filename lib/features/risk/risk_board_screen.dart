@@ -115,6 +115,12 @@ class _RiskBoardScreenState extends ConsumerState<RiskBoardScreen> {
     // agenda de prevención (que ya se acota por org) y refleja el aislamiento
     // que en producción impone la RLS: un paciente de otro centro no debe
     // aparecer aquí (en demo, sin RLS, listAllPatients mostraba todos).
+    //
+    // ALCANCE POR ROL PRIMARIO (intencional, punto 6 §0/§2 C): se compara el
+    // espejo escalar `role`, NO hasRole(clinico). Un {admin,clinico} espeja a
+    // `admin`, así que ve el centro completo — el comportamiento deseado para un
+    // admin-clínico. Migrarlo a canDiagnose lo REDUCIRÍA a solo sus pacientes
+    // asignados (regresión). No cambiar sin una decisión de producto.
     final basePatients =
         (user?.role == AppRole.clinico && user?.staffId != null)
             ? repo.listPatientsForStaff(user!.staffId!)

@@ -43,13 +43,16 @@ class _TourScopeState extends ConsumerState<TourScope> {
 
   void _startForRole() {
     final session = ref.read(sessionProvider);
-    final role = session.user?.role;
-    if (role == null) return;
+    final user = session.user;
+    final role = user?.role;
+    if (user == null || role == null) return;
     String? pid;
     String? wid;
     String? cid;
     final repo = ref.read(dataRepositoryProvider).valueOrNull;
-    if (repo != null && (role == AppRole.clinico || role == AppRole.admin)) {
+    // Capacidad positiva: el recorrido clínico se muestra a quien TIENE rol
+    // clínico o admin (los roles suman; un {admin,clinico} entra) (punto 6 §2 A).
+    if (repo != null && (user.hasRole(AppRole.clinico) || user.hasRole(AppRole.admin))) {
       final patients = repo.listAllPatients();
       for (final p in patients) {
         final wounds =

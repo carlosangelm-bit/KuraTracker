@@ -289,33 +289,24 @@ class _UsersTabState extends State<UsersTab> {
     );
   }
 
-  Future<void> _changeRole(AppUser u, AppRole newRole) async {
-    final confirmed = await showDialog<bool>(
+  Future<void> _editRoles(AppUser u) async {
+    final result = await showDialog<Set<AppRole>>(
       context: context,
-      builder: (dialogCtx) => AlertDialog(
-        title: const Text('Cambiar rol'),
-        content: Text('¿Cambiar a ${u.fullName} a "${newRole.label}"?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogCtx, false),
-            child: const Text('Cancelar'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(dialogCtx, true),
-            style: FilledButton.styleFrom(backgroundColor: KuraColors.primary),
-            child: const Text('Cambiar'),
-          ),
-        ],
+      builder: (dialogCtx) => _RolesEditorDialog(
+        userName: u.fullName,
+        initial: u.effectiveRoles,
       ),
     );
-    if (confirmed != true) return;
+    if (result == null) return; // cancelado
     try {
-      await widget.repo.setUserRole(u.id, newRole);
+      await widget.repo.setUserRoles(u.id, result);
       if (mounted) setState(() {});
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('No se pudo cambiar el rol: $e')),
+          SnackBar(
+              content: Text('No se pudieron cambiar los roles: '
+                  '${e.toString().replaceFirst('Exception: ', '')}')),
         );
       }
     }
@@ -473,8 +464,8 @@ class _UsersTabState extends State<UsersTab> {
     // El cuidador entra con teléfono + clave (correo sintético), no recibe
     // correos reales; por eso el envío de "establecer contraseña" no aplica.
     final canEmail =
-        AppConfig.isSupabaseConfigured && u.role != AppRole.cuidador;
-    final canRole = !isSelf && u.role != AppRole.master;
+        AppConfig.isSupabaseConfigured && !u.isCaregiverOnly;
+    final canRole = !isSelf && !u.isMaster;
     return Card(
       child: ListTile(
         isThreeLine: true,
@@ -492,7 +483,10 @@ class _UsersTabState extends State<UsersTab> {
               spacing: 6,
               runSpacing: 4,
               children: [
-                _tag(u.role.label, KuraColors.primary),
+                // Se muestra el CONJUNTO de roles (ordenado por precedencia),
+                // no solo el primario (punto 6 §3.6).
+                for (final r in _rolesByPrecedence(u.effectiveRoles))
+                  _tag(r.label, KuraColors.primary),
                 if (!u.isActive) _tag('Inactivo', KuraColors.danger),
                 if (u.premiumEnabled) _tag('Premium', KuraColors.success),
                 if (u.staffId != null)
@@ -533,14 +527,8 @@ class _UsersTabState extends State<UsersTab> {
                 onSelected: (v) {
                   if (v == 'email') {
                     _sendPasswordEmail(u.email);
-                  } else if (v == 'role:admin') {
-                    _changeRole(u, AppRole.admin);
-                  } else if (v == 'role:clinico') {
-                    _changeRole(u, AppRole.clinico);
-                  } else if (v == 'role:enfermeria') {
-                    _changeRole(u, AppRole.enfermeria);
-                  } else if (v == 'role:cuidador') {
-                    _changeRole(u, AppRole.cuidador);
+                  } else if (v == 'roles') {
+                    _editRoles(u);
                   }
                 },
                 itemBuilder: (_) => [
@@ -554,23 +542,15 @@ class _UsersTabState extends State<UsersTab> {
                       ]),
                     ),
                   if (canEmail && canRole) const PopupMenuDivider(),
-                  if (canRole) ...[
-                    if (u.role != AppRole.admin)
-                      const PopupMenuItem(
-                          value: 'role:admin',
-                          child: Text('Hacer administrador')),
-                    if (u.role != AppRole.clinico)
-                      const PopupMenuItem(
-                          value: 'role:clinico',
-                          child: Text('Hacer personal sanitario')),
-                    if (u.role != AppRole.enfermeria)
-                      const PopupMenuItem(
-                          value: 'role:enfermeria',
-                          child: Text('Hacer enfermería')),
-                    if (u.role != AppRole.cuidador)
-                      const PopupMenuItem(
-                          value: 'role:cuidador', child: Text('Hacer cuidador')),
-                  ],
+                  if (canRole)
+                    const PopupMenuItem(
+                      value: 'roles',
+                      child: Row(children: [
+                        Icon(Icons.badge_outlined, size: 18),
+                        SizedBox(width: 8),
+                        Text('Editar roles'),
+                      ]),
+                    ),
                 ],
               ),
           ],
@@ -630,12 +610,13 @@ class _UserFormDialogState extends State<_UserFormDialog> {
   final _phoneCtrl = TextEditingController();
   final _cedulaCtrl = TextEditingController();
   final _claveCtrl = TextEditingController();
-  AppRole _role = AppRole.clinico;
+  final Set<AppRole> _roles = {AppRole.clinico};
   String? _siteId;
   bool _saving = false;
   String? _error;
 
-  bool get _isCaregiver => _role == AppRole.cuidador;
+  bool get _isCaregiver => _roles.contains(AppRole.cuidador);
+  bool get _isClinical => _roles.contains(AppRole.clinico);
 
   @override
   void dispose() {
@@ -649,6 +630,13 @@ class _UserFormDialogState extends State<_UserFormDialog> {
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
+    // Validación del conjunto (misma regla que servidor): no vacío, cuidador
+    // exclusivo, sin master. El picker ya lo impide, pero se revalida por si acaso.
+    final roleErr = validateRoleSet(_roles);
+    if (roleErr != null) {
+      setState(() => _error = roleErr);
+      return;
+    }
     setState(() {
       _saving = true;
       _error = null;
@@ -671,11 +659,11 @@ class _UserFormDialogState extends State<_UserFormDialog> {
       final created = await widget.repo.createUserWithLogin(
         email: email!,
         fullName: _nameCtrl.text.trim(),
-        role: _role,
+        roles: _roles,
         organizationId: widget.organizationId,
         phone: phone.isEmpty ? null : phone,
         cedulaProfesional: cedula.isEmpty ? null : cedula,
-        primarySiteId: _role == AppRole.clinico ? _siteId : null,
+        primarySiteId: _isClinical ? _siteId : null,
         password: _isCaregiver ? _claveCtrl.text : null,
       );
       if (mounted) Navigator.pop(context, created);
@@ -706,28 +694,21 @@ class _UserFormDialogState extends State<_UserFormDialog> {
                   validator: (v) => (v == null || v.trim().isEmpty) ? 'Requerido' : null,
                 ),
                 const SizedBox(height: 12),
-                DropdownButtonFormField<AppRole>(
-                  value: _role,
-                  decoration: const InputDecoration(labelText: 'Rol'),
-                  items: const [
-                    DropdownMenuItem(
-                      value: AppRole.clinico,
-                      child: Text('Personal sanitario'),
-                    ),
-                    DropdownMenuItem(
-                      value: AppRole.admin,
-                      child: Text('Administrador'),
-                    ),
-                    DropdownMenuItem(
-                      value: AppRole.enfermeria,
-                      child: Text('Enfermería'),
-                    ),
-                    DropdownMenuItem(
-                      value: AppRole.cuidador,
-                      child: Text('Cuidador'),
-                    ),
-                  ],
-                  onChanged: (r) => setState(() => _role = r ?? AppRole.clinico),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text('Roles',
+                      style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: KuraColors.darkText.withOpacity(0.7))),
+                ),
+                _RolesPicker(
+                  value: _roles,
+                  onChanged: (next) => setState(() {
+                    _roles
+                      ..clear()
+                      ..addAll(next);
+                  }),
                 ),
                 const SizedBox(height: 12),
                 // Cuidador: entra con TELÉFONO + CLAVE (sin correo). El resto,
@@ -788,7 +769,7 @@ class _UserFormDialogState extends State<_UserFormDialog> {
                         const InputDecoration(labelText: 'Teléfono (opcional)'),
                   ),
                 ],
-                if (_role == AppRole.clinico) ...[
+                if (_isClinical) ...[
                   const SizedBox(height: 12),
                   TextFormField(
                     controller: _cedulaCtrl,
@@ -2234,6 +2215,136 @@ class _EmptyState extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Roles ordenados por precedencia (master>admin>clinico>enfermeria>cuidador)
+/// para mostrarlos de forma estable (el conjunto no tiene orden).
+List<AppRole> _rolesByPrecedence(Set<AppRole> roles) => const [
+      AppRole.master,
+      AppRole.admin,
+      AppRole.clinico,
+      AppRole.enfermeria,
+      AppRole.cuidador,
+    ].where(roles.contains).toList();
+
+/// Grupo de casillas para elegir el CONJUNTO de roles (punto 6 §3). Impone en la
+/// UI la misma regla que valida el servidor: `cuidador` es EXCLUSIVO (al marcarlo
+/// se limpian las demás y se deshabilitan; si hay otra marcada, cuidador se
+/// deshabilita). `master` nunca aparece. La validación de "no vacío" la hace el
+/// formulario al enviar (validateRoleSet).
+class _RolesPicker extends StatelessWidget {
+  final Set<AppRole> value;
+  final ValueChanged<Set<AppRole>> onChanged;
+  const _RolesPicker({required this.value, required this.onChanged});
+
+  static const _selectable = [
+    AppRole.admin,
+    AppRole.clinico,
+    AppRole.enfermeria,
+    AppRole.cuidador,
+  ];
+
+  void _toggle(AppRole r, bool on) {
+    final next = {...value};
+    if (on) {
+      if (r == AppRole.cuidador) {
+        next
+          ..clear()
+          ..add(AppRole.cuidador); // exclusivo
+      } else {
+        next
+          ..remove(AppRole.cuidador)
+          ..add(r);
+      }
+    } else {
+      next.remove(r);
+    }
+    onChanged(next);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final caregiverSelected = value.contains(AppRole.cuidador);
+    final hasNonCaregiver = value.any((x) => x != AppRole.cuidador);
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (final r in _selectable)
+          CheckboxListTile(
+            dense: true,
+            contentPadding: EdgeInsets.zero,
+            controlAffinity: ListTileControlAffinity.leading,
+            activeColor: KuraColors.primary,
+            value: value.contains(r),
+            onChanged: (r == AppRole.cuidador
+                ? hasNonCaregiver
+                : caregiverSelected)
+                ? null
+                : (v) => _toggle(r, v ?? false),
+            title: Text(r.label),
+            subtitle: r == AppRole.cuidador
+                ? const Text('Acceso reducido; no se combina con otros roles',
+                    style: TextStyle(fontSize: 11))
+                : null,
+          ),
+      ],
+    );
+  }
+}
+
+/// Diálogo para editar el CONJUNTO de roles de un usuario existente (reemplaza el
+/// viejo menú "Hacer X"). Devuelve el conjunto elegido, o null si se cancela.
+class _RolesEditorDialog extends StatefulWidget {
+  final String userName;
+  final Set<AppRole> initial;
+  const _RolesEditorDialog({required this.userName, required this.initial});
+
+  @override
+  State<_RolesEditorDialog> createState() => _RolesEditorDialogState();
+}
+
+class _RolesEditorDialogState extends State<_RolesEditorDialog> {
+  late final Set<AppRole> _roles = {...widget.initial}..remove(AppRole.master);
+
+  @override
+  Widget build(BuildContext context) {
+    final err = validateRoleSet(_roles);
+    return AlertDialog(
+      title: Text('Roles de ${widget.userName}'),
+      content: SizedBox(
+        width: 360,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _RolesPicker(
+              value: _roles,
+              onChanged: (next) => setState(() {
+                _roles
+                  ..clear()
+                  ..addAll(next);
+              }),
+            ),
+            if (err != null) ...[
+              const SizedBox(height: 8),
+              Text(err, style: const TextStyle(color: KuraColors.danger, fontSize: 12)),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancelar'),
+        ),
+        FilledButton(
+          onPressed: err != null ? null : () => Navigator.pop(context, _roles),
+          style: FilledButton.styleFrom(backgroundColor: KuraColors.primary),
+          child: const Text('Guardar'),
+        ),
+      ],
     );
   }
 }

@@ -988,9 +988,10 @@ class _CaregiversCardState extends ConsumerState<_CaregiversCard> {
         .listCaregiverAssignments(patientId: widget.patientId)
         .map((a) => a.caregiverProfileId)
         .toSet();
-    // Usuarios con rol cuidador aún no asignados a este paciente.
+    // Usuarios con rol cuidador aún no asignados a este paciente. Capacidad
+    // positiva: quien TIENE el rol cuidador es asignable (punto 6 §2 A).
     final candidates = usersById.values
-        .where((u) => u.role == AppRole.cuidador && !assigned.contains(u.id))
+        .where((u) => u.hasRole(AppRole.cuidador) && !assigned.contains(u.id))
         .toList();
     await showDialog<void>(
       context: context,
