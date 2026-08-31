@@ -30,6 +30,7 @@ import 'acuity_visit_type_map_screen.dart';
 import 'scale_toggles_screen.dart';
 import 'recommendations_reference_screen.dart';
 import 'patient_cleanup_screen.dart';
+import 'data_disclosures_screen.dart';
 import '../../services/photo_upload_service.dart';
 
 /// Panel de administración: gestión de personal sanitario, sitios y
@@ -1796,6 +1797,17 @@ class _NoteCatalogTabState extends State<NoteCatalogTab> {
                       icon: const Icon(Icons.cleaning_services_outlined,
                           size: 18),
                       label: const Text('Depurar expedientes'),
+                    ),
+                    // Registro de divulgaciones (0101): constancia de cada
+                    // salida de datos del centro.
+                    FilledButton.tonalIcon(
+                      onPressed: () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => const DataDisclosuresScreen(),
+                        ),
+                      ),
+                      icon: const Icon(Icons.fact_check_outlined, size: 18),
+                      label: const Text('Registro de divulgaciones'),
                     ),
                   ],
                 ),

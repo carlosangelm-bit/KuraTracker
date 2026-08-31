@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:csv/csv.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/providers/session_provider.dart';
 import '../../core/theme/kura_theme.dart';
 import '../../core/router/app_shell.dart' show UserMenuButton;
 import '../../services/data_repository.dart';
@@ -10,14 +12,14 @@ import '../../models/consultation.dart' show VisitTypeLabel;
 
 /// Interoperabilidad con eKare: importación del historial (pantalla dedicada
 /// `/ekare-import`) y exportación CSV de mediciones.
-class ImportExportScreen extends StatefulWidget {
+class ImportExportScreen extends ConsumerStatefulWidget {
   const ImportExportScreen({super.key});
 
   @override
-  State<ImportExportScreen> createState() => _ImportExportScreenState();
+  ConsumerState<ImportExportScreen> createState() => _ImportExportScreenState();
 }
 
-class _ImportExportScreenState extends State<ImportExportScreen> {
+class _ImportExportScreenState extends ConsumerState<ImportExportScreen> {
   Future<void> _exportMeasurementsCsv(DataRepository repo) async {
     final patients = repo.listAllPatients();
     final rows = <List<dynamic>>[
@@ -43,7 +45,8 @@ class _ImportExportScreenState extends State<ImportExportScreen> {
     }
     final csv = const ListToCsvConverter().convert(rows);
     // rows.length - 1 = filas de datos (sin el encabezado).
-    _showCsvDialog('Mediciones', 'mediciones.csv', csv, rows.length - 1);
+    _showCsvDialog('Mediciones', 'mediciones.csv', csv, rows.length - 1,
+        repo: repo, kind: 'csv_mediciones');
   }
 
   /// §3.2 del paquete de salida: una fila por CONSULTA (paciente, fecha, autor,
@@ -87,13 +90,15 @@ class _ImportExportScreenState extends State<ImportExportScreen> {
       }
     }
     final csv = const ListToCsvConverter().convert(rows);
-    _showCsvDialog('Consultas', 'consultas.csv', csv, rows.length - 1);
+    _showCsvDialog('Consultas', 'consultas.csv', csv, rows.length - 1,
+        repo: repo, kind: 'csv_consultas');
   }
 
   /// Muestra el CSV generado con vista previa Y descarga real. Antes solo había
   /// "Cerrar" (§2.4): seleccionar y copiar miles de filas de un diálogo no es
   /// viable para una entrega. Usa el downloadCsv() que ya existe (web + io).
-  void _showCsvDialog(String title, String filename, String csv, int dataRows) {
+  void _showCsvDialog(String title, String filename, String csv, int dataRows,
+      {required DataRepository repo, required String kind}) {
     if (!mounted) return;
     showDialog(
       context: context,
@@ -113,6 +118,17 @@ class _ImportExportScreenState extends State<ImportExportScreen> {
             style: FilledButton.styleFrom(backgroundColor: KuraColors.primary),
             onPressed: () async {
               await downloadCsv(filename, csv);
+              // Registro de divulgación (0101): DESPUÉS de entregar la descarga.
+              final user = ref.read(sessionProvider).user;
+              await repo.recordDataDisclosure(
+                organizationId: user?.organizationId,
+                actorId: user?.id,
+                actorEmail: user?.email,
+                kind: kind,
+                recordCount: dataRows,
+                patientCount: repo.listAllPatients().length,
+                fileName: filename,
+              );
               if (dialogCtx.mounted) Navigator.pop(dialogCtx);
             },
           ),
