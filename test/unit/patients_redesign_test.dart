@@ -22,14 +22,35 @@ void main() {
         'duplicados) para un paciente con varias heridas de la misma '
         'etiologia', () async {
       final repo = await DataRepository.instance();
-      final patients = repo.listAllPatients();
-      // Paciente 1 del DemoSeed: pie diabetico activo (w1).
-      final p1 = patients.firstWhere((p) => p.folio == 'EXP2025-0001');
+      // Autocontenido (no depende de folios del DemoSeed, que cambian): paciente
+      // nuevo con DOS heridas ACTIVAS de la misma etiología (deben colapsar a una
+      // sola en el resumen) + una CERRADA (no cuenta ni aporta etiología).
+      final orgId = repo.listAllPatients().first.organizationId;
+      final patient = await repo.createPatient(
+          fullName: 'Paciente Multi Herida (prueba)', organizationId: orgId);
+      await repo.createWound({
+        'patient_id': patient.id,
+        'etiology': 'pie_diabetico',
+        'body_location_primary': 'pie derecho',
+        'is_active': true,
+      });
+      await repo.createWound({
+        'patient_id': patient.id,
+        'etiology': 'pie_diabetico',
+        'body_location_primary': 'pie izquierdo',
+        'is_active': true,
+      });
+      await repo.createWound({
+        'patient_id': patient.id,
+        'etiology': 'vascular',
+        'body_location_primary': 'pierna derecha',
+        'is_active': false,
+      });
 
-      final summary = PatientWoundSummary.compute(repo, p1.id);
+      final summary = PatientWoundSummary.compute(repo, patient.id);
 
       expect(summary.hasActiveWounds, isTrue);
-      expect(summary.activeCount, 1);
+      expect(summary.activeCount, 2);
       expect(summary.etiologies, [Etiologia.pieDiabetico]);
     });
 

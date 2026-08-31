@@ -384,7 +384,7 @@ class _UsersTabState extends State<UsersTab> {
           AppRole.clinico => 'Sanitario',
           AppRole.enfermeria => 'Enfermería',
           AppRole.cuidador => 'Cuidador',
-          _ => r!.label,
+          _ => r.label,
         };
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),

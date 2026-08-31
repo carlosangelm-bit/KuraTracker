@@ -1,3 +1,7 @@
+// Acceso deliberado a `controller.state` (StateNotifier) desde la pantalla de
+// captura: es el patrón de este formulario (el controller expone el form state
+// mutable). Se suprimen los lints de miembro protegido/de-testing en el archivo.
+// ignore_for_file: invalid_use_of_protected_member, invalid_use_of_visible_for_testing_member
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';

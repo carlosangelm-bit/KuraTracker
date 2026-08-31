@@ -1,7 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'package:kuratracker/models/app_user.dart';
 import 'package:kuratracker/models/note_option_catalog.dart';
 import 'package:kuratracker/models/center_type.dart';
 import 'package:kuratracker/services/data_repository.dart';
@@ -36,19 +35,18 @@ void main() {
   });
 
   test(
-      'DemoSeed pobla un perfil master (organization_id null) ademas de al '
-      'menos 2 organizaciones, para poder probar el selector de Plataforma',
+      'DemoSeed NO siembra un perfil master (acceso interno) pero sí ≥2 '
+      'organizaciones, para poder probar el selector de Plataforma',
       () async {
     final repo = await DataRepository.instance();
 
-    final master = repo.findUserByEmail('master@kuratracker.mx');
-    expect(master, isNotNull, reason: 'DemoSeed debe incluir un perfil master de prueba.');
-    expect(master!.role, AppRole.master);
-    expect(master.isMaster, isTrue);
+    // El master es de acceso interno: a propósito NO se siembra en la demo, para
+    // que no pueda entrarse como master ni por el selector de perfiles ni
+    // tecleando su correo en el login (ver demo_seed.dart:208).
     expect(
-      master.organizationId,
+      repo.findUserByEmail('master@kuratracker.mx'),
       isNull,
-      reason: 'El master no pertenece a ningun centro en particular (administra todos).',
+      reason: 'La demo no debe permitir entrar como master.',
     );
 
     final orgs = repo.listOrganizations();
