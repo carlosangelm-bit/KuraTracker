@@ -8,7 +8,7 @@ import '../../models/app_user.dart';
 /// clínico de un insumo (/insumos/consumo) sí es parte del trabajo clínico y no
 /// se restringe aquí. (Brief 30-ago-2026: "solo el admin del centro compra".)
 bool canPurchaseSupplies(AppUser? user) =>
-    user?.role == AppRole.admin || (user?.isMaster ?? false);
+    (user?.isAdmin ?? false) || (user?.isMaster ?? false);
 
 /// Guarda EN PANTALLA para las rutas de compra (además del bloqueo del router):
 /// en una app web con rutas por URL, el candado del router no basta.
