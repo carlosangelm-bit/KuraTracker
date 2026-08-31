@@ -157,7 +157,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       // clínico NO compran. Registrar CONSUMO clínico (/insumos/consumo) sí es
       // parte del trabajo, así que no se bloquea. Dos capas (router + guarda en
       // pantalla) porque en web una ruta por URL no es un candado.
-      final isAdmin = session.user?.role == AppRole.admin;
+      final isAdmin = session.user?.isAdmin ?? false;
       final canPurchase = isAdmin || isMaster;
       if (loggedIn && !canPurchase) {
         const purchaseRoutes = {

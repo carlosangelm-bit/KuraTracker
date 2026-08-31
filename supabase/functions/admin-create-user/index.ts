@@ -58,13 +58,19 @@ serve(async (req) => {
 
   const { data: callerProfile } = await admin
     .from("profiles")
-    .select("role, organization_id")
+    .select("role, roles, organization_id")
     .eq("id", caller.user.id)
     .maybeSingle();
   if (!callerProfile) return json({ error: "Perfil del llamador no encontrado." }, 403);
 
-  const isMaster = callerProfile.role === "master";
-  const isAdmin = callerProfile.role === "admin";
+  // Roles como CONJUNTO (0098): un admin puede ser {admin} o {admin,clinico}, un
+  // master es {master}. Se decide por pertenencia al conjunto, no por el espejo
+  // escalar `role` (que por precedencia podría no reflejar todos los roles).
+  const callerRoles: string[] = Array.isArray(callerProfile.roles)
+    ? callerProfile.roles.map((r: unknown) => String(r))
+    : (callerProfile.role ? [String(callerProfile.role)] : []);
+  const isMaster = callerRoles.includes("master");
+  const isAdmin = callerRoles.includes("admin");
   if (!isMaster && !isAdmin) {
     return json({ error: "No autorizado (requiere admin o master)." }, 403);
   }
@@ -73,20 +79,45 @@ serve(async (req) => {
   const body = await req.json().catch(() => ({} as Record<string, unknown>));
   const email = String(body.email ?? "").trim().toLowerCase();
   const fullName = String(body.fullName ?? "").trim();
-  const role = String(body.role ?? "clinico");
   const phone = body.phone ? String(body.phone).trim() : null;
   const cedulaProfesional = body.cedulaProfesional ? String(body.cedulaProfesional).trim() : null;
   const primarySiteId = body.primarySiteId ? String(body.primarySiteId) : null;
   const roleTitle = String(body.roleTitle ?? "Kurador").trim() || "Kurador";
 
+  // Roles como CONJUNTO (0098, punto 7). Acepta `roles: string[]`; si la UI vieja
+  // manda solo `role` (escalar), se envuelve en un conjunto de 1 (compat). El
+  // profile se escribe con `roles` y el trigger sync_profile_roles deriva el
+  // espejo `role` — así el alta NO depende del atajo legacy (role='admin' →
+  // {admin,clinico}) que hoy da rol clínico a todo admin sin que nadie lo pida.
+  const rawRoles = Array.isArray(body.roles)
+    ? body.roles.map((r: unknown) => String(r))
+    : [String(body.role ?? "clinico")];
+  const roles = [...new Set(rawRoles.map((r) => r.trim()).filter(Boolean))];
+
   if (!email || !fullName) return json({ error: "email y fullName son obligatorios." }, 400);
-  // 'cuidador' (Fase 3): rol restringido con cuenta propia; NO se le crea fila de
-  // staff (su acceso es solo lectura vía caregiver_patient_assignments, ver 0042).
-  // 'enfermeria' (0045): personal del centro; SÍ tiene fila de staff (como
-  // clínico), acceso centrado-en-centro en hospitales; observa/reporta/ejecuta.
-  if (role !== "admin" && role !== "clinico" && role !== "cuidador" && role !== "enfermeria") {
-    return json({ error: "role debe ser 'admin', 'clinico', 'cuidador' o 'enfermeria'." }, 400);
+  // Validación del conjunto (misma regla de negocio que la Fase B):
+  //  - no vacío;
+  //  - 'master' NUNCA por esta vía (un admin no puede otorgarlo; el master se
+  //    crea/gestiona aparte);
+  //  - 'cuidador' es EXCLUSIVO: cuenta con acceso reducido (0042), no se combina;
+  //  - roles válidos: admin | clinico | cuidador | enfermeria.
+  //    'enfermeria' (0045) y 'clinico' tienen fila de staff; 'cuidador' no.
+  const VALID = ["admin", "clinico", "cuidador", "enfermeria"];
+  if (roles.length === 0) return json({ error: "roles no puede estar vacío." }, 400);
+  if (roles.includes("master")) {
+    return json({ error: "No se puede otorgar 'master' por esta vía." }, 403);
   }
+  for (const r of roles) {
+    if (!VALID.includes(r)) {
+      return json({ error: `Rol inválido: '${r}'. Permitidos: ${VALID.join(", ")}.` }, 400);
+    }
+  }
+  if (roles.includes("cuidador") && roles.length > 1) {
+    return json({ error: "'cuidador' es exclusivo: no puede combinarse con otros roles." }, 400);
+  }
+  // Espejo escalar por precedencia (master>admin>clinico>enfermeria>cuidador),
+  // igual que primary_role() en la BD; se usa para user_metadata del alta en Auth.
+  const primaryRole = primaryRoleOf(roles);
 
   // 3) Acotar la organización según el rol del llamador.
   let organizationId: string;
@@ -111,7 +142,11 @@ serve(async (req) => {
     email,
     password: tempPassword,
     email_confirm: true,
-    user_metadata: { role, full_name: fullName, organization_id: organizationId },
+    // El trigger handle_new_auth_user crea el profile con este `role`; luego el
+    // upsert de abajo fija `roles` (autoridad) y sync_profile_roles corrige el
+    // espejo. Mandamos el espejo por precedencia para que el estado intermedio
+    // sea coherente.
+    user_metadata: { role: primaryRole, full_name: fullName, organization_id: organizationId },
   });
   if (createErr || !createdUser.user) {
     const msg = createErr?.message ?? "desconocido";
@@ -125,9 +160,12 @@ serve(async (req) => {
 
   // 5) Reforzar el profile (el trigger ya lo creó; se completan phone/is_active
   //    y se re-afirman role/org por si el trigger no estuviera presente).
+  // Se escribe `roles` (el CONJUNTO, autoridad) y NO `role`: el trigger
+  // sync_profile_roles deriva el espejo escalar desde roles. Escribir `role`
+  // aquí volvería a caer en el atajo de compatibilidad.
   const { error: profileErr } = await admin.from("profiles").upsert({
     id: uid,
-    role,
+    roles,
     full_name: fullName,
     email,
     phone,
@@ -138,18 +176,22 @@ serve(async (req) => {
     return json({ error: `Cuenta creada pero falló el perfil: ${profileErr.message}`, uid }, 500);
   }
 
-  // 6) Registro de personal sanitario (staff). Para 'clinico' y 'enfermeria'
-  //    (personal del centro); para 'admin' solo si se pide (createStaff=true).
-  //    'cuidador' NO tiene staff.
+  // 6) Registro de personal sanitario (staff). Si el CONJUNTO incluye 'clinico'
+  //    o 'enfermeria' (personal del centro); para un admin puro solo si se pide
+  //    (createStaff=true). 'cuidador' NO tiene staff. Un {admin}-only no recibe
+  //    staff: no diagnostica (canDiagnose=false), y si alguna vez lo necesitara,
+  //    ensureAdminStaffId se la crea al vuelo.
+  const hasClinico = roles.includes("clinico");
+  const hasEnfermeria = roles.includes("enfermeria");
   let staffId: string | null = null;
-  if (role === "clinico" || role === "enfermeria" || body.createStaff === true) {
+  if (hasClinico || hasEnfermeria || body.createStaff === true) {
     staffId = await createStaffRow(admin, {
       organizationId,
       profileId: uid,
       fullName,
-      roleTitle: role === "clinico"
+      roleTitle: hasClinico
           ? roleTitle
-          : role === "enfermeria"
+          : hasEnfermeria
               ? "Enfermería"
               : "Administrador",
       cedulaProfesional,
@@ -157,8 +199,14 @@ serve(async (req) => {
     });
   }
 
-  return json({ uid, email, tempPassword, role, organizationId, staffId });
+  return json({ uid, email, tempPassword, roles, role: primaryRole, organizationId, staffId });
 });
+
+// Espejo escalar por precedencia — mismo orden que primary_role() en 0098.
+function primaryRoleOf(roles: string[]): string {
+  const precedence = ["master", "admin", "clinico", "enfermeria", "cuidador"];
+  return precedence.find((r) => roles.includes(r)) ?? "clinico";
+}
 
 // Crea la fila de staff generando el folio K<year>-NNNN (mismo formato que
 // DataRepository.createStaff en la app). El folio es `unique not null` sin

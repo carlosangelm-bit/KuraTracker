@@ -8,7 +8,6 @@ import '../../core/theme/kura_theme.dart';
 import '../../core/providers/session_provider.dart';
 import '../../core/router/app_shell.dart' show UserMenuButton;
 import '../../core/widgets/kura_primary_fab.dart';
-import '../../models/app_user.dart';
 import 'purchase_guard.dart';
 import '../../models/inventory.dart';
 import '../../services/csv_download.dart';
@@ -348,7 +347,7 @@ class _InventarioScreenState extends ConsumerState<InventarioScreen> {
               .length;
           final invValue = items.fold<double>(
               0, (a, it) => a + (it.unitCost ?? 0) * (onHand[it.id] ?? 0));
-          final isAdmin = user?.role == AppRole.admin;
+          final isAdmin = user?.isAdmin ?? false;
 
           return Column(
             children: [
@@ -560,7 +559,7 @@ class _InventarioScreenState extends ConsumerState<InventarioScreen> {
 
   // ---- Detalle del artículo ----
   Future<void> _openItem(DataRepository repo, InventoryItem item) async {
-    final isAdmin = ref.read(sessionProvider).user?.role == AppRole.admin;
+    final isAdmin = ref.read(sessionProvider).user?.isAdmin ?? false;
     await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
