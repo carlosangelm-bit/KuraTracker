@@ -1980,6 +1980,13 @@ class DataRepository {
         .getAll(Collections.pointPayments)
         .map(PointPayment.fromJson)
         .firstWhere((p) => p.id == paymentId);
+    // No se puede ligar (ni liquidar un cobro con) un pago NO aprobado: un pago
+    // rechazado se veía idéntico a uno aprobado y podía liquidar un cobro.
+    if (payment.status != 'approved') {
+      throw Exception(
+          'El pago no está aprobado (estado: ${payment.status}); no se puede '
+          'ligar a un cobro.');
+    }
     await _store.updateRow(Collections.pointPayments, paymentId, {
       'charge_id': chargeId,
       'linked_by': linkedBy,

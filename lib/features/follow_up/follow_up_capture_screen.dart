@@ -2203,6 +2203,17 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
     if (id == null) return;
     final c = repo.getConsultation(id);
     if (c == null) return;
+    // Inmutabilidad (0097): si la consulta YA está finalizada, no se puede
+    // reescribir por URL. Se lleva al detalle (lectura + nota de enmienda), en
+    // vez de dejar llenar un formulario que la base rechazaría al guardar.
+    if (!c.isDraft) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          context.go('/patients/${widget.patientId}/consultation/${c.id}');
+        }
+      });
+      return;
+    }
     // Fecha de la visita: se restaura la ORIGINAL del borrador (antes se quedaba
     // en DateTime.now() y al re-guardar sobrescribía la fecha real en silencio).
     _visitDate = c.visitDate;
