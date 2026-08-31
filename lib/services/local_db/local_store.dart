@@ -178,6 +178,7 @@ class Collections {
   static const kuraRecommendations = 'kura_recommendations';
   static const sheehanCheckpoints = 'sheehan_checkpoints';
   static const auditLog = 'audit_log';
+  static const dataDisclosures = 'data_disclosures';
   static const importBatches = 'import_batches';
   static const noteOptionCatalog = 'note_option_catalog';
   static const manualAppointments = 'manual_appointments';

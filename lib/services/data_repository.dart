@@ -17,6 +17,7 @@ import '../models/module_setting.dart';
 import '../models/preventive_task.dart';
 import '../models/consent.dart';
 import '../models/consultation.dart';
+import '../models/data_disclosure.dart';
 import '../models/manual_appointment.dart';
 import '../models/organization.dart';
 import '../models/supply_product_mapping.dart';
@@ -5001,6 +5002,61 @@ class DataRepository {
       .map(Consultation.fromJson)
       .toList()
     ..sort((a, b) => b.visitDate.compareTo(a.visitDate));
+
+  // ---------------- Registro de divulgaciones (0101) ----------------
+
+  /// Deja constancia de que datos clínicos SALIERON de la plataforma. Se llama
+  /// DESPUÉS de que la descarga se entregó (si la generación falla, no hubo
+  /// divulgación y no debe haber registro). Best-effort: el registro NUNCA debe
+  /// romper una entrega ya realizada, así que un fallo se ignora.
+  Future<void> recordDataDisclosure({
+    required String? organizationId,
+    required String? actorId,
+    required String? actorEmail,
+    required String kind,
+    Map<String, dynamic>? scope,
+    int? recordCount,
+    int? patientCount,
+    int? photoCount,
+    int? missingCount,
+    String? fileName,
+  }) async {
+    if (organizationId == null) return;
+    try {
+      await _store.insertRow(Collections.dataDisclosures, {
+        'organization_id': organizationId,
+        'actor_id': actorId,
+        'actor_email': actorEmail,
+        'kind': kind,
+        'scope': scope,
+        'record_count': recordCount,
+        'patient_count': patientCount,
+        'photo_count': photoCount,
+        'missing_count': missingCount,
+        'file_name': fileName,
+        'occurred_at': DateTime.now().toUtc().toIso8601String(),
+      });
+    } catch (_) {
+      // La entrega ya ocurrió; no romper la UX por el registro.
+    }
+  }
+
+  /// Divulgaciones del centro (más recientes primero). La pantalla las refresca
+  /// con [refreshDataDisclosures] antes de leer (no se hidratan al login).
+  List<DataDisclosure> listDataDisclosures({String? organizationId}) => _store
+      .getAll(Collections.dataDisclosures)
+      .map(DataDisclosure.fromJson)
+      .where((d) =>
+          organizationId == null || d.organizationId == organizationId)
+      .toList()
+    ..sort((a, b) => b.occurredAt.compareTo(a.occurredAt));
+
+  Future<void> refreshDataDisclosures() async {
+    final store = _store;
+    if (store is SupabaseDataStore) {
+      await store.refreshCollection(Collections.dataDisclosures);
+    }
+  }
 
   Consultation? getConsultation(String id) {
     final match = _store.getAll(Collections.consultations).where((c) => c['id'] == id);

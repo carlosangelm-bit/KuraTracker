@@ -60,6 +60,20 @@ class _PatientDetailScreenState extends ConsumerState<PatientDetailScreen> {
       final fecha = DateTime.now().toIso8601String().substring(0, 10);
       final filename = 'expediente_${folioDir}_$fecha.zip';
       await downloadBytes(filename, bytes, 'application/zip');
+      // Registro de divulgación (0101): DESPUÉS de entregar la descarga.
+      final user = ref.read(sessionProvider).user;
+      await repo.recordDataDisclosure(
+        organizationId: patient.organizationId ?? user?.organizationId,
+        actorId: user?.id,
+        actorEmail: user?.email,
+        kind: 'expediente_paciente',
+        scope: {'patient_id': patient.id, 'folio': patient.folio},
+        recordCount: files.length,
+        patientCount: 1,
+        photoCount: result.photoCount,
+        missingCount: result.photoMissing,
+        fileName: filename,
+      );
       messenger.hideCurrentSnackBar();
       messenger.showSnackBar(SnackBar(
           content: Text(result.photoMissing == 0
@@ -145,9 +159,10 @@ class _PatientDetailScreenState extends ConsumerState<PatientDetailScreen> {
           // leer todo + reportar (riesgo/eventos adversos) + prevención.
           final canWrite = ref.watch(sessionProvider).user?.canDiagnose ?? true;
           // Exportar el expediente (paquete de salida / divulgación): admin/master.
+          // Permisos por los getters del conjunto de roles, nunca por role == x.
           final exportUser = ref.watch(sessionProvider).user;
           final canExportRecord =
-              exportUser?.role == AppRole.admin || (exportUser?.isMaster ?? false);
+              (exportUser?.isAdmin ?? false) || (exportUser?.isMaster ?? false);
           final wounds = repo.listWoundsForPatient(patient.id);
           final consultations = repo.listConsultationsForPatient(patient.id);
           final comorbidities = repo.listComorbidities(patient.id);

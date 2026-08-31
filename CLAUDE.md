@@ -61,6 +61,10 @@ Lo que **no** viaja con el clone y hay que tener en la máquina nueva:
 - **Ramas por feature/fix**; merge `--no-ff` a `main`. Entregas grandes = por fases
   (cada fase = 1 deploy).
 - **Mensajes de commit** terminan con el trailer `Co-Authored-By: Claude ...`.
+- **Permisos por rol**: usa SIEMPRE los getters del conjunto de roles
+  (`user.isAdmin`, `user.isMaster`, `user.canDiagnose`, `user.isNurse`), NUNCA
+  `user.role == AppRole.x`. El rol escalar es un espejo del conjunto; comparar
+  contra él vuelve a acoplar al modelo viejo y se rompe con roles combinados.
 - **Migraciones** en `supabase/migrations/NNNN_*.sql`, numeradas en secuencia. La RLS se
   extiende de forma **ADITIVA** (nuevas policies `SELECT`/`INSERT` que se OR-ean con las
   existentes; nunca reescribir/borrar policies vigentes). Helpers `SECURITY DEFINER` para
