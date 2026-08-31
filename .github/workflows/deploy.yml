@@ -38,7 +38,26 @@ on:
 # a medias sin aviso. Un `build_deploy` cancelado sí es inofensivo (se
 # re-despliega en el siguiente push).
 jobs:
+  # Red de calidad ANTES de tocar la BD o desplegar: analiza (fatal en
+  # warnings/errores; --no-fatal-infos deja pasar lints de estilo que varían por
+  # versión) y corre la suite de pruebas. migrations y build_deploy dependen de
+  # este job, así que un test rojo o un warning nuevo BLOQUEA el deploy — en vez
+  # de que el único filtro fuera "compiló".
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.27.1'
+          channel: stable
+      - run: flutter --version
+      - run: flutter pub get
+      - run: flutter analyze --no-fatal-infos
+      - run: flutter test
+
   migrations:
+    needs: checks
     concurrency:
       group: db-migrations-main
       cancel-in-progress: false
@@ -74,7 +93,7 @@ jobs:
   # Docker resultó frágil. Deploy DIRIGIDO (no todas) para no
   # re-habilitar verify_jwt en funciones con --no-verify-jwt (webhook Acuity).
   deploy_functions:
-    needs: migrations
+    needs: [checks, migrations]
     concurrency:
       group: deploy-functions-main
       cancel-in-progress: false
@@ -122,7 +141,7 @@ jobs:
         run: supabase functions deploy shopify-inventory --use-api --project-ref "$SUPABASE_PROJECT_REF"
 
   build_deploy:
-    needs: migrations
+    needs: [checks, migrations]
     concurrency:
       group: build-deploy-main
       cancel-in-progress: true

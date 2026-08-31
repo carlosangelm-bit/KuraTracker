@@ -1,7 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:kuratracker/models/note_option_catalog.dart';
-import 'package:kuratracker/services/data_repository.dart';
 
 /// Reproduccion controlada del bug "pantalla en blanco al crear concepto de
 /// catalogo" reportado contra Supabase real, usando el propio motor de

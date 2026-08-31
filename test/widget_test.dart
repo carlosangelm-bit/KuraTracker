@@ -1,7 +1,6 @@
 // Test de humo basico. Los tests relevantes del dominio clinico estan en
 // test/engine/ (motor Protocolo Kura+: paridad, casos limite, reglas de
 // seguridad). Este archivo solo verifica que la app arranca sin excepciones.
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 

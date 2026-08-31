@@ -4,7 +4,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:kuratracker/engine/models/kura_engine_enums.dart';
 import 'package:kuratracker/engine/models/kura_engine_input.dart';
 import 'package:kuratracker/engine/rules/kura_treatment_rules_engine.dart';
-import 'package:kuratracker/features/follow_up/follow_up_capture_screen.dart';
 import 'package:kuratracker/models/consultation.dart';
 import 'package:kuratracker/models/note_option_catalog.dart';
 import 'package:kuratracker/models/center_type.dart';

@@ -10,13 +10,21 @@ void main() {
       }
     });
 
-    test('adjunto jsonKey/fromKey roundtrip y las 5 claves del checklist', () {
+    test('adjunto jsonKey/fromKey roundtrip y las claves del checklist', () {
       for (final a in ReferralAdjunto.values) {
         expect(ReferralAdjuntoLabel.fromKey(a.jsonKey), a);
       }
       expect(
         ReferralAdjunto.values.map((a) => a.jsonKey).toSet(),
-        {'reporte_ekare', 'resumen_clinico', 'cultivo', 'itb', 'laboratorios'},
+        {
+          'reporte_ekare',
+          'resumen_clinico',
+          'cultivo',
+          'itb',
+          'laboratorios',
+          'estudios_gabinete',
+          'informes_previos_especialidades',
+        },
       );
     });
   });
@@ -37,6 +45,8 @@ void main() {
         'cultivo': false,
         'itb': true,
         'laboratorios': false,
+        'estudios_gabinete': false,
+        'informes_previos_especialidades': false,
       });
     });
 

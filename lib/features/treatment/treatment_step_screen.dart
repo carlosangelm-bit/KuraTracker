@@ -5,7 +5,6 @@ import 'package:speech_to_text/speech_to_text.dart' as stt;
 
 import '../../core/theme/kura_theme.dart';
 import '../../core/providers/session_provider.dart';
-import '../../engine/kura_protocol_engine.dart';
 import '../../engine/models/kura_engine_output.dart';
 import '../../engine/models/kura_engine_enums.dart';
 import '../../models/treatment_plan.dart';
