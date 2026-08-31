@@ -143,7 +143,18 @@ class _WoundCaptureScreenState extends ConsumerState<WoundCaptureScreen> {
     // leen su initialValue de formState).
     final cid = widget.consultationId;
     if (cid != null) {
-      final snap = repo.getConsultation(cid)?.draftFormState;
+      final c = repo.getConsultation(cid);
+      // Inmutabilidad (0097): valoración de una consulta ya FINALIZADA no se
+      // reescribe por URL; al detalle (lectura + nota de enmienda).
+      if (c != null && !c.isDraft) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            context.go('/patients/${widget.patientId}/consultation/$cid');
+          }
+        });
+        return;
+      }
+      final snap = c?.draftFormState;
       final form = snap == null ? null : snap['form'];
       if (form is Map) {
         controller.state.photoPaths.clear();

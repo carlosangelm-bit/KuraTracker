@@ -20,6 +20,15 @@ import '../insumos/dashboard_charts.dart';
 
 String _money(double v) => '\$${v.toStringAsFixed(2)} MXN';
 
+/// Etiqueta del estado de un pago de terminal (para mostrarlo en la tarjeta).
+String _pagoEstadoLabel(String s) => switch (s) {
+      'approved' => 'Aprobado',
+      'rejected' => 'Rechazado',
+      'refunded' => 'Reembolsado',
+      'pending' => 'Pendiente',
+      _ => s,
+    };
+
 /// Módulo comercial (Fase C, premium): historial de cobros/pagos y catálogo de
 /// servicios del centro. A futuro: facturación. Gateado por premium_insumos.
 class ComercialScreen extends ConsumerStatefulWidget {
@@ -1596,10 +1605,39 @@ class _ConciliacionTabState extends ConsumerState<_ConciliacionTab> {
       ),
     );
     if (chosen == null) return;
-    await repo.linkPointPaymentToCharge(
-        paymentId: p.id,
-        chargeId: chosen.id,
-        linkedBy: ref.read(sessionProvider).user?.id);
+    // Monto distinto → confirmación explícita con AMBAS cifras (un parcial o una
+    // propina son reales, pero debe ser una decisión consciente). No bloquea.
+    if ((chosen.total - p.amount).abs() >= 0.01) {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Montos distintos'),
+          content: Text('El pago es de ${_money(p.amount)} y el cobro es de '
+              '${_money(chosen.total)}. ¿Ligar de todos modos?'),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.of(ctx).pop(false),
+                child: const Text('Cancelar')),
+            FilledButton(
+                onPressed: () => Navigator.of(ctx).pop(true),
+                child: const Text('Ligar')),
+          ],
+        ),
+      );
+      if (confirmed != true) return;
+    }
+    try {
+      await repo.linkPointPaymentToCharge(
+          paymentId: p.id,
+          chargeId: chosen.id,
+          linkedBy: ref.read(sessionProvider).user?.id);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('$e'.replaceFirst('Exception: ', ''))));
+      }
+      return;
+    }
     if (mounted) setState(() {});
   }
 
@@ -1722,8 +1760,20 @@ class _PaymentCard extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(_money(p.amount),
-                      style: const TextStyle(fontWeight: FontWeight.w800)),
+                  Row(
+                    children: [
+                      Text(_money(p.amount),
+                          style: const TextStyle(fontWeight: FontWeight.w800)),
+                      const SizedBox(width: 8),
+                      Text(_pagoEstadoLabel(p.status),
+                          style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: p.status == 'approved'
+                                  ? KuraColors.success
+                                  : KuraColors.danger)),
+                    ],
+                  ),
                   Text(
                     [
                       p.providerLabel,
