@@ -57,4 +57,36 @@ void main() {
           'public.is_admin() and organization_id = public.current_organization_id()'),
     );
   });
+
+  // ---- 0106: roles por centro + asientos ----
+  final m0106 =
+      File('supabase/migrations/0106_membership_roles_and_seats.sql')
+          .readAsStringSync();
+
+  test('candado de membresía mira AMBAS columnas y corre AL FINAL (zz)', () {
+    // Reemplaza el candado escalar del 0104 por uno que mira role Y roles.
+    expect(m0106, contains('new_has_master'));
+    expect(m0106, contains('old_has_master'));
+    expect(m0106,
+        contains('drop trigger if exists trg_prevent_membership_master_grant'));
+    expect(m0106,
+        contains('create trigger trg_zz_prevent_membership_master_grant'));
+  });
+
+  test('set_active_center copia el CONJUNTO de roles, no el escalar', () {
+    final s = flat(m0106);
+    expect(s, contains('select roles into v_roles'));
+    expect(s, contains('roles = v_roles'));
+    // No debe volver a escribir el escalar `role` directamente en el perfil.
+    expect(s.contains('set organization_id = target_org, role = '), isFalse);
+  });
+
+  test('el switch legítimo sigue permitido: exención por membresía en el guard',
+      () {
+    // Un no-admin puede cambiar org+roles si coincide con una membresía activa.
+    expect(m0106,
+        contains('cambio de centro/roles sin membresía válida'));
+    expect(flat(m0106),
+        contains('m.roles <@ new.roles and new.roles <@ m.roles'));
+  });
 }

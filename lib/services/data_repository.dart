@@ -417,13 +417,32 @@ class DataRepository {
   /// En Supabase, la RLS de profiles (profiles_update_own_or_admin) + el trigger
   /// anti-escalada (prevent_profile_privilege_escalation, 0096 cubre `roles`)
   /// permiten esto SOLO a admin/master; un clínico no puede auto-promoverse.
-  Future<void> setUserRoles(String userId, Set<AppRole> roles) async {
+  Future<void> setUserRoles(String userId, Set<AppRole> roles,
+      {String? organizationId}) async {
     final err = validateRoleSet(roles);
     if (err != null) throw Exception(err);
-    await _store.updateRow(Collections.profiles, userId, {
-      'roles': roles.map((r) => r.dbValue).toList(),
-      'role': primaryRoleOf(roles).dbValue,
-    });
+    final rolesDb = roles.map((r) => r.dbValue).toList();
+    final primary = primaryRoleOf(roles).dbValue;
+    // La autoridad de los roles POR CENTRO es la MEMBRESÍA (0106): editar solo el
+    // perfil no dura, porque el próximo set_active_center lo sobreescribe desde
+    // la membresía. Se actualiza la membresía del centro.
+    if (organizationId != null) {
+      final m = listMembershipsForOrg(organizationId)
+          .where((x) => x.profileId == userId);
+      if (m.isNotEmpty) {
+        await _store.updateRow(Collections.userCenterMemberships, m.first.id,
+            {'roles': rolesDb, 'role': primary});
+      }
+    }
+    // El perfil solo si ESE centro es el activo del usuario (efecto inmediato);
+    // sin contexto de centro, se actualiza el perfil (comportamiento previo).
+    final prof =
+        _store.getAll(Collections.profiles).where((p) => p['id'] == userId);
+    final activeOrg = prof.isEmpty ? null : prof.first['organization_id'];
+    if (organizationId == null || activeOrg == organizationId) {
+      await _store.updateRow(Collections.profiles, userId,
+          {'roles': rolesDb, 'role': primary});
+    }
   }
 
   /// Da de alta un usuario CON cuenta de acceso (login).
@@ -580,13 +599,16 @@ class DataRepository {
       await store.callRpc('set_active_center', {'target_org': organizationId});
       await hydrateAfterLogin();
     } else {
-      // Demo: aplicar el rol de la membresía al perfil, igual que el RPC.
+      // Demo: aplicar el CONJUNTO de roles de la membresía al perfil, igual que
+      // el RPC reescrito (0106). Antes copiaba solo el escalar.
       final membership = listMembershipsFor(profileId)
           .where((m) => m.organizationId == organizationId);
-      final role = membership.isEmpty ? null : membership.first.role.dbValue;
       await _store.updateRow(Collections.profiles, profileId, {
         'organization_id': organizationId,
-        if (role != null) 'role': role,
+        if (membership.isNotEmpty) ...{
+          'roles': membership.first.roles.map((r) => r.dbValue).toList(),
+          'role': primaryRoleOf(membership.first.roles).dbValue,
+        },
       });
     }
   }
@@ -614,6 +636,7 @@ class DataRepository {
       'profile_id': profileId,
       'organization_id': organizationId,
       'role': role.dbValue,
+      'roles': [role.dbValue], // 0106: conjunto (en prod lo deriva el trigger)
       'is_active': true,
     });
   }
