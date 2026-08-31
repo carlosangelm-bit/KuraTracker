@@ -65,6 +65,11 @@ Lo que **no** viaja con el clone y hay que tener en la máquina nueva:
   (`user.isAdmin`, `user.isMaster`, `user.canDiagnose`, `user.isNurse`), NUNCA
   `user.role == AppRole.x`. El rol escalar es un espejo del conjunto; comparar
   contra él vuelve a acoplar al modelo viejo y se rompe con roles combinados.
+- **Orden de triggers.** Postgres dispara los `BEFORE` en orden alfabético por nombre de
+  trigger. Un candado llamado `trg_prevent_*` corre **antes** que una derivación llamada
+  `trg_sync_*`, así que valida la entrada cruda y no el estado final. Los triggers de
+  validación se nombran `trg_zz_*` para que corran al final, y comparan **todas** las columnas
+  que representan el mismo dato (p. ej. `role` y `roles`).
 - **Migraciones** en `supabase/migrations/NNNN_*.sql`, numeradas en secuencia. La RLS se
   extiende de forma **ADITIVA** (nuevas policies `SELECT`/`INSERT` que se OR-ean con las
   existentes; nunca reescribir/borrar policies vigentes). Helpers `SECURITY DEFINER` para
