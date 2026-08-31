@@ -129,6 +129,22 @@ class PhotoUploadService {
     return path;
   }
 
+  /// Bytes ORIGINALES de una foto de herida, para exportarla a un archivo (no
+  /// se reescala: es la evidencia clínica real). En demo el storage_path es un
+  /// data URL base64 autocontenido; en prod es una ruta del bucket privado y se
+  /// baja con `download(path)` (una petición por imagen, justo antes de
+  /// escribirla — sin problema de expiración de signed URLs). Lanza si falla,
+  /// para que el llamador la registre como faltante y continúe.
+  static Future<Uint8List> downloadWoundPhotoBytes(String storagePath) async {
+    if (storagePath.startsWith('data:')) {
+      final comma = storagePath.indexOf(',');
+      return base64Decode(storagePath.substring(comma + 1));
+    }
+    return Supabase.instance.client.storage
+        .from(_bucket)
+        .download(storagePath);
+  }
+
   /// Resuelve una URL mostrable (Image.network) para un `storage_path`
   /// guardado en `wound_photos`. Si ya es una URL/data URL autocontenida
   /// (modo demo local), se retorna tal cual. Si es una ruta real de

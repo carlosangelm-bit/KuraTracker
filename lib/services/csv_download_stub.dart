@@ -3,3 +3,8 @@
 Future<void> downloadCsv(String filename, String csvContent) async {
   throw UnsupportedError('Descarga de CSV no soportada en esta plataforma.');
 }
+
+Future<void> downloadBytes(
+    String filename, List<int> bytes, String mimeType) async {
+  throw UnsupportedError('Descarga de archivo no soportada en esta plataforma.');
+}

@@ -21,7 +21,9 @@ import '../../models/patient.dart';
 import '../../models/wound.dart';
 import '../../models/consultation.dart';
 import '../../models/consent.dart';
+import '../../services/csv_download.dart';
 import '../../services/data_repository.dart';
+import '../../services/export/record_export.dart';
 import '../follow_up/follow_up_screen.dart';
 import '../adverse_events/adverse_events_screen.dart' show adverseSeverityColor;
 import 'cie10_picker_sheet.dart' show diagnosisRelationColor;
@@ -36,6 +38,40 @@ class PatientDetailScreen extends ConsumerStatefulWidget {
 
 class _PatientDetailScreenState extends ConsumerState<PatientDetailScreen> {
   final _dateFmt = DateFormat('dd/MM/yyyy');
+
+  /// Exporta el expediente del paciente como CARPETA comprimida (ZIP): CSVs +
+  /// fotos originales por herida/fecha (paquete de salida, reemplaza el PDF).
+  /// Una foto que falle no aborta la entrega: se anota en el manifiesto.
+  Future<void> _exportPatientRecord(
+      BuildContext context, DataRepository repo, Patient patient) async {
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.showSnackBar(SnackBar(
+        content: Text('Preparando el expediente de ${patient.folio}…'),
+        duration: const Duration(seconds: 30)));
+    try {
+      final result = await RecordExportService.buildPatientFiles(repo, patient);
+      final folioDir = RecordExportService.sanitize(patient.folio);
+      final files = <ExportedFile>[
+        ...result.files,
+        ExportedFile('$folioDir/manifiesto.csv',
+            RecordExportService.patientManifestCsv(patient, result)),
+      ];
+      final bytes = RecordExportService.zip(files);
+      final fecha = DateTime.now().toIso8601String().substring(0, 10);
+      final filename = 'expediente_${folioDir}_$fecha.zip';
+      await downloadBytes(filename, bytes, 'application/zip');
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(SnackBar(
+          content: Text(result.photoMissing == 0
+              ? 'Expediente exportado: ${result.photoCount} foto(s).'
+              : 'Expediente exportado: ${result.photoCount} foto(s), '
+                  '${result.photoMissing} faltante(s) (ver manifiesto.csv).')));
+    } catch (e) {
+      messenger.hideCurrentSnackBar();
+      messenger
+          .showSnackBar(SnackBar(content: Text('No se pudo exportar: $e')));
+    }
+  }
 
   /// Plan de alta / egreso de una herida: elige el motivo de egreso + una
   /// explicación libre y cierra la herida (Prompt 5 / feedback de María).
@@ -108,6 +144,10 @@ class _PatientDetailScreenState extends ConsumerState<PatientDetailScreen> {
           // registrar herida/seguimiento, comorbilidades/diagnósticos). Puede
           // leer todo + reportar (riesgo/eventos adversos) + prevención.
           final canWrite = ref.watch(sessionProvider).user?.canDiagnose ?? true;
+          // Exportar el expediente (paquete de salida / divulgación): admin/master.
+          final exportUser = ref.watch(sessionProvider).user;
+          final canExportRecord =
+              exportUser?.role == AppRole.admin || (exportUser?.isMaster ?? false);
           final wounds = repo.listWoundsForPatient(patient.id);
           final consultations = repo.listConsultationsForPatient(patient.id);
           final comorbidities = repo.listComorbidities(patient.id);
@@ -430,6 +470,13 @@ class _PatientDetailScreenState extends ConsumerState<PatientDetailScreen> {
                 title: Text(patient.fullName),
                 pinned: true,
                 actions: [
+                  if (canExportRecord)
+                    IconButton(
+                      icon: const Icon(Icons.folder_zip_outlined),
+                      tooltip: 'Exportar expediente (ZIP)',
+                      onPressed: () =>
+                          _exportPatientRecord(context, repo, patient),
+                    ),
                   if (canWrite) ...[
                     IconButton(
                       icon: const Icon(Icons.edit_outlined),

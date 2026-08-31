@@ -12,3 +12,12 @@ Future<void> downloadCsv(String filename, String csvContent) async {
     bytes: Uint8List.fromList(csvContent.codeUnits),
   );
 }
+
+/// Descarga binaria (ZIP, imagen…) en nativo vía "Guardar como".
+Future<void> downloadBytes(
+    String filename, List<int> bytes, String mimeType) async {
+  await FilePicker.platform.saveFile(
+    fileName: filename,
+    bytes: bytes is Uint8List ? bytes : Uint8List.fromList(bytes),
+  );
+}
