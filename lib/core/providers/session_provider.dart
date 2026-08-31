@@ -248,17 +248,21 @@ final enabledModulesProvider = Provider<Set<ModuleKey>>((ref) {
   );
 });
 
-/// ¿Puede el usuario actual usar el Protocolo Kura+? Es el OR de:
-/// - `premium_enabled` por USUARIO (activación individual, la que ya existía), y
-/// - el add-on premium "Protocolo Kura+" por CENTRO (0049).
-/// Así, el add-on del centro habilita Kura+ para todo el centro sin quitar la
-/// activación por usuario. Se recomputa al cambiar de centro/usuario.
+/// ¿Puede el usuario actual usar el Protocolo Kura+? Es el AND de:
+/// - el add-on premium "Protocolo Kura+" comprado por el CENTRO (0049), y
+/// - `premium_enabled` por USUARIO (a quién decide dárselo el centro).
+/// El add-on se compra a nivel centro (licencia) y el centro asigna la
+/// activación individual; sin el add-on del centro, la activación por usuario no
+/// habilita nada (modelo de licencias, brief 31-ago-2026 §4). Antes era un OR,
+/// que regalaba Kura+ a todo el centro o a cualquier usuario marcado — hueco de
+/// ingresos. Se recomputa al cambiar de centro/usuario.
 final kuraProtocolEnabledProvider = Provider<bool>((ref) {
   final user = ref.watch(sessionProvider).user;
   if (user == null) return false;
-  if (user.premiumEnabled) return true;
   final repo = ref.watch(dataRepositoryProvider).valueOrNull;
-  return repo?.premiumProtocoloKuraFor(user.organizationId) ?? false;
+  final centerHasAddon =
+      repo?.premiumProtocoloKuraFor(user.organizationId) ?? false;
+  return centerHasAddon && user.premiumEnabled;
 });
 
 /// Catálogo CIE-10 de heridas crónicas (asset empaquetado, reference data

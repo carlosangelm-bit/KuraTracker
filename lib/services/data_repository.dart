@@ -388,7 +388,20 @@ class DataRepository {
     await _store.updateRow(Collections.profiles, userId, {'is_active': active});
   }
 
+  /// Activa/desactiva el premium por USUARIO (Protocolo Kura+). Solo se puede
+  /// OTORGAR (premium=true) si el CENTRO compró el add-on (licencia): el premium
+  /// individual es "a quién decide dárselo el centro", no una compra propia
+  /// (brief §4). La base lo refuerza con el trigger enforce_premium_requires_org_addon
+  /// (0100); esto es para dar un mensaje decente en la UI. Quitarlo (false) siempre
+  /// se permite.
   Future<void> setUserPremium(String userId, bool premium) async {
+    if (premium) {
+      final u = listUsers().where((x) => x.id == userId).firstOrNull;
+      if (!premiumProtocoloKuraFor(u?.organizationId)) {
+        throw Exception('El centro no tiene el add-on Protocolo Kura+. '
+            'Actívalo a nivel centro antes de asignarlo a una persona.');
+      }
+    }
     await _store.updateRow(Collections.profiles, userId, {'premium_enabled': premium});
   }
 
