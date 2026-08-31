@@ -481,7 +481,14 @@ class _OrganizationsTab extends StatelessWidget {
                           child: Icon(Icons.hub_outlined, color: centerTypeColor(o.centerType)),
                         ),
                         title: Text(o.name),
-                        subtitle: Text(o.isActive ? 'Activo' : 'Inactivo'),
+                        // Tipo visible de un vistazo (un centro mal tipificado se
+                        // ve aquí en vez de descubrirse por un "no funciona") +
+                        // marca de centro de pruebas.
+                        subtitle: Text(
+                          '${o.centerType.label}'
+                          '${o.isTest ? ' · PRUEBA' : ''} · '
+                          '${o.isActive ? 'Activo' : 'Inactivo'}',
+                        ),
                         trailing: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
@@ -921,6 +928,10 @@ class _OrganizationFormDialog extends StatefulWidget {
 class _OrganizationFormDialogState extends State<_OrganizationFormDialog> {
   final _formKey = GlobalKey<FormState>();
   final _nameCtrl = TextEditingController();
+  // Sin preselección: elegir el tipo debe ser un acto, no un descuido. El tipo
+  // define la superficie de permisos (módulos + RLS hospitalaria).
+  CenterType? _centerType;
+  bool _isTest = false;
   bool _saving = false;
   String? _error;
 
@@ -932,12 +943,18 @@ class _OrganizationFormDialogState extends State<_OrganizationFormDialog> {
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
+    if (_centerType == null) {
+      setState(() => _error = 'Selecciona el tipo de centro.');
+      return;
+    }
     setState(() {
       _saving = true;
       _error = null;
     });
     try {
-      final created = await widget.repo.createOrganization(_nameCtrl.text.trim());
+      final created = await widget.repo.createOrganization(
+          _nameCtrl.text.trim(), _centerType!,
+          isTest: _isTest);
       // dialogCtx propio (ver convencion documentada en la pantalla):
       // nunca el context externo del ShellRoute anidado.
       if (mounted) Navigator.pop(context, created.id);
@@ -968,6 +985,40 @@ class _OrganizationFormDialogState extends State<_OrganizationFormDialog> {
                 autofocus: true,
                 decoration: const InputDecoration(labelText: 'Nombre del centro'),
                 validator: (v) => (v == null || v.trim().isEmpty) ? 'Requerido' : null,
+              ),
+              const SizedBox(height: 12),
+              const Align(
+                alignment: Alignment.centerLeft,
+                child: Text('Tipo de centro *',
+                    style: TextStyle(fontWeight: FontWeight.w600)),
+              ),
+              // Define la superficie de permisos del centro: módulos + RLS.
+              for (final t in CenterType.values)
+                RadioListTile<CenterType>(
+                  value: t,
+                  groupValue: _centerType,
+                  onChanged: _saving
+                      ? null
+                      : (v) => setState(() {
+                            _centerType = v;
+                            _error = null;
+                          }),
+                  contentPadding: EdgeInsets.zero,
+                  dense: true,
+                  title: Text(t.label),
+                  subtitle: Text(t.description,
+                      style: const TextStyle(fontSize: 11)),
+                ),
+              CheckboxListTile(
+                value: _isTest,
+                onChanged:
+                    _saving ? null : (v) => setState(() => _isTest = v ?? false),
+                contentPadding: EdgeInsets.zero,
+                dense: true,
+                controlAffinity: ListTileControlAffinity.leading,
+                title: const Text('Centro de pruebas'),
+                subtitle: const Text('No productivo; se excluye de KPIs/listados.',
+                    style: TextStyle(fontSize: 11)),
               ),
               if (_error != null) ...[
                 const SizedBox(height: 12),

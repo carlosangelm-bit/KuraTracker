@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:kuratracker/models/note_option_catalog.dart';
+import 'package:kuratracker/models/center_type.dart';
 import 'package:kuratracker/services/data_repository.dart';
 
 /// Cobertura de `DataRepository.seedDefaultNoteOptions()`: el boton
@@ -29,7 +30,7 @@ void main() {
       'un centro nuevo sin ningun concepto propio', () async {
     final repo = await DataRepository.instance();
 
-    final org = await repo.createOrganization('Centro Nuevo Sin Catalogo');
+    final org = await repo.createOrganization('Centro Nuevo Sin Catalogo', CenterType.clinicaHeridas);
 
     for (final field in NoteOptionField.values) {
       expect(
@@ -69,7 +70,7 @@ void main() {
       'seedDefaultNoteOptions() es idempotente: llamarlo dos veces no '
       'duplica conceptos', () async {
     final repo = await DataRepository.instance();
-    final org = await repo.createOrganization('Centro Nuevo Idempotencia');
+    final org = await repo.createOrganization('Centro Nuevo Idempotencia', CenterType.clinicaHeridas);
 
     await repo.seedDefaultNoteOptions(organizationId: org.id);
     final countAfterFirst =
@@ -93,7 +94,7 @@ void main() {
       'seedDefaultNoteOptions() no pisa un concepto que el admin ya '
       'personalizo o desactivo antes de cargar el catalogo base', () async {
     final repo = await DataRepository.instance();
-    final org = await repo.createOrganization('Centro Nuevo Personalizado');
+    final org = await repo.createOrganization('Centro Nuevo Personalizado', CenterType.clinicaHeridas);
 
     // El admin desactiva de antemano un concepto que tambien esta en el
     // catalogo base, con exactamente el mismo texto (mismo (field, label)).
@@ -134,8 +135,8 @@ void main() {
       'de otro centro (mismo aislamiento por organizacion que el resto del '
       'catalogo)', () async {
     final repo = await DataRepository.instance();
-    final orgA = await repo.createOrganization('Centro A Catalogo Base');
-    final orgB = await repo.createOrganization('Centro B Catalogo Base');
+    final orgA = await repo.createOrganization('Centro A Catalogo Base', CenterType.clinicaHeridas);
+    final orgB = await repo.createOrganization('Centro B Catalogo Base', CenterType.clinicaHeridas);
 
     await repo.seedDefaultNoteOptions(organizationId: orgA.id);
 

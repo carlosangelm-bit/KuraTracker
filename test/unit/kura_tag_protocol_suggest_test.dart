@@ -7,6 +7,7 @@ import 'package:kuratracker/engine/rules/kura_treatment_rules_engine.dart';
 import 'package:kuratracker/features/follow_up/follow_up_capture_screen.dart';
 import 'package:kuratracker/models/consultation.dart';
 import 'package:kuratracker/models/note_option_catalog.dart';
+import 'package:kuratracker/models/center_type.dart';
 import 'package:kuratracker/services/data_repository.dart';
 
 import '../engine/clinical_params_fixture.dart';
@@ -104,7 +105,7 @@ void main() {
     test('seedDefaultNoteOptions() persiste el kura_tag de cada concepto '
         'sembrado (roundtrip completo Parte B->C)', () async {
       final repo = await DataRepository.instance();
-      final org = await repo.createOrganization('Centro Prueba KuraTag');
+      final org = await repo.createOrganization('Centro Prueba KuraTag', CenterType.clinicaHeridas);
 
       await repo.seedDefaultNoteOptions(organizationId: org.id);
 
