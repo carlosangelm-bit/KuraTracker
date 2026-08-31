@@ -3,6 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:kuratracker/models/app_user.dart';
 import 'package:kuratracker/models/note_option_catalog.dart';
+import 'package:kuratracker/models/center_type.dart';
 import 'package:kuratracker/services/data_repository.dart';
 
 /// Cobertura del rol `master` (administrador de plataforma, ver
@@ -69,7 +70,7 @@ void main() {
     final before = repo.listOrganizations();
     final countBefore = before.length;
 
-    final created = await repo.createOrganization('Centro de Prueba E2E');
+    final created = await repo.createOrganization('Centro de Prueba E2E', CenterType.clinicaHeridas);
 
     expect(created.name, 'Centro de Prueba E2E');
     expect(created.isActive, isTrue);
@@ -84,7 +85,7 @@ void main() {
       'organizacion indicada, sin afectar a las demas', () async {
     final repo = await DataRepository.instance();
 
-    final created = await repo.createOrganization('Centro para desactivar');
+    final created = await repo.createOrganization('Centro para desactivar', CenterType.clinicaHeridas);
     expect(created.isActive, isTrue);
 
     await repo.setOrganizationActive(created.id, false);

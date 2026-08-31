@@ -32,6 +32,8 @@ class Organization {
   // Escalas del protocolo de hospital habilitadas por el centro (0085). null =
   // todas habilitadas.
   final List<String>? enabledScales;
+  // Centro de pruebas/andamio (0103): se excluye de KPIs/listados reales.
+  final bool isTest;
 
   const Organization({
     required this.id,
@@ -49,6 +51,7 @@ class Organization {
     this.acuitySessionTypeId,
     this.acuityTypeVisitMap = const {},
     this.enabledScales,
+    this.isTest = false,
   });
 
   factory Organization.fromJson(Map<String, dynamic> json) => Organization(
@@ -71,6 +74,7 @@ class Organization {
         enabledScales: (json['enabled_scales'] as List?)
             ?.map((e) => e.toString())
             .toList(),
+        isTest: json['is_test'] as bool? ?? false,
       );
 
   Map<String, dynamic> toJson() => {
@@ -89,5 +93,6 @@ class Organization {
         'acuity_session_type_id': acuitySessionTypeId,
         'acuity_type_visit_map': acuityTypeVisitMap,
         'enabled_scales': enabledScales,
+        'is_test': isTest,
       };
 }

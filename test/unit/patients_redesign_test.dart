@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:kuratracker/engine/models/kura_engine_enums.dart';
 import 'package:kuratracker/features/patients/patient_wound_summary.dart';
 import 'package:kuratracker/features/patients/patients_view_preferences.dart';
+import 'package:kuratracker/models/center_type.dart';
 import 'package:kuratracker/services/data_repository.dart';
 
 /// Cobertura del rediseno de PatientsListScreen (vista Lista/Tarjeta,
@@ -36,7 +37,7 @@ void main() {
         'un paciente sin heridas activas devuelve activeCount=0, '
         'hasActiveWounds=false y etiologies vacio', () async {
       final repo = await DataRepository.instance();
-      final created = await repo.createOrganization('Org sin heridas (prueba)');
+      final created = await repo.createOrganization('Org sin heridas (prueba)', CenterType.clinicaHeridas);
       // Paciente nuevo sin ninguna herida creada.
       final patient = await repo.createPatient(
         fullName: 'Paciente Sin Heridas',
@@ -52,7 +53,7 @@ void main() {
 
     test('una herida cerrada (is_active=false) no cuenta ni aparece como chip', () async {
       final repo = await DataRepository.instance();
-      final created = await repo.createOrganization('Org herida cerrada (prueba)');
+      final created = await repo.createOrganization('Org herida cerrada (prueba)', CenterType.clinicaHeridas);
       final patient = await repo.createPatient(
         fullName: 'Paciente Herida Cerrada',
         organizationId: created.id,

@@ -741,10 +741,16 @@ class DataRepository {
   /// a admin de la organizacion nueva), esto es un INSERT directo -- el
   /// master sigue siendo master, no se vincula automaticamente como admin
   /// de la organizacion creada.
-  Future<Organization> createOrganization(String name) async {
+  Future<Organization> createOrganization(String name, CenterType centerType,
+      {bool isTest = false}) async {
     final data = {
       'id': _uuid.v4(),
       'name': name,
+      // EXPLÍCITO, no el default 'clinica_heridas' del 0040: un hospital creado
+      // como clínica no muestra sus módulos, no los deja encender, y enfermería
+      // no puede escribir (has_hospital_org_access exige center_type=hospital).
+      'center_type': centerType.dbValue,
+      'is_test': isTest,
       'is_active': true,
     };
     final saved = await _store.insertRow(Collections.organizations, data);
