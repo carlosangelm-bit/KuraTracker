@@ -392,13 +392,24 @@ class DataRepository {
     await _store.updateRow(Collections.profiles, userId, {'premium_enabled': premium});
   }
 
-  /// Cambia el rol de un usuario (admin <-> clinico) desde el panel de
-  /// Administracion / Plataforma. En Supabase, la RLS de profiles
-  /// (profiles_update_own_or_admin) + el trigger anti-escalada
-  /// (prevent_profile_privilege_escalation) permiten esto SOLO a admin/master;
-  /// un clinico no puede auto-promoverse (0006/0012/0017).
-  Future<void> setUserRole(String userId, AppRole role) async {
-    await _store.updateRow(Collections.profiles, userId, {'role': role.dbValue});
+  /// Cambia el CONJUNTO de roles de un usuario desde el panel de Administración /
+  /// Plataforma. Escribe `roles` (autoridad); el trigger sync_profile_roles
+  /// deriva el espejo `role`. Antes (setUserRole) se escribía SOLO `role`, lo que
+  /// caía en el atajo de compat del trigger (0098) y otorgaba `clinico` a todo
+  /// admin sin que nadie lo pidiera — la tercera vía legacy que el punto 7 no
+  /// cerró (punto 6 §1). Se escribe también `role` (primary) por el modo demo,
+  /// que no tiene trigger; en prod el trigger recomputa el espejo desde `roles`.
+  ///
+  /// En Supabase, la RLS de profiles (profiles_update_own_or_admin) + el trigger
+  /// anti-escalada (prevent_profile_privilege_escalation, 0096 cubre `roles`)
+  /// permiten esto SOLO a admin/master; un clínico no puede auto-promoverse.
+  Future<void> setUserRoles(String userId, Set<AppRole> roles) async {
+    final err = validateRoleSet(roles);
+    if (err != null) throw Exception(err);
+    await _store.updateRow(Collections.profiles, userId, {
+      'roles': roles.map((r) => r.dbValue).toList(),
+      'role': primaryRoleOf(roles).dbValue,
+    });
   }
 
   /// Da de alta un usuario CON cuenta de acceso (login).
@@ -415,7 +426,7 @@ class DataRepository {
   Future<CreatedUser> createUserWithLogin({
     required String email,
     required String fullName,
-    required AppRole role,
+    required Set<AppRole> roles,
     required String organizationId,
     String? phone,
     String? cedulaProfesional,
@@ -423,19 +434,24 @@ class DataRepository {
     String roleTitle = 'Kurador',
     String? password,
   }) async {
+    // Validación del conjunto (misma regla que la Edge Function y setUserRoles):
+    // no vacío, sin master por esta vía, cuidador exclusivo.
+    final err = validateRoleSet(roles);
+    if (err != null) throw Exception(err);
     // Regla: un centro no puede quedar sin admin (si no, nadie podría comprar
     // insumos). El PRIMER usuario del centro —o cualquiera mientras el centro no
     // tenga aún un admin/master— debe crearse como admin. Evita que el problema
     // reaparezca en silencio al dar de alta un centro nuevo.
-    if (role != AppRole.admin) {
+    if (!roles.contains(AppRole.admin)) {
       final hasAdmin = listUsers().any((u) =>
-          u.organizationId == organizationId &&
-          (u.role == AppRole.admin || u.role == AppRole.master));
+          u.organizationId == organizationId && (u.isAdmin || u.isMaster));
       if (!hasAdmin) {
         throw Exception('El primer usuario del centro debe ser administrador: '
             'un centro no puede quedar sin admin.');
       }
     }
+    final hasClinico = roles.contains(AppRole.clinico);
+    final hasEnfermeria = roles.contains(AppRole.enfermeria);
     final store = _store;
     if (store is SupabaseDataStore) {
       Map<String, dynamic> data;
@@ -443,7 +459,9 @@ class DataRepository {
         data = await store.invokeFunction('admin-create-user', {
           'email': email,
           'fullName': fullName,
-          'role': role.dbValue,
+          // Se manda el CONJUNTO (autoridad); el trigger deriva el espejo `role`.
+          // Se deja de mandar `role` para no depender del atajo legacy (punto 7).
+          'roles': roles.map((r) => r.dbValue).toList(),
           'organizationId': organizationId,
           if (phone != null && phone.isNotEmpty) 'phone': phone,
           if (cedulaProfesional != null && cedulaProfesional.isNotEmpty)
@@ -464,32 +482,35 @@ class DataRepository {
         uid: data['uid'] as String,
         email: (data['email'] ?? email) as String,
         tempPassword: data['tempPassword'] as String?,
-        role: role,
+        role: primaryRoleOf(roles),
       );
     }
 
-    // Modo demo local: sin Auth real.
+    // Modo demo local: sin Auth real ni trigger, así que se escriben AMBOS
+    // `roles` (autoridad) y `role` (espejo primary) para que la UI sea correcta.
     final uid = _uuid.v4();
     await _store.insertRow(Collections.profiles, {
       'id': uid,
-      'role': role.dbValue,
+      'role': primaryRoleOf(roles).dbValue,
+      'roles': roles.map((r) => r.dbValue).toList(),
       'full_name': fullName,
       'email': email,
       'is_active': true,
       'premium_enabled': false,
       'organization_id': organizationId,
     });
-    if (role == AppRole.clinico || role == AppRole.enfermeria) {
+    if (hasClinico || hasEnfermeria) {
       await createStaff(
         fullName: fullName,
-        roleTitle: role == AppRole.enfermeria ? 'Enfermería' : roleTitle,
+        roleTitle: hasClinico ? roleTitle : 'Enfermería',
         organizationId: organizationId,
         primarySiteId: primarySiteId,
         profileId: uid,
         cedulaProfesional: cedulaProfesional,
       );
     }
-    return CreatedUser(uid: uid, email: email, tempPassword: null, role: role);
+    return CreatedUser(
+        uid: uid, email: email, tempPassword: null, role: primaryRoleOf(roles));
   }
 
   String _edgeErrorMessage(FunctionException e) {

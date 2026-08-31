@@ -113,11 +113,15 @@ final routerProvider = Provider<GoRouter>((ref) {
       // El CUIDADOR (Fase 3) es un rol restringido: su única área es
       // '/caregiver' (monitoreo de los pacientes que el centro le asignó, solo
       // lectura + sus tareas). No ve el dashboard clínico ni el resto de la nav.
-      final isCaregiver = session.user?.role == AppRole.cuidador;
+      // RESTRICCIÓN → cuidador EXCLUSIVO (punto 6 §0): encerrar en /caregiver
+      // solo a quien no tiene ningún rol más amplio.
+      final isCaregiver = session.user?.isCaregiverOnly ?? false;
       // Enfermería (0045): personal clínico restringido — observa, reporta y
       // ejecuta, pero NO diagnostica ni cambia protocolo. Se le bloquean las
-      // rutas de escritura de diagnóstico/protocolo (abajo).
-      final isNurse = session.user?.role == AppRole.enfermeria;
+      // rutas de escritura de diagnóstico/protocolo (abajo). RESTRICCIÓN →
+      // enfermería SIN nada más amplio (punto 6 §0): un {clinico,enfermeria} NO
+      // debe quedar bloqueado, porque su rol clínico sí diagnostica.
+      final isNurse = session.user?.isRestrictedNurse ?? false;
       if (loggedIn && (goingToLogin || goingToDemo)) {
         if (isMaster) return '/platform';
         if (isCaregiver) return '/caregiver';

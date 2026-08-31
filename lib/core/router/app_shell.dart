@@ -45,8 +45,10 @@ class AppShell extends ConsumerWidget {
     }
 
     // El cuidador (Fase 3) tiene una sola área: su monitoreo (pacientes
-    // asignados, solo lectura, + sus tareas preventivas).
-    if (user?.role == AppRole.cuidador) {
+    // asignados, solo lectura, + sus tareas preventivas). RESTRICCIÓN → cuidador
+    // EXCLUSIVO (punto 6 §0): la nav reducida es solo para quien no tiene nada
+    // más amplio.
+    if (user?.isCaregiverOnly ?? false) {
       return const [
         _NavItem('/caregiver', Icons.monitor_heart_outlined, Icons.monitor_heart, 'Monitoreo'),
       ];
