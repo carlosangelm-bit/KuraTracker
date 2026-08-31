@@ -101,24 +101,30 @@ set search_path = public, pg_temp as $$
 begin
   if auth.uid() is null then return new; end if;   -- alta por trigger de Auth
 
+  -- premium jamás lo cambia un no-admin (igual que hoy).
   if not public.is_admin() and not public.is_master() then
-    -- premium jamás lo cambia un no-admin.
     if new.premium_enabled is distinct from old.premium_enabled then
       raise exception 'No autorizado: solo un administrador puede modificar premium_enabled';
     end if;
-    -- Cambio de centro/roles: permitido SOLO si coincide con una membresía
-    -- activa propia (el switch legítimo, que solo admin/master pueden conceder).
-    if new.roles is distinct from old.roles
-       or new.organization_id is distinct from old.organization_id then
-      if not exists (
-        select 1 from public.user_center_memberships m
-        where m.profile_id = new.id
-          and m.organization_id = new.organization_id
-          and m.is_active = true
-          and m.roles <@ new.roles and new.roles <@ m.roles
-      ) then
-        raise exception 'No autorizado: cambio de centro/roles sin membresía válida';
-      end if;
+  end if;
+
+  -- Cambio de centro/roles: permitido SOLO si coincide con una membresía activa
+  -- propia. Aplica a TODOS salvo el master (que no está atado a una organización,
+  -- regla de oro del 0012). Antes estaba DENTRO de la rama de no-admin, así que
+  -- un admin se la saltaba y podía mudar su propio organization_id a otro centro
+  -- (acceso entre inquilinos vía current_organization_id()). Invariante: el
+  -- centro activo y los roles de un perfil solo reflejan una membresía concedida.
+  if not public.is_master()
+     and ( new.roles is distinct from old.roles
+        or new.organization_id is distinct from old.organization_id ) then
+    if not exists (
+      select 1 from public.user_center_memberships m
+      where m.profile_id = new.id
+        and m.organization_id = new.organization_id
+        and m.is_active = true
+        and m.roles <@ new.roles and new.roles <@ m.roles
+    ) then
+      raise exception 'No autorizado: cambio de centro/roles sin membresía válida';
     end if;
   end if;
 
@@ -134,6 +140,62 @@ begin
   return new;
 end; $$;
 -- El trigger ya es trg_zz_prevent_profile_privilege_escalation (0105).
+
+-- -----------------------------------------------------------------------------
+-- 4.1 create_organization_with_admin (0099): crear la MEMBRESÍA ANTES de promover
+--     el perfil. Con el guard más estricto de arriba, actualizar el perfil sin
+--     una membresía coincidente ahora se rechaza; el alta de centro de
+--     autoservicio necesita que la membresía exista primero. SECURITY DEFINER
+--     con auth.uid() = llamador, así que el trigger de §4 SÍ dispara.
+-- -----------------------------------------------------------------------------
+create or replace function public.create_organization_with_admin(
+  p_organization_name text,
+  p_admin_full_name text,
+  p_admin_is_clinical boolean default false
+)
+returns uuid language plpgsql security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_org_id uuid;
+  v_staff_id uuid;
+  v_roles public.user_role[];
+begin
+  if auth.uid() is null then
+    raise exception 'No autenticado';
+  end if;
+
+  v_roles := case
+               when p_admin_is_clinical
+                 then array['admin', 'clinico']::public.user_role[]
+               else array['admin']::public.user_role[]
+             end;
+
+  insert into public.organizations (name) values (p_organization_name)
+  returning id into v_org_id;
+
+  -- Membresía PRIMERO (el guard de profiles exige una coincidente para el cambio
+  -- de organization_id/roles, que ahora aplica también a admins).
+  insert into public.user_center_memberships (profile_id, organization_id, roles, is_active)
+  values (auth.uid(), v_org_id, v_roles, true)
+  on conflict (profile_id, organization_id)
+    do update set roles = excluded.roles, is_active = true;
+
+  update public.profiles
+  set organization_id = v_org_id,
+      roles = v_roles,
+      full_name = coalesce(p_admin_full_name, full_name)
+  where id = auth.uid();
+
+  if p_admin_is_clinical then
+    insert into public.staff (profile_id, folio, full_name, role_title, organization_id)
+    values (auth.uid(), '', coalesce(p_admin_full_name, 'Administrador'), 'Administrador', v_org_id)
+    returning id into v_staff_id;
+  end if;
+
+  return v_org_id;
+end;
+$$;
 
 -- -----------------------------------------------------------------------------
 -- 5. set_active_center: copia el CONJUNTO de la membresía al perfil (nunca toca

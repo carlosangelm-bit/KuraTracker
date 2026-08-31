@@ -81,12 +81,29 @@ void main() {
     expect(s.contains('set organization_id = target_org, role = '), isFalse);
   });
 
-  test('el switch legítimo sigue permitido: exención por membresía en el guard',
+  test('el requisito de membresía aplica a TODOS salvo master (no solo no-admin)',
       () {
-    // Un no-admin puede cambiar org+roles si coincide con una membresía activa.
-    expect(m0106,
-        contains('cambio de centro/roles sin membresía válida'));
-    expect(flat(m0106),
-        contains('m.roles <@ new.roles and new.roles <@ m.roles'));
+    final s = flat(m0106);
+    // El chequeo de centro/roles está guardado SOLO por `not is_master()` (así
+    // un admin NO se lo salta y no puede mudarse de centro a otro inquilino).
+    expect(
+      s,
+      contains(
+          'if not public.is_master() and ( new.roles is distinct from old.roles or new.organization_id is distinct from old.organization_id )'),
+    );
+    expect(s, contains('cambio de centro/roles sin membresía válida'));
+    expect(s, contains('m.roles <@ new.roles and new.roles <@ m.roles'));
+  });
+
+  test('create_organization_with_admin crea la membresía ANTES del perfil', () {
+    // Con el guard más estricto, el alta de centro requiere la membresía primero.
+    expect(m0106, contains('create or replace function public.create_organization_with_admin'));
+    final idxMembership = m0106.indexOf(
+        'insert into public.user_center_memberships (profile_id, organization_id, roles, is_active)');
+    final idxProfileUpdate = m0106.indexOf('update public.profiles\n  set organization_id = v_org_id,');
+    expect(idxMembership, greaterThan(0));
+    expect(idxProfileUpdate, greaterThan(0));
+    expect(idxMembership, lessThan(idxProfileUpdate),
+        reason: 'la membresía debe insertarse antes de actualizar el perfil');
   });
 }
