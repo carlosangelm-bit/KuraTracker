@@ -279,6 +279,11 @@ class _TreatmentStepScreenState extends ConsumerState<TreatmentStepScreen> {
                                 // reflejo aqui), se inyecta como opcion extra
                                 // en vez de dejar el campo en blanco (bug #6).
                                 value: row.method,
+                                // isExpanded recorta con "…" dentro de la caja;
+                                // sin él el texto se desborda bajo el IconButton
+                                // en móvil (~390 px). Flutter 3.27.1: `value:`,
+                                // NO `initialValue:`.
+                                isExpanded: true,
                                 decoration: const InputDecoration(labelText: 'Método'),
                                 items: _methodItems(row.method)
                                     .map((m) => DropdownMenuItem(value: m, child: Text(m)))
@@ -304,6 +309,7 @@ class _TreatmentStepScreenState extends ConsumerState<TreatmentStepScreen> {
                                 // aunque no pertenezca a la lista base de ese
                                 // metodo en el catalogo.
                                 value: row.product,
+                                isExpanded: true,
                                 decoration: const InputDecoration(labelText: 'Producto'),
                                 items: _productItems(row.method, row.product)
                                     .map((p) => DropdownMenuItem(value: p, child: Text(p)))

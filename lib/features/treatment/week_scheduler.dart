@@ -172,7 +172,11 @@ class _WeekSchedulerState extends State<WeekScheduler> {
 
   Widget _hourRow(int hour, List<DateTime> days) {
     return Row(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
+      // OJO: sin `CrossAxisAlignment.stretch`. Este widget vive dentro de un
+      // ListView, donde la altura disponible es ILIMITADA; `stretch` obliga a
+      // los hijos a alto infinito y toda la rejilla desaparece (en release no
+      // hay assert, solo pantalla en blanco). Las celdas ya traen `height: 34`,
+      // así que quedan alineadas con el default (center) sin stretch.
       children: [
         SizedBox(
           width: 40,
