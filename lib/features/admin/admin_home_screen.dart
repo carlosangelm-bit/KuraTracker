@@ -87,6 +87,16 @@ class _AdminHomeScreenState extends ConsumerState<AdminHomeScreen>
     // móvil conserva el TabBar horizontal.
     final wide = MediaQuery.of(context).size.width >= Breakpoints.twoPane;
 
+    // Guarda de rol (2ª capa; el redirect del router es la 1ª). En web una URL
+    // no es candado: solo admin del centro y master ven Administración. Un
+    // clinico que llegue aquí por cualquier ruta no ve nada administrativo.
+    final sessionUser = ref.watch(sessionProvider).user;
+    if (sessionUser != null && !sessionUser.isAdmin && !sessionUser.isMaster) {
+      return const Scaffold(
+        body: Center(child: Text('No tienes acceso a esta sección.')),
+      );
+    }
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Administración'),
@@ -102,7 +112,13 @@ class _AdminHomeScreenState extends ConsumerState<AdminHomeScreen>
                   Tab(text: 'Configuración'),
                   Tab(text: 'Marca'),
                 ],
-                onTap: (i) => setState(() => _tab = i),
+                // Mueve el controller además del estado de contenido; si solo
+                // se cambia `_tab`, el indicador del TabBar queda un paso atrás
+                // (mismo patrón que el rail de escritorio abajo).
+                onTap: (i) => setState(() {
+                  _tab = i;
+                  _tabController.index = i;
+                }),
               ),
       ),
       body: repoAsync.when(
