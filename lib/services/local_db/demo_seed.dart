@@ -31,7 +31,7 @@ class DemoSeed {
   // una sola vez en instalaciones demo previas (wipeAll + _seed), evitando
   // duplicados y datos viejos. Cada rediseño del roster sube este número.
   // v12: roster curado por escenario (clínica 7 / hospital 5 / cuidadores 3).
-  static const String _seedFlag = 'seeded_v25';
+  static const String _seedFlag = 'seeded_v26';
 
   static Future<void> ensureSeeded(LocalStore store) async {
     if (store.getBool(_seedFlag)) return;
@@ -67,6 +67,11 @@ class DemoSeed {
     final organizationId2 = _uuid.v4(); // Clínica Vitalis (2º tenant, para master)
     final organizationIdHospital = _uuid.v4();
     final organizationIdCuidadores = _uuid.v4();
+    // Profesional independiente (persona del congreso): su propio consultorio de
+    // heridas. Mismo center_type que una clínica; lo que cambia son los permisos
+    // (la persona es admin Y clínico). Protocolo Kura+ SÍ (diferenciador),
+    // insumos NO (capa comercial no validada).
+    final organizationIdIndependiente = _uuid.v4();
 
     await store.saveAll(Collections.organizations, [
       {
@@ -111,6 +116,19 @@ class DemoSeed {
         'center_type': 'cuidadores',
         'created_at': iso(now.subtract(const Duration(days: 10))),
       },
+      {
+        'id': organizationIdIndependiente,
+        'name': 'Consultorio Dra. Alejandra Ríos',
+        'is_active': true,
+        'center_type': 'clinica_heridas',
+        'scheduling_mode': 'manual',
+        // Kura+ SÍ (es lo que se vende); insumos NO (no se muestra la capa
+        // comercial que aún no se valida).
+        'premium_protocolo_kura': true,
+        'premium_insumos': false,
+        'is_test': false,
+        'created_at': iso(now.subtract(const Duration(days: 120))),
+      },
     ]);
 
     // ---------------- Sitios ----------------
@@ -119,6 +137,7 @@ class DemoSeed {
     final siteDomicilioCdmx = _uuid.v4();
     final siteDomicilioGdl = _uuid.v4();
     final siteVitalisMty = _uuid.v4();
+    final siteIndependiente = _uuid.v4();
 
     await store.saveAll(Collections.sites, [
       {
@@ -161,6 +180,14 @@ class DemoSeed {
         'address': 'Av. Constitución 789, Monterrey',
         'is_active': true,
       },
+      {
+        'id': siteIndependiente,
+        'organization_id': organizationIdIndependiente,
+        'name': 'Consultorio Dra. Alejandra Ríos',
+        'kind': 'clinica',
+        'address': 'Torre Médica, Consultorio 305',
+        'is_active': true,
+      },
     ]);
 
     // ---------------- Usuarios / Perfiles ----------------
@@ -176,6 +203,8 @@ class DemoSeed {
     // Enfermería demo: personal del Hospital demo (acceso center-wide, ejecuta
     // rondas pero no diagnostica/prescribe).
     final enfermeriaProfileId = _uuid.v4();
+    // Profesional independiente (congreso): un SOLO perfil con los dos roles.
+    final independienteProfileId = _uuid.v4();
 
     await store.saveAll(Collections.profiles, [
       {
@@ -235,6 +264,18 @@ class DemoSeed {
         'email': 'enfermeria@hospital.mx',
         'is_active': true,
         'premium_enabled': false,
+      },
+      {
+        'id': independienteProfileId,
+        'organization_id': organizationIdIndependiente,
+        'role': 'admin', // espejo (primary_role del conjunto)
+        'roles': ['admin', 'clinico'], // el conjunto: ES el todólogo
+        'full_name': 'Dra. Alejandra Ríos',
+        'email': 'independiente@demo.kuramas.com',
+        // premium_enabled OBLIGATORIO: desde 0100 Kura+ es add-on de centro AND
+        // premium de usuario. Sin esto no vería el motor Kura+ (lo que se vende).
+        'premium_enabled': true,
+        'is_active': true,
       },
     ]);
 
@@ -296,6 +337,17 @@ class DemoSeed {
         'is_active': true,
         'created_at': iso(now),
       },
+      {
+        'id': _uuid.v4(),
+        'profile_id': independienteProfileId,
+        'organization_id': organizationIdIndependiente,
+        'role': 'admin',
+        'roles': ['admin', 'clinico'], // conjunto: autoridad de roles por centro
+        // No consume-exención: es una licencia real (consumed_seats = 1).
+        'seat_exempt': false,
+        'is_active': true,
+        'created_at': iso(now),
+      },
     ]);
 
     // ---------------- Personal sanitario ----------------
@@ -304,6 +356,10 @@ class DemoSeed {
     final staff2Id = _uuid.v4();
     final adminVitalisStaffId = _uuid.v4();
     final enfermeriaStaffId = _uuid.v4();
+    // Staff de la Dra. Ríos: consultations.staff_id es NOT NULL, sin su fila no
+    // puede crear consultas (en demo no hay ensureAdminStaffId al vuelo). Con
+    // cédula: es clínica de verdad.
+    final independienteStaffId = _uuid.v4();
 
     await store.saveAll(Collections.staff, [
       {
@@ -359,6 +415,18 @@ class DemoSeed {
         'primary_site_id': siteVitalisMty,
         'is_active': true,
         'created_at': iso(now.subtract(const Duration(days: 30))),
+      },
+      {
+        'id': independienteStaffId,
+        'organization_id': organizationIdIndependiente,
+        'profile_id': independienteProfileId,
+        'folio': 'AR2026-0001',
+        'full_name': 'Dra. Alejandra Ríos',
+        'role_title': 'Médico / Kuradora',
+        'cedula_profesional': '12345678',
+        'primary_site_id': siteIndependiente,
+        'is_active': true,
+        'created_at': iso(now.subtract(const Duration(days: 120))),
       },
     ]);
 
@@ -490,7 +558,9 @@ class DemoSeed {
       bool withFollowUpNotes = false, // narrativa de seguimiento por visita
       String followUpSignedBy = 'Dra. Ana Martínez',
       String followUpSignedLicense = 'K2024-0001',
+      String? orgId, // centro dueño del caso; default Kura+ (organizationId)
     }) async {
+      final org = orgId ?? organizationId;
       final pid = _uuid.v4();
       final wid = _uuid.v4();
       final folio = 'EXP2026-${expSeq.toString().padLeft(4, '0')}';
@@ -510,7 +580,7 @@ class DemoSeed {
       await appendRows(Collections.patients, [
         {
           'id': pid,
-          'organization_id': organizationId,
+          'organization_id': org,
           'folio': folio,
           'full_name': name,
           'birth_date': isoDate(birth),
@@ -543,7 +613,7 @@ class DemoSeed {
             diagnoses
                 .map((d) => {
                       'id': _uuid.v4(),
-                      'organization_id': organizationId,
+                      'organization_id': org,
                       'patient_id': pid,
                       'wound_id': null,
                       'staff_id': staffId,
@@ -1805,6 +1875,172 @@ class DemoSeed {
           'status': 'pending',
         },
       ],
+    );
+
+    // ---------------- ESCENARIO: Profesional independiente (congreso) --------
+    // La Dra. Alejandra Ríos es su propio centro: administra Y trata. Pocos
+    // pacientes (consultorio de una persona), pero cada uno luce lo que se vende:
+    // curva de cierre, fotos en dos fechas, Protocolo Kura+ corrido, etiologías
+    // variadas y un caso ya cerrado. Reutiliza addClinicalCase con orgId propio.
+    const indepSignedBy = 'Dra. Alejandra Ríos';
+    const indepLicense = '12345678';
+
+    // 1) Pie diabético — MEJORANDO. Sobre este se siembra la recomendación Kura+.
+    final indepDiabetico = await addClinicalCase(
+      orgId: organizationIdIndependiente,
+      siteId: siteIndependiente,
+      staffId: independienteStaffId,
+      followUpSignedBy: indepSignedBy,
+      followUpSignedLicense: indepLicense,
+      name: 'María Elena Fuentes Rivera',
+      birth: DateTime(1961, 7, 4),
+      sex: 'F',
+      mobility: 'ambulatorio',
+      background: 'Diabetes mellitus tipo 2 en control. Neuropatía periférica; '
+          'acude a consultorio privado para el manejo de su úlcera plantar.',
+      etiology: 'pie_diabetico',
+      subtype: 'Úlcera neuropática plantar',
+      location: 'pie_derecho_planta',
+      woundExtra: {'wagner_grade': 'g2'},
+      glucose: 152,
+      comorbid: [
+        ['diabetes_mellitus', 'presente'],
+        ['enfermedad_arterial_periferica', 'presente'],
+      ],
+      diagnoses: [
+        {
+          'code': 'L97X',
+          'name': 'ÚLCERA DE MIEMBRO INFERIOR, NO CLASIFICADA EN OTRA PARTE',
+          'relation': 'herida',
+          'primary': 'true'
+        },
+        {
+          'code': 'E115',
+          'name':
+              'DIABETES MELLITUS TIPO 2, CON COMPLICACIONES CIRCULATORIAS PERIFÉRICAS',
+          'relation': 'causa',
+          'primary': 'false'
+        },
+      ],
+      areas: [9.6, 7.2, 4.8, 2.4],
+      comps: [
+        [30, 45, 10, 15],
+        [45, 35, 5, 15],
+        [65, 20, 0, 15],
+        [80, 8, 0, 12],
+      ],
+      baselineDaysAgo: 42,
+      withPhotos: true,
+      withFollowUpNotes: true,
+    );
+    // Recomendación del Protocolo Kura+ ya corrida sobre la última consulta del
+    // caso, para que se vea sin tener que correrla en vivo (1.3). La UI lee
+    // dominant_scenario, commercial_phenotype, regimen (metodo/producto) e
+    // interconsultas (especialidad/es_urgente).
+    await appendRows(Collections.kuraRecommendations, [
+      {
+        'id': _uuid.v4(),
+        'consultation_id': (indepDiabetico['consultIds'] as List).last,
+        'wound_id': indepDiabetico['wid'],
+        'dominant_scenario': 'B',
+        'commercial_phenotype': 'Herida con esfacelo y exudado moderado',
+        'regimen': [
+          {'metodo': 'Desbridamiento enzimático', 'producto': 'Colagenasa (pomada)'},
+          {'metodo': 'Apósito primario', 'producto': 'Hidrofibra con plata'},
+          {'metodo': 'Apósito secundario', 'producto': 'Espuma de poliuretano'},
+        ],
+        'interconsultas': [
+          {'especialidad': 'Angiología', 'es_urgente': false},
+        ],
+        'alertas': <String>[],
+        'generated_at': iso(now.subtract(const Duration(days: 1))),
+        'created_at': iso(now.subtract(const Duration(days: 1))),
+      }
+    ]);
+
+    // 2) Úlcera venosa — MEJORANDO. Otra etiología, con fotos antes/después.
+    await addClinicalCase(
+      orgId: organizationIdIndependiente,
+      siteId: siteIndependiente,
+      staffId: independienteStaffId,
+      followUpSignedBy: indepSignedBy,
+      followUpSignedLicense: indepLicense,
+      name: 'Jorge Alberto Medina Sáenz',
+      birth: DateTime(1955, 11, 20),
+      sex: 'M',
+      mobility: 'ambulatorio',
+      background: 'Insuficiencia venosa crónica. Úlcera maleolar recurrente; '
+          'manejo con terapia compresiva y curación avanzada.',
+      etiology: 'vascular',
+      subtype: 'Úlcera venosa',
+      location: 'pierna_izquierda_tercio_distal',
+      woundExtra: {'ceap_class': 'c6'},
+      comorbid: [
+        ['obesidad', 'presente'],
+        ['movilidad_reducida', 'no_evaluado'],
+      ],
+      diagnoses: [
+        {
+          'code': 'I830',
+          'name': 'VENAS VARICOSAS DE LOS MIEMBROS INFERIORES CON ÚLCERA',
+          'relation': 'herida',
+          'primary': 'true'
+        },
+      ],
+      areas: [14.0, 10.5, 7.0, 4.2],
+      comps: [
+        [40, 40, 5, 15],
+        [55, 28, 2, 15],
+        [70, 15, 0, 15],
+        [82, 6, 0, 12],
+      ],
+      baselineDaysAgo: 35,
+      withPhotos: true,
+      withFollowUpNotes: true,
+    );
+
+    // 3) LPP (por presión) — CERRADA / dada de alta. "Así se ve cuando cierra".
+    await addClinicalCase(
+      orgId: organizationIdIndependiente,
+      siteId: siteIndependiente,
+      staffId: independienteStaffId,
+      followUpSignedBy: indepSignedBy,
+      followUpSignedLicense: indepLicense,
+      name: 'Guadalupe Ramírez Ortega',
+      birth: DateTime(1949, 2, 28),
+      sex: 'F',
+      mobility: 'silla_ruedas',
+      background: 'Úlcera por presión sacra en paciente con movilidad reducida. '
+          'Seguimiento domiciliario hasta el cierre completo.',
+      etiology: 'lpp',
+      subtype: 'Úlcera por presión (categoría 3)',
+      location: 'region_sacra',
+      comorbid: [
+        ['movilidad_reducida', 'presente'],
+        ['diabetes_mellitus', 'presente'],
+      ],
+      diagnoses: [
+        {
+          'code': 'L89153',
+          'name': 'ÚLCERA POR PRESIÓN DE REGIÓN SACRA, ESTADIO 3',
+          'relation': 'herida',
+          'primary': 'true'
+        },
+      ],
+      areas: [16.0, 10.0, 5.5, 2.0, 0.4],
+      comps: [
+        [15, 40, 35, 10],
+        [35, 40, 15, 10],
+        [60, 25, 0, 15],
+        [80, 8, 0, 12],
+        [95, 0, 0, 5],
+      ],
+      baselineDaysAgo: 56,
+      withPhotos: true,
+      withFollowUpNotes: true,
+      closed: true,
+      dischargeNote: 'Cierre completo por segunda intención. Se dan indicaciones '
+          'de prevención de recurrencia (cambios posturales, superficie de apoyo).',
     );
 
     // ---------------- Agenda de la clínica (citas manuales) ----------------

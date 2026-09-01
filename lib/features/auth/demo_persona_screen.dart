@@ -51,6 +51,17 @@ const _personas = <_Persona>[
         'el perfil principal del sistema.',
   ),
   _Persona(
+    title: 'Profesional independiente',
+    email: 'independiente@demo.kuramas.com',
+    icon: Icons.medical_information_outlined,
+    centerType: CenterType.clinicaHeridas,
+    description:
+        'Atiende por su cuenta y es su propio centro: administra y trata. '
+        'Lleva el expediente completo de sus pacientes, corre el motor '
+        'Protocolo Kura+ y sigue la evolución de cada herida con fotos y '
+        'mediciones.',
+  ),
+  _Persona(
     title: 'Administrador de centro',
     email: 'admin@curamas.mx',
     icon: Icons.admin_panel_settings_outlined,
@@ -285,11 +296,19 @@ class _PersonaCard extends StatelessWidget {
                           else
                             Icon(Icons.arrow_forward, size: 16, color: color),
                           const SizedBox(width: 6),
-                          Text(loading ? 'Entrando…' : 'Entrar como ${persona.title}',
-                              style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w700,
-                                  color: color)),
+                          // Flexible + ellipsis: títulos largos (p. ej.
+                          // "Profesional independiente") no desbordan la fila.
+                          Flexible(
+                            child: Text(
+                                loading
+                                    ? 'Entrando…'
+                                    : 'Entrar como ${persona.title}',
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                    color: color)),
+                          ),
                         ],
                       ),
                     ],
