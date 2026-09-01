@@ -173,6 +173,14 @@ final routerProvider = Provider<GoRouter>((ref) {
         if (purchaseRoutes.contains(location)) return '/insumos';
       }
 
+      // /admin: SOLO admin del centro (y master). Mismo criterio que la compra
+      // de insumos. En web una URL no es candado (punto 1 auditoría 1-sep): un
+      // clinico tecleando /admin abría el panel completo. Dos capas: este
+      // redirect + guarda de rol dentro de AdminHomeScreen.
+      if (loggedIn && !canPurchase && location.startsWith('/admin')) {
+        return '/';
+      }
+
       if (loggedIn && isNurse) {
         final blocked = location == '/patients/new' ||
             location.endsWith('/edit') ||

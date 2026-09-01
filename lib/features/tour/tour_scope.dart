@@ -234,26 +234,23 @@ class _TourLauncher extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: KuraColors.primary,
-      borderRadius: BorderRadius.circular(24),
-      elevation: 4,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(24),
-        onTap: onTap,
-        child: const Padding(
-          padding: EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.play_circle_outline, color: Colors.white, size: 18),
-              SizedBox(width: 6),
-              Text('Tour',
-                  style: TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 13)),
-            ],
+    // Ícono circular compacto (antes pill "▶ Tour"): footprint mínimo para no
+    // tapar el contenido bajo el anclaje bottom-left (celda 07:00 de la rejilla
+    // del plan, rótulo "Largo (cm)" de la Fase 1). Opacidad en reposo para
+    // dejar leer lo que quede detrás. Punto 3 auditoría 1-sep.
+    return Opacity(
+      opacity: 0.7,
+      child: Material(
+        color: KuraColors.primary,
+        shape: const CircleBorder(),
+        elevation: 4,
+        child: InkWell(
+          customBorder: const CircleBorder(),
+          onTap: onTap,
+          child: const Padding(
+            padding: EdgeInsets.all(11),
+            child:
+                Icon(Icons.play_circle_outline, color: Colors.white, size: 22),
           ),
         ),
       ),
