@@ -62,6 +62,30 @@ create trigger trg_sync_membership_roles
   for each row execute function public.sync_membership_roles();
 
 -- -----------------------------------------------------------------------------
+-- 2.1 Backfill de membresías desde `profiles` (§3.1 del cierre del hueco). La
+--     membresía pasa a ser la AUTORIDAD de roles/asientos, pero hoy solo se
+--     poblaba a mano desde Plataforma: ni admin-create-user ni
+--     create_organization_with_admin la creaban. Sin esto, al aplicar el guard
+--     estricto de §4, editar roles (setUserRoles) o cambiar de centro tronaría
+--     para toda persona sin membresía. Idempotente.
+--
+--     Se EXCLUYE al master: no es miembro de un centro (regla de oro del 0012, no
+--     atado a una organización) y no consume asiento; además su inserción con
+--     roles={master} dispararía prevent_membership_master_grant (§3), porque
+--     durante la migración is_master() es false. Si un master necesita operar
+--     dentro de un centro cliente, esa membresía se crea explícita y seat_exempt.
+insert into public.user_center_memberships
+  (id, profile_id, organization_id, role, roles, is_active)
+select gen_random_uuid(), p.id, p.organization_id, p.role, p.roles, true
+from public.profiles p
+where p.organization_id is not null
+  and not ('master'::public.user_role = any(p.roles))
+  and not exists (
+    select 1 from public.user_center_memberships m
+    where m.profile_id = p.id and m.organization_id = p.organization_id
+  );
+
+-- -----------------------------------------------------------------------------
 -- 3. Candado master en la membresía: mira AMBAS columnas y corre AL FINAL
 --    (trg_zz_*, tras el espejo de §2). Reemplaza el de 0104 (que miraba solo el
 --    escalar y corría antes del espejo → misma ventana que cerró el 0105).

@@ -423,22 +423,39 @@ class DataRepository {
     if (err != null) throw Exception(err);
     final rolesDb = roles.map((r) => r.dbValue).toList();
     final primary = primaryRoleOf(roles).dbValue;
+
+    // Centro objetivo: el pasado, o el activo del usuario.
+    final prof =
+        _store.getAll(Collections.profiles).where((p) => p['id'] == userId);
+    final activeOrg =
+        prof.isEmpty ? null : prof.first['organization_id'] as String?;
+    final targetOrg = organizationId ?? activeOrg;
+
     // La autoridad de los roles POR CENTRO es la MEMBRESÍA (0106): editar solo el
-    // perfil no dura, porque el próximo set_active_center lo sobreescribe desde
-    // la membresía. Se actualiza la membresía del centro.
-    if (organizationId != null) {
-      final m = listMembershipsForOrg(organizationId)
+    // perfil no dura (el próximo set_active_center lo sobreescribe desde la
+    // membresía) y, con el guard estricto del 0106 §4, actualizar el perfil sin
+    // una membresía coincidente se RECHAZA. Por eso se hace UPSERT de la membresía
+    // (§3.5): insertar si no existe (usuario creado por admin-create-user sin
+    // membresía), actualizar si existe. La membresía va PRIMERO.
+    if (targetOrg != null) {
+      final existing = listMembershipsForOrg(targetOrg)
           .where((x) => x.profileId == userId);
-      if (m.isNotEmpty) {
-        await _store.updateRow(Collections.userCenterMemberships, m.first.id,
-            {'roles': rolesDb, 'role': primary});
+      if (existing.isNotEmpty) {
+        await _store.updateRow(Collections.userCenterMemberships,
+            existing.first.id, {'roles': rolesDb, 'role': primary});
+      } else {
+        await _store.insertRow(Collections.userCenterMemberships, {
+          'id': _uuid.v4(),
+          'profile_id': userId,
+          'organization_id': targetOrg,
+          'roles': rolesDb,
+          'role': primary,
+          'is_active': true,
+        });
       }
     }
     // El perfil solo si ESE centro es el activo del usuario (efecto inmediato);
     // sin contexto de centro, se actualiza el perfil (comportamiento previo).
-    final prof =
-        _store.getAll(Collections.profiles).where((p) => p['id'] == userId);
-    final activeOrg = prof.isEmpty ? null : prof.first['organization_id'];
     if (organizationId == null || activeOrg == organizationId) {
       await _store.updateRow(Collections.profiles, userId,
           {'roles': rolesDb, 'role': primary});
@@ -531,6 +548,16 @@ class DataRepository {
       'is_active': true,
       'premium_enabled': false,
       'organization_id': organizationId,
+    });
+    // Toda alta deja su membresía (0106 §3.4): autoridad de roles/asientos por
+    // centro. En prod lo hace admin-create-user; en demo se replica aquí.
+    await _store.insertRow(Collections.userCenterMemberships, {
+      'id': _uuid.v4(),
+      'profile_id': uid,
+      'organization_id': organizationId,
+      'role': primaryRoleOf(roles).dbValue,
+      'roles': roles.map((r) => r.dbValue).toList(),
+      'is_active': true,
     });
     if (hasClinico || hasEnfermeria) {
       await createStaff(

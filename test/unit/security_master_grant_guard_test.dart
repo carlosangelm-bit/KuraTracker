@@ -106,4 +106,40 @@ void main() {
     expect(idxMembership, lessThan(idxProfileUpdate),
         reason: 'la membresía debe insertarse antes de actualizar el perfil');
   });
+
+  // ---- Cierre del hueco de organización (§3.1/§3.4/§3.5) ----
+  // Las membresías no se poblaban en el alta normal; con el guard estricto eso
+  // rompería setUserRoles y el cambio de centro. Estas aserciones detectan el
+  // revert silencioso de las tres piezas que lo cierran.
+
+  test('0106 §3.1: backfill de membresías desde profiles, excluyendo master', () {
+    final s = flat(m0106);
+    expect(
+      s,
+      contains(
+          'insert into public.user_center_memberships (id, profile_id, organization_id, role, roles, is_active) select gen_random_uuid()'),
+    );
+    // El master no es miembro de centro (regla de oro 0012) y su inserción
+    // dispararía el candado de master durante la migración.
+    expect(s, contains("not ('master'::public.user_role = any(p.roles))"));
+  });
+
+  test('§3.4: admin-create-user deja la membresía del centro (upsert)', () {
+    final edge =
+        File('supabase/functions/admin-create-user/index.ts').readAsStringSync();
+    expect(edge, contains('user_center_memberships'));
+    expect(edge, contains('onConflict: "profile_id,organization_id"'));
+  });
+
+  test('§3.5: setUserRoles hace UPSERT de la membresía (insert si no existe)', () {
+    final repo = File('lib/services/data_repository.dart').readAsStringSync();
+    final idx = repo.indexOf('Future<void> setUserRoles(');
+    expect(idx, greaterThan(0));
+    // Ventana del método (suficiente para cubrir ambas ramas del upsert).
+    final chunk = repo.substring(idx, idx + 2200);
+    expect(chunk, contains('updateRow(Collections.userCenterMemberships'),
+        reason: 'rama: la membresía ya existe');
+    expect(chunk, contains('insertRow(Collections.userCenterMemberships'),
+        reason: 'rama: la membresía NO existe (usuario de admin-create-user)');
+  });
 }
