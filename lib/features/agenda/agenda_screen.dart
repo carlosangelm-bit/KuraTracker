@@ -13,7 +13,6 @@ import '../../core/theme/kura_theme.dart';
 import '../../core/providers/session_provider.dart';
 import '../../core/router/app_shell.dart' show UserMenuButton;
 import '../../core/widgets/kura_primary_fab.dart';
-import '../../models/app_user.dart';
 import '../../models/appointment.dart';
 import '../../models/manual_appointment.dart';
 import '../../models/patient.dart';
@@ -156,7 +155,7 @@ class _AgendaScreenState extends ConsumerState<AgendaScreen> {
   @override
   Widget build(BuildContext context) {
     final user = ref.watch(sessionProvider).user;
-    final isAdmin = user?.role == AppRole.admin;
+    final isAdmin = user?.isAdmin ?? false;
     final repo = ref.watch(dataRepositoryProvider).valueOrNull;
     final mode = repo?.schedulingModeFor(user?.organizationId) ?? 'none';
 
@@ -356,7 +355,7 @@ class _SummaryHeader extends StatelessWidget {
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: KuraPalette.brandPrimary.withOpacity(0.28),
+            color: KuraPalette.brandPrimary.withValues(alpha: 0.28),
             blurRadius: 18,
             offset: const Offset(0, 8),
           ),
@@ -369,7 +368,7 @@ class _SummaryHeader extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text('Hoy · ${_dayLong(today)}',
-                    style: TextStyle(color: Colors.white.withOpacity(0.75), fontSize: 12)),
+                    style: TextStyle(color: Colors.white.withValues(alpha: 0.75), fontSize: 12)),
                 const SizedBox(height: 2),
                 Text(
                   todayCount == 0
@@ -388,7 +387,7 @@ class _SummaryHeader extends StatelessWidget {
             children: [
               if (next != null) ...[
                 Text('Próxima',
-                    style: TextStyle(color: Colors.white.withOpacity(0.75), fontSize: 12)),
+                    style: TextStyle(color: Colors.white.withValues(alpha: 0.75), fontSize: 12)),
                 Text(
                   '${_dayLabel(next.datetime!)} · ${DateFormat('HH:mm').format(next.datetime!)}',
                   style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
@@ -398,7 +397,7 @@ class _SummaryHeader extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.16),
+                  color: Colors.white.withValues(alpha: 0.16),
                   borderRadius: BorderRadius.circular(20),
                 ),
                 child: Text('Esta semana: $weekCount',
@@ -458,13 +457,13 @@ class _Controls extends StatelessWidget {
               ChoiceChip(
                 label: const Text('Día'),
                 selected: view == _AgendaView.dia,
-                selectedColor: KuraColors.primary.withOpacity(0.15),
+                selectedColor: KuraColors.primary.withValues(alpha: 0.15),
                 onSelected: (_) => onViewChanged(_AgendaView.dia),
               ),
               ChoiceChip(
                 label: const Text('Semana'),
                 selected: view == _AgendaView.semana,
-                selectedColor: KuraColors.primary.withOpacity(0.15),
+                selectedColor: KuraColors.primary.withValues(alpha: 0.15),
                 onSelected: (_) => onViewChanged(_AgendaView.semana),
               ),
               if (view == _AgendaView.dia)
@@ -472,7 +471,7 @@ class _Controls extends StatelessWidget {
                   label: const Text('Historial'),
                   avatar: const Icon(Icons.history, size: 16),
                   selected: showHistory,
-                  selectedColor: KuraColors.primary.withOpacity(0.15),
+                  selectedColor: KuraColors.primary.withValues(alpha: 0.15),
                   onSelected: onHistoryChanged,
                 ),
               if (kuradorOptions.isNotEmpty) _kuradorDropdown(),
@@ -491,7 +490,7 @@ class _Controls extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12),
       decoration: BoxDecoration(
-        border: Border.all(color: KuraColors.primary.withOpacity(0.35)),
+        border: Border.all(color: KuraColors.primary.withValues(alpha: 0.35)),
         borderRadius: BorderRadius.circular(20),
       ),
       child: DropdownButtonHideUnderline(
@@ -601,10 +600,7 @@ class _DayAgenda extends StatelessWidget {
     final children = <Widget>[];
     for (final day in dayKeys) {
       final appts = apptsByDay[day] ?? const [];
-      // Copia modificable: si el día no tiene sesiones, el fallback antes era
-      // `const []` y `..sort()` lo intentaba mutar → "Cannot modify a constant
-      // list" (crash de la agenda en centros con citas pero sin sesiones).
-      final sess = [...?sessByDay[day]]
+      final sess = (sessByDay[day] ?? const <TreatmentProgramSession>[])
         ..sort((a, b) => a.scheduledAt.compareTo(b.scheduledAt));
       children.add(_DayHeader(day: day, count: appts.length + sess.length));
       for (final a in appts) {
@@ -700,7 +696,7 @@ class _DayHeader extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 8),
-          Text('· $count', style: TextStyle(fontSize: 12, color: KuraColors.darkText.withOpacity(0.5))),
+          Text('· $count', style: TextStyle(fontSize: 12, color: KuraColors.darkText.withValues(alpha: 0.5))),
         ],
       ),
     );
@@ -843,7 +839,7 @@ class _WeekStripCell extends StatelessWidget {
           color: selected ? KuraColors.primary : Colors.transparent,
           borderRadius: BorderRadius.circular(12),
           border: isToday && !selected
-              ? Border.all(color: KuraColors.primary.withOpacity(0.5))
+              ? Border.all(color: KuraColors.primary.withValues(alpha: 0.5))
               : null,
         ),
         child: Column(
@@ -853,7 +849,7 @@ class _WeekStripCell extends StatelessWidget {
               _wd[day.weekday - 1],
               style: TextStyle(
                 fontSize: 11,
-                color: selected ? Colors.white70 : KuraColors.darkText.withOpacity(0.6),
+                color: selected ? Colors.white70 : KuraColors.darkText.withValues(alpha: 0.6),
               ),
             ),
             Text(
@@ -871,7 +867,7 @@ class _WeekStripCell extends StatelessWidget {
               decoration: BoxDecoration(
                 color: count == 0
                     ? Colors.transparent
-                    : (selected ? Colors.white24 : KuraColors.primary.withOpacity(0.15)),
+                    : (selected ? Colors.white24 : KuraColors.primary.withValues(alpha: 0.15)),
                 shape: BoxShape.circle,
               ),
               child: count == 0
@@ -917,9 +913,9 @@ class _WeekColumn extends StatelessWidget {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 4),
       decoration: BoxDecoration(
-        color: isToday ? KuraColors.primary.withOpacity(0.05) : null,
+        color: isToday ? KuraColors.primary.withValues(alpha: 0.05) : null,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: KuraColors.darkText.withOpacity(0.08)),
+        border: Border.all(color: KuraColors.darkText.withValues(alpha: 0.08)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -932,7 +928,7 @@ class _WeekColumn extends StatelessWidget {
                   _wd[day.weekday - 1],
                   style: TextStyle(
                     fontSize: 11,
-                    color: KuraColors.darkText.withOpacity(0.6),
+                    color: KuraColors.darkText.withValues(alpha: 0.6),
                   ),
                 ),
                 Text(
@@ -950,7 +946,7 @@ class _WeekColumn extends StatelessWidget {
             child: sorted.isEmpty
                 ? Center(
                     child: Text('—',
-                        style: TextStyle(color: KuraColors.darkText.withOpacity(0.25))),
+                        style: TextStyle(color: KuraColors.darkText.withValues(alpha: 0.25))),
                   )
                 : ListView(
                     padding: const EdgeInsets.all(6),
@@ -992,7 +988,7 @@ class _WeekChip extends StatelessWidget {
         margin: const EdgeInsets.only(bottom: 6),
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
         decoration: BoxDecoration(
-          color: KuraColors.primary.withOpacity(0.10),
+          color: KuraColors.primary.withValues(alpha: 0.10),
           borderRadius: BorderRadius.circular(8),
           border: Border(left: BorderSide(color: KuraColors.primary, width: 3)),
         ),
@@ -1011,7 +1007,7 @@ class _WeekChip extends StatelessWidget {
               Text(kuradorName!,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: 10, color: KuraColors.darkText.withOpacity(0.55))),
+                  style: TextStyle(fontSize: 10, color: KuraColors.darkText.withValues(alpha: 0.55))),
             _ChipActions(
               repo: repo,
               patientId: appointment.patientId,
@@ -1110,7 +1106,7 @@ class _AppointmentTile extends StatelessWidget {
               width: 56,
               padding: const EdgeInsets.symmetric(vertical: 6),
               decoration: BoxDecoration(
-                color: KuraColors.primary.withOpacity(isPast ? 0.06 : 0.12),
+                color: KuraColors.primary.withValues(alpha: isPast ? 0.06 : 0.12),
                 borderRadius: BorderRadius.circular(10),
               ),
               child: Column(
@@ -1119,7 +1115,7 @@ class _AppointmentTile extends StatelessWidget {
                     DateFormat('HH:mm').format(dt),
                     style: TextStyle(
                       fontWeight: FontWeight.w800,
-                      color: isPast ? KuraColors.darkText.withOpacity(0.5) : KuraColors.primary,
+                      color: isPast ? KuraColors.darkText.withValues(alpha: 0.5) : KuraColors.primary,
                     ),
                   ),
                 ],
@@ -1198,10 +1194,10 @@ class _MiniChip extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 13, color: KuraColors.darkText.withOpacity(0.6)),
+          Icon(icon, size: 13, color: KuraColors.darkText.withValues(alpha: 0.6)),
           const SizedBox(width: 4),
           Text(label,
-              style: TextStyle(fontSize: 11, color: KuraColors.darkText.withOpacity(0.75))),
+              style: TextStyle(fontSize: 11, color: KuraColors.darkText.withValues(alpha: 0.75))),
         ],
       ),
     );
@@ -1372,7 +1368,7 @@ class _AppointmentDetailSheet extends StatelessWidget {
                       child: Text(
                         'Esta cita no tiene datos crudos guardados '
                         '(sincronizada antes de habilitar el guardado completo).',
-                        style: TextStyle(color: KuraColors.darkText.withOpacity(0.6)),
+                        style: TextStyle(color: KuraColors.darkText.withValues(alpha: 0.6)),
                       ),
                     )
                   else
@@ -1437,7 +1433,7 @@ class _IntakePhotoView extends StatelessWidget {
             final url = snap.data;
             if (url == null) {
               return Text('No se pudo cargar la foto.',
-                  style: TextStyle(fontSize: 12, color: KuraColors.darkText.withOpacity(0.6)));
+                  style: TextStyle(fontSize: 12, color: KuraColors.darkText.withValues(alpha: 0.6)));
             }
             return GestureDetector(
               onTap: () => showDialog<void>(
@@ -1495,7 +1491,7 @@ class _DetailSection extends StatelessWidget {
                 SizedBox(
                   width: 130,
                   child: Text(e.key,
-                      style: TextStyle(fontSize: 12, color: KuraColors.darkText.withOpacity(0.6))),
+                      style: TextStyle(fontSize: 12, color: KuraColors.darkText.withValues(alpha: 0.6))),
                 ),
                 Expanded(child: SelectableText(e.value, style: const TextStyle(fontSize: 13))),
               ],
@@ -1855,7 +1851,7 @@ class _AgendaUnavailable extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(Icons.calendar_month_outlined,
-                size: 48, color: KuraColors.darkText.withOpacity(0.25)),
+                size: 48, color: KuraColors.darkText.withValues(alpha: 0.25)),
             const SizedBox(height: 12),
             const Text('Agenda no disponible en modo demo',
                 style: TextStyle(fontWeight: FontWeight.w700)),
@@ -1865,7 +1861,7 @@ class _AgendaUnavailable extends StatelessWidget {
               'Estará disponible al ejecutar la app con un proyecto Supabase '
               'configurado y las Edge Functions de Acuity desplegadas.',
               textAlign: TextAlign.center,
-              style: TextStyle(color: KuraColors.darkText.withOpacity(0.6)),
+              style: TextStyle(color: KuraColors.darkText.withValues(alpha: 0.6)),
             ),
           ],
         ),
@@ -1886,9 +1882,9 @@ class _AgendaEmpty extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(Icons.event_available_outlined,
-                size: 48, color: KuraColors.darkText.withOpacity(0.25)),
+                size: 48, color: KuraColors.darkText.withValues(alpha: 0.25)),
             const SizedBox(height: 12),
-            Text(message, style: TextStyle(color: KuraColors.darkText.withOpacity(0.6))),
+            Text(message, style: TextStyle(color: KuraColors.darkText.withValues(alpha: 0.6))),
           ],
         ),
       ),
@@ -2007,6 +2003,30 @@ class _ManualAgendaState extends ConsumerState<_ManualAgenda> {
         : filtered.where((a) => !_dayStart(a.datetime).isBefore(today)).toList();
     final ordered = _showHistory ? visible.reversed.toList() : visible;
 
+    // Sesiones del programa de tratamiento (0075): en modo manual TAMBIÉN se
+    // muestran en la agenda, junto a las citas (antes solo se pintaban en el
+    // path de Acuity → en modo manual la agenda salía vacía aunque el programa
+    // tuviera sesiones). Admin ve todas; el Kurador las suyas. Se excluyen las
+    // ya empujadas a Acuity (no aplica en demo).
+    final sessionsOrgId = widget.organizationId;
+    final sessionsAll = sessionsOrgId == null
+        ? const <TreatmentProgramSession>[]
+        : repo
+            .listProgramSessionsForOrg(
+              organizationId: sessionsOrgId,
+              staffId: widget.isAdmin ? null : widget.currentStaffId,
+            )
+            .where((s) => !(s.appointmentRef?.startsWith('acuity:') ?? false))
+            .toList();
+    final sessions = _kuradorFilter == null
+        ? sessionsAll
+        : sessionsAll.where((s) => s.staffId == _kuradorFilter).toList();
+    final visibleSessions = _showHistory
+        ? sessions
+        : sessions
+            .where((s) => !_dayStart(s.scheduledAt).isBefore(today))
+            .toList();
+
     return Scaffold(
       appBar: _bar(),
       floatingActionButton: widget.organizationId == null
@@ -2032,13 +2052,13 @@ class _ManualAgendaState extends ConsumerState<_ManualAgenda> {
                     ChoiceChip(
                       label: const Text('Día'),
                       selected: view == _AgendaView.dia,
-                      selectedColor: KuraColors.primary.withOpacity(0.15),
+                      selectedColor: KuraColors.primary.withValues(alpha: 0.15),
                       onSelected: (_) => setState(() => _view = _AgendaView.dia),
                     ),
                     ChoiceChip(
                       label: const Text('Semana'),
                       selected: view == _AgendaView.semana,
-                      selectedColor: KuraColors.primary.withOpacity(0.15),
+                      selectedColor: KuraColors.primary.withValues(alpha: 0.15),
                       onSelected: (_) => setState(() => _view = _AgendaView.semana),
                     ),
                     if (view == _AgendaView.dia)
@@ -2046,7 +2066,7 @@ class _ManualAgendaState extends ConsumerState<_ManualAgenda> {
                         label: const Text('Historial'),
                         avatar: const Icon(Icons.history, size: 16),
                         selected: _showHistory,
-                        selectedColor: KuraColors.primary.withOpacity(0.15),
+                        selectedColor: KuraColors.primary.withValues(alpha: 0.15),
                         onSelected: (v) => setState(() => _showHistory = v),
                       ),
                     if (kuradorOptions.isNotEmpty) _kuradorDropdown(kuradorOptions),
@@ -2062,14 +2082,16 @@ class _ManualAgendaState extends ConsumerState<_ManualAgenda> {
           const Divider(height: 1),
           Expanded(
             child: view == _AgendaView.dia
-                ? (ordered.isEmpty
+                ? ((ordered.isEmpty && visibleSessions.isEmpty)
                     ? _AgendaEmpty(
                         message: _showHistory ? 'Sin citas registradas.' : 'Sin citas próximas')
                     : ListView(
                         padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
-                        children: _grouped(repo, ordered, staffNames, patientName),
+                        children: _grouped(
+                            repo, ordered, visibleSessions, staffNames, patientName),
                       ))
-                : _manualWeek(repo, filtered, staffNames, patientName, isWide),
+                : _manualWeek(
+                    repo, filtered, sessions, staffNames, patientName, isWide),
           ),
         ],
       ),
@@ -2119,6 +2141,7 @@ class _ManualAgendaState extends ConsumerState<_ManualAgenda> {
   Widget _manualWeek(
     DataRepository repo,
     List<ManualAppointment> items,
+    List<TreatmentProgramSession> sessions,
     Map<String, String> staffNames,
     String Function(String?) patientName,
     bool isWide,
@@ -2127,6 +2150,9 @@ class _ManualAgendaState extends ConsumerState<_ManualAgenda> {
     List<ManualAppointment> forDay(DateTime d) =>
         items.where((a) => _sameDay(a.datetime, d)).toList()
           ..sort((a, b) => a.datetime.compareTo(b.datetime));
+    List<TreatmentProgramSession> forDaySess(DateTime d) =>
+        sessions.where((s) => _sameDay(s.scheduledAt, d)).toList()
+          ..sort((a, b) => a.scheduledAt.compareTo(b.scheduledAt));
 
     if (isWide) {
       return Padding(
@@ -2135,7 +2161,9 @@ class _ManualAgendaState extends ConsumerState<_ManualAgenda> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             for (final day in days)
-              Expanded(child: _manualWeekColumn(repo, day, forDay(day), staffNames, patientName)),
+              Expanded(
+                  child: _manualWeekColumn(
+                      repo, day, forDay(day), forDaySess(day), staffNames, patientName)),
           ],
         ),
       );
@@ -2147,6 +2175,7 @@ class _ManualAgendaState extends ConsumerState<_ManualAgenda> {
       selected = days.any((d) => _sameDay(d, now)) ? _dayStart(now) : days.first;
     }
     final dayAppts = forDay(selected);
+    final daySess = forDaySess(selected);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -2158,7 +2187,7 @@ class _ManualAgendaState extends ConsumerState<_ManualAgenda> {
                 Expanded(
                   child: _WeekStripCell(
                     day: day,
-                    count: forDay(day).length,
+                    count: forDay(day).length + forDaySess(day).length,
                     selected: _sameDay(day, selected),
                     onTap: () => setState(() => _selectedDay = _dayStart(day)),
                   ),
@@ -2168,11 +2197,18 @@ class _ManualAgendaState extends ConsumerState<_ManualAgenda> {
         ),
         const Divider(height: 1),
         Expanded(
-          child: dayAppts.isEmpty
+          child: (dayAppts.isEmpty && daySess.isEmpty)
               ? _AgendaEmpty(message: 'Sin citas el ${_dayLabel(selected)}')
               : ListView(
                   padding: const EdgeInsets.fromLTRB(16, 12, 16, 96),
                   children: [
+                    for (final s in daySess)
+                      _SessionTile(
+                        session: s,
+                        patientName: patientName(s.patientId),
+                        kuradorName: widget.isAdmin ? staffNames[s.staffId] : null,
+                        woundId: repo.programById(s.programId)?.woundId,
+                      ),
                     for (final a in dayAppts)
                       _ManualTile(
                         appointment: a,
@@ -2193,6 +2229,7 @@ class _ManualAgendaState extends ConsumerState<_ManualAgenda> {
     DataRepository repo,
     DateTime day,
     List<ManualAppointment> appts,
+    List<TreatmentProgramSession> sess,
     Map<String, String> staffNames,
     String Function(String?) patientName,
   ) {
@@ -2200,9 +2237,9 @@ class _ManualAgendaState extends ConsumerState<_ManualAgenda> {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 4),
       decoration: BoxDecoration(
-        color: isToday ? KuraColors.primary.withOpacity(0.05) : null,
+        color: isToday ? KuraColors.primary.withValues(alpha: 0.05) : null,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: KuraColors.darkText.withOpacity(0.08)),
+        border: Border.all(color: KuraColors.darkText.withValues(alpha: 0.08)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -2212,7 +2249,7 @@ class _ManualAgendaState extends ConsumerState<_ManualAgenda> {
             child: Column(
               children: [
                 Text(_wd[day.weekday - 1],
-                    style: TextStyle(fontSize: 11, color: KuraColors.darkText.withOpacity(0.6))),
+                    style: TextStyle(fontSize: 11, color: KuraColors.darkText.withValues(alpha: 0.6))),
                 Text('${day.day}',
                     style: TextStyle(
                         fontWeight: FontWeight.w800,
@@ -2222,12 +2259,56 @@ class _ManualAgendaState extends ConsumerState<_ManualAgenda> {
           ),
           const Divider(height: 1),
           Expanded(
-            child: appts.isEmpty
+            child: (appts.isEmpty && sess.isEmpty)
                 ? Center(
-                    child: Text('—', style: TextStyle(color: KuraColors.darkText.withOpacity(0.25))))
+                    child: Text('—', style: TextStyle(color: KuraColors.darkText.withValues(alpha: 0.25))))
                 : ListView(
                     padding: const EdgeInsets.all(6),
                     children: [
+                      // Sesiones del programa (tap → seguimiento pre-cargado).
+                      for (final s in sess)
+                        InkWell(
+                          borderRadius: BorderRadius.circular(8),
+                          onTap: () {
+                            final wid = repo.programById(s.programId)?.woundId;
+                            context.go(wid != null
+                                ? '/patients/${s.patientId}/wound/$wid/follow-up'
+                                : '/patients/${s.patientId}');
+                          },
+                          child: Container(
+                            margin: const EdgeInsets.only(bottom: 6),
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: KuraColors.primary.withValues(alpha: 0.10),
+                              borderRadius: BorderRadius.circular(8),
+                              border: const Border(
+                                  left: BorderSide(color: KuraColors.primary, width: 3)),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Text(DateFormat('HH:mm').format(s.scheduledAt),
+                                        style: const TextStyle(
+                                            fontWeight: FontWeight.w800, fontSize: 12)),
+                                    const SizedBox(width: 4),
+                                    const Icon(Icons.spa_outlined,
+                                        size: 13, color: KuraColors.primary),
+                                  ],
+                                ),
+                                Text(patientName(s.patientId),
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(fontSize: 12)),
+                                Text('Sesión de tratamiento',
+                                    style: TextStyle(
+                                        fontSize: 10,
+                                        color: KuraColors.darkText.withValues(alpha: 0.55))),
+                              ],
+                            ),
+                          ),
+                        ),
                       for (final a in appts)
                         InkWell(
                           borderRadius: BorderRadius.circular(8),
@@ -2237,7 +2318,7 @@ class _ManualAgendaState extends ConsumerState<_ManualAgenda> {
                             margin: const EdgeInsets.only(bottom: 6),
                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                             decoration: BoxDecoration(
-                              color: KuraColors.primary.withOpacity(0.10),
+                              color: KuraColors.primary.withValues(alpha: 0.10),
                               borderRadius: BorderRadius.circular(8),
                               border: const Border(
                                   left: BorderSide(color: KuraColors.primary, width: 3)),
@@ -2256,7 +2337,7 @@ class _ManualAgendaState extends ConsumerState<_ManualAgenda> {
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
                                       style: TextStyle(
-                                          fontSize: 10, color: KuraColors.darkText.withOpacity(0.55))),
+                                          fontSize: 10, color: KuraColors.darkText.withValues(alpha: 0.55))),
                                 _ChipActions(
                                   repo: repo,
                                   patientId: a.patientId,
@@ -2365,7 +2446,7 @@ class _ManualAgendaState extends ConsumerState<_ManualAgenda> {
   Widget _kuradorDropdown(List<MapEntry<String, String>> opts) => Container(
         padding: const EdgeInsets.symmetric(horizontal: 12),
         decoration: BoxDecoration(
-          border: Border.all(color: KuraColors.primary.withOpacity(0.35)),
+          border: Border.all(color: KuraColors.primary.withValues(alpha: 0.35)),
           borderRadius: BorderRadius.circular(20),
         ),
         child: DropdownButtonHideUnderline(
@@ -2386,16 +2467,39 @@ class _ManualAgendaState extends ConsumerState<_ManualAgenda> {
   List<Widget> _grouped(
     DataRepository repo,
     List<ManualAppointment> items,
+    List<TreatmentProgramSession> sessions,
     Map<String, String> staffNames,
     String Function(String?) patientName,
   ) {
-    final groups = <DateTime, List<ManualAppointment>>{};
+    final apptByDay = <DateTime, List<ManualAppointment>>{};
     for (final a in items) {
-      groups.putIfAbsent(_dayStart(a.datetime), () => []).add(a);
+      apptByDay.putIfAbsent(_dayStart(a.datetime), () => []).add(a);
+    }
+    final sessByDay = <DateTime, List<TreatmentProgramSession>>{};
+    for (final s in sessions) {
+      sessByDay.putIfAbsent(_dayStart(s.scheduledAt), () => []).add(s);
+    }
+    final days = {...apptByDay.keys, ...sessByDay.keys}.toList()..sort();
+    if (_showHistory) {
+      days.sort((a, b) => b.compareTo(a)); // historial: más reciente primero
     }
     final out = <Widget>[];
-    groups.forEach((day, appts) {
-      out.add(_DayHeader(day: day, count: appts.length));
+    for (final day in days) {
+      final appts = (apptByDay[day] ?? const <ManualAppointment>[]).toList()
+        ..sort((a, b) => a.datetime.compareTo(b.datetime));
+      final sess = (sessByDay[day] ?? const <TreatmentProgramSession>[]).toList()
+        ..sort((a, b) => a.scheduledAt.compareTo(b.scheduledAt));
+      out.add(_DayHeader(day: day, count: appts.length + sess.length));
+      // Sesiones del programa primero (destacan el "remate": tap → seguimiento
+      // pre-cargado), luego las citas manuales.
+      for (final s in sess) {
+        out.add(_SessionTile(
+          session: s,
+          patientName: patientName(s.patientId),
+          kuradorName: widget.isAdmin ? staffNames[s.staffId] : null,
+          woundId: repo.programById(s.programId)?.woundId,
+        ));
+      }
       for (final a in appts) {
         out.add(_ManualTile(
           appointment: a,
@@ -2406,7 +2510,7 @@ class _ManualAgendaState extends ConsumerState<_ManualAgenda> {
           repo: repo,
         ));
       }
-    });
+    }
     return out;
   }
 }
@@ -2450,7 +2554,7 @@ class _ManualSummary extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text('Hoy · ${_dayLong(_dayStart(now))}',
-                    style: TextStyle(color: Colors.white.withOpacity(0.75), fontSize: 12)),
+                    style: TextStyle(color: Colors.white.withValues(alpha: 0.75), fontSize: 12)),
                 const SizedBox(height: 2),
                 Text(
                   todayCount == 0 ? 'Sin citas hoy' : '$todayCount ${todayCount == 1 ? 'cita' : 'citas'}',
@@ -2466,7 +2570,7 @@ class _ManualSummary extends StatelessWidget {
             children: [
               if (next != null) ...[
                 Text('Próxima',
-                    style: TextStyle(color: Colors.white.withOpacity(0.75), fontSize: 12)),
+                    style: TextStyle(color: Colors.white.withValues(alpha: 0.75), fontSize: 12)),
                 Text('${_dayLabel(next.datetime)} · ${DateFormat('HH:mm').format(next.datetime)}',
                     style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
                 const SizedBox(height: 6),
@@ -2474,7 +2578,7 @@ class _ManualSummary extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.16),
+                  color: Colors.white.withValues(alpha: 0.16),
                   borderRadius: BorderRadius.circular(20),
                 ),
                 child: Text('Esta semana: $weekCount',
@@ -2521,7 +2625,7 @@ class _ManualTile extends StatelessWidget {
                 width: 56,
                 padding: const EdgeInsets.symmetric(vertical: 6),
                 decoration: BoxDecoration(
-                  color: KuraColors.primary.withOpacity(isPast ? 0.06 : 0.12),
+                  color: KuraColors.primary.withValues(alpha: isPast ? 0.06 : 0.12),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Column(
@@ -2530,7 +2634,7 @@ class _ManualTile extends StatelessWidget {
                       DateFormat('HH:mm').format(dt),
                       style: TextStyle(
                         fontWeight: FontWeight.w800,
-                        color: isPast ? KuraColors.darkText.withOpacity(0.5) : KuraColors.primary,
+                        color: isPast ? KuraColors.darkText.withValues(alpha: 0.5) : KuraColors.primary,
                       ),
                     ),
                   ],
@@ -2828,13 +2932,13 @@ class _ManualFormState extends State<_ManualForm> {
                   ChoiceChip(
                     label: const Text('Existente'),
                     selected: !_newPatient,
-                    selectedColor: KuraColors.primary.withOpacity(0.15),
+                    selectedColor: KuraColors.primary.withValues(alpha: 0.15),
                     onSelected: (_) => setState(() => _newPatient = false),
                   ),
                   ChoiceChip(
                     label: const Text('Nuevo'),
                     selected: _newPatient,
-                    selectedColor: KuraColors.primary.withOpacity(0.15),
+                    selectedColor: KuraColors.primary.withValues(alpha: 0.15),
                     onSelected: (_) => setState(() => _newPatient = true),
                   ),
                 ]),
@@ -3036,7 +3140,7 @@ class _AgendaModeSetup extends ConsumerWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(Icons.calendar_month_outlined,
-                  size: 48, color: KuraColors.darkText.withOpacity(0.25)),
+                  size: 48, color: KuraColors.darkText.withValues(alpha: 0.25)),
               const SizedBox(height: 12),
               const Text('Agenda no configurada',
                   style: TextStyle(fontWeight: FontWeight.w700)),
@@ -3046,7 +3150,7 @@ class _AgendaModeSetup extends ConsumerWidget {
                     ? 'Elige cómo gestionar la agenda de este centro.'
                     : 'El administrador de tu centro aún no ha configurado la agenda.',
                 textAlign: TextAlign.center,
-                style: TextStyle(color: KuraColors.darkText.withOpacity(0.6)),
+                style: TextStyle(color: KuraColors.darkText.withValues(alpha: 0.6)),
               ),
               if (isAdmin && organizationId != null) ...[
                 const SizedBox(height: 20),
@@ -3199,7 +3303,7 @@ class _AcuityConfigSheetState extends ConsumerState<_AcuityConfigSheet> {
                 'Ingresa el User ID y la API Key de la cuenta de Acuity de este '
                 'centro (Acuity → Integrations → API). La key se guarda de forma '
                 'segura en el servidor y nunca se muestra completa.',
-                style: TextStyle(fontSize: 12, color: KuraColors.darkText.withOpacity(0.6)),
+                style: TextStyle(fontSize: 12, color: KuraColors.darkText.withValues(alpha: 0.6)),
               ),
               const SizedBox(height: 12),
               if (_loadingStatus)
