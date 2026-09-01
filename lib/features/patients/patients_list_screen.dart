@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/providers/session_provider.dart';
+import '../../core/theme/kura_theme.dart';
 import '../../models/center_type.dart';
 import '../../core/router/app_shell.dart' show kFloatingNavBarHeight, UserMenuButton;
 import '../../core/widgets/kura_primary_fab.dart';
@@ -272,7 +273,37 @@ class PatientsListScreenState extends ConsumerState<PatientsListScreen> {
                     ),
                     Expanded(
                       child: patients.isEmpty
-                          ? const Center(child: Text('Sin pacientes.'))
+                          ? (allPatients.isEmpty
+                              ? const Center(child: Text('Sin pacientes.'))
+                              // Hay pacientes, pero un filtro (posiblemente
+                              // persistido de una sesión previa) los oculta: se
+                              // explica y se ofrece limpiar, en vez de aparentar
+                              // que el centro está vacío.
+                              : Center(
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(24),
+                                    child: Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Text(
+                                          'Ningún paciente coincide con los filtros.',
+                                          textAlign: TextAlign.center,
+                                          style: TextStyle(
+                                              color: KuraColors.darkText
+                                                  .withValues(alpha: 0.7)),
+                                        ),
+                                        const SizedBox(height: 8),
+                                        TextButton.icon(
+                                          icon: const Icon(Icons.filter_alt_off, size: 18),
+                                          label: const Text('Limpiar filtros'),
+                                          onPressed: () => _updatePrefs((p) =>
+                                              const PatientsViewPreferences()
+                                                  .copyWith(viewMode: p.viewMode)),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ))
                           : _prefs.viewMode == PatientsViewMode.list
                               ? _PatientsListView(
                                   patients: patients,

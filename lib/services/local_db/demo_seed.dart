@@ -1,4 +1,5 @@
 import 'package:uuid/uuid.dart';
+import '../../features/patients/patients_view_preferences.dart';
 import 'demo_wound_photos.dart';
 import 'local_store.dart';
 
@@ -31,19 +32,23 @@ class DemoSeed {
   // una sola vez en instalaciones demo previas (wipeAll + _seed), evitando
   // duplicados y datos viejos. Cada rediseño del roster sube este número.
   // v12: roster curado por escenario (clínica 7 / hospital 5 / cuidadores 3).
-  static const String _seedFlag = 'seeded_v27';
+  static const String _seedFlag = 'seeded_v28';
 
   static Future<void> ensureSeeded(LocalStore store) async {
     if (store.getBool(_seedFlag)) return;
     // Limpia cualquier siembra anterior para no duplicar filas ni arrastrar
     // pacientes de versiones previas.
     await store.wipeAll();
+    // Los filtros persistidos del listado NO viven en el store (sobreviven a
+    // wipeAll); un filtro viejo dejaría "Sin pacientes" al re-sembrar. Se limpian.
+    await PatientsViewPreferencesStore.clear();
     await _seed(store);
     await store.setBool(_seedFlag, true);
   }
 
   static Future<void> resetAndReseed(LocalStore store) async {
     await store.wipeAll();
+    await PatientsViewPreferencesStore.clear();
     await _seed(store);
     await store.setBool(_seedFlag, true);
   }
