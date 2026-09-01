@@ -300,7 +300,8 @@ class _UsersTabState extends State<UsersTab> {
     );
     if (result == null) return; // cancelado
     try {
-      await widget.repo.setUserRoles(u.id, result);
+      await widget.repo
+          .setUserRoles(u.id, result, organizationId: widget.organizationId);
       if (mounted) setState(() {});
     } catch (e) {
       if (mounted) {

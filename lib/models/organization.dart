@@ -34,6 +34,8 @@ class Organization {
   final List<String>? enabledScales;
   // Centro de pruebas/andamio (0103): se excluye de KPIs/listados reales.
   final bool isTest;
+  // Asientos de licencia contratados por el centro (0106). null = sin límite.
+  final int? seatsContracted;
 
   const Organization({
     required this.id,
@@ -52,6 +54,7 @@ class Organization {
     this.acuityTypeVisitMap = const {},
     this.enabledScales,
     this.isTest = false,
+    this.seatsContracted,
   });
 
   factory Organization.fromJson(Map<String, dynamic> json) => Organization(
@@ -75,6 +78,7 @@ class Organization {
             ?.map((e) => e.toString())
             .toList(),
         isTest: json['is_test'] as bool? ?? false,
+        seatsContracted: (json['seats_contracted'] as num?)?.toInt(),
       );
 
   Map<String, dynamic> toJson() => {
@@ -94,5 +98,6 @@ class Organization {
         'acuity_type_visit_map': acuityTypeVisitMap,
         'enabled_scales': enabledScales,
         'is_test': isTest,
+        'seats_contracted': seatsContracted,
       };
 }

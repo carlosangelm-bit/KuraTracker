@@ -57,4 +57,89 @@ void main() {
           'public.is_admin() and organization_id = public.current_organization_id()'),
     );
   });
+
+  // ---- 0106: roles por centro + asientos ----
+  final m0106 =
+      File('supabase/migrations/0106_membership_roles_and_seats.sql')
+          .readAsStringSync();
+
+  test('candado de membresía mira AMBAS columnas y corre AL FINAL (zz)', () {
+    // Reemplaza el candado escalar del 0104 por uno que mira role Y roles.
+    expect(m0106, contains('new_has_master'));
+    expect(m0106, contains('old_has_master'));
+    expect(m0106,
+        contains('drop trigger if exists trg_prevent_membership_master_grant'));
+    expect(m0106,
+        contains('create trigger trg_zz_prevent_membership_master_grant'));
+  });
+
+  test('set_active_center copia el CONJUNTO de roles, no el escalar', () {
+    final s = flat(m0106);
+    expect(s, contains('select roles into v_roles'));
+    expect(s, contains('roles = v_roles'));
+    // No debe volver a escribir el escalar `role` directamente en el perfil.
+    expect(s.contains('set organization_id = target_org, role = '), isFalse);
+  });
+
+  test('el requisito de membresía aplica a TODOS salvo master (no solo no-admin)',
+      () {
+    final s = flat(m0106);
+    // El chequeo de centro/roles está guardado SOLO por `not is_master()` (así
+    // un admin NO se lo salta y no puede mudarse de centro a otro inquilino).
+    expect(
+      s,
+      contains(
+          'if not public.is_master() and ( new.roles is distinct from old.roles or new.organization_id is distinct from old.organization_id )'),
+    );
+    expect(s, contains('cambio de centro/roles sin membresía válida'));
+    expect(s, contains('m.roles <@ new.roles and new.roles <@ m.roles'));
+  });
+
+  test('create_organization_with_admin crea la membresía ANTES del perfil', () {
+    // Con el guard más estricto, el alta de centro requiere la membresía primero.
+    expect(m0106, contains('create or replace function public.create_organization_with_admin'));
+    final idxMembership = m0106.indexOf(
+        'insert into public.user_center_memberships (profile_id, organization_id, roles, is_active)');
+    final idxProfileUpdate = m0106.indexOf('update public.profiles\n  set organization_id = v_org_id,');
+    expect(idxMembership, greaterThan(0));
+    expect(idxProfileUpdate, greaterThan(0));
+    expect(idxMembership, lessThan(idxProfileUpdate),
+        reason: 'la membresía debe insertarse antes de actualizar el perfil');
+  });
+
+  // ---- Cierre del hueco de organización (§3.1/§3.4/§3.5) ----
+  // Las membresías no se poblaban en el alta normal; con el guard estricto eso
+  // rompería setUserRoles y el cambio de centro. Estas aserciones detectan el
+  // revert silencioso de las tres piezas que lo cierran.
+
+  test('0106 §3.1: backfill de membresías desde profiles, excluyendo master', () {
+    final s = flat(m0106);
+    expect(
+      s,
+      contains(
+          'insert into public.user_center_memberships (id, profile_id, organization_id, role, roles, is_active) select gen_random_uuid()'),
+    );
+    // El master no es miembro de centro (regla de oro 0012) y su inserción
+    // dispararía el candado de master durante la migración.
+    expect(s, contains("not ('master'::public.user_role = any(p.roles))"));
+  });
+
+  test('§3.4: admin-create-user deja la membresía del centro (upsert)', () {
+    final edge =
+        File('supabase/functions/admin-create-user/index.ts').readAsStringSync();
+    expect(edge, contains('user_center_memberships'));
+    expect(edge, contains('onConflict: "profile_id,organization_id"'));
+  });
+
+  test('§3.5: setUserRoles hace UPSERT de la membresía (insert si no existe)', () {
+    final repo = File('lib/services/data_repository.dart').readAsStringSync();
+    final idx = repo.indexOf('Future<void> setUserRoles(');
+    expect(idx, greaterThan(0));
+    // Ventana del método (suficiente para cubrir ambas ramas del upsert).
+    final chunk = repo.substring(idx, idx + 2200);
+    expect(chunk, contains('updateRow(Collections.userCenterMemberships'),
+        reason: 'rama: la membresía ya existe');
+    expect(chunk, contains('insertRow(Collections.userCenterMemberships'),
+        reason: 'rama: la membresía NO existe (usuario de admin-create-user)');
+  });
 }

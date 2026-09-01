@@ -417,13 +417,49 @@ class DataRepository {
   /// En Supabase, la RLS de profiles (profiles_update_own_or_admin) + el trigger
   /// anti-escalada (prevent_profile_privilege_escalation, 0096 cubre `roles`)
   /// permiten esto SOLO a admin/master; un clínico no puede auto-promoverse.
-  Future<void> setUserRoles(String userId, Set<AppRole> roles) async {
+  Future<void> setUserRoles(String userId, Set<AppRole> roles,
+      {String? organizationId}) async {
     final err = validateRoleSet(roles);
     if (err != null) throw Exception(err);
-    await _store.updateRow(Collections.profiles, userId, {
-      'roles': roles.map((r) => r.dbValue).toList(),
-      'role': primaryRoleOf(roles).dbValue,
-    });
+    final rolesDb = roles.map((r) => r.dbValue).toList();
+    final primary = primaryRoleOf(roles).dbValue;
+
+    // Centro objetivo: el pasado, o el activo del usuario.
+    final prof =
+        _store.getAll(Collections.profiles).where((p) => p['id'] == userId);
+    final activeOrg =
+        prof.isEmpty ? null : prof.first['organization_id'] as String?;
+    final targetOrg = organizationId ?? activeOrg;
+
+    // La autoridad de los roles POR CENTRO es la MEMBRESÍA (0106): editar solo el
+    // perfil no dura (el próximo set_active_center lo sobreescribe desde la
+    // membresía) y, con el guard estricto del 0106 §4, actualizar el perfil sin
+    // una membresía coincidente se RECHAZA. Por eso se hace UPSERT de la membresía
+    // (§3.5): insertar si no existe (usuario creado por admin-create-user sin
+    // membresía), actualizar si existe. La membresía va PRIMERO.
+    if (targetOrg != null) {
+      final existing = listMembershipsForOrg(targetOrg)
+          .where((x) => x.profileId == userId);
+      if (existing.isNotEmpty) {
+        await _store.updateRow(Collections.userCenterMemberships,
+            existing.first.id, {'roles': rolesDb, 'role': primary});
+      } else {
+        await _store.insertRow(Collections.userCenterMemberships, {
+          'id': _uuid.v4(),
+          'profile_id': userId,
+          'organization_id': targetOrg,
+          'roles': rolesDb,
+          'role': primary,
+          'is_active': true,
+        });
+      }
+    }
+    // El perfil solo si ESE centro es el activo del usuario (efecto inmediato);
+    // sin contexto de centro, se actualiza el perfil (comportamiento previo).
+    if (organizationId == null || activeOrg == organizationId) {
+      await _store.updateRow(Collections.profiles, userId,
+          {'roles': rolesDb, 'role': primary});
+    }
   }
 
   /// Da de alta un usuario CON cuenta de acceso (login).
@@ -513,6 +549,16 @@ class DataRepository {
       'premium_enabled': false,
       'organization_id': organizationId,
     });
+    // Toda alta deja su membresía (0106 §3.4): autoridad de roles/asientos por
+    // centro. En prod lo hace admin-create-user; en demo se replica aquí.
+    await _store.insertRow(Collections.userCenterMemberships, {
+      'id': _uuid.v4(),
+      'profile_id': uid,
+      'organization_id': organizationId,
+      'role': primaryRoleOf(roles).dbValue,
+      'roles': roles.map((r) => r.dbValue).toList(),
+      'is_active': true,
+    });
     if (hasClinico || hasEnfermeria) {
       await createStaff(
         fullName: fullName,
@@ -580,13 +626,16 @@ class DataRepository {
       await store.callRpc('set_active_center', {'target_org': organizationId});
       await hydrateAfterLogin();
     } else {
-      // Demo: aplicar el rol de la membresía al perfil, igual que el RPC.
+      // Demo: aplicar el CONJUNTO de roles de la membresía al perfil, igual que
+      // el RPC reescrito (0106). Antes copiaba solo el escalar.
       final membership = listMembershipsFor(profileId)
           .where((m) => m.organizationId == organizationId);
-      final role = membership.isEmpty ? null : membership.first.role.dbValue;
       await _store.updateRow(Collections.profiles, profileId, {
         'organization_id': organizationId,
-        if (role != null) 'role': role,
+        if (membership.isNotEmpty) ...{
+          'roles': membership.first.roles.map((r) => r.dbValue).toList(),
+          'role': primaryRoleOf(membership.first.roles).dbValue,
+        },
       });
     }
   }
@@ -614,6 +663,7 @@ class DataRepository {
       'profile_id': profileId,
       'organization_id': organizationId,
       'role': role.dbValue,
+      'roles': [role.dbValue], // 0106: conjunto (en prod lo deriva el trigger)
       'is_active': true,
     });
   }

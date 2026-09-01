@@ -176,6 +176,25 @@ serve(async (req) => {
     return json({ error: `Cuenta creada pero falló el perfil: ${profileErr.message}`, uid }, 500);
   }
 
+  // 5.1) Membresía del centro (0106 §3.4). Toda alta deja su membresía: es la
+  //      AUTORIDAD de roles/asientos por centro y la fuente que consulta el guard
+  //      de profiles al editar roles después (setUserRoles). Sin esto, ajustarle
+  //      los roles a esta persona más tarde fallaría (no habría membresía). Se
+  //      escribe `roles` (el trigger sync_membership_roles deriva el espejo).
+  //      Idempotente por (profile_id, organization_id). Service role → sin RLS.
+  const { error: membershipErr } = await admin
+    .from("user_center_memberships")
+    .upsert(
+      { profile_id: uid, organization_id: organizationId, roles, is_active: true },
+      { onConflict: "profile_id,organization_id" },
+    );
+  if (membershipErr) {
+    return json(
+      { error: `Cuenta creada pero falló la membresía: ${membershipErr.message}`, uid },
+      500,
+    );
+  }
+
   // 6) Registro de personal sanitario (staff). Si el CONJUNTO incluye 'clinico'
   //    o 'enfermeria' (personal del centro); para un admin puro solo si se pide
   //    (createStaff=true). 'cuidador' NO tiene staff. Un {admin}-only no recibe
