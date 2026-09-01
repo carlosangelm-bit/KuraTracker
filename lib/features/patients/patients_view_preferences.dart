@@ -133,4 +133,13 @@ class PatientsViewPreferencesStore {
     final sp = await SharedPreferences.getInstance();
     await sp.setString(_key, jsonEncode(prefs.toJson()));
   }
+
+  /// Borra las preferencias persistidas (filtros/vista). Se llama al re-sembrar
+  /// la demo: los datos cambian y un filtro viejo (p. ej. un estatus de avance
+  /// que ya no coincide) dejaría el listado en blanco al abrir. Sobrevive a
+  /// wipeAll del store porque su key no lleva el prefijo del LocalStore.
+  static Future<void> clear() async {
+    final sp = await SharedPreferences.getInstance();
+    await sp.remove(_key);
+  }
 }

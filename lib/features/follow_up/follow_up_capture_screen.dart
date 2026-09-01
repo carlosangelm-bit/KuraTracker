@@ -1491,8 +1491,8 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
           if (abiMin != null)
             _profileRow('ABI/ITB (mín.)', abiMin.toStringAsFixed(2)),
           if (comorbs.isNotEmpty)
-            _profileRow(
-                'Comorbilidades', comorbs.map((c) => c.code.name).join(', ')),
+            _profileRow('Comorbilidades',
+                comorbs.map((c) => c.code.label).join(', ')),
           if (clasificaciones.isNotEmpty)
             _profileRow('Clasificaciones', clasificaciones.join(' · ')),
           if (wound.etiology == Etiologia.vascular) ...[

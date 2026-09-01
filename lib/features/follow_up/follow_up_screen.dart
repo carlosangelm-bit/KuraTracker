@@ -239,9 +239,23 @@ class FollowUpBody extends ConsumerWidget {
                                 bottomTitles: AxisTitles(
                                   sideTitles: SideTitles(
                                     showTitles: true,
+                                    // interval:1 → solo marcas en índices enteros
+                                    // (sin `interval` fl_chart pone ticks
+                                    // fraccionarios que floorean al mismo índice y
+                                    // apilan la misma fecha decenas de veces).
+                                    interval: 1,
                                     getTitlesWidget: (value, meta) {
                                       final idx = value.toInt();
-                                      if (idx < 0 || idx >= measurements.length) {
+                                      if (idx < 0 ||
+                                          idx >= measurements.length ||
+                                          value != idx.toDouble()) {
+                                        return const SizedBox.shrink();
+                                      }
+                                      // Ralea a ~6 marcas (última incluida) para
+                                      // que las fechas no se encimen ilegibles.
+                                      final step = (measurements.length / 6).ceil();
+                                      if (idx % step != 0 &&
+                                          idx != measurements.length - 1) {
                                         return const SizedBox.shrink();
                                       }
                                       return Padding(
@@ -554,9 +568,16 @@ class FollowUpBody extends ConsumerWidget {
                     bottomTitles: AxisTitles(
                       sideTitles: SideTitles(
                         showTitles: true,
+                        interval: 1,
                         getTitlesWidget: (value, meta) {
                           final idx = value.toInt();
-                          if (idx < 0 || idx >= measurements.length) {
+                          if (idx < 0 ||
+                              idx >= measurements.length ||
+                              value != idx.toDouble()) {
+                            return const SizedBox.shrink();
+                          }
+                          final step = (measurements.length / 6).ceil();
+                          if (idx % step != 0 && idx != measurements.length - 1) {
                             return const SizedBox.shrink();
                           }
                           return Padding(
@@ -727,9 +748,16 @@ class FollowUpBody extends ConsumerWidget {
                     bottomTitles: AxisTitles(
                       sideTitles: SideTitles(
                         showTitles: true,
+                        interval: 1,
                         getTitlesWidget: (value, meta) {
                           final idx = value.toInt();
-                          if (idx < 0 || idx >= measurements.length) {
+                          if (idx < 0 ||
+                              idx >= measurements.length ||
+                              value != idx.toDouble()) {
+                            return const SizedBox.shrink();
+                          }
+                          final step = (measurements.length / 6).ceil();
+                          if (idx % step != 0 && idx != measurements.length - 1) {
                             return const SizedBox.shrink();
                           }
                           return Padding(

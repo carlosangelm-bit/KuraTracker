@@ -2039,7 +2039,7 @@ class _ManualAgendaState extends ConsumerState<_ManualAgenda> {
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _ManualSummary(appointments: all),
+          _ManualSummary(appointments: all, sessions: sessions),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
             child: Column(
@@ -2518,21 +2518,29 @@ class _ManualAgendaState extends ConsumerState<_ManualAgenda> {
 /// Encabezado resumen de la agenda manual (mismo estilo que el de Acuity).
 class _ManualSummary extends StatelessWidget {
   final List<ManualAppointment> appointments;
-  const _ManualSummary({required this.appointments});
+  // Las sesiones del programa (0075) cuentan igual que las citas en el resumen:
+  // sin ellas, el badge "Esta semana" y "Hoy" ignoraban las sesiones visibles.
+  final List<TreatmentProgramSession> sessions;
+  const _ManualSummary({required this.appointments, this.sessions = const []});
 
   @override
   Widget build(BuildContext context) {
     final now = DateTime.now();
     final weekStart = _mondayOf(now);
     final weekEnd = weekStart.add(const Duration(days: 7));
-    final todayCount = appointments.where((a) => _sameDay(a.datetime, now)).length;
-    final weekCount = appointments
-        .where((a) => !a.datetime.isBefore(weekStart) && a.datetime.isBefore(weekEnd))
+    // Fechas de citas + sesiones, unificadas para los conteos y la "próxima".
+    final times = [
+      ...appointments.map((a) => a.datetime),
+      ...sessions.map((s) => s.scheduledAt),
+    ];
+    final todayCount = times.where((t) => _sameDay(t, now)).length;
+    final weekCount = times
+        .where((t) => !t.isBefore(weekStart) && t.isBefore(weekEnd))
         .length;
-    ManualAppointment? next;
-    for (final a in appointments) {
-      if (a.datetime.isAfter(now)) {
-        next = a;
+    DateTime? next;
+    for (final t in times..sort()) {
+      if (t.isAfter(now)) {
+        next = t;
         break;
       }
     }
@@ -2561,6 +2569,12 @@ class _ManualSummary extends StatelessWidget {
                   style: const TextStyle(
                       color: Colors.white, fontSize: 26, fontWeight: FontWeight.w800),
                 ),
+                // Si hoy no hay pero la semana sí, se dice — evita que "Sin citas
+                // hoy" contradiga las sesiones visibles de la semana (§4).
+                if (todayCount == 0 && weekCount > 0)
+                  Text('$weekCount esta semana',
+                      style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.85), fontSize: 12)),
               ],
             ),
           ),
@@ -2571,7 +2585,7 @@ class _ManualSummary extends StatelessWidget {
               if (next != null) ...[
                 Text('Próxima',
                     style: TextStyle(color: Colors.white.withValues(alpha: 0.75), fontSize: 12)),
-                Text('${_dayLabel(next.datetime)} · ${DateFormat('HH:mm').format(next.datetime)}',
+                Text('${_dayLabel(next)} · ${DateFormat('HH:mm').format(next)}',
                     style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
                 const SizedBox(height: 6),
               ],
