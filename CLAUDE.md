@@ -70,6 +70,12 @@ Lo que **no** viaja con el clone y hay que tener en la máquina nueva:
   `trg_sync_*`, así que valida la entrada cruda y no el estado final. Los triggers de
   validación se nombran `trg_zz_*` para que corran al final, y comparan **todas** las columnas
   que representan el mismo dato (p. ej. `role` y `roles`).
+- **Demo seed (`_seedFlag`).** Todo cambio al CONTENIDO de `demo_seed.dart` exige subir
+  `_seedFlag` (`seeded_vN` → `vN+1`). `ensureSeeded` no re-siembra si el flag ya está puesto,
+  así que cambiar el código del seed sin subir el flag **no tiene efecto en ningún navegador
+  que ya sembró** (el dato viejo se queda). Es la contraparte, en la capa de datos, del caché
+  del service worker en la capa de código. El aislamiento/lógica es código (se despliega solo);
+  lo sembrado es dato (exige el flag).
 - **Migraciones** en `supabase/migrations/NNNN_*.sql`, numeradas en secuencia. La RLS se
   extiende de forma **ADITIVA** (nuevas policies `SELECT`/`INSERT` que se OR-ean con las
   existentes; nunca reescribir/borrar policies vigentes). Helpers `SECURITY DEFINER` para

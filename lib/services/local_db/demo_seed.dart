@@ -31,7 +31,7 @@ class DemoSeed {
   // una sola vez en instalaciones demo previas (wipeAll + _seed), evitando
   // duplicados y datos viejos. Cada rediseño del roster sube este número.
   // v12: roster curado por escenario (clínica 7 / hospital 5 / cuidadores 3).
-  static const String _seedFlag = 'seeded_v26';
+  static const String _seedFlag = 'seeded_v27';
 
   static Future<void> ensureSeeded(LocalStore store) async {
     if (store.getBool(_seedFlag)) return;
@@ -2045,6 +2045,204 @@ class DemoSeed {
       dischargeNote: 'Cierre completo por segunda intención. Se dan indicaciones '
           'de prevención de recurrencia (cambios posturales, superficie de apoyo).',
     );
+
+    // ---- El REMATE del pitch: programa de tratamiento ligado a productos ----
+    // Inventario del consultorio (costo y precio), reglas producto-por-categoría
+    // (specificidad variada: gana la más específica) y un programa ACEPTADO con
+    // sus supplies y sesiones AGENDADAS ESTA SEMANA (fechas relativas a now, para
+    // que no se vacíe la agenda con el tiempo). Con esto el recorrido
+    // agenda → abrir la sesión → la consulta pre-carga los productos con cantidad
+    // y precio (consultation_detail:_maybePreload → preloadProgramSuppliesIntoConsultation).
+    final invIndep = <Map<String, dynamic>>[];
+    final invMovIndep = <Map<String, dynamic>>[];
+    String invItem(String name, double cost, double price, {int stock = 20}) {
+      final id = _uuid.v4();
+      invIndep.add({
+        'id': id,
+        'organization_id': organizationIdIndependiente,
+        'site_id': siteIndependiente,
+        'name': name,
+        'is_external': true,
+        'unit_cost': cost,
+        'unit_price': price,
+        'currency': 'MXN',
+        'supplier': 'Proveedor demo',
+        'reorder_threshold': 5,
+        'notes': null,
+        'is_active': true,
+        'created_by': independienteStaffId,
+        'created_at': iso(now.subtract(const Duration(days: 90))),
+        'updated_at': iso(now.subtract(const Duration(days: 90))),
+      });
+      invMovIndep.add({
+        'id': _uuid.v4(),
+        'organization_id': organizationIdIndependiente,
+        'site_id': siteIndependiente,
+        'inventory_item_id': id,
+        'delta': stock,
+        'reason': 'compra',
+        'unit_cost': cost,
+        'patient_id': null,
+        'consultation_id': null,
+        'note': 'Existencia inicial (demo)',
+        'created_by': independienteStaffId,
+        'created_at': iso(now.subtract(const Duration(days: 90))),
+      });
+      return id;
+    }
+
+    final espumaPlataId = invItem('Apósito de espuma con plata 10x10', 145.0, 210.0);
+    final hidrofibraId = invItem('Hidrofibra con plata 5x5', 95.0, 150.0);
+    final aposSecId = invItem('Apósito secundario de espuma 15x15', 120.0, 185.0);
+    final gasaId = invItem('Gasa estéril 10x10 (paquete 10)', 18.0, 35.0);
+    // Inventario adicional del consultorio (no ligado a reglas/supplies; da cuerpo
+    // a la pantalla de Insumos).
+    invItem('Solución limpiadora de heridas 350 ml', 320.0, 480.0);
+    invItem('Colagenasa pomada 30 g', 260.0, 390.0);
+    invItem('Cinta de fijación 2.5 cm', 22.0, 40.0);
+    await appendRows(Collections.inventoryItems, invIndep);
+    await appendRows(Collections.inventoryMovements, invMovIndep);
+
+    // Reglas producto-por-categoría (0076/0077). Tres, con distinta especificidad:
+    // una general de apósito, una acotada por ZONA (talón/pie, más específica →
+    // GANA en el pie), y una antimicrobiana por EXUDADO moderado.
+    await appendRows(Collections.protocolProductRules, [
+      {
+        'id': _uuid.v4(),
+        'organization_id': organizationIdIndependiente,
+        'category': 'aposito',
+        'inventory_item_id': aposSecId,
+        'name': 'Apósito secundario de espuma 15x15',
+        'dimension': 'none',
+        'quantity_mode': 'fixed',
+        'quantity_value': 1,
+        'sort_order': 0,
+        'exudate_levels': <String>[],
+        'zone_groups': <String>[],
+        'infection': 'any',
+        'priority': 0,
+      },
+      {
+        'id': _uuid.v4(),
+        'organization_id': organizationIdIndependiente,
+        'category': 'aposito',
+        'inventory_item_id': espumaPlataId,
+        'name': 'Apósito de espuma con plata 10x10',
+        'dimension': 'none',
+        'quantity_mode': 'fixed',
+        'quantity_value': 1,
+        'sort_order': 0,
+        'exudate_levels': <String>[],
+        'zone_groups': <String>['talon_pie'],
+        'infection': 'any',
+        'priority': 0,
+      },
+      {
+        'id': _uuid.v4(),
+        'organization_id': organizationIdIndependiente,
+        'category': 'antimicrobiano',
+        'inventory_item_id': hidrofibraId,
+        'name': 'Hidrofibra con plata 5x5',
+        'dimension': 'none',
+        'quantity_mode': 'fixed',
+        'quantity_value': 1,
+        'sort_order': 0,
+        'exudate_levels': <String>['moderado'],
+        'zone_groups': <String>[],
+        'infection': 'any',
+        'priority': 0,
+      },
+    ]);
+
+    // Programa mensual ACEPTADO para la herida del pie diabético (activa).
+    final indepProgramId = _uuid.v4();
+    await appendRows(Collections.treatmentPrograms, [
+      {
+        'id': indepProgramId,
+        'organization_id': organizationIdIndependiente,
+        'patient_id': indepDiabetico['pid'],
+        'wound_id': indepDiabetico['wid'],
+        'consultation_id': (indepDiabetico['consultIds'] as List).last,
+        'site_id': siteIndependiente,
+        'staff_id': independienteStaffId,
+        'weeks': 4,
+        'cadence_mode': 'weekly',
+        'status': 'aceptado',
+        'notes': 'Plan mensual de curación avanzada (apósito con plata + '
+            'antimicrobiano según exudado).',
+        'accepted_at': iso(now.subtract(const Duration(days: 2))),
+        'created_at': iso(now.subtract(const Duration(days: 2))),
+      }
+    ]);
+
+    // Supplies del programa (por sesión, con inventory_item_id → se pre-cargan en
+    // la consulta con cantidad y precio). is_monthly:false para que preloaden.
+    await appendRows(Collections.treatmentProgramSupplies, [
+      {
+        'id': _uuid.v4(),
+        'program_id': indepProgramId,
+        'organization_id': organizationIdIndependiente,
+        'method': 'Apósito primario',
+        'product': 'Espuma con plata',
+        'inventory_item_id': espumaPlataId,
+        'name': 'Apósito de espuma con plata 10x10',
+        'quantity_per_session': 1,
+        'is_monthly': false,
+        'unit_cost': 145.0,
+        'unit_price': 210.0,
+        'currency': 'MXN',
+        'sort_order': 0,
+      },
+      {
+        'id': _uuid.v4(),
+        'program_id': indepProgramId,
+        'organization_id': organizationIdIndependiente,
+        'method': 'Antimicrobiano',
+        'product': 'Hidrofibra con plata',
+        'inventory_item_id': hidrofibraId,
+        'name': 'Hidrofibra con plata 5x5',
+        'quantity_per_session': 1,
+        'is_monthly': false,
+        'unit_cost': 95.0,
+        'unit_price': 150.0,
+        'currency': 'MXN',
+        'sort_order': 1,
+      },
+      {
+        'id': _uuid.v4(),
+        'program_id': indepProgramId,
+        'organization_id': organizationIdIndependiente,
+        'method': 'Cobertura',
+        'product': 'Gasa estéril',
+        'inventory_item_id': gasaId,
+        'name': 'Gasa estéril 10x10 (paquete 10)',
+        'quantity_per_session': 2,
+        'is_monthly': false,
+        'unit_cost': 18.0,
+        'unit_price': 35.0,
+        'currency': 'MXN',
+        'sort_order': 2,
+      },
+    ]);
+
+    // Sesiones agendadas esta semana (relativas a now → nunca se vacía la agenda).
+    const sessOffsets = [1, 2, 4, 6];
+    await appendRows(Collections.treatmentProgramSessions, [
+      for (var i = 0; i < sessOffsets.length; i++)
+        {
+          'id': _uuid.v4(),
+          'program_id': indepProgramId,
+          'organization_id': organizationIdIndependiente,
+          'patient_id': indepDiabetico['pid'],
+          'staff_id': independienteStaffId,
+          'scheduled_at': iso(DateTime(
+              now.year, now.month, now.day + sessOffsets[i], 10, 0)),
+          'end_at': iso(DateTime(
+              now.year, now.month, now.day + sessOffsets[i], 10, 40)),
+          'status': 'agendada',
+          'sort_index': i,
+        }
+    ]);
 
     // ---------------- Agenda de la clínica (citas manuales) ----------------
     // Kura+ opera su agenda en modo MANUAL en la demo. Se puebla con citas de
