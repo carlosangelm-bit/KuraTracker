@@ -7,6 +7,7 @@ import '../../core/design/tokens.dart';
 import '../../core/providers/session_provider.dart';
 import '../../core/theme/kura_theme.dart';
 import '../../models/center_type.dart';
+import '../../services/data_repository.dart';
 
 /// Capa PREVIA al login que solo se muestra en la DEMO (sin Supabase): el
 /// visitante elige su perfil a partir de una explicación clara y entra con el
@@ -120,6 +121,39 @@ class _DemoPersonaScreenState extends ConsumerState<DemoPersonaScreen> {
     }
   }
 
+  /// Reinicia la demo a su estado sembrado: restaura los datos de ejemplo y
+  /// limpia los filtros/vista persistidos (resetAndReseed ya llama a
+  /// PatientsViewPreferencesStore.clear). Pensado para el stand: dejar el demo
+  /// limpio entre un prospecto y el siguiente, sin arrastrar sus cambios ni sus
+  /// filtros (que dejarían la pantalla de Pacientes en blanco al siguiente).
+  Future<void> _resetDemo() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (d) => AlertDialog(
+        title: const Text('Reiniciar demo'),
+        content: const Text(
+            'Se borrarán los cambios de esta sesión de demostración y se '
+            'restaurarán los datos de ejemplo.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(d, false),
+              child: const Text('Cancelar')),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: KuraColors.primary),
+            onPressed: () => Navigator.pop(d, true),
+            child: const Text('Reiniciar'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    final repo = await DataRepository.instance();
+    await repo.resetDemoData();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Demo reiniciada · datos de ejemplo restaurados.')));
+  }
+
   @override
   Widget build(BuildContext context) {
     final busy = _loadingEmail != null;
@@ -195,6 +229,16 @@ class _DemoPersonaScreenState extends ConsumerState<DemoPersonaScreen> {
                   onPressed: busy ? null : () => context.go('/login'),
                   icon: const Icon(Icons.login, size: 18),
                   label: const Text('Prefiero iniciar sesión manualmente'),
+                ),
+                // Reiniciar la demo entre un prospecto y el siguiente: restaura
+                // los datos y limpia los filtros, para que nadie herede la
+                // sesión anterior (p. ej. un filtro que deja Pacientes vacío).
+                TextButton.icon(
+                  onPressed: busy ? null : _resetDemo,
+                  icon: const Icon(Icons.refresh, size: 18),
+                  style: TextButton.styleFrom(
+                      foregroundColor: KuraColors.darkText.withOpacity(0.6)),
+                  label: const Text('Reiniciar demo'),
                 ),
                 const SizedBox(height: 8),
                 Text(
