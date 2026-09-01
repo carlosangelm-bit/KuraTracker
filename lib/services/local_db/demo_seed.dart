@@ -122,10 +122,13 @@ class DemoSeed {
         'is_active': true,
         'center_type': 'clinica_heridas',
         'scheduling_mode': 'manual',
-        // Kura+ SÍ (es lo que se vende); insumos NO (no se muestra la capa
-        // comercial que aún no se valida).
+        // Kura+ SÍ (es lo que se vende). Insumos SÍ: la bandera premium_insumos
+        // NO agrega la tienda a la nav (eso lo gatea ModuleKey.insumos), pero SÍ
+        // enciende la PRE-CARGA de productos del programa en la consulta de la
+        // sesión (consultation_detail:967) — "la parte más importante": el
+        // protocolo ligado a los productos con cantidad y precio.
         'premium_protocolo_kura': true,
-        'premium_insumos': false,
+        'premium_insumos': true,
         'is_test': false,
         'created_at': iso(now.subtract(const Duration(days: 120))),
       },

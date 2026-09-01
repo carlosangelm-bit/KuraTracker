@@ -194,7 +194,12 @@ class PatientsListScreenState extends ConsumerState<PatientsListScreen> {
                       .where((p) => p.organizationId == user!.organizationId)
                       .toList();
                 } else if (user?.role == AppRole.admin) {
-                  allPatients = repo.listAllPatients();
+                  // Admin: pacientes de SU centro (en prod la RLS lo hace; en
+                  // demo sin RLS hay que acotar por org, igual que arriba).
+                  allPatients = repo
+                      .listAllPatients()
+                      .where((p) => p.organizationId == user!.organizationId)
+                      .toList();
                 } else {
                   allPatients = user?.staffId != null
                       ? repo.listPatientsForStaff(user!.staffId!)

@@ -148,8 +148,15 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                 // Aislamiento por rol: clínico ve SUS pacientes; admin los del
                 // centro. El master no llega aquí (va a /platform).
                 final isAdmin = user?.role == AppRole.admin;
+                // El admin ve los pacientes de SU centro. listAllPatients no
+                // filtra por organización (en prod lo tapa la RLS; en demo, sin
+                // RLS, dejaría ver los de otros centros) → se acota por org, el
+                // mismo patrón que risk_board_screen.
                 final patients = isAdmin
-                    ? repo.listAllPatients()
+                    ? repo
+                        .listAllPatients()
+                        .where((p) => p.organizationId == user?.organizationId)
+                        .toList()
                     : (user?.staffId != null
                         ? repo.listPatientsForStaff(user!.staffId!)
                         : <Patient>[]);
@@ -244,7 +251,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Hola, ${user?.fullName.split(' ').first ?? ''} 👋',
+                  'Hola, ${user?.fullName.split(' ').first ?? ''}',
                   style: Theme.of(context)
                       .textTheme
                       .headlineSmall
@@ -633,7 +640,11 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     final maxSessions = loads.fold<int>(1, (m, l) => l.sessions > m ? l.sessions : m);
 
     return [
-      ..._greeting(context, user, 'Supervisión del centro'),
+      // Un consultorio de una sola persona (p. ej. el profesional independiente)
+      // no es "supervisión del centro": es su propio consultorio. Se distingue
+      // por el nº de personal activo del centro (loads ya está acotado por org).
+      ..._greeting(context, user,
+          loads.length <= 1 ? 'Tu consultorio' : 'Supervisión del centro'),
       const SizedBox(height: 20),
       _HeroCard(
         activePatients: activePatients,
