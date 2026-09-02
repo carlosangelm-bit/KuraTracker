@@ -139,6 +139,11 @@ jobs:
         run: supabase functions deploy shopify-sync-catalog --use-api --project-ref "$SUPABASE_PROJECT_REF"
       - name: Deploy shopify-inventory (--use-api)
         run: supabase functions deploy shopify-inventory --use-api --project-ref "$SUPABASE_PROJECT_REF"
+      # Portera de leads de la demo: endpoint PÚBLICO (se llama desde el navegador
+      # en modo demo, sin sesión) → --no-verify-jwt. El token de Bitrix vive en el
+      # secret BITRIX_WEBHOOK_URL de Supabase, nunca en el cliente.
+      - name: Deploy demo-lead (--use-api, --no-verify-jwt)
+        run: supabase functions deploy demo-lead --use-api --no-verify-jwt --project-ref "$SUPABASE_PROJECT_REF"
 
   build_deploy:
     needs: [checks, migrations]
@@ -206,12 +211,19 @@ jobs:
       # flutter clean garantiza que los const String.fromEnvironment se
       # recompilen SIN los dart-define (si no, el caché podría reusar el bundle
       # de prod y la demo quedaría apuntando a Supabase real).
+      # LEADS_ENDPOINT es la URL de la función portera demo-lead (NO una
+      # credencial). Se deriva de SUPABASE_URL pero NO se pasan SUPABASE_URL/
+      # ANON_KEY como dart-define, así que la demo sigue en modo demo
+      # (isSupabaseConfigured solo mira esos dos). AVISO_URL es la URL del aviso
+      # de privacidad (pendiente; vacío = la leyenda no muestra enlace).
       - name: Build web (demo)
         run: |
           flutter clean
           flutter pub get
           flutter build web --release \
-            --dart-define=SHOPIFY_STOREFRONT_TOKEN="${{ secrets.SHOPIFY_STOREFRONT_TOKEN }}"
+            --dart-define=SHOPIFY_STOREFRONT_TOKEN="${{ secrets.SHOPIFY_STOREFRONT_TOKEN }}" \
+            --dart-define=LEADS_ENDPOINT="${{ secrets.SUPABASE_URL }}/functions/v1/demo-lead" \
+            --dart-define=AVISO_URL="${{ vars.AVISO_URL }}"
 
       - name: Deploy demo → kuratracker-demo
         uses: cloudflare/wrangler-action@v3

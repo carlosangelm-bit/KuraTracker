@@ -46,9 +46,14 @@ Lo que **no** viaja con el clone y hay que tener en la máquina nueva:
      credenciales, usa `LocalStore`).
   3. `deploy_functions`: despliega una lista ACOTADA de funciones con `--use-api`
      (admin-create-user, acuity-proxy, mercadopago-webhook/-sync-charge/-point-intent,
-     stripe-create-checkout/-webhook, vac-bot, support-bot, shopify-sync-catalog/-inventory).
-     Los webhooks que deben quedar con la URL abierta (stripe-webhook, mercadopago-webhook)
-     se despliegan con `--no-verify-jwt` para no re-habilitar `verify_jwt`.
+     stripe-create-checkout/-webhook, vac-bot, support-bot, shopify-sync-catalog/-inventory,
+     demo-lead).
+     Los webhooks/endpoints que deben quedar con la URL abierta (stripe-webhook,
+     mercadopago-webhook, demo-lead) se despliegan con `--no-verify-jwt` para no
+     re-habilitar `verify_jwt`. `demo-lead` es la portera de leads de la demo →
+     Bitrix (secret `BITRIX_WEBHOOK_URL` en Supabase); el build de la demo recibe
+     su URL en el dart-define `LEADS_ENDPOINT` (y el aviso de privacidad en
+     `AVISO_URL`, variable de repo).
 - Los secrets de Cloudflare se llaman **`CLOUDFARE_API_TOKEN` / `CLOUDFARE_ACCOUNT_ID`**
   (sin la "L", intencional). El token Cloudflare requiere permiso *Account · Cloudflare
   Pages · Edit*.
