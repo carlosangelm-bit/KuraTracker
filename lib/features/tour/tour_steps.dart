@@ -97,86 +97,94 @@ List<TourStep> tourStepsFor(
 
     case AppRole.admin:
     case AppRole.clinico:
+      // Copy aprobado por Carlos (KuraTracker_lenguaje_del_demo.md): lenguaje de
+      // CLIENTE, no de Kuramas. Se resuelven Acuity → "tu sistema de citas en
+      // línea"; checkpoint de Sheehan → "revisión de avance de la semana 4";
+      // F0..F5 → nombradas en palabras; y "el motor Kura+" → "Protocolo Kura+
+      // —el motor de decisión clínica—" la 1ª vez, luego "el protocolo".
       return [
         const TourStep(
           route: '/',
-          title: 'Bienvenido al recorrido',
+          title: 'Bienvenido',
           body:
-              'Te muestro el flujo real del día a día: crear un paciente, '
-              'agendar, la consulta hasta el cobro, los reportes y el tablero de '
-              'avance.',
+              'Te muestro el día a día completo: registrar un paciente, agendar '
+              'su cita, la consulta con su nota firmada, el cobro y el '
+              'seguimiento de su evolución.',
         ),
         const TourStep(
           route: '/patients',
-          title: '1 · Pacientes',
+          title: 'Pacientes',
           body:
-              'El listado de tus pacientes: buscar, filtrar y dar de alta. Toca '
-              '“Nuevo paciente” para registrar uno.',
+              'El listado de tus pacientes: buscar, filtrar por estado o sede, y '
+              'dar de alta. Toca “Nuevo paciente” para registrar uno.',
         ),
         const TourStep(
           route: '/patients/new',
-          title: '2 · Crear paciente',
+          title: 'Crear paciente',
           body:
-              'Aquí capturas el perfil completo: datos generales, comorbilidades, '
-              'antecedentes y cuidador. Entre más completo, mejor alimenta el '
-              'motor Kura+ y el módulo de prevención.',
+              'Aquí capturas el expediente: datos generales, enfermedades que ya '
+              'tiene, antecedentes y quién lo cuida en casa. Cuanto más completo, '
+              'mejores son las recomendaciones que el sistema te va a dar después.',
         ),
         const TourStep(
           route: '/agenda',
-          title: '3 · Agenda de consultas',
+          title: 'Agenda',
           body:
-              'Programa citas (o se sincronizan desde Acuity). Desde una cita: '
-              '“Iniciar consulta”; si ya existe, “Ir a la consulta” — sin '
-              'capturar dos veces.',
+              'Programa las citas, o déjalas entrar solas si conectas tu sistema '
+              'de citas en línea. Desde una cita abres la consulta con un toque, '
+              'sin capturar los datos del paciente otra vez.',
         ),
         const TourStep(
           route: '/agenda',
-          title: '4 · Iniciar consulta o seguimiento',
+          title: 'Iniciar la consulta',
           body:
-              'Al iniciar la consulta eliges el tipo. Para una herida existente, '
-              '“Seguimiento” te lleva directo a su formulario (ya no a una '
-              'valoración).',
+              'Al abrir la cita eliges qué vas a hacer. Si la herida ya existe, '
+              'entras directo a su seguimiento; si es nueva, a su primera '
+              'valoración.',
         ),
         if (hasWound)
           TourStep(
             route: '/patients/$patientId/wound/$woundId/capture',
-            title: '5 · La consulta · Valoración',
+            title: 'La valoración',
             body:
-                'Captura guiada por etiología con el PRONÓSTICO EN VIVO del motor '
-                'mientras mides el lecho. (Solo un vistazo; no guardamos nada.)',
+                'Los campos cambian según el tipo de herida, y mientras mides el '
+                'lecho el Protocolo Kura+ —el motor de decisión clínica del '
+                'sistema— te va diciendo, en vivo, qué pronóstico tiene esa '
+                'herida.',
           ),
         if (hasWound)
           TourStep(
             route: '/patients/$patientId/wound/$woundId/follow-up/new',
-            title: '6 · La consulta · Seguimiento (5 fases)',
+            title: 'El seguimiento, en cinco fases',
             body:
-                'Perfil heredado (F0), procedimiento físico (F1), estado (F2), '
-                'RÉGIMEN de Kura+ con alertas/interconsultas (F3), checkpoint de '
-                'Sheehan (F4) y nota + firma (F5).',
+                'Perfil heredado de la valoración anterior; procedimiento '
+                'realizado; estado actual de la herida; el tratamiento que el '
+                'protocolo recomienda, con sus alertas y a quién derivar; la '
+                'revisión de avance de la semana 4; y la nota firmada.',
           ),
         if (patientId != null && consultationId != null)
           TourStep(
             route: '/patients/$patientId/consultation/$consultationId',
-            title: '7 · …hasta el cobro',
+            title: 'Hasta el cobro',
             body:
-                'Al cerrar la consulta registras los insumos usados y generas el '
-                'COBRO: efectivo, terminal Point o link de pago (Stripe). Todo '
-                'queda en el expediente.',
+                'Al cerrar la consulta registras qué material usaste y generas el '
+                'cobro: efectivo, terminal o liga de pago. El material sale del '
+                'inventario y todo queda en el expediente del paciente.',
           ),
         const TourStep(
           route: '/reports',
-          title: '8 · Reportes del paciente',
+          title: 'Reportes',
           body:
-              'Genera reportes clínicos (evolución, medidas, fotos) para '
-              'compartir con el paciente o exportar.',
+              'Genera el reporte clínico del paciente —evolución, medidas y '
+              'fotos— para entregárselo o compartirlo con otro médico.',
         ),
         const TourStep(
           route: '/',
-          title: '9 · Dashboard · avance de todos',
+          title: 'Tu tablero',
           body:
-              'El tablero de inicio: el avance de TODOS tus pacientes de un '
-              'vistazo (riesgo, cierres, pendientes). ¡Listo, explora libremente! '
-              'Reabre el recorrido con el botón “Tour”.',
+              'El avance de todos tus pacientes de un vistazo: quién mejora, '
+              'quién no y quién necesita atención hoy. Listo — explora con '
+              'libertad; puedes reabrir este recorrido con el botón de la esquina.',
         ),
       ];
   }

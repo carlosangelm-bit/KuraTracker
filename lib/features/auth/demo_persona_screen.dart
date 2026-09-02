@@ -47,9 +47,9 @@ const _personas = <_Persona>[
     icon: Icons.medical_services_outlined,
     centerType: CenterType.clinicaHeridas,
     description:
-        'Profesional clínico de una clínica de heridas. Valora heridas, corre '
-        'el motor Kura+, registra el seguimiento en 5 fases y firma notas. Es '
-        'el perfil principal del sistema.',
+        'Atiende heridas en una clínica. Valora, recibe la recomendación de '
+        'tratamiento del Protocolo Kura+, registra cada seguimiento y firma la '
+        'nota. Es el perfil principal.',
   ),
   _Persona(
     title: 'Profesional independiente',
@@ -58,9 +58,8 @@ const _personas = <_Persona>[
     centerType: CenterType.clinicaHeridas,
     description:
         'Atiende por su cuenta y es su propio centro: administra y trata. '
-        'Lleva el expediente completo de sus pacientes, corre el motor '
-        'Protocolo Kura+ y sigue la evolución de cada herida con fotos y '
-        'mediciones.',
+        'Lleva el expediente completo, recibe la recomendación de tratamiento y '
+        'sigue la evolución de cada herida con fotos y medidas.',
   ),
   _Persona(
     title: 'Administrador de centro',
@@ -68,8 +67,8 @@ const _personas = <_Persona>[
     icon: Icons.admin_panel_settings_outlined,
     centerType: CenterType.clinicaHeridas,
     description:
-        'Gestiona su clínica: personal, sitios, catálogo de notas, módulos '
-        'premium y precios de insumos. También puede capturar clínicamente.',
+        'Gestiona la clínica: su personal, sus sedes, el catálogo de notas y '
+        'los precios del material. También puede atender pacientes.',
   ),
   _Persona(
     title: 'Enfermería (hospital)',
@@ -77,9 +76,10 @@ const _personas = <_Persona>[
     icon: Icons.local_hospital_outlined,
     centerType: CenterType.hospital,
     description:
-        'Personal de enfermería hospitalaria. Prevención de LPP: escala de '
-        'Braden, panel de riesgo, rondas y agenda de cuidados. Observa y '
-        'ejecuta; no diagnostica ni cambia el protocolo.',
+        'Enfermería hospitalaria enfocada en prevenir lesiones por presión: '
+        'valoración de riesgo con la escala de Braden, tablero del piso, rondas '
+        'y agenda de cuidados. Observa, reporta y ejecuta; no cambia el '
+        'tratamiento.',
   ),
   _Persona(
     title: 'Cuidador',
@@ -87,9 +87,8 @@ const _personas = <_Persona>[
     icon: Icons.volunteer_activism_outlined,
     centerType: CenterType.cuidadores,
     description:
-        'Cuidador de un paciente en domicilio. Acceso reducido: solo sus '
-        'pacientes asignados, las instrucciones del centro y su agenda de '
-        'tareas.',
+        'Cuida a un paciente en su casa. Ve solo a los suyos, las '
+        'instrucciones del centro y las tareas del día.',
   ),
   // El perfil Master (plataforma) NO se expone en la demo: es de acceso interno
   // y solo se entra por el login real de producción con credenciales.
