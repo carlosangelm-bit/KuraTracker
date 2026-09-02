@@ -338,7 +338,11 @@ class AppShell extends ConsumerWidget {
       onSelected: (value) {
         if (value == 'logout') {
           ref.read(sessionProvider.notifier).logout();
-          context.go('/login');
+          // El destino depende del modo: en la DEMO la landing es el selector de
+          // perfiles, no el login de producción (ahí no hay credenciales válidas y
+          // el visitante queda en un callejón sin salida, además de perder el
+          // acceso al botón "Reiniciar demo", que vive en esa pantalla).
+          context.go(AppConfig.isSupabaseConfigured ? '/login' : '/demo');
         } else if (value == 'switch') {
           showCenterSwitcher(context, ref);
         } else if (value == 'help') {
@@ -650,7 +654,11 @@ class UserMenuButton extends ConsumerWidget {
         onSelected: (value) {
           if (value == 'logout') {
             ref.read(sessionProvider.notifier).logout();
-            context.go('/login');
+            // El destino depende del modo: en la DEMO la landing es el selector
+            // de perfiles, no el login de producción (ahí no hay credenciales
+            // válidas y el visitante queda en un callejón sin salida, además de
+            // perder el acceso al botón "Reiniciar demo", que vive en esa pantalla).
+            context.go(AppConfig.isSupabaseConfigured ? '/login' : '/demo');
           } else if (value == 'switch') {
             showCenterSwitcher(context, ref);
           } else if (value == 'help') {
