@@ -521,7 +521,7 @@ class _WoundSection extends StatelessWidget {
             runSpacing: 6,
             children: a.infectionCriteria
                 .map((c) => Chip(
-                      label: Text(c.name, style: const TextStyle(fontSize: 11)),
+                      label: Text(c.label, style: const TextStyle(fontSize: 11)),
                       backgroundColor: KuraColors.danger.withOpacity(0.1),
                       // Solo lectura: sin shrinkWrap Material añade caja 48x48
                       // (auditoría 1-sep, punto 3).
@@ -541,7 +541,7 @@ class _WoundSection extends StatelessWidget {
             runSpacing: 6,
             children: a.perilesionalSkin
                 .map((c) => Chip(
-                      label: Text(c.name, style: const TextStyle(fontSize: 11)),
+                      label: Text(c.label, style: const TextStyle(fontSize: 11)),
                       backgroundColor: KuraColors.chipBg,
                       // Solo lectura (auditoría 1-sep, punto 3).
                       visualDensity: VisualDensity.compact,

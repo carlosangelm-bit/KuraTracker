@@ -981,7 +981,7 @@ class _WoundCaptureScreenState extends ConsumerState<WoundCaptureScreen> {
                       value: formState.exudadoCantidad,
                       decoration: const InputDecoration(labelText: 'Exudado (cantidad)'),
                       items: ExudadoCantidad.values
-                          .map((e) => DropdownMenuItem(value: e, child: Text(e.name)))
+                          .map((e) => DropdownMenuItem(value: e, child: Text(e.label)))
                           .toList(),
                       onChanged: (v) => update(
                           () => formState.exudadoCantidad = v ?? ExudadoCantidad.escaso),
@@ -1055,7 +1055,7 @@ class _WoundCaptureScreenState extends ConsumerState<WoundCaptureScreen> {
                 children: PielPerilesionalEstado.values.map((p) {
                   final selected = formState.perilesionalSkin.contains(p);
                   return FilterChip(
-                    label: Text(p.name, style: const TextStyle(fontSize: 12)),
+                    label: Text(p.label, style: const TextStyle(fontSize: 12)),
                     selected: selected,
                     selectedColor: KuraColors.warning.withOpacity(0.2),
                     onSelected: (v) => update(() {
@@ -1648,7 +1648,7 @@ class _WoundCaptureScreenState extends ConsumerState<WoundCaptureScreen> {
             children: AgenteCausal.values.map((a) {
               final selected = formState.agenteCausal == a;
               return ChoiceChip(
-                label: Text(a.name),
+                label: Text(a.label),
                 selected: selected,
                 selectedColor: KuraColors.primary.withOpacity(0.18),
                 onSelected: (_) => update(() => formState.agenteCausal = a),

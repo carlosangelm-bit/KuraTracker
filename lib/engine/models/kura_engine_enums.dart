@@ -298,6 +298,23 @@ enum WuwhsGrade { g1, g2, g3, g4 }
 /// Agente causal para heridas traumaticas.
 enum AgenteCausal { mordedura, armaFuego, aplastamiento, punzocortante, otro }
 
+extension AgenteCausalLabel on AgenteCausal {
+  String get label {
+    switch (this) {
+      case AgenteCausal.mordedura:
+        return 'Mordedura';
+      case AgenteCausal.armaFuego:
+        return 'Arma de fuego';
+      case AgenteCausal.aplastamiento:
+        return 'Aplastamiento';
+      case AgenteCausal.punzocortante:
+        return 'Punzocortante';
+      case AgenteCausal.otro:
+        return 'Otro';
+    }
+  }
+}
+
 // ===========================================================================
 // Clasificaciones/campos por etiología (Prompt 5) — protocolos de las 4
 // etiologías. Enums de dominio con etiqueta legible + `dbValue` (== name) para

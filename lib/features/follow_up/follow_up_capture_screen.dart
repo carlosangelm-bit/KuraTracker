@@ -752,7 +752,7 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
                         value: _exudadoCantidad,
                         decoration: const InputDecoration(labelText: 'Exudado (cantidad)'),
                         items: ExudadoCantidad.values
-                            .map((e) => DropdownMenuItem(value: e, child: Text(e.name)))
+                            .map((e) => DropdownMenuItem(value: e, child: Text(e.label)))
                             .toList(),
                         onChanged: (v) =>
                             setState(() => _exudadoCantidad = v ?? _exudadoCantidad),
@@ -855,7 +855,7 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
                   children: PielPerilesionalEstado.values.map((p) {
                     final selected = _perilesionalSkin.contains(p);
                     return FilterChip(
-                      label: Text(p.name, style: const TextStyle(fontSize: 12)),
+                      label: Text(p.label, style: const TextStyle(fontSize: 12)),
                       selected: selected,
                       selectedColor: KuraColors.warning.withOpacity(0.2),
                       onSelected: (v) => setState(() {
@@ -1510,7 +1510,7 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
               children: [
                 for (final s in SubtipoVascular.values)
                   ChoiceChip(
-                    label: Text(s.name, style: const TextStyle(fontSize: 12)),
+                    label: Text(s.label, style: const TextStyle(fontSize: 12)),
                     selected: _effectiveSubtipo(wound) == s,
                     onSelected: (_) => setState(() {
                       _subtipoOverride = s;
