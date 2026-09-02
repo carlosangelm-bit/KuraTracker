@@ -663,7 +663,9 @@ class _PatientHeaderCard extends StatelessWidget {
                         '${patient.responsibleName!}${patient.responsibleRelationship != null && patient.responsibleRelationship!.isNotEmpty ? ' (${patient.responsibleRelationship})' : ''}',
                   ),
                 if (patient.ekareExternalId != null)
-                  _InfoItem(label: 'eKare ID', value: patient.ekareExternalId!),
+                  _InfoItem(
+                      label: 'ID de expediente externo',
+                      value: patient.ekareExternalId!),
               ],
             ),
             if (patient.address != null && patient.address!.isNotEmpty) ...[

@@ -49,7 +49,7 @@ extension ModuleKeyX on ModuleKey {
       case ModuleKey.reports:
         return 'Reportes';
       case ModuleKey.ekare:
-        return 'eKare';
+        return 'Importar expedientes';
       case ModuleKey.insumos:
         return 'Insumos';
       case ModuleKey.comercial:
@@ -86,8 +86,13 @@ extension ModuleKeyX on ModuleKey {
   /// sugerencia inicial: el master puede sobreescribirlo (p.ej. encender
   /// Prevención en una clínica de heridas). Prevención se apaga por defecto en
   /// clínica de heridas (enfoque en tratamiento) y se enciende en hospital y
-  /// cuidadores; reportes/eKare se apagan por defecto en cuidadores.
+  /// cuidadores; reportes se apagan por defecto en cuidadores.
   bool defaultFor(CenterType type) {
+    // Importar expedientes (interoperabilidad): APAGADO por defecto en todo tipo
+    // de centro. Es un caso raro (un cliente que llega con historia en otra
+    // herramienta); el master lo enciende por centro cuando hace falta, sin
+    // clavar el nombre de ninguna clínica en el código.
+    if (this == ModuleKey.ekare) return false;
     // Insumos/Tienda y Comercial: por default SOLO en clínica de heridas
     // (segmento objetivo). El master puede encenderlos en otro tipo de centro.
     if (this == ModuleKey.insumos || this == ModuleKey.comercial) {
@@ -108,11 +113,12 @@ extension ModuleKeyX on ModuleKey {
   /// Si el módulo APLICA a este tipo de centro. Un módulo no disponible no se
   /// ofrece en la configuración y queda apagado aunque exista un ajuste previo.
   ///
-  /// eKare (interoperabilidad propia de la clínica de heridas) NO aplica en
-  /// hospital: ahí la herramienta funge como apoyo al manejo preventivo de
-  /// lesiones, no como expediente/interoperabilidad de heridas.
+  /// Todos los módulos están disponibles en todo tipo de centro; el que no deba
+  /// verse arranca APAGADO por defecto (ver [defaultFor]) y el master lo
+  /// enciende donde haga falta. (Importar expedientes usaba antes un caso
+  /// especial para excluirse del hospital; ya no hace falta al arrancar apagado
+  /// en todos.)
   bool availableFor(CenterType type) {
-    if (this == ModuleKey.ekare) return type != CenterType.hospital;
     return true;
   }
 

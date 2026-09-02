@@ -141,7 +141,7 @@ class _ImportExportScreenState extends ConsumerState<ImportExportScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Interoperabilidad eKare'),
+        title: const Text('Importación y exportación de expedientes'),
         actions: const [UserMenuButton()],
       ),
       body: Center(
@@ -158,11 +158,11 @@ class _ImportExportScreenState extends ConsumerState<ImportExportScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text('Importar historial de mediciones (eKare)',
+                        const Text('Importar mediciones de otro expediente',
                             style: TextStyle(fontWeight: FontWeight.w700)),
                         const SizedBox(height: 8),
                         Text(
-                          'Carga el export de mediciones de eKare (uno o varios '
+                          'Carga el export de mediciones de otro expediente (uno o varios '
                           'CSV): crea pacientes, heridas y su historial de '
                           'mediciones. Omite pacientes que ya existan.',
                           style: TextStyle(
@@ -172,7 +172,7 @@ class _ImportExportScreenState extends ConsumerState<ImportExportScreen> {
                         const SizedBox(height: 12),
                         FilledButton.icon(
                           icon: const Icon(Icons.cloud_upload_outlined),
-                          label: const Text('Abrir importador de eKare'),
+                          label: const Text('Abrir importador'),
                           style: FilledButton.styleFrom(
                               backgroundColor: KuraColors.primary),
                           onPressed: () => context.push('/ekare-import'),
@@ -193,7 +193,7 @@ class _ImportExportScreenState extends ConsumerState<ImportExportScreen> {
                         const SizedBox(height: 8),
                         Text(
                           'Genera un archivo CSV con todas las mediciones seriadas registradas, '
-                          'compatible con una migración total futura hacia/desde eKare.',
+                          'compatible con una migración hacia o desde otro expediente.',
                           style: TextStyle(fontSize: 12, color: KuraColors.darkText.withOpacity(0.6)),
                         ),
                         const SizedBox(height: 12),
