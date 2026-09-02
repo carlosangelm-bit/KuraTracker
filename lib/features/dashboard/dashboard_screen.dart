@@ -70,7 +70,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   static const int _recentLimit = 6;
 
   // Filtro de temporalidad (solo para los indicadores de actividad del admin:
-  // "por sitio" y "carga por Kurador"). Por defecto, el mes actual.
+  // "por sitio" y "carga por especialista"). Por defecto, el mes actual.
   _Period _sitePeriod = _Period.mes;
   _Period _kuradorPeriod = _Period.mes;
 
@@ -708,7 +708,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
             _sectionBlock(
               context,
               icon: Icons.groups_outlined,
-              title: 'Carga por Kurador',
+              title: 'Carga por especialista',
               count: loads.length,
               filter: _PeriodChips(
                 value: _kuradorPeriod,

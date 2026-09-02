@@ -989,7 +989,7 @@ class _StaffFormDialogState extends State<_StaffFormDialog> {
   late final TextEditingController _nameCtrl =
       TextEditingController(text: widget.existing?.fullName ?? '');
   late final TextEditingController _roleCtrl =
-      TextEditingController(text: widget.existing?.roleTitle ?? 'Kurador');
+      TextEditingController(text: widget.existing?.roleTitle ?? 'Especialista');
   late final TextEditingController _cedulaCtrl =
       TextEditingController(text: widget.existing?.cedulaProfesional ?? '');
   late final TextEditingController _especialidadCtrl =
@@ -1027,7 +1027,7 @@ class _StaffFormDialogState extends State<_StaffFormDialog> {
       if (widget.existing == null) {
         await widget.repo.createStaff(
           fullName: _nameCtrl.text.trim(),
-          roleTitle: _roleCtrl.text.trim().isEmpty ? 'Kurador' : _roleCtrl.text.trim(),
+          roleTitle: _roleCtrl.text.trim().isEmpty ? 'Especialista' : _roleCtrl.text.trim(),
           organizationId: widget.organizationId,
           primarySiteId: _siteId,
           profileId: _profileId,
@@ -1038,7 +1038,7 @@ class _StaffFormDialogState extends State<_StaffFormDialog> {
         await widget.repo.updateStaff(
           widget.existing!.id,
           fullName: _nameCtrl.text.trim(),
-          roleTitle: _roleCtrl.text.trim().isEmpty ? 'Kurador' : _roleCtrl.text.trim(),
+          roleTitle: _roleCtrl.text.trim().isEmpty ? 'Especialista' : _roleCtrl.text.trim(),
           primarySiteId: _siteId,
           clearPrimarySiteId: _siteId == null,
           profileId: _profileId,
@@ -1084,7 +1084,7 @@ class _StaffFormDialogState extends State<_StaffFormDialog> {
                   controller: _roleCtrl,
                   decoration: const InputDecoration(
                     labelText: 'Cargo',
-                    hintText: 'Kurador, Médico, Enfermera...',
+                    hintText: 'Especialista, Médico, Enfermera…',
                   ),
                 ),
                 const SizedBox(height: 12),
