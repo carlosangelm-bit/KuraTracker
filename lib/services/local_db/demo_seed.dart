@@ -32,7 +32,7 @@ class DemoSeed {
   // una sola vez en instalaciones demo previas (wipeAll + _seed), evitando
   // duplicados y datos viejos. Cada rediseño del roster sube este número.
   // v12: roster curado por escenario (clínica 7 / hospital 5 / cuidadores 3).
-  static const String _seedFlag = 'seeded_v28';
+  static const String _seedFlag = 'seeded_v29';
 
   static Future<void> ensureSeeded(LocalStore store) async {
     if (store.getBool(_seedFlag)) return;
@@ -847,7 +847,9 @@ class DemoSeed {
       abiLeft: 0.92,
       isLowerExtremity: true,
       albumin: 3.6,
-      withPhotos: true,
+      // Sin foto: el banco de demo solo tiene una evolución de LPP sacra, y
+      // Roberto es pie diabético. Mostrar la LPP aquí rompía la credibilidad
+      // (auditoría 1-sep, camino B). El remate fotográfico va en Ricardo Salinas.
       withFollowUpNotes: true,
       treatmentDescription:
           'Descarga plantar con calzado terapéutico, curación en ambiente '
@@ -939,7 +941,7 @@ class DemoSeed {
       abiLeft: 0.34, // isquemia crítica en la pierna con la herida
       isLowerExtremity: true,
       albumin: 3.0,
-      withPhotos: true,
+      // Sin foto: etiología vascular, el banco solo tiene LPP sacra (camino B).
       withFollowUpNotes: true,
       treatmentDescription:
           'Herida arterial con isquemia crítica: NO desbridar tejido seco; '
@@ -1122,7 +1124,7 @@ class DemoSeed {
       depths: [0.5, 0.35, 0.2, 0.1, 0.0],
       baselineDaysAgo: 21,
       closed: true,
-      withPhotos: true,
+      // Sin foto: etiología quirúrgica, el banco solo tiene LPP sacra (camino B).
       withFollowUpNotes: true,
       followUpSignedBy: 'Administradora Procomsa',
       followUpSignedLicense: '',
@@ -1938,7 +1940,7 @@ class DemoSeed {
         [80, 8, 0, 12],
       ],
       baselineDaysAgo: 42,
-      withPhotos: true,
+      // Sin foto: María Elena es pie diabético; el banco solo tiene LPP sacra (camino B).
       withFollowUpNotes: true,
     );
     // Recomendación del Protocolo Kura+ ya corrida sobre la última consulta del
@@ -2003,7 +2005,7 @@ class DemoSeed {
         [82, 6, 0, 12],
       ],
       baselineDaysAgo: 35,
-      withPhotos: true,
+      // Sin foto: etiología vascular, el banco solo tiene LPP sacra (camino B).
       withFollowUpNotes: true,
     );
 

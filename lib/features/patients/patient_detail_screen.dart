@@ -580,7 +580,15 @@ class _PatientHeaderCard extends StatelessWidget {
           runSpacing: 4,
           children: items
               .map((t) => Chip(
-                    label: Text(t, style: const TextStyle(fontSize: 12)),
+                    // Un Chip no recorta solo: sin tope de ancho + ellipsis, un
+                    // ítem largo (una alergia o medicamento con dosis) se sale y
+                    // el Wrap lo corta a media palabra (auditoría 1-sep, punto 4).
+                    label: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 220),
+                      child: Text(t,
+                          style: const TextStyle(fontSize: 12),
+                          overflow: TextOverflow.ellipsis),
+                    ),
                     backgroundColor: danger
                         ? KuraColors.danger.withOpacity(0.10)
                         : KuraColors.chipBg,
@@ -696,8 +704,17 @@ class _PatientHeaderCard extends StatelessWidget {
               const SizedBox(height: 12),
               const Divider(),
               const SizedBox(height: 8),
-              _labeledChips('Antecedentes', patient.backgroundNotes,
-                  color: KuraColors.darkText.withOpacity(0.6)),
+              // Antecedentes es TEXTO LIBRE narrativo, no una lista: partirlo en
+              // chips por comas produce fragmentos sin sentido y el chip recorta
+              // lo que no cabe. Se rinde como párrafo, igual que "Antecedentes
+              // quirúrgicos" (auditoría 1-sep, punto 2).
+              Text('Antecedentes',
+                  style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: KuraColors.darkText.withOpacity(0.6))),
+              const SizedBox(height: 4),
+              Text(patient.backgroundNotes!),
             ],
             if ((patient.allergies ?? '').trim().isNotEmpty) ...[
               const SizedBox(height: 12),
@@ -834,6 +851,10 @@ class _ComorbidityCard extends StatelessWidget {
                           Text(c.code.label, style: const TextStyle(fontSize: 12)),
                       avatar: Icon(Icons.circle, size: 10, color: color),
                       backgroundColor: KuraColors.chipBg,
+                      // Chip de solo lectura: sin shrinkWrap Material lo envuelve
+                      // en 48x48 y añade aire vertical (auditoría 1-sep, punto 3).
+                      visualDensity: VisualDensity.compact,
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                     );
                   }).toList(),
                 ),
