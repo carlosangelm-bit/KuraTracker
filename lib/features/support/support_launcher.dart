@@ -76,7 +76,7 @@ String supportScreenLabelFor(String location) {
     '/caregiver': 'Monitoreo del cuidador',
     '/admin': 'Administración del centro',
     '/platform': 'Plataforma (master)',
-    '/import-export': 'Importar / exportar (eKare)',
+    '/import-export': 'Importar / exportar expedientes',
     '/vac': 'Terapia VAC',
   };
   final e = exact[path];

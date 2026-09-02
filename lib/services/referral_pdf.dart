@@ -61,7 +61,7 @@ Future<void> generateAndShowReferralPdf({
           if (patient.age != null) _kv('Edad', '${patient.age} años'),
           if ((patient.sex ?? '').isNotEmpty) _kv('Sexo', patient.sex!),
           if ((patient.ekareExternalId ?? '').isNotEmpty)
-            _kv('eKare ID', patient.ekareExternalId!),
+            _kv('ID de expediente externo', patient.ekareExternalId!),
           pw.SizedBox(height: 12),
 
           // Referencia

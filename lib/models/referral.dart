@@ -56,7 +56,7 @@ extension ReferralAdjuntoLabel on ReferralAdjunto {
   String get label {
     switch (this) {
       case ReferralAdjunto.reporteEkare:
-        return 'Reporte eKare';
+        return 'Reporte de mediciones';
       case ReferralAdjunto.resumenClinico:
         return 'Resumen clínico';
       case ReferralAdjunto.cultivo:

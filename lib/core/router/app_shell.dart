@@ -40,7 +40,7 @@ class AppShell extends ConsumerWidget {
     if (user?.role == AppRole.master) {
       return const [
         _NavItem('/platform', Icons.hub_outlined, Icons.hub, 'Plataforma'),
-        _NavItem('/import-export', Icons.sync_alt_outlined, Icons.sync_alt, 'eKare'),
+        _NavItem('/import-export', Icons.sync_alt_outlined, Icons.sync_alt, 'Importar expedientes'),
       ];
     }
 
@@ -97,7 +97,7 @@ class AppShell extends ConsumerWidget {
           '/admin', Icons.admin_panel_settings_outlined, Icons.admin_panel_settings, 'Administración'));
     }
     if (modules.contains(ModuleKey.ekare)) {
-      items.add(const _NavItem('/import-export', Icons.sync_alt_outlined, Icons.sync_alt, 'eKare'));
+      items.add(const _NavItem('/import-export', Icons.sync_alt_outlined, Icons.sync_alt, 'Importar expedientes'));
     }
     return items;
   }
