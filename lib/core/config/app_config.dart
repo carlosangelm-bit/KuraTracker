@@ -20,6 +20,16 @@ class AppConfig {
   static bool get isSupabaseConfigured =>
       supabaseUrl.isNotEmpty && supabaseAnonKey.isNotEmpty;
 
+  /// URL PÚBLICA de la función portera de leads de la demo (demo-lead). Es una
+  /// URL, NO una credencial (el token de Bitrix vive en los secrets de Supabase,
+  /// del lado del servidor). Vacía en la Fase 1 / sin configurar: el formulario
+  /// encola el lead localmente y sigue. **No participa en [isSupabaseConfigured]**
+  /// — la demo sigue siendo demo aunque este endpoint esté configurado.
+  static const String leadsEndpoint = String.fromEnvironment(
+    'LEADS_ENDPOINT',
+    defaultValue: '',
+  );
+
   /// Limite de tamano por lote de evidencia fotografica (seccion 3/9).
   static const int maxPhotoBatchBytes = 17 * 1024 * 1024; // 17 MB
 
