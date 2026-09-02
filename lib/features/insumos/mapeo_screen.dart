@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../core/theme/kura_theme.dart';
 import '../../core/providers/session_provider.dart';
@@ -53,6 +54,7 @@ class _MapeoScreenState extends ConsumerState<MapeoScreen> {
 
     return Scaffold(
       appBar: AppBar(
+        leading: BackButton(onPressed: () => context.go('/insumos')),
         title: const Text('Mapeo de insumos'),
         actions: const [UserMenuButton()],
       ),

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
 import '../../core/theme/kura_theme.dart';
@@ -44,6 +45,7 @@ class _ConsumoScreenState extends ConsumerState<ConsumoScreen> {
 
     return Scaffold(
       appBar: AppBar(
+        leading: BackButton(onPressed: () => context.go('/insumos')),
         title: const Text('Consumo por paciente'),
         actions: [
           if (_patientId != null)

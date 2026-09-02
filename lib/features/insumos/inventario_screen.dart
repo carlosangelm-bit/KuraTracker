@@ -2,6 +2,7 @@ import 'package:csv/csv.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
 import '../../core/theme/kura_theme.dart';
@@ -257,6 +258,7 @@ class _InventarioScreenState extends ConsumerState<InventarioScreen> {
 
     return Scaffold(
       appBar: AppBar(
+        leading: BackButton(onPressed: () => context.go('/insumos')),
         title: const Text('Inventario'),
         actions: [
           if (repoAsync.valueOrNull
