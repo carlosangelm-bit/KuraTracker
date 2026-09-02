@@ -42,7 +42,7 @@ class _Persona {
 
 const _personas = <_Persona>[
   _Persona(
-    title: 'Kuradora / Médico',
+    title: 'Especialista / Médico',
     email: 'ana.martinez@curamas.mx',
     icon: Icons.medical_services_outlined,
     centerType: CenterType.clinicaHeridas,
