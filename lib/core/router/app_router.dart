@@ -442,7 +442,11 @@ final routerProvider = Provider<GoRouter>((ref) {
             builder: (context, state) => const ImportExportScreen(),
           ),
           GoRoute(
-            path: '/ekare-import',
+            // Hija de /import-export para que ModuleKey.forRoute la atrape (via
+            // el prefijo de la ruta del módulo) y herede el gate del módulo. Como
+            // ruta de primer nivel quedaba fuera del gate — el mismo hueco que
+            // tuvo /admin (auditoría 1-sep).
+            path: '/import-export/ekare',
             builder: (context, state) => const EkareImportScreen(),
           ),
         ],
