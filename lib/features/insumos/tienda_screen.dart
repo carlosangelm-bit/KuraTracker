@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/theme/kura_theme.dart';
@@ -56,6 +57,7 @@ class _TiendaScreenState extends ConsumerState<TiendaScreen> {
 
     return Scaffold(
       appBar: AppBar(
+        leading: BackButton(onPressed: () => context.go('/insumos')),
         title: const Text('Tienda de insumos'),
         actions: [
           IconButton(
