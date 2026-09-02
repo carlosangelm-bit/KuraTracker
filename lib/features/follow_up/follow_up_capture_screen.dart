@@ -786,13 +786,18 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
                       const SizedBox(height: 8),
                       Wrap(
                         spacing: 8,
-                        runSpacing: 8,
+                        // Interactivo (FilterChip): se conserva el objetivo táctil
+                        // de 48px para el dedo; solo se baja el alto con
+                        // visualDensity y el aire vertical con runSpacing 8→4
+                        // (auditoría 1-sep, punto 3, distinción lectura vs táctil).
+                        runSpacing: 4,
                         children: InfeccionCriterioIwii.values.map((c) {
                           final selected = _infeccionCriterios.contains(c);
                           return FilterChip(
                             label:
                                 Text(c.label, style: const TextStyle(fontSize: 12)),
                             selected: selected,
+                            visualDensity: VisualDensity.compact,
                             selectedColor: KuraColors.danger.withOpacity(0.15),
                             onSelected: (v) => setState(() {
                               if (v) {

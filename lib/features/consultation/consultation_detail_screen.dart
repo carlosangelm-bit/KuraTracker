@@ -523,6 +523,10 @@ class _WoundSection extends StatelessWidget {
                 .map((c) => Chip(
                       label: Text(c.name, style: const TextStyle(fontSize: 11)),
                       backgroundColor: KuraColors.danger.withOpacity(0.1),
+                      // Solo lectura: sin shrinkWrap Material añade caja 48x48
+                      // (auditoría 1-sep, punto 3).
+                      visualDensity: VisualDensity.compact,
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                     ))
                 .toList(),
           ),
@@ -539,6 +543,9 @@ class _WoundSection extends StatelessWidget {
                 .map((c) => Chip(
                       label: Text(c.name, style: const TextStyle(fontSize: 11)),
                       backgroundColor: KuraColors.chipBg,
+                      // Solo lectura (auditoría 1-sep, punto 3).
+                      visualDensity: VisualDensity.compact,
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                     ))
                 .toList(),
           ),
