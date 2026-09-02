@@ -223,7 +223,8 @@ jobs:
           flutter build web --release \
             --dart-define=SHOPIFY_STOREFRONT_TOKEN="${{ secrets.SHOPIFY_STOREFRONT_TOKEN }}" \
             --dart-define=LEADS_ENDPOINT="${{ secrets.SUPABASE_URL }}/functions/v1/demo-lead" \
-            --dart-define=AVISO_URL="${{ vars.AVISO_URL }}"
+            --dart-define=AVISO_URL="${{ vars.AVISO_URL }}" \
+            --dart-define=DEMO_EVENT="${{ vars.DEMO_EVENT || 'Congreso de heridas · sep 2026' }}"
 
       - name: Deploy demo → kuratracker-demo
         uses: cloudflare/wrangler-action@v3

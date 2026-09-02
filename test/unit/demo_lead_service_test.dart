@@ -14,21 +14,35 @@ void main() {
         phone: phone,
         userType: 'Atiendo heridas en una clínica o consultorio',
         otherText: other,
+        event: 'Congreso de heridas · sep 2026',
         createdAt: '2026-09-01T10:00:00Z',
       );
 
   setUp(() => SharedPreferences.setMockInitialValues({}));
 
-  test('toJson lleva la fuente fija y omite campos vacíos', () {
+  test('toJson lleva la fuente fija, el evento, y omite campos vacíos', () {
     final j = lead().toJson();
     expect(j['source'], 'Demo KuraTracker');
     expect(j['first_name'], 'Ana');
+    expect(j['event'], 'Congreso de heridas · sep 2026');
     expect(j.containsKey('phone'), isFalse); // opcional, no dado
     expect(j.containsKey('other_text'), isFalse);
 
     final j2 = lead(phone: '5512345678', other: 'Investigación').toJson();
     expect(j2['phone'], '5512345678');
     expect(j2['other_text'], 'Investigación');
+  });
+
+  test('pendingAsCsv exporta encabezado + una fila por lead pendiente', () async {
+    expect(await DemoLeadService.pendingAsCsv(), isEmpty);
+    await DemoLeadService.capture(lead(first: 'Rosa'));
+    await DemoLeadService.capture(lead(first: 'Luis', other: 'con, coma'));
+    final csv = await DemoLeadService.pendingAsCsv();
+    final lines = csv.split('\n');
+    expect(lines.first, 'nombre,apellido,correo,telefono,tipo_usuario,otro,evento,fecha');
+    expect(lines.length, 3); // encabezado + 2 leads
+    expect(csv, contains('Rosa'));
+    expect(csv, contains('"con, coma"')); // escape CSV de la coma
   });
 
   test('round-trip JSON del lead', () {

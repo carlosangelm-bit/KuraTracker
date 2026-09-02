@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -37,6 +38,8 @@ Future<void> showResetDemoDialog(BuildContext context, WidgetRef ref) async {
               style: const TextStyle(
                   fontSize: 12.5, fontWeight: FontWeight.w600, color: KuraColors.warning),
             ),
+            const SizedBox(height: 4),
+            _CopyPendingCsvButton(),
           ],
         ],
       ),
@@ -61,4 +64,39 @@ Future<void> showResetDemoDialog(BuildContext context, WidgetRef ref) async {
   context.go('/demo');
   ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
       content: Text('Demo reiniciada · datos de ejemplo restaurados.')));
+}
+
+/// Copia los leads pendientes al portapapeles como CSV, para no perder ninguno
+/// si la red falló todo el evento. Dentro del diálogo de reinicio; da feedback
+/// "Copiado" sin cerrar el diálogo.
+class _CopyPendingCsvButton extends StatefulWidget {
+  @override
+  State<_CopyPendingCsvButton> createState() => _CopyPendingCsvButtonState();
+}
+
+class _CopyPendingCsvButtonState extends State<_CopyPendingCsvButton> {
+  bool _copied = false;
+
+  Future<void> _copy() async {
+    final csv = await DemoLeadService.pendingAsCsv();
+    if (csv.isEmpty) return;
+    await Clipboard.setData(ClipboardData(text: csv));
+    if (!mounted) return;
+    setState(() => _copied = true);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: TextButton.icon(
+        onPressed: _copied ? null : _copy,
+        icon: Icon(_copied ? Icons.check : Icons.copy_all_outlined, size: 18),
+        style: TextButton.styleFrom(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            foregroundColor: KuraColors.primary),
+        label: Text(_copied ? 'Copiado ✓' : 'Copiar pendientes (CSV)'),
+      ),
+    );
+  }
 }

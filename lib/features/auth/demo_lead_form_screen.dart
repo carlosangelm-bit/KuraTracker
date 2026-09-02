@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../core/config/app_config.dart';
 import '../../core/providers/session_provider.dart';
 import '../../core/theme/kura_theme.dart';
 import '../../services/demo/demo_lead_service.dart';
@@ -108,6 +109,7 @@ class _DemoLeadFormScreenState extends ConsumerState<DemoLeadFormScreen> {
         phone: _phone.text.trim().isEmpty ? null : _phone.text.trim(),
         userType: option.label,
         otherText: option.isOther ? _other.text.trim() : null,
+        event: AppConfig.demoEvent.isEmpty ? null : AppConfig.demoEvent,
         createdAt: DateTime.now().toUtc().toIso8601String(),
       );
       // capture() nunca lanza por red: envía con timeout y, si falla, encola.

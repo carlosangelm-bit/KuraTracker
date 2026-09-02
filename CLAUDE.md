@@ -51,9 +51,12 @@ Lo que **no** viaja con el clone y hay que tener en la máquina nueva:
      Los webhooks/endpoints que deben quedar con la URL abierta (stripe-webhook,
      mercadopago-webhook, demo-lead) se despliegan con `--no-verify-jwt` para no
      re-habilitar `verify_jwt`. `demo-lead` es la portera de leads de la demo →
-     Bitrix (secret `BITRIX_WEBHOOK_URL` en Supabase); el build de la demo recibe
-     su URL en el dart-define `LEADS_ENDPOINT` (y el aviso de privacidad en
-     `AVISO_URL`, variable de repo).
+     Bitrix (`crm.item.add`, entityTypeId=1). Secrets en Supabase: `BITRIX_WEBHOOK_URL`,
+     `BITRIX_ASSIGNED_BY_ID` (responsable comercial), `BITRIX_USERTYPE_FIELD` (campo
+     de lista del tipo de usuario; la etiqueta se traduce al ID de su opción vía
+     `crm.item.fields`), `BITRIX_EVENT_FIELD` (campo del evento). El build de la demo
+     recibe el dart-define `LEADS_ENDPOINT` (URL de la función), `AVISO_URL` (aviso de
+     privacidad, `vars.AVISO_URL`) y `DEMO_EVENT` (evento, `vars.DEMO_EVENT`).
 - Los secrets de Cloudflare se llaman **`CLOUDFARE_API_TOKEN` / `CLOUDFARE_ACCOUNT_ID`**
   (sin la "L", intencional). El token Cloudflare requiere permiso *Account · Cloudflare
   Pages · Edit*.

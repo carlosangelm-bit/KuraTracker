@@ -18,6 +18,7 @@ class DemoLead {
   final String? phone; // opcional (§1)
   final String userType; // la opción que eligió, en sus palabras (§2)
   final String? otherText; // texto libre cuando eligió "Otro"
+  final String? event; // evento donde se mostró la demo (oculto en el form)
   final String createdAt; // ISO-8601
 
   const DemoLead({
@@ -27,6 +28,7 @@ class DemoLead {
     required this.userType,
     this.phone,
     this.otherText,
+    this.event,
     required this.createdAt,
   });
 
@@ -37,6 +39,7 @@ class DemoLead {
         if (phone != null && phone!.isNotEmpty) 'phone': phone,
         'user_type': userType,
         if (otherText != null && otherText!.isNotEmpty) 'other_text': otherText,
+        if (event != null && event!.isNotEmpty) 'event': event,
         'created_at': createdAt,
         'source': 'Demo KuraTracker',
       };
@@ -48,6 +51,7 @@ class DemoLead {
         phone: j['phone'] as String?,
         userType: j['user_type'] as String? ?? '',
         otherText: j['other_text'] as String?,
+        event: j['event'] as String?,
         createdAt: j['created_at'] as String? ?? '',
       );
 }
@@ -119,6 +123,38 @@ class DemoLeadService {
   }
 
   static Future<int> pending() async => (await _loadQueue()).length;
+
+  /// Los leads pendientes de enviar como CSV (para copiar al portapapeles antes
+  /// de reiniciar y no perder ninguno si la red falló todo el evento). Vacío si
+  /// no hay pendientes.
+  static Future<String> pendingAsCsv() async {
+    final q = await _loadQueue();
+    if (q.isEmpty) return '';
+    String cell(String? v) {
+      final s = v ?? '';
+      // Escape CSV: comillas dobles si hay coma, comilla o salto de línea.
+      if (s.contains(',') || s.contains('"') || s.contains('\n')) {
+        return '"${s.replaceAll('"', '""')}"';
+      }
+      return s;
+    }
+
+    final rows = <String>[
+      'nombre,apellido,correo,telefono,tipo_usuario,otro,evento,fecha',
+      for (final l in q)
+        [
+          cell(l.firstName),
+          cell(l.lastName),
+          cell(l.email),
+          cell(l.phone),
+          cell(l.userType),
+          cell(l.otherText),
+          cell(l.event),
+          cell(l.createdAt),
+        ].join(','),
+    ];
+    return rows.join('\n');
+  }
 
   // --- interno ---
 
