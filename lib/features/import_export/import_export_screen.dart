@@ -175,7 +175,7 @@ class _ImportExportScreenState extends ConsumerState<ImportExportScreen> {
                           label: const Text('Abrir importador'),
                           style: FilledButton.styleFrom(
                               backgroundColor: KuraColors.primary),
-                          onPressed: () => context.push('/ekare-import'),
+                          onPressed: () => context.push('/import-export/ekare'),
                         ),
                       ],
                     ),

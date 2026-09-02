@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/theme/kura_theme.dart';
 import '../../core/providers/session_provider.dart';
+import '../../models/module_key.dart';
 import '../../engine/models/kura_engine_enums.dart';
 import '../../models/wound.dart';
 
@@ -406,6 +407,15 @@ class _EkareImportScreenState extends ConsumerState<EkareImportScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Guarda de módulo (2ª capa; el redirect del router es la 1ª). En web una
+    // URL no es candado: si el módulo "Importar expedientes" no está encendido
+    // para el centro activo, no se renderiza el importador. eKare es exclusivo
+    // de Kura+ (regla de producto): ningún otro centro debe verlo.
+    if (!ref.watch(enabledModulesProvider).contains(ModuleKey.ekare)) {
+      return const Scaffold(
+        body: Center(child: Text('No tienes acceso a esta sección.')),
+      );
+    }
     return Scaffold(
       appBar: AppBar(title: const Text('Importar de eKare')),
       body: Center(
