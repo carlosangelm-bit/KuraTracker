@@ -481,7 +481,7 @@ class DataRepository {
     String? phone,
     String? cedulaProfesional,
     String? primarySiteId,
-    String roleTitle = 'Kurador',
+    String roleTitle = 'Especialista',
     String? password,
   }) async {
     // Validación del conjunto (misma regla que la Edge Function y setUserRoles):

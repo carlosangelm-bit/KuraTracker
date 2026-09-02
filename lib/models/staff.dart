@@ -3,7 +3,7 @@ class StaffMember {
   final String? profileId;
   final String folio; // K2024-0001
   final String fullName;
-  final String roleTitle; // Kurador, Medico...
+  final String roleTitle; // Especialista, Médico...
   final String? primarySiteId;
   final bool isActive;
   final DateTime createdAt;
@@ -26,7 +26,7 @@ class StaffMember {
     this.profileId,
     required this.folio,
     required this.fullName,
-    this.roleTitle = 'Kurador',
+    this.roleTitle = 'Especialista',
     this.primarySiteId,
     this.isActive = true,
     required this.createdAt,
@@ -41,7 +41,7 @@ class StaffMember {
         profileId: json['profile_id'] as String?,
         folio: json['folio'] as String,
         fullName: json['full_name'] as String,
-        roleTitle: json['role_title'] as String? ?? 'Kurador',
+        roleTitle: json['role_title'] as String? ?? 'Especialista',
         primarySiteId: json['primary_site_id'] as String?,
         isActive: json['is_active'] as bool? ?? true,
         createdAt: DateTime.parse(json['created_at'] as String),

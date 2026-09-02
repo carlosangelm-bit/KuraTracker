@@ -309,7 +309,7 @@ class _AgendaScreenState extends ConsumerState<AgendaScreen> {
     final ids = all.map((a) => a.staffId).whereType<String>().toSet();
     if (ids.length < 2) return const [];
     final entries = ids
-        .map((id) => MapEntry(id, staffNames[id] ?? 'Kurador'))
+        .map((id) => MapEntry(id, staffNames[id] ?? 'Especialista'))
         .toList()
       ..sort((a, b) => a.value.toLowerCase().compareTo(b.value.toLowerCase()));
     return entries;
@@ -498,9 +498,9 @@ class _Controls extends StatelessWidget {
           value: kuradorFilter,
           isDense: true,
           icon: const Icon(Icons.filter_list, size: 18),
-          hint: const Text('Kurador', style: TextStyle(fontSize: 13)),
+          hint: const Text('Especialista', style: TextStyle(fontSize: 13)),
           items: [
-            const DropdownMenuItem<String?>(value: null, child: Text('Todos los Kuradores')),
+            const DropdownMenuItem<String?>(value: null, child: Text('Todos los especialistas')),
             ...kuradorOptions.map(
               (e) => DropdownMenuItem<String?>(value: e.key, child: Text(e.value)),
             ),
@@ -1319,7 +1319,7 @@ class _AppointmentDetailSheet extends StatelessWidget {
       if (r('duration') != null) MapEntry('Duración', '${r('duration')} min'),
       if ((a.appointmentType ?? r('type')) != null)
         MapEntry('Tipo', a.appointmentType ?? r('type')!),
-      if (r('calendar') != null) MapEntry('Calendario (Kurador)', r('calendar')!),
+      if (r('calendar') != null) MapEntry('Calendario del especialista', r('calendar')!),
       if (r('location') != null) MapEntry('Ubicación', r('location')!),
       MapEntry('Estado', a.status),
       if (r('price') != null) MapEntry('Precio', r('price')!),
@@ -1991,7 +1991,7 @@ class _ManualAgendaState extends ConsumerState<_ManualAgenda> {
     final ids = all.map((a) => a.staffId).whereType<String>().toSet();
     final kuradorOptions = ids.length < 2
         ? <MapEntry<String, String>>[]
-        : (ids.map((id) => MapEntry(id, staffNames[id] ?? 'Kurador')).toList()
+        : (ids.map((id) => MapEntry(id, staffNames[id] ?? 'Especialista')).toList()
           ..sort((a, b) => a.value.toLowerCase().compareTo(b.value.toLowerCase())));
 
     final isWide = MediaQuery.sizeOf(context).width >= 900;
@@ -2454,9 +2454,9 @@ class _ManualAgendaState extends ConsumerState<_ManualAgenda> {
             value: _kuradorFilter,
             isDense: true,
             icon: const Icon(Icons.filter_list, size: 18),
-            hint: const Text('Kurador', style: TextStyle(fontSize: 13)),
+            hint: const Text('Especialista', style: TextStyle(fontSize: 13)),
             items: [
-              const DropdownMenuItem<String?>(value: null, child: Text('Todos los Kuradores')),
+              const DropdownMenuItem<String?>(value: null, child: Text('Todos los especialistas')),
               ...opts.map((e) => DropdownMenuItem<String?>(value: e.key, child: Text(e.value))),
             ],
             onChanged: (v) => setState(() => _kuradorFilter = v),
@@ -2995,7 +2995,7 @@ class _ManualFormState extends State<_ManualForm> {
                 DropdownButtonFormField<String?>(
                   value: _staffId,
                   isExpanded: true,
-                  decoration: const InputDecoration(labelText: 'Kurador'),
+                  decoration: const InputDecoration(labelText: 'Especialista'),
                   items: [
                     const DropdownMenuItem<String?>(value: null, child: Text('Sin asignar')),
                     ...staff.map((s) => DropdownMenuItem<String?>(

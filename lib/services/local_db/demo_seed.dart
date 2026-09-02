@@ -32,7 +32,7 @@ class DemoSeed {
   // una sola vez en instalaciones demo previas (wipeAll + _seed), evitando
   // duplicados y datos viejos. Cada rediseño del roster sube este número.
   // v12: roster curado por escenario (clínica 7 / hospital 5 / cuidadores 3).
-  static const String _seedFlag = 'seeded_v29';
+  static const String _seedFlag = 'seeded_v30';
 
   static Future<void> ensureSeeded(LocalStore store) async {
     if (store.getBool(_seedFlag)) return;
@@ -397,7 +397,7 @@ class DemoSeed {
         'profile_id': clinico1ProfileId,
         'folio': 'K2024-0001',
         'full_name': 'Dra. Ana Martínez',
-        'role_title': 'Kuradora / Médico',
+        'role_title': 'Especialista / Médico',
         'primary_site_id': siteClinicaCdmx,
         'is_active': true,
         'created_at': iso(now.subtract(const Duration(days: 400))),
@@ -408,7 +408,7 @@ class DemoSeed {
         'profile_id': clinico2ProfileId,
         'folio': 'K2024-0002',
         'full_name': 'Lic. Carlos Ramírez',
-        'role_title': 'Kurador',
+        'role_title': 'Especialista',
         'primary_site_id': siteClinicaGdl,
         'is_active': true,
         'created_at': iso(now.subtract(const Duration(days: 250))),
@@ -430,7 +430,7 @@ class DemoSeed {
         'profile_id': independienteProfileId,
         'folio': 'AR2026-0001',
         'full_name': 'Dra. Alejandra Ríos',
-        'role_title': 'Médico / Kuradora',
+        'role_title': 'Médico / Especialista',
         'cedula_profesional': '12345678',
         'primary_site_id': siteIndependiente,
         'is_active': true,
