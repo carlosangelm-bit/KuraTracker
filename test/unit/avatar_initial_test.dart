@@ -24,25 +24,21 @@ void main() {
     expect(avatarInitial('Dr.'), '?');
   });
 
-  // Un helper probado no basta: hay que probar que está CONECTADO en todos los
-  // avatares. Este guard cierra el hueco de "la etiqueta que ves arreglada y dos
-  // más escondidas": si un sitio vuelve a la inicial cruda, se pone rojo.
-  test('conectado: los avatares usan avatarInitial, no la inicial cruda', () {
-    const sitios = [
-      'lib/core/router/app_shell.dart', // barra + drawer
-      'lib/features/admin/admin_home_screen.dart', // personal
-      'lib/features/patients/patient_grid_card.dart',
-      'lib/features/patients/patient_list_tile.dart',
-      'lib/features/dashboard/dashboard_screen.dart',
-    ];
-    for (final f in sitios) {
-      final src = File(f).readAsStringSync();
-      expect(src.contains('avatarInitial('), isTrue,
-          reason: '$f no usa avatarInitial');
-      expect(RegExp(r'fullName\[0\]').hasMatch(src), isFalse,
-          reason: '$f: queda un fullName[0] crudo (daría "D" en "Dra.")');
-      expect(src.contains('fullName.trim().substring(0, 1)'), isFalse,
-          reason: '$f: queda un substring(0,1) crudo');
+  test('en NINGÚN lugar de lib se calcula la inicial a mano', () {
+    // Atado al PATRÓN, no al nombre de la variable: dashboard:1843 usaba
+    // load.name[0] (alias de s.fullName) y el guard por-archivo lo dejó pasar.
+    final crudo = RegExp(
+        r"isNotEmpty \? [\w.]*[nN]ame\[0\]|[\w.]*[nN]ame[\w.()]*\.substring\(0, ?1\)");
+    final ofensores = <String>[];
+    for (final f in Directory('lib').listSync(recursive: true)) {
+      if (f is File &&
+          f.path.endsWith('.dart') &&
+          crudo.hasMatch(f.readAsStringSync())) {
+        ofensores.add(f.path);
+      }
     }
+    expect(ofensores, isEmpty,
+        reason:
+            'inicial cruda (daría "D" en "Dra."): usa avatarInitial() de core/name_format.dart');
   });
 }

@@ -1840,7 +1840,7 @@ class _StaffLoadRow extends StatelessWidget {
             CircleAvatar(
               radius: 18,
               backgroundColor: t.info.withOpacity(0.12),
-              child: Text(load.name.isNotEmpty ? load.name[0] : '?',
+              child: Text(avatarInitial(load.name),
                   style: TextStyle(color: t.info, fontWeight: FontWeight.w800)),
             ),
             const SizedBox(width: 12),
