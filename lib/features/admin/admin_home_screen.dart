@@ -11,6 +11,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../core/theme/kura_theme.dart';
+import '../../core/name_format.dart';
 import '../../core/layout/responsive.dart';
 import '../../core/config/app_config.dart';
 import '../../core/providers/session_provider.dart';
@@ -922,9 +923,7 @@ class _StaffTabState extends State<StaffTab> {
                       child: Text(
                         s.folio.length >= 3
                             ? s.folio.substring(1, 3)
-                            : s.fullName.trim().isEmpty
-                                ? '?'
-                                : s.fullName.trim().substring(0, 1).toUpperCase(),
+                            : avatarInitial(s.fullName),
                       ),
                     ),
                     title: Text(s.fullName),

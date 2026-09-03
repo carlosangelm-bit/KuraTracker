@@ -55,7 +55,9 @@ Lo que **no** viaja con el clone y hay que tener en la máquina nueva:
      `BITRIX_ASSIGNED_BY_ID` (responsable comercial, OPCIONAL: sin él los leads caen
      en la cuenta del webhook), `BITRIX_USERTYPE_FIELD` (campo de lista del tipo de
      usuario = `ufCrm_LEAD_1788382308670`; la etiqueta se traduce al ID de su opción
-     vía `crm.item.fields`). El EVENTO no usa campo propio (decisión de Carlos): se
+     vía `crm.item.fields`), `BITRIX_SOURCE_ID` (OPCIONAL, override del ORIGEN; por
+     defecto `UC_HRFW6S` = origen propio "Demo KuraTracker" del portal — sin fijarlo
+     Bitrix pone "Llamada" por omisión). El EVENTO no usa campo propio (decisión de Carlos): se
      concatena a `sourceDescription` como "Demo KuraTracker · <evento>". El build de la
      demo recibe el dart-define `LEADS_ENDPOINT` (URL de la función), `AVISO_URL` (aviso
      de privacidad, `vars.AVISO_URL`) y `DEMO_EVENT` (evento, `vars.DEMO_EVENT`).

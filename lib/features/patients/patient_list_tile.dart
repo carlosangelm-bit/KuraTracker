@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/design/tokens.dart';
+import '../../core/name_format.dart';
 import '../../engine/models/kura_engine_enums.dart';
 import '../../engine/risk/prevention_risk_engine.dart';
 import '../../models/patient.dart';
@@ -95,7 +96,7 @@ class PatientListTile extends StatelessWidget {
               CircleAvatar(
                 backgroundColor: t.info.withOpacity(0.12),
                 child: Text(
-                  patient.fullName.isNotEmpty ? patient.fullName[0] : '?',
+                  avatarInitial(patient.fullName),
                   style: TextStyle(color: t.info, fontWeight: FontWeight.w800),
                 ),
               ),

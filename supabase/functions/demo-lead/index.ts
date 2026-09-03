@@ -39,6 +39,14 @@ import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 const BITRIX_WEBHOOK_URL = Deno.env.get("BITRIX_WEBHOOK_URL") ?? "";
 const ASSIGNED_BY_ID = Deno.env.get("BITRIX_ASSIGNED_BY_ID") ?? "";
 const USERTYPE_FIELD = Deno.env.get("BITRIX_USERTYPE_FIELD") ?? "";
+// ORIGEN del lead (directorio Orígenes de Bitrix). Por defecto UC_HRFW6S, el
+// origen propio "Demo KuraTracker" del portal de Kuramas (verificado vía
+// crm.status.list, 3-sep-2026). Sin fijar sourceId, Bitrix aplica el origen por
+// omisión del portal —"Llamada"— y ensucia el reporte de orígenes. El valor
+// correcto vive en el código (constante verificada); BITRIX_SOURCE_ID queda solo
+// como override para otro portal. OJO: un sourceId que no exista en el directorio
+// hace que crm.item.add rechace el lead (502) y no llegue al CRM.
+const SOURCE_ID = Deno.env.get("BITRIX_SOURCE_ID")?.trim() || "UC_HRFW6S";
 
 // entityTypeId del LEAD en la API universal de Bitrix (crm.item.*). Se usa
 // crm.item.add porque crm.lead.add está marcado como obsoleto.
@@ -192,6 +200,7 @@ serve(async (req) => {
     title: `Demo KuraTracker — ${firstName} ${lastName}`.slice(0, MAX_FIELD),
     name: firstName,
     lastName: lastName,
+    sourceId: SOURCE_ID,
     sourceDescription,
     comments,
     email: [{ value: email, valueType: "WORK" }],

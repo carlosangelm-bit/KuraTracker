@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/theme/kura_theme.dart';
+import '../../core/name_format.dart';
 import '../../core/layout/responsive.dart';
 import '../../core/providers/session_provider.dart';
 import '../../core/router/app_shell.dart' show UserMenuButton;
@@ -703,7 +704,7 @@ class _NurseActivityCard extends StatelessWidget {
                           radius: 16,
                           backgroundColor: KuraColors.primary.withValues(alpha: 0.12),
                           child: Text(
-                            s.name.isNotEmpty ? s.name[0] : '?',
+                            avatarInitial(s.name),
                             style: const TextStyle(
                                 color: KuraColors.primary,
                                 fontWeight: FontWeight.w800),

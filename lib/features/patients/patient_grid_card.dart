@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/theme/kura_theme.dart';
+import '../../core/name_format.dart';
 import '../../engine/models/kura_engine_enums.dart';
 import '../../models/patient.dart';
 import 'patient_list_tile.dart' show PatientHospitalInfo, HospitalSignalsRow, BradenBadge;
@@ -52,7 +53,7 @@ class PatientGridCard extends StatelessWidget {
                     radius: 20,
                     backgroundColor: KuraColors.primary.withOpacity(0.12),
                     child: Text(
-                      patient.fullName.isNotEmpty ? patient.fullName[0] : '?',
+                      avatarInitial(patient.fullName),
                       style: const TextStyle(
                           color: KuraColors.primary, fontWeight: FontWeight.w800),
                     ),

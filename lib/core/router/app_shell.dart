@@ -13,6 +13,7 @@ import '../../models/app_user.dart';
 import '../../models/center_type.dart';
 import '../../models/module_key.dart';
 import '../../services/data_repository.dart';
+import '../name_format.dart';
 
 /// Alto del contenido de la barra de navegacion flotante. Las pantallas
 /// scrolleables del shell suman esto (mas el inset inferior del sistema) a su
@@ -371,7 +372,7 @@ class AppShell extends ConsumerWidget {
       child: CircleAvatar(
         backgroundColor: t.brandPrimary.withOpacity(0.15),
         child: Text(
-          user.fullName.isNotEmpty ? user.fullName[0].toUpperCase() : '?',
+          avatarInitial(user.fullName),
           style: TextStyle(color: t.brandPrimary, fontWeight: FontWeight.w800),
         ),
       ),
@@ -693,7 +694,7 @@ class UserMenuButton extends ConsumerWidget {
           radius: 16,
           backgroundColor: t.brandPrimary.withOpacity(0.15),
           child: Text(
-            user.fullName.isNotEmpty ? user.fullName[0].toUpperCase() : '?',
+            avatarInitial(user.fullName),
             style: TextStyle(color: t.brandPrimary, fontWeight: FontWeight.w800),
           ),
         ),
