@@ -18,21 +18,27 @@
 //   BITRIX_WEBHOOK_URL      URL del webhook entrante de Bitrix
 //                           (https://<portal>/rest/<user>/<token>/). Da acceso a
 //                           TODO el CRM: solo del lado servidor, nunca al navegador.
-//   BITRIX_ASSIGNED_BY_ID   ID numérico del responsable comercial. Sin esto todos
-//                           los leads caen en la cuenta dueña del webhook (Carlos).
-//   BITRIX_USERTYPE_FIELD   Código del campo de LISTA "tipo de usuario" (UF_CRM_…).
-//                           La etiqueta que manda la app se traduce al ID de su
-//                           opción (leyendo crm.item.fields) para que Carlos pueda
-//                           FILTRAR leads por tipo en Bitrix.
-//   BITRIX_EVENT_FIELD      Código del campo del evento (UF_CRM_…). Se le pone el
-//                           valor `event` que manda el formulario.
+//   BITRIX_ASSIGNED_BY_ID   ID numérico del responsable comercial. OPCIONAL: si no
+//                           está puesto (o no es un número válido), la función NO
+//                           fija responsable y los leads caen en la cuenta dueña del
+//                           webhook (Carlos). No falla por su ausencia.
+//   BITRIX_USERTYPE_FIELD   Código del campo de LISTA "tipo de usuario"
+//                           (ufCrm_LEAD_1788382308670). La etiqueta que manda la app
+//                           se traduce al ID de su opción (leyendo crm.item.fields)
+//                           para que Carlos pueda FILTRAR leads por tipo. Las seis
+//                           opciones empatan palabra por palabra con las etiquetas de
+//                           la app (IDs 284/286/288/290/292/294): el mapeo es directo.
+//
+// El EVENTO no usa campo propio (Carlos decidió no crearlo): su valor —el que la
+// app manda en `event` desde su dart-define DEMO_EVENT— se concatena a
+// sourceDescription como "Demo KuraTracker · <evento>". Si algún día se quiere
+// filtrar por evento, se crea el campo y se vuelve a rutear ahí.
 
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 
 const BITRIX_WEBHOOK_URL = Deno.env.get("BITRIX_WEBHOOK_URL") ?? "";
 const ASSIGNED_BY_ID = Deno.env.get("BITRIX_ASSIGNED_BY_ID") ?? "";
 const USERTYPE_FIELD = Deno.env.get("BITRIX_USERTYPE_FIELD") ?? "";
-const EVENT_FIELD = Deno.env.get("BITRIX_EVENT_FIELD") ?? "";
 
 // entityTypeId del LEAD en la API universal de Bitrix (crm.item.*). Se usa
 // crm.item.add porque crm.lead.add está marcado como obsoleto.
@@ -176,16 +182,28 @@ serve(async (req) => {
     "Origen: Demo KuraTracker",
   ].filter((s) => s.length > 0).join("\n");
 
+  // El evento va en sourceDescription (no en un campo propio): "Demo KuraTracker
+  // · <evento>". Sin evento, queda solo "Demo KuraTracker".
+  const sourceDescription = event.length > 0
+    ? `Demo KuraTracker · ${event}`.slice(0, MAX_FIELD)
+    : "Demo KuraTracker";
+
   const fields: Record<string, unknown> = {
     title: `Demo KuraTracker — ${firstName} ${lastName}`.slice(0, MAX_FIELD),
     name: firstName,
     lastName: lastName,
-    sourceDescription: "Demo KuraTracker",
+    sourceDescription,
     comments,
     email: [{ value: email, valueType: "WORK" }],
   };
   if (phone.length > 0) fields.phone = [{ value: phone, valueType: "WORK" }];
-  if (ASSIGNED_BY_ID) fields.assignedById = Number(ASSIGNED_BY_ID);
+  // Responsable OPCIONAL: solo se fija si BITRIX_ASSIGNED_BY_ID es un número
+  // válido. Ausente o mal puesto → no se manda y el lead cae en la cuenta del
+  // webhook (no se envía un NaN).
+  const assignedBy = Number(ASSIGNED_BY_ID);
+  if (Number.isFinite(assignedBy) && assignedBy > 0) {
+    fields.assignedById = assignedBy;
+  }
 
   // Tipo de usuario → ID de opción del campo de lista.
   const optId = await userTypeOptionId(userType);
@@ -198,9 +216,6 @@ serve(async (req) => {
   } else {
     console.error("demo-lead: falta BITRIX_USERTYPE_FIELD (tipo de usuario)");
   }
-
-  // Evento (valor fijo configurable que manda el formulario) → su campo.
-  if (EVENT_FIELD && event.length > 0) fields[EVENT_FIELD] = event;
 
   const r = await bitrix("crm.item.add", {
     entityTypeId: LEAD_ENTITY_TYPE_ID,
