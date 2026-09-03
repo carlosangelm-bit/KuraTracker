@@ -14,6 +14,22 @@ import '../../models/center_type.dart';
 import '../../models/module_key.dart';
 import '../../services/data_repository.dart';
 
+/// Inicial para el avatar, SALTANDO títulos (Dr./Dra./Lic./Enf./Mtro./Ing.…):
+/// "Dra. Ana Martínez" → "A", no "D". Toma la inicial de la primera palabra que
+/// no sea un título; si no queda ninguna, "?".
+String avatarInitial(String fullName) {
+  const titulos = {
+    'dr', 'dra', 'lic', 'licda', 'enf', 'mtro', 'mtra', 'ing', 'sr', 'sra',
+    'srta', 'prof', 'q', 'qfb', 'md',
+  };
+  for (final w in fullName.trim().split(RegExp(r'\s+'))) {
+    final limpio = w.replaceAll('.', '').toLowerCase();
+    if (limpio.isEmpty || titulos.contains(limpio)) continue;
+    return w[0].toUpperCase();
+  }
+  return '?';
+}
+
 /// Alto del contenido de la barra de navegacion flotante. Las pantallas
 /// scrolleables del shell suman esto (mas el inset inferior del sistema) a su
 /// padding inferior para que el ultimo elemento no quede tapado por la barra.
@@ -371,7 +387,7 @@ class AppShell extends ConsumerWidget {
       child: CircleAvatar(
         backgroundColor: t.brandPrimary.withOpacity(0.15),
         child: Text(
-          user.fullName.isNotEmpty ? user.fullName[0].toUpperCase() : '?',
+          avatarInitial(user.fullName),
           style: TextStyle(color: t.brandPrimary, fontWeight: FontWeight.w800),
         ),
       ),
@@ -693,7 +709,7 @@ class UserMenuButton extends ConsumerWidget {
           radius: 16,
           backgroundColor: t.brandPrimary.withOpacity(0.15),
           child: Text(
-            user.fullName.isNotEmpty ? user.fullName[0].toUpperCase() : '?',
+            avatarInitial(user.fullName),
             style: TextStyle(color: t.brandPrimary, fontWeight: FontWeight.w800),
           ),
         ),

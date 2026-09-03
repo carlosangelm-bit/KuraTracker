@@ -131,8 +131,14 @@ class _DemoLeadFormScreenState extends ConsumerState<DemoLeadFormScreen> {
   }
 
   Future<void> _openAviso() async {
-    if (_avisoUrl.isEmpty) return;
-    final uri = Uri.tryParse(_avisoUrl);
+    var url = _avisoUrl.trim();
+    if (url.isEmpty) return;
+    // AVISO_URL sin esquema (p. ej. "kuramas.com/aviso") el navegador la trata
+    // como ruta relativa y REABRE la demo. Se antepone https:// si falta.
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+      url = 'https://$url';
+    }
+    final uri = Uri.tryParse(url);
     if (uri != null) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     }
