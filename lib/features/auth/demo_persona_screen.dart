@@ -7,7 +7,20 @@ import '../../core/design/tokens.dart';
 import '../../core/providers/session_provider.dart';
 import '../../core/theme/kura_theme.dart';
 import '../../models/center_type.dart';
-import '../../services/data_repository.dart';
+import '../../services/demo/demo_lead_service.dart';
+import 'demo_lead_form_screen.dart';
+import 'demo_reset_action.dart';
+
+/// Emails de los usuarios demo sembrados, por perfil. Fuente única: los usan el
+/// selector de perfiles y el formulario de captura (que entra directo al perfil
+/// mapeado en §2). No son secretos — son cuentas de demostración locales.
+class DemoPersonaEmail {
+  static const especialista = 'ana.martinez@curamas.mx';
+  static const independiente = 'independiente@demo.kuramas.com';
+  static const admin = 'admin@curamas.mx';
+  static const enfermeria = 'enfermeria@hospital.mx';
+  static const cuidador = '5512345678@cuidador.kuramas.com';
+}
 
 /// Capa PREVIA al login que solo se muestra en la DEMO (sin Supabase): el
 /// visitante elige su perfil a partir de una explicación clara y entra con el
@@ -43,7 +56,7 @@ class _Persona {
 const _personas = <_Persona>[
   _Persona(
     title: 'Especialista / Médico',
-    email: 'ana.martinez@curamas.mx',
+    email: DemoPersonaEmail.especialista,
     icon: Icons.medical_services_outlined,
     centerType: CenterType.clinicaHeridas,
     description:
@@ -53,7 +66,7 @@ const _personas = <_Persona>[
   ),
   _Persona(
     title: 'Profesional independiente',
-    email: 'independiente@demo.kuramas.com',
+    email: DemoPersonaEmail.independiente,
     icon: Icons.medical_information_outlined,
     centerType: CenterType.clinicaHeridas,
     description:
@@ -63,7 +76,7 @@ const _personas = <_Persona>[
   ),
   _Persona(
     title: 'Administrador de centro',
-    email: 'admin@curamas.mx',
+    email: DemoPersonaEmail.admin,
     icon: Icons.admin_panel_settings_outlined,
     centerType: CenterType.clinicaHeridas,
     description:
@@ -72,7 +85,7 @@ const _personas = <_Persona>[
   ),
   _Persona(
     title: 'Enfermería (hospital)',
-    email: 'enfermeria@hospital.mx',
+    email: DemoPersonaEmail.enfermeria,
     icon: Icons.local_hospital_outlined,
     centerType: CenterType.hospital,
     description:
@@ -83,7 +96,7 @@ const _personas = <_Persona>[
   ),
   _Persona(
     title: 'Cuidador',
-    email: '5512345678@cuidador.kuramas.com',
+    email: DemoPersonaEmail.cuidador,
     icon: Icons.volunteer_activism_outlined,
     centerType: CenterType.cuidadores,
     description:
@@ -120,38 +133,10 @@ class _DemoPersonaScreenState extends ConsumerState<DemoPersonaScreen> {
     }
   }
 
-  /// Reinicia la demo a su estado sembrado: restaura los datos de ejemplo y
-  /// limpia los filtros/vista persistidos (resetAndReseed ya llama a
-  /// PatientsViewPreferencesStore.clear). Pensado para el stand: dejar el demo
-  /// limpio entre un prospecto y el siguiente, sin arrastrar sus cambios ni sus
-  /// filtros (que dejarían la pantalla de Pacientes en blanco al siguiente).
-  Future<void> _resetDemo() async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (d) => AlertDialog(
-        title: const Text('Reiniciar demo'),
-        content: const Text(
-            'Se borrarán los cambios de esta sesión de demostración y se '
-            'restaurarán los datos de ejemplo.'),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(d, false),
-              child: const Text('Cancelar')),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: KuraColors.primary),
-            onPressed: () => Navigator.pop(d, true),
-            child: const Text('Reiniciar'),
-          ),
-        ],
-      ),
-    );
-    if (ok != true) return;
-    final repo = await DataRepository.instance();
-    await repo.resetDemoData();
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('Demo reiniciada · datos de ejemplo restaurados.')));
-  }
+  /// Reinicia la demo entre un prospecto y el siguiente. Delega en el flujo
+  /// compartido (borra datos de ejemplo, filtros y el lead activo; conserva la
+  /// cola de pendientes; termina en /demo → formulario en blanco).
+  Future<void> _resetDemo() => showResetDemoDialog(context, ref);
 
   @override
   Widget build(BuildContext context) {
@@ -368,3 +353,44 @@ class _PersonaCard extends StatelessWidget {
 
 /// True si la app corre en modo demo (sin Supabase). Expuesto para el router.
 bool get isDemoMode => !AppConfig.isSupabaseConfigured;
+
+/// Puerta de entrada de la demo (`/demo`). Sin lead capturado → formulario de
+/// captura; con lead ya capturado → selector de cinco perfiles (para recorrer
+/// los cinco perfiles con el mismo prospecto sin volver a llenar nada). El
+/// formulario reaparece solo al reiniciar la demo (borra el lead activo).
+/// Al montarse reintenta en segundo plano los leads pendientes de enviar (§5.3).
+class DemoGateScreen extends ConsumerStatefulWidget {
+  const DemoGateScreen({super.key});
+
+  @override
+  ConsumerState<DemoGateScreen> createState() => _DemoGateScreenState();
+}
+
+class _DemoGateScreenState extends ConsumerState<DemoGateScreen> {
+  Future<bool>? _hasLead;
+
+  @override
+  void initState() {
+    super.initState();
+    _hasLead = DemoLeadService.hasLead();
+    // Reintento best-effort de la cola al abrir la demo (no bloquea la UI).
+    DemoLeadService.init();
+    DemoLeadService.retryPending();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<bool>(
+      future: _hasLead,
+      builder: (context, snap) {
+        if (!snap.hasData) {
+          return const Scaffold(
+              body: Center(child: CircularProgressIndicator()));
+        }
+        return snap.data!
+            ? const DemoPersonaScreen()
+            : const DemoLeadFormScreen();
+      },
+    );
+  }
+}

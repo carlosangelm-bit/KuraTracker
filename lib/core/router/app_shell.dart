@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../config/app_config.dart';
 import '../../features/support/support_launcher.dart';
+import '../../features/auth/demo_reset_action.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -347,6 +348,8 @@ class AppShell extends ConsumerWidget {
           showCenterSwitcher(context, ref);
         } else if (value == 'help') {
           openSupportAssistant(ref);
+        } else if (value == 'reset_demo') {
+          showResetDemoDialog(context, ref);
         }
       },
       itemBuilder: (context) => [
@@ -360,6 +363,9 @@ class AppShell extends ConsumerWidget {
           const PopupMenuItem(value: 'help', child: Text('Asistente de ayuda')),
         if (session.canSwitchCenter)
           const PopupMenuItem(value: 'switch', child: Text('Cambiar de centro')),
+        if (!AppConfig.isSupabaseConfigured)
+          const PopupMenuItem(
+              value: 'reset_demo', child: Text('Reiniciar demo')),
         const PopupMenuItem(value: 'logout', child: Text('Cerrar sesión')),
       ],
       child: CircleAvatar(
@@ -663,6 +669,8 @@ class UserMenuButton extends ConsumerWidget {
             showCenterSwitcher(context, ref);
           } else if (value == 'help') {
             openSupportAssistant(ref);
+          } else if (value == 'reset_demo') {
+            showResetDemoDialog(context, ref);
           }
         },
         itemBuilder: (context) => [
@@ -676,6 +684,9 @@ class UserMenuButton extends ConsumerWidget {
             const PopupMenuItem(value: 'help', child: Text('Asistente de ayuda')),
           if (session.canSwitchCenter)
             const PopupMenuItem(value: 'switch', child: Text('Cambiar de centro')),
+          if (!AppConfig.isSupabaseConfigured)
+            const PopupMenuItem(
+                value: 'reset_demo', child: Text('Reiniciar demo')),
           const PopupMenuItem(value: 'logout', child: Text('Cerrar sesión')),
         ],
         child: CircleAvatar(

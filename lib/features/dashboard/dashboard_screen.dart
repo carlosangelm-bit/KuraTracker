@@ -4,8 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/config/app_config.dart';
 import '../../core/design/tokens.dart';
 import '../../core/layout/responsive.dart';
+import '../../services/demo/demo_lead_service.dart';
 import '../../core/providers/session_provider.dart';
 import '../../core/router/app_shell.dart' show kFloatingNavBarHeight, UserMenuButton;
 import '../../core/widgets/kura_glass_card.dart';
@@ -240,6 +242,14 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
 
   List<Widget> _greeting(BuildContext context, AppUser? user, String subtitle) {
     final t = BrandTokens.of(context);
+    // Saludo: en la DEMO se prefiere el nombre capturado en la pantalla previa
+    // (§6); en producción sale del usuario real.
+    final demoLeadName = ref.watch(demoLeadFirstNameProvider).valueOrNull;
+    final greetName = (!AppConfig.isSupabaseConfigured &&
+            demoLeadName != null &&
+            demoLeadName.isNotEmpty)
+        ? demoLeadName
+        : (user?.fullName.split(' ').first ?? '');
     return [
       // Encabezado: saludo a la izquierda y el avatar/menú de usuario a la
       // derecha (antes vivía en el AppBar del shell, ya removido).
@@ -251,7 +261,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Hola, ${user?.fullName.split(' ').first ?? ''}',
+                  'Hola, $greetName',
                   style: Theme.of(context)
                       .textTheme
                       .headlineSmall

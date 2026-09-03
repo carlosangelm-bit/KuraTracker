@@ -46,9 +46,19 @@ Lo que **no** viaja con el clone y hay que tener en la máquina nueva:
      credenciales, usa `LocalStore`).
   3. `deploy_functions`: despliega una lista ACOTADA de funciones con `--use-api`
      (admin-create-user, acuity-proxy, mercadopago-webhook/-sync-charge/-point-intent,
-     stripe-create-checkout/-webhook, vac-bot, support-bot, shopify-sync-catalog/-inventory).
-     Los webhooks que deben quedar con la URL abierta (stripe-webhook, mercadopago-webhook)
-     se despliegan con `--no-verify-jwt` para no re-habilitar `verify_jwt`.
+     stripe-create-checkout/-webhook, vac-bot, support-bot, shopify-sync-catalog/-inventory,
+     demo-lead).
+     Los webhooks/endpoints que deben quedar con la URL abierta (stripe-webhook,
+     mercadopago-webhook, demo-lead) se despliegan con `--no-verify-jwt` para no
+     re-habilitar `verify_jwt`. `demo-lead` es la portera de leads de la demo →
+     Bitrix (`crm.item.add`, entityTypeId=1). Secrets en Supabase: `BITRIX_WEBHOOK_URL`,
+     `BITRIX_ASSIGNED_BY_ID` (responsable comercial, OPCIONAL: sin él los leads caen
+     en la cuenta del webhook), `BITRIX_USERTYPE_FIELD` (campo de lista del tipo de
+     usuario = `ufCrm_LEAD_1788382308670`; la etiqueta se traduce al ID de su opción
+     vía `crm.item.fields`). El EVENTO no usa campo propio (decisión de Carlos): se
+     concatena a `sourceDescription` como "Demo KuraTracker · <evento>". El build de la
+     demo recibe el dart-define `LEADS_ENDPOINT` (URL de la función), `AVISO_URL` (aviso
+     de privacidad, `vars.AVISO_URL`) y `DEMO_EVENT` (evento, `vars.DEMO_EVENT`).
 - Los secrets de Cloudflare se llaman **`CLOUDFARE_API_TOKEN` / `CLOUDFARE_ACCOUNT_ID`**
   (sin la "L", intencional). El token Cloudflare requiere permiso *Account · Cloudflare
   Pages · Edit*.

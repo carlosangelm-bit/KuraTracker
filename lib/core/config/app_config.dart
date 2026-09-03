@@ -20,6 +20,24 @@ class AppConfig {
   static bool get isSupabaseConfigured =>
       supabaseUrl.isNotEmpty && supabaseAnonKey.isNotEmpty;
 
+  /// URL PÚBLICA de la función portera de leads de la demo (demo-lead). Es una
+  /// URL, NO una credencial (el token de Bitrix vive en los secrets de Supabase,
+  /// del lado del servidor). Vacía en la Fase 1 / sin configurar: el formulario
+  /// encola el lead localmente y sigue. **No participa en [isSupabaseConfigured]**
+  /// — la demo sigue siendo demo aunque este endpoint esté configurado.
+  static const String leadsEndpoint = String.fromEnvironment(
+    'LEADS_ENDPOINT',
+    defaultValue: '',
+  );
+
+  /// Evento en el que se muestra la demo (congreso, feria…). Va OCULTO en el
+  /// formulario de captura y viaja en el lead para poder segmentar en Bitrix.
+  /// Configurable por dart-define; sin él usa un valor por defecto legible.
+  static const String demoEvent = String.fromEnvironment(
+    'DEMO_EVENT',
+    defaultValue: 'Congreso de heridas · sep 2026',
+  );
+
   /// Limite de tamano por lote de evidencia fotografica (seccion 3/9).
   static const int maxPhotoBatchBytes = 17 * 1024 * 1024; // 17 MB
 

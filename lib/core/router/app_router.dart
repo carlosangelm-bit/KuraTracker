@@ -222,7 +222,7 @@ final routerProvider = Provider<GoRouter>((ref) {
     },
     routes: [
       GoRoute(path: '/login', builder: (context, state) => const LoginScreen()),
-      GoRoute(path: '/demo', builder: (context, state) => const DemoPersonaScreen()),
+      GoRoute(path: '/demo', builder: (context, state) => const DemoGateScreen()),
       // Resultado de pago (público, fuera del shell): Stripe redirige aquí.
       GoRoute(
           path: '/pago-recibido',
