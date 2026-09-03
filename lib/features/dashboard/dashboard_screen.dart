@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/config/app_config.dart';
+import '../../core/name_format.dart';
 import '../../core/design/tokens.dart';
 import '../../core/layout/responsive.dart';
 import '../../services/demo/demo_lead_service.dart';
@@ -1326,7 +1327,7 @@ class _RecentPatientTile extends StatelessWidget {
               children: [
                 CircleAvatar(
                   backgroundColor: t.info.withOpacity(0.12),
-                  child: Text(p.fullName.isNotEmpty ? p.fullName[0] : '?',
+                  child: Text(avatarInitial(p.fullName),
                       style: TextStyle(color: t.info, fontWeight: FontWeight.w800)),
                 ),
                 const SizedBox(width: 12),
