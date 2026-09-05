@@ -1,0 +1,74 @@
+{
+  "_README": "Geometria fisica REAL de la tarjeta WoundCalibrate, copia de tools/wound_calibrate_proto/card_spec.json para el motor on-device (lib/engine/vision). Origen en la esquina superior-izquierda, X a la derecha, Y hacia ABAJO, mm. Mientras is_placeholder sea true, el motor marca la calibracion como 'tarjeta provisional' y las medidas NO son confiables: reemplazar por los valores MEDIDOS del impreso real (tags, circulo, tamano) y poner is_placeholder=false.",
+  "is_placeholder": true,
+  "card_family": "tag36h11",
+  "card_size_mm": {
+    "width": 85.6,
+    "height": 54.0,
+    "_note": "PLACEHOLDER: tamano tarjeta credito. Medir el impreso real."
+  },
+  "tags": [
+    {
+      "id": 0,
+      "corner": "top_left",
+      "center_mm": [
+        10.0,
+        10.0
+      ],
+      "size_mm": 10.0,
+      "_note": "PLACEHOLDER"
+    },
+    {
+      "id": 1,
+      "corner": "top_right",
+      "center_mm": [
+        75.6,
+        10.0
+      ],
+      "size_mm": 10.0,
+      "_note": "PLACEHOLDER"
+    },
+    {
+      "id": 2,
+      "corner": "bottom_right",
+      "center_mm": [
+        75.6,
+        44.0
+      ],
+      "size_mm": 10.0,
+      "_note": "PLACEHOLDER"
+    },
+    {
+      "id": 3,
+      "corner": "bottom_left",
+      "center_mm": [
+        10.0,
+        44.0
+      ],
+      "size_mm": 10.0,
+      "_note": "PLACEHOLDER"
+    }
+  ],
+  "reference_circle": {
+    "diameter_mm": 12.7,
+    "center_mm": [
+      42.8,
+      27.0
+    ],
+    "_note": "diameter_mm=12.7 (0.50\") es un valor DE ESPECIFICACION del disenio, no un placeholder. center_mm es PLACEHOLDER: medir donde queda el circulo en el impreso real.",
+    "check_mode": "solid",
+    "_check_mode_note": "'solid' = el circulo impreso es un disco relleno oscuro (se mide su diametro equivalente); 'skip' = no verificar (p. ej. anillo fino)."
+  },
+  "ruler": {
+    "origin_mm": [
+      10.0,
+      50.0
+    ],
+    "direction": [
+      1.0,
+      0.0
+    ],
+    "length_mm": 60.0,
+    "_note": "PLACEHOLDER: origen/orientacion/longitud de la regla impresa. Solo se usa como cross-check opcional de escala."
+  }
+}

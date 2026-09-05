@@ -95,6 +95,13 @@ Lo que **no** viaja con el clone y hay que tener en la máquina nueva:
   hospital enruta a `/prevention-agenda`, no a la agenda de citas), perfil con cumplimiento
   por tipo/global + bitácora de auditoría, y **dashboard del centro** (`/hospital`) con
   editor de turnos (`organizations.shift_config`). Migración base: `0046`.
+- **Motor de visión de heridas** (`lib/engine/vision`, Dart puro, on-device): «Medir con
+  foto» en valoración y seguimiento propone largo/ancho/composición del lecho desde una
+  foto con tarjeta WoundCalibrate (AprilTags) o disco de referencia. `area_cm2` NO cambia
+  (sigue L×A×0,785); el área real va en `area_planimetric_cm2`; origen en
+  `measurement_source` + `vision_meta` (migración `0108`). Umbrales en
+  `assets/engine/vision/*.json`. Ver `docs/engine/motor_vision.md`. **Pendiente**:
+  `card_spec.json` real (hoy `is_placeholder`) y validación con fotos reales.
 - **Rol enfermería** + hospital **centrado en el paciente** (cualquier staff activo ve a
   todos los pacientes del centro; las tareas siguen al paciente, sin dueño). **Cuidador**:
   login por teléfono+clave (correo sintético), acceso reducido a sus pacientes asignados.

@@ -1,0 +1,122 @@
+{
+  "_README": "Parametros del motor de visión de heridas (lib/engine/vision). Todos los umbrales del motor viven aqui, no en el codigo. Validados sobre imagenes sinteticas (test/engine/vision); AJUSTAR con fotos reales antes de uso clinico. version = identificador que viaja en wound_measurements.vision_meta.",
+  "version": "vision_v1",
+  "tag_detector": {
+    "detect_max_side": 1000,
+    "tile_size": 4,
+    "min_contrast": 40,
+    "min_component_area": 60,
+    "max_component_area_frac": 0.2,
+    "min_side_px": 8,
+    "max_aspect": 2.5,
+    "min_hull_fill": 0.8,
+    "max_hamming": 4,
+    "min_decode_contrast": 30,
+    "refine_samples": 16
+  },
+  "rectify": {
+    "target_px_per_mm": 4.0,
+    "max_side_px": 1400,
+    "max_margin_mm": 120.0,
+    "_note": "La imagen rectificada (vista cenital) cubre la foto completa recortada a tarjeta +- max_margin_mm; si excede max_side_px se baja la resolucion y el motor reporta el mm/px real."
+  },
+  "quality": {
+    "planarity_max_side_error_pct": 5.0,
+    "circle_diameter_tol_pct": 3.0,
+    "overexposed_max_fraction": 0.02,
+    "overexposed_threshold_255": 250,
+    "min_tag_side_px": 28,
+    "disc_tilt_min_ratio": 0.9,
+    "_note": "planarity: lados de cada tag rectificados vs size_mm. circle: desvio del diametro del circulo de 12.7 mm. overexposed: fraccion de pixeles quemados dentro de la caja de la herida. min_tag_side_px: proxy de distancia (tag mas chico = camara lejos). disc_tilt_min_ratio: eje menor/mayor del disco de respaldo (perspectiva no corregida)."
+  },
+  "segmentation": {
+    "work_max_side_px": 480,
+    "seed_patch_radius_px": 3,
+    "ring_width_px": 6,
+    "iterations": 4,
+    "sub_clusters": 3,
+    "close_radius_px": 2,
+    "open_radius_px": 1,
+    "sensitivity_default": 0.5,
+    "sensitivity_span": 0.6,
+    "stage_a_delta_e": 18.0,
+    "roi_expand": 0.8,
+    "roi_pad_px": 12,
+    "roi_band_frac": 0.08,
+    "prototype_classes": [
+      "granulacion",
+      "esfacelo",
+      "necrosis"
+    ],
+    "contour_epsilon_px": 1.0,
+    "_note": "Etapa A: crecimiento desde cada semilla por similitud Lab (stage_a_delta_e). ROI = caja de la etapa A expandida (roi_expand) + roi_pad_px. Etapa B (iterativa): prototipos de herida = parches semilla + k-means (sub_clusters) + prototipos de tejido listados en prototype_classes; fondo = banda exterior del ROI (roi_band_frac) en la 1a iteracion y luego todo lo que queda fuera de la region dilatada ring_width_px (el anillo de separacion no cuenta ni como herida ni como fondo). Un pixel es herida si dist_herida * escala < dist_fondo, con escala = 1 + (sensibilidad-0.5)*2*sensitivity_span."
+  },
+  "tissue": {
+    "rules": [
+      {
+        "class": "necrosis",
+        "v_max": 0.3
+      },
+      {
+        "class": "necrosis",
+        "v_max": 0.45,
+        "s_max": 0.35
+      },
+      {
+        "class": "esfacelo",
+        "h_min": 30,
+        "h_max": 80,
+        "s_min": 0.22,
+        "v_min": 0.35
+      },
+      {
+        "class": "granulacion",
+        "h_min": 335,
+        "h_max": 25,
+        "s_min": 0.35,
+        "v_min": 0.25
+      },
+      {
+        "class": "epitelizacion",
+        "h_min": 300,
+        "h_max": 30,
+        "s_max": 0.35,
+        "v_min": 0.55
+      }
+    ],
+    "prototypes_lab": {
+      "granulacion": [
+        42,
+        48,
+        25
+      ],
+      "esfacelo": [
+        75,
+        5,
+        48
+      ],
+      "necrosis": [
+        15,
+        4,
+        3
+      ],
+      "epitelizacion": [
+        78,
+        24,
+        6
+      ]
+    },
+    "_note": "Las reglas se evaluan en orden sobre HSV (H en grados, S y V en 0-1); h_min > h_max = arco que cruza 0/360. Un pixel que no cumple ninguna regla va al prototipo Lab mas cercano. Los prototipos tambien sirven como semillas de color en la segmentacion (prototype_classes). AJUSTAR con fotos etiquetadas por el equipo clinico (Maria)."
+  },
+  "fallback_disc": {
+    "diameter_mm": 19.0,
+    "hue_min": 80,
+    "hue_max": 170,
+    "s_min": 0.35,
+    "v_min": 0.2,
+    "min_area_px": 200,
+    "fill_min": 0.8,
+    "aspect_min": 0.8,
+    "_note": "Disco adhesivo VERDE saturado de diametro conocido (19 mm por defecto; ajustar al insumo real). Solo da escala, NO corrige perspectiva: la foto debe ser cenital. Verde porque no aparece en piel ni en tejido de herida."
+  }
+}

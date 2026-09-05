@@ -151,9 +151,14 @@ tools/wound_calibrate_proto/
 - **Distancia en cm**: requiere `focal_length_px`. Sin ella se reporta el tamaño
   de tag en px como proxy y la compuerta en cm se marca omitida.
 
-## Pendientes para Fase 1b (integración on-device)
+## Fase 1b (integración on-device) — HECHA en `lib/engine/vision`
 
-- Portar el algoritmo validado a Flutter (OpenCV vía FFI o detector nativo de
-  AprilTag) para que **las fotos no salgan del dispositivo** (mismo criterio de
-  PHI que el resto de la app).
-- Decidir la librería on-device (OpenCV FFI vs detector nativo de AprilTag).
+El algoritmo se portó a **Dart puro** (sin OpenCV ni detector nativo: corre en
+Flutter Web y móvil, las fotos no salen del dispositivo), incluyendo el detector
+AprilTag 36h11, y se añadieron segmentación de la herida, clasificación de tejido
+por reglas y la integración en las pantallas de captura. Ver
+[docs/engine/motor_vision.md](../../docs/engine/motor_vision.md).
+
+Este prototipo Python sigue siendo útil para **iterar rápido** sobre fotos reales
+y comparar contra el motor Dart (misma matemática). El `card_spec.json` real debe
+copiarse a `assets/engine/vision/card_spec.json` (con `is_placeholder=false`).

@@ -30,6 +30,7 @@ import '../../models/consent.dart';
 import '../consents/consents_screen.dart';
 import '../wound_capture/widgets/bed_composition_sliders.dart';
 import '../wound_capture/widgets/undermining_tunneling_editor.dart';
+import '../wound_capture/widgets/wound_vision_screen.dart';
 
 /// Formulario de "Registrar seguimiento" (visita visit_type='seguimiento'
 /// ligada a una herida existente).
@@ -123,6 +124,17 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
   double _necrosis = 0;
   double _epitelizacion = 0;
   bool _capturedBeforeDebridement = true;
+
+  // Medición por foto (motor de visión, lib/engine/vision; migración 0108).
+  // 'manual' salvo que el clínico aplique una medición de "Medir con foto".
+  String _measurementSource = 'manual';
+  double? _areaPlanimetricCm2;
+  Map<String, dynamic>? _visionMeta;
+  bool _visionEdited = false;
+  bool get _isVisionMeasured => _measurementSource.startsWith('vision_');
+  void _markVisionEdited() {
+    if (_isVisionMeasured) _visionEdited = true;
+  }
 
   // ---- Evaluacion clinica (reevaluacion integral) ----
   String _edema = 'ninguno';
@@ -394,6 +406,41 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
     super.dispose();
   }
 
+  /// «Medir con foto»: corre el motor de visión sobre la foto "después de
+  /// limpiar" (o la de medición) y pre-llena largo, ancho y composición del
+  /// lecho. El clínico revisa y edita; el origen queda en measurement_source.
+  Future<void> _measureWithPhoto() async {
+    final bytes = _photoAfterCleaningBytes ?? _photoWithMeasurementBytes;
+    if (bytes == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Primero toma la foto de la herida (con la tarjeta de calibración) para poder medirla.'),
+      ));
+      return;
+    }
+    final applied = await WoundVisionScreen.open(context, bytes);
+    if (applied == null || !mounted) return;
+    final r = applied.result;
+    setState(() {
+      _lengthCtrl.text = applied.lengthCm.toStringAsFixed(1);
+      _widthCtrl.text = applied.widthCm.toStringAsFixed(1);
+      _granulacion = r.tissue.granulacion;
+      _esfacelo = r.tissue.esfacelo;
+      _necrosis = r.tissue.necrosis;
+      _epitelizacion = r.tissue.epitelizacion;
+      _measurementSource = r.measurementSource;
+      _areaPlanimetricCm2 = r.measurement.areaCm2;
+      _visionMeta = r.toVisionMeta();
+      _visionEdited = false;
+      _syncVolumeField();
+    });
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(
+        'Medidas de la foto aplicadas (${applied.modeLabel}): '
+        '${applied.lengthCm.toStringAsFixed(1)} × ${applied.widthCm.toStringAsFixed(1)} cm. Revisa y ajusta si hace falta.',
+      ),
+    ));
+  }
+
   /// Mantiene _volumeCtrl sincronizado con el auto-calculo de Kundin
   /// mientras el clinico no lo haya sobrescrito a mano (_volumeAutoFollowing).
   /// Se llama tras cualquier cambio de largo/ancho/profundidad
@@ -521,6 +568,44 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
                 const SizedBox(height: 24),
                 Text('Medición', style: _sectionStyle(context)),
                 const SizedBox(height: 12),
+                // Medición por foto (motor de visión on-device): propone largo,
+                // ancho y composición del lecho a partir de la foto con tarjeta.
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: (_photoAfterCleaningBytes == null && _photoWithMeasurementBytes == null)
+                            ? null
+                            : _measureWithPhoto,
+                        icon: const Icon(Icons.straighten, size: 18),
+                        label: Text(_isVisionMeasured ? 'Volver a medir con foto' : 'Medir con foto'),
+                      ),
+                    ),
+                    if (_isVisionMeasured) ...[
+                      const SizedBox(width: 8),
+                      TextButton(
+                        onPressed: () => setState(() {
+                          _measurementSource = 'manual';
+                          _areaPlanimetricCm2 = null;
+                          _visionMeta = null;
+                          _visionEdited = false;
+                        }),
+                        child: const Text('Quitar origen foto'),
+                      ),
+                    ],
+                  ],
+                ),
+                if (_isVisionMeasured)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: Text(
+                      'Largo, ancho y lecho propuestos por el motor de visión'
+                      '${_areaPlanimetricCm2 == null ? '' : ' · área por planimetría ${_areaPlanimetricCm2!.toStringAsFixed(2)} cm²'}'
+                      '${_visionEdited ? ' · editado a mano' : ''}. Apoyo a la decisión clínica — no sustituye el juicio clínico.',
+                      style: TextStyle(fontSize: 11, color: KuraColors.darkText.withOpacity(0.6)),
+                    ),
+                  ),
+                const SizedBox(height: 12),
                 Row(
                   children: [
                     Expanded(
@@ -528,7 +613,10 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
                         controller: _lengthCtrl,
                         keyboardType: const TextInputType.numberWithOptions(decimal: true),
                         decoration: const InputDecoration(labelText: 'Largo (cm) *'),
-                        onChanged: (_) => setState(_syncVolumeField),
+                        onChanged: (_) => setState(() {
+                          _markVisionEdited();
+                          _syncVolumeField();
+                        }),
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -537,7 +625,10 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
                         controller: _widthCtrl,
                         keyboardType: const TextInputType.numberWithOptions(decimal: true),
                         decoration: const InputDecoration(labelText: 'Ancho (cm) *'),
-                        onChanged: (_) => setState(_syncVolumeField),
+                        onChanged: (_) => setState(() {
+                          _markVisionEdited();
+                          _syncVolumeField();
+                        }),
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -659,10 +750,22 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
                   esfacelo: _esfacelo,
                   necrosis: _necrosis,
                   epitelizacion: _epitelizacion,
-                  onGranulacionChanged: (v) => setState(() => _granulacion = v),
-                  onEsfaceloChanged: (v) => setState(() => _esfacelo = v),
-                  onNecrosisChanged: (v) => setState(() => _necrosis = v),
-                  onEpitelizacionChanged: (v) => setState(() => _epitelizacion = v),
+                  onGranulacionChanged: (v) => setState(() {
+                    _markVisionEdited();
+                    _granulacion = v;
+                  }),
+                  onEsfaceloChanged: (v) => setState(() {
+                    _markVisionEdited();
+                    _esfacelo = v;
+                  }),
+                  onNecrosisChanged: (v) => setState(() {
+                    _markVisionEdited();
+                    _necrosis = v;
+                  }),
+                  onEpitelizacionChanged: (v) => setState(() {
+                    _markVisionEdited();
+                    _epitelizacion = v;
+                  }),
                   capturedBeforeDebridement: _capturedBeforeDebridement,
                   onCapturedBeforeDebridementChanged: (v) =>
                       setState(() => _capturedBeforeDebridement = v),
@@ -2070,6 +2173,10 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
         'depth': _depthCtrl.text,
         'volume': _volumeCtrl.text,
         'volume_auto_following': _volumeAutoFollowing,
+        'measurement_source': _measurementSource,
+        'area_planimetric_cm2': _areaPlanimetricCm2,
+        'vision_meta': _visionMeta,
+        'vision_edited': _visionEdited,
         'manual_measurement': _manualMeasurementCtrl.text,
         'tunneling': _tunneling,
         'undermining': _undermining,
@@ -2134,6 +2241,10 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
     _depthCtrl.text = txt(s['depth'], _depthCtrl.text);
     _volumeCtrl.text = txt(s['volume'], _volumeCtrl.text);
     _volumeAutoFollowing = s['volume_auto_following'] as bool? ?? _volumeAutoFollowing;
+    _measurementSource = s['measurement_source'] as String? ?? _measurementSource;
+    _areaPlanimetricCm2 = s['area_planimetric_cm2'] is num ? (s['area_planimetric_cm2'] as num).toDouble() : null;
+    _visionMeta = (s['vision_meta'] as Map?)?.cast<String, dynamic>();
+    _visionEdited = s['vision_edited'] as bool? ?? _visionEdited;
     _manualMeasurementCtrl.text = txt(s['manual_measurement'], _manualMeasurementCtrl.text);
     _tunneling = s['tunneling'] as bool? ?? _tunneling;
     _undermining = s['undermining'] as bool? ?? _undermining;
@@ -2625,6 +2736,10 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
         'manual_measurement_note': _manualMeasurementCtrl.text.trim().isEmpty
             ? null
             : _manualMeasurementCtrl.text.trim(),
+        // Origen de la medición (0108): manual o motor de visión.
+        'measurement_source': _measurementSource,
+        'area_planimetric_cm2': _areaPlanimetricCm2,
+        'vision_meta': _visionMeta == null ? null : {..._visionMeta!, 'edited': _visionEdited},
       });
 
       await repo.createAssessment({

@@ -116,6 +116,62 @@ class WoundCaptureFormState {
   double epitelizacionPct = 0;
   bool capturedBeforeDebridement = true;
 
+  // ---- Medición por foto (motor de visión, lib/engine/vision) ----
+  // Origen de largo/ancho/composición: 'manual' | 'vision_card' | 'vision_disc'
+  // | 'vision_manual_trace' (migración 0108). Cuando el clínico aplica una
+  // medición del motor, visionMeta guarda la trazabilidad (versión, mm/px,
+  // compuertas, contorno) y areaPlanimetricCm2 el área real por conteo de
+  // píxeles, que se persiste APARTE de areaCm2 (estimado por elipse que
+  // alimenta el pronóstico). Si después edita largo/ancho/sliders a mano,
+  // visionEdited = true y se registra en vision_meta.edited.
+  String measurementSource = 'manual';
+  double? areaPlanimetricCm2;
+  Map<String, dynamic>? visionMeta;
+  bool visionEdited = false;
+
+  bool get isVisionMeasured => measurementSource.startsWith('vision_');
+
+  /// Registra que el clínico modificó a mano un valor propuesto por el motor.
+  void markVisionEdited() {
+    if (isVisionMeasured) visionEdited = true;
+  }
+
+  /// Aplica una medición del motor de visión (largo/ancho a 0,1 cm + lecho).
+  void applyVisionMeasurement({
+    required double lengthCm,
+    required double widthCm,
+    required double areaPlanimetricCm2,
+    required double granulacionPct,
+    required double esfaceloPct,
+    required double necrosisPct,
+    required double epitelizacionPct,
+    required String source,
+    required Map<String, dynamic> meta,
+  }) {
+    this.lengthCm = lengthCm;
+    this.widthCm = widthCm;
+    this.areaPlanimetricCm2 = areaPlanimetricCm2;
+    this.granulacionPct = granulacionPct;
+    this.esfaceloPct = esfaceloPct;
+    this.necrosisPct = necrosisPct;
+    this.epitelizacionPct = epitelizacionPct;
+    measurementSource = source;
+    visionMeta = meta;
+    visionEdited = false;
+  }
+
+  /// Vuelve a medición manual (conserva los números; borra la trazabilidad).
+  void clearVisionMeasurement() {
+    measurementSource = 'manual';
+    areaPlanimetricCm2 = null;
+    visionMeta = null;
+    visionEdited = false;
+  }
+
+  /// vision_meta listo para persistir (incluye el flag de edición).
+  Map<String, dynamic>? get visionMetaForSave =>
+      visionMeta == null ? null : {...visionMeta!, 'edited': visionEdited};
+
   // ---- Perfusion / nutricion ----
   bool esExtremidadInferior = false;
   double? abiRight;
@@ -292,6 +348,10 @@ class WoundCaptureFormState {
         'necrosisPct': necrosisPct,
         'epitelizacionPct': epitelizacionPct,
         'capturedBeforeDebridement': capturedBeforeDebridement,
+        'measurementSource': measurementSource,
+        'areaPlanimetricCm2': areaPlanimetricCm2,
+        'visionMeta': visionMeta,
+        'visionEdited': visionEdited,
         'esExtremidadInferior': esExtremidadInferior,
         'abiRight': abiRight,
         'abiLeft': abiLeft,
@@ -388,6 +448,10 @@ class WoundCaptureFormState {
     epitelizacionPct = d(j['epitelizacionPct']) ?? epitelizacionPct;
     capturedBeforeDebridement =
         j['capturedBeforeDebridement'] as bool? ?? capturedBeforeDebridement;
+    measurementSource = j['measurementSource'] as String? ?? measurementSource;
+    areaPlanimetricCm2 = d(j['areaPlanimetricCm2']);
+    visionMeta = (j['visionMeta'] as Map?)?.cast<String, dynamic>();
+    visionEdited = j['visionEdited'] as bool? ?? visionEdited;
     esExtremidadInferior =
         j['esExtremidadInferior'] as bool? ?? esExtremidadInferior;
     abiRight = d(j['abiRight']);

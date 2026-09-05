@@ -86,6 +86,7 @@ flutter:
     - assets/engine/scales/
     - assets/engine/clinical/thresholds.json
     - assets/engine/clinical/archetypes.json
+    - assets/engine/vision/
     - assets/data/cie10_heridas.json
     - assets/images/
     - assets/demo/
