@@ -20,6 +20,15 @@
     "max_margin_mm": 120.0,
     "_note": "La imagen rectificada (vista cenital) cubre la foto completa recortada a tarjeta +- max_margin_mm; si excede max_side_px se baja la resolucion y el motor reporta el mm/px real."
   },
+  "illumination": {
+    "enabled": true,
+    "white_percentile": 90.0,
+    "black_percentile": 5.0,
+    "target_white": 235.0,
+    "min_dynamic_range": 40.0,
+    "strong_cast_ratio": 1.3,
+    "_note": "Normalizacion de color y exposicion usando la PROPIA tarjeta como referencia neutra (papel blanco + tinta negra de los marcadores): out = (in - negro)/(blanco - negro) * target_white por canal (von Kries). SIN esto, el clasificador de tejido —que usa umbrales de tono/brillo absolutos— se rompe con la luz de la sala: medido en sintetico, con lampara calida el esfacelo pasa de 30% a 0% y el area cae ~30% porque la segmentacion pierde parte del lecho. Con la correccion, los 6 escenarios de luz probados quedan dentro de +-0.5% de area y +-1 punto de tejido. LIMITES: es diagonal (no corrige la respuesta espectral de la camara, para eso harian falta parches cromaticos medidos con espectrofotometro); no corrige iluminacion NO uniforme (tarjeta a la sombra + herida al sol); y NO aplica en modo disco, que carece de referencia neutra. strong_cast_ratio = max(ganancia)/min(ganancia) por encima del cual se avisa que la luz tenia un cast fuerte (aunque ya se corrigio)."
+  },
   "quality": {
     "planarity_max_side_error_pct": 5.0,
     "circle_diameter_tol_pct": 3.0,

@@ -24,9 +24,10 @@ Abre `WoundVisionScreen` (`lib/features/wound_capture/widgets/wound_vision_scree
 
 1. **Calibración** (automática al abrir): localiza la **tarjeta WoundCalibrate**
    (4 AprilTags 36h11) → homografía → imagen **rectificada** (vista cenital)
-   con `mm/px` conocido; verifica la escala con el círculo de 12,7 mm. Si no hay
-   tarjeta, busca el **disco de referencia** (verde, diámetro conocido): da
-   escala pero **no corrige perspectiva** (compuerta de aviso permanente).
+   con `mm/px` conocido; verifica la escala con el círculo de 12,7 mm; y
+   **normaliza color y exposición** usando la propia tarjeta (ver abajo). Si no
+   hay tarjeta, busca el **disco de referencia** (verde, diámetro conocido): da
+   escala pero **no corrige perspectiva ni color** (dos compuertas de aviso).
 2. **Delimitación**: el clínico **toca dentro de la herida** (uno o varios
    toques, uno por tipo de tejido si hay varios; p. ej. el borde en
    epitelización solo entra si se toca) o **traza el contorno a mano**.
@@ -49,12 +50,59 @@ Abre `WoundVisionScreen` (`lib/features/wound_capture/widgets/wound_vision_scree
 | **Tejido** | Reglas HSV por píxel + prototipo Lab más cercano | Porcentajes enteros que suman 100. |
 | **Profundidad / volumen** | **No se miden** desde una foto | Siguen manuales (Kundin). |
 
+## Normalización de color: por qué la tarjeta también es referencia de color
+
+El clasificador de tejido usa umbrales de tono y brillo **absolutos** (rojo =
+granulación, amarillo = esfacelo, oscuro = necrosis), así que depende de la luz
+de la sala y del balance de blancos del teléfono. Medido sobre la escena
+sintética (`test/engine/vision/illumination_test.dart`), **sin normalizar**:
+
+| Luz | Área | Tejido (verdad 60/30/10) |
+|---|---|---|
+| Referencia D65 | 0,0 % | 60/30/10 |
+| **Lámpara cálida** | **−29,9 %** | **86/0/14** |
+| **Subexpuesta −40 %** | **−29,7 %** | **85/0/15** |
+| Sombra fría / fluorescente / sobreexpuesta | ≤ 0,1 % | 60/30/10 |
+
+No es solo que clasifique mal: **la segmentación pierde el parche de esfacelo**
+y el área cae ~30 %. Y para el seguimiento serial —de lo que vive el producto—
+importa aún más: un cambio de sala entre visitas movería los porcentajes del
+lecho y contaminaría la tendencia que consume el checkpoint de Sheehan.
+
+**No hizo falta rediseñar la tarjeta**: el papel blanco y la tinta negra de los
+marcadores ya son dos referencias neutras. Se estiman por percentiles dentro de
+la región de la tarjeta y se aplica una corrección diagonal (von Kries) por
+canal, `out = (in − negro)/(blanco − negro) × objetivo`, a la imagen rectificada
+completa antes de segmentar. Con eso, las seis condiciones quedan dentro de
+**±0,5 % de área y ±1 punto de tejido**. Parámetros en `vision_params.json →
+illumination`; ganancias y diagnóstico viajan en `vision_meta.calibration.illumination`.
+
+**Límites, en orden de importancia:**
+
+1. **El disco de respaldo no corrige color** (es verde, no neutro). Con disco,
+   los porcentajes de tejido quedan a merced de la luz — la compuerta lo dice.
+   Para composición del lecho, tarjeta.
+2. **Iluminación no uniforme**: si la tarjeta queda a la sombra y la herida
+   iluminada (o al revés), una ganancia global no lo arregla.
+3. Es una corrección **diagonal**: normaliza el cast global y la exposición, no
+   la respuesta espectral de la cámara. Para eso harían falta parches cromáticos
+   con valores Lab **medidos con espectrofotómetro** — una impresión de oficina
+   no los garantiza y además se decoloran. Vale la pena solo si, con fotos
+   reales, la corrección diagonal se queda corta.
+4. Si la tarjeta sale **quemada** (papel saturado en algún canal), la corrección
+   es aproximada; la compuerta avisa y pide evitar el flash directo.
+
+Nota: la imagen rectificada que se guarda y se muestra al clínico es la
+**corregida** (es la que el motor mide). La foto original intacta sigue en
+`wound_photos`, y las ganancias quedan en `vision_meta` para poder deshacerla.
+
 ## Arquitectura
 
 ```
 lib/engine/vision/
 ├── wound_vision_engine.dart   # orquestador: calibratePhoto → analyze / analyzeManualTrace
 ├── reference_calibrator.dart  # tarjeta (homografía, rectificación, planaridad, círculo) y disco
+├── illumination_corrector.dart # normalización de color/exposición con la tarjeta como referencia neutra
 ├── apriltag_detector.dart     # AprilTag 36h11 en Dart puro (umbral adaptativo, quads, refinado, decodificación)
 ├── tag36h11_table.dart        # 587 códigos (hex; dart2js trunca bit a bit a 32 bits)
 ├── wound_segmenter.dart       # WoundSegmenter (contrato) + ColorRegionSegmenter (clásico)
@@ -93,6 +141,7 @@ algoritmo (mismo pipeline validado antes en Python):
 | Cross-check círculo 12,7 mm | < 0,2 % | ±3 % |
 | Composición del lecho | exacta al 1 % | — |
 | Disco de respaldo (cenital) | área −0,6 % | < 5 % |
+| Estabilidad ante 6 condiciones de luz | área ±0,5 %, tejido ±1 punto | — |
 
 **Real — pendiente (bloqueante para uso clínico):**
 1. **Imprimir la tarjeta** desde `tools/wound_calibrate_proto/print/` (generada con
@@ -104,15 +153,19 @@ algoritmo (mismo pipeline validado antes en Python):
    el spec.
 2. Fotos reales con tarjeta + objeto de medida conocida → error contra regla.
 3. Ajustar `tissue.rules` / `prototypes_lab` con fotos etiquetadas por el equipo
-   clínico (María). Los colores de tejido reales varían mucho más que los sintéticos.
+   clínico (María). Los colores de tejido reales varían mucho más que los
+   sintéticos. **Etiquetar sobre la imagen YA normalizada**, no sobre la foto
+   cruda: si no, se calibran umbrales contra la luz de ese día.
 4. Disco de respaldo: fijar el insumo (diámetro y color) y ajustar `fallback_disc`.
 
 ## Compuertas de calidad (`vision_params.json → quality`)
 
 `tags` (4/4) · `planarity` (≤ 5 %) · `scale_check` (círculo ±3 %, o `skip`) ·
-`distance` (tag ≥ 28 px; aviso) · `exposure` (≤ 2 % quemado en la herida; aviso) ·
-`card_spec` (aviso mientras sea provisional) · en disco: `disc_tilt` (≥ 0,90) y
-`perspective` (aviso permanente). `fail` no bloquea la aplicación en esta fase:
+`distance` (tag ≥ 28 px; aviso) · `color` (normalización con la tarjeta; avisa si
+no se pudo, si la tarjeta salió quemada, o —en modo disco— que no hay referencia
+neutra) · `exposure` (≤ 2 % quemado en la herida; aviso) · `card_spec` (aviso
+mientras sea provisional) · en disco: `disc_tilt` (≥ 0,90) y `perspective`
+(aviso permanente). `fail` no bloquea la aplicación en esta fase:
 se muestra en rojo y viaja en `vision_meta.gates` para que el análisis
 posterior pueda filtrar mediciones de baja calidad. Decidir con María si alguna
 compuerta debe bloquear.

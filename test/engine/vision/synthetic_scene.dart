@@ -50,8 +50,10 @@ class SceneTruth {
 CardSpec loadTestCardSpec() => CardSpec.fromJson(
     (jsonDecode(File('assets/engine/vision/card_spec.json').readAsStringSync()) as Map).cast<String, dynamic>());
 
-VisionParams loadTestVisionParams() =>
-    VisionParams.fromJsonString(File('assets/engine/vision/vision_params.json').readAsStringSync());
+String loadTestVisionParamsJson() =>
+    File('assets/engine/vision/vision_params.json').readAsStringSync();
+
+VisionParams loadTestVisionParams() => VisionParams.fromJsonString(loadTestVisionParamsJson());
 
 /// Bitmap 8×8 del tag (1 = blanco), con borde negro. Misma convención que la tabla.
 List<List<int>> tagBitmap(int id) {

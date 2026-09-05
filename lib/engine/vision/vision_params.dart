@@ -101,6 +101,14 @@ class VisionParams {
   final int rectifyMaxSidePx;
   final double rectifyMaxMarginMm;
 
+  // Normalización de iluminación (ver illumination_corrector.dart)
+  final bool illuminationEnabled;
+  final double illumWhitePercentile;
+  final double illumBlackPercentile;
+  final double illumTargetWhite;
+  final double illumMinDynamicRange;
+  final double illumStrongCastRatio;
+
   // Compuertas de calidad
   final double planarityMaxSideErrorPct;
   final double circleDiameterTolPct;
@@ -141,6 +149,12 @@ class VisionParams {
     required this.targetPxPerMm,
     required this.rectifyMaxSidePx,
     required this.rectifyMaxMarginMm,
+    required this.illuminationEnabled,
+    required this.illumWhitePercentile,
+    required this.illumBlackPercentile,
+    required this.illumTargetWhite,
+    required this.illumMinDynamicRange,
+    required this.illumStrongCastRatio,
     required this.planarityMaxSideErrorPct,
     required this.circleDiameterTolPct,
     required this.overexposedMaxFraction,
@@ -176,6 +190,7 @@ class VisionParams {
 
   factory VisionParams.fromJson(Map<String, dynamic> j) {
     final rect = (j['rectify'] as Map).cast<String, dynamic>();
+    final illum = ((j['illumination'] as Map?) ?? const {}).cast<String, dynamic>();
     final q = (j['quality'] as Map).cast<String, dynamic>();
     final s = (j['segmentation'] as Map).cast<String, dynamic>();
     final t = (j['tissue'] as Map).cast<String, dynamic>();
@@ -187,6 +202,12 @@ class VisionParams {
       targetPxPerMm: (rect['target_px_per_mm'] as num).toDouble(),
       rectifyMaxSidePx: (rect['max_side_px'] as num).toInt(),
       rectifyMaxMarginMm: (rect['max_margin_mm'] as num).toDouble(),
+      illuminationEnabled: illum['enabled'] as bool? ?? true,
+      illumWhitePercentile: (illum['white_percentile'] as num?)?.toDouble() ?? 90,
+      illumBlackPercentile: (illum['black_percentile'] as num?)?.toDouble() ?? 5,
+      illumTargetWhite: (illum['target_white'] as num?)?.toDouble() ?? 235,
+      illumMinDynamicRange: (illum['min_dynamic_range'] as num?)?.toDouble() ?? 40,
+      illumStrongCastRatio: (illum['strong_cast_ratio'] as num?)?.toDouble() ?? 1.30,
       planarityMaxSideErrorPct: (q['planarity_max_side_error_pct'] as num).toDouble(),
       circleDiameterTolPct: (q['circle_diameter_tol_pct'] as num).toDouble(),
       overexposedMaxFraction: (q['overexposed_max_fraction'] as num).toDouble(),

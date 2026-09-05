@@ -5,6 +5,7 @@ import 'package:image/image.dart' as img;
 
 import 'apriltag_detector.dart';
 import 'color_spaces.dart';
+import 'illumination_corrector.dart';
 import 'rasters.dart';
 import 'vision_geometry.dart';
 import 'vision_params.dart';
@@ -126,14 +127,31 @@ class ReferenceCalibrator {
       return const CalibrationOutcome.fail(
           CalibrationFailure('decode_error', 'No se pudo rectificar la imagen.'));
     }
-    final (rect, valid) = warped;
+    var (rect, valid) = warped;
     final mmPerPx = 1 / ppm;
 
     final cardRect = RectD((0 - x0) * ppm, (0 - y0) * ppm, (spec.widthMm - x0) * ppm, (spec.heightMm - y0) * ppm);
+
+    // Normalización de color/exposición con la tarjeta como referencia neutra.
+    // Va ANTES de todo lo que mire color (segmentación y tejido); la geometría
+    // no se ve afectada. Ver illumination_corrector.dart para el porqué.
+    IlluminationCorrection? illum;
+    if (params.illuminationEnabled) {
+      illum = IlluminationCorrector.estimate(
+        rect,
+        cardRect,
+        valid: valid,
+        whitePercentile: params.illumWhitePercentile,
+        blackPercentile: params.illumBlackPercentile,
+        targetWhite: params.illumTargetWhite,
+        minDynamicRange: params.illumMinDynamicRange,
+      );
+      if (illum != null) rect = IlluminationCorrector.apply(rect, illum);
+    }
     final circleDev = spec.circleCheckMode == 'skip' ? null : _checkCircle(rect, x0, y0, ppm);
     final tagSide = dets.map((d) => d.sidePx).reduce((a, b) => a + b) / dets.length;
     final gates = <QualityGate>[
-      QualityGate('tags', 'Marcadores de la tarjeta', GateStatus.pass, '4 de 4 detectados'),
+      const QualityGate('tags', 'Marcadores de la tarjeta', GateStatus.pass, '4 de 4 detectados'),
       QualityGate(
         'planarity',
         'Tarjeta plana',
@@ -158,6 +176,23 @@ class ReferenceCalibrator {
             ? 'Marcadores de ${tagSide.toStringAsFixed(0)} px'
             : 'Marcadores pequeños (${tagSide.toStringAsFixed(0)} px): acércate a la herida',
       ),
+      if (!params.illuminationEnabled)
+        const QualityGate('color', 'Color y exposición', GateStatus.warn,
+            'Normalización de color desactivada en la configuración: los porcentajes de tejido dependen de la luz')
+      else if (illum == null)
+        const QualityGate('color', 'Color y exposición', GateStatus.warn,
+            'No se pudo normalizar el color con la tarjeta (poco contraste o tarjeta muy pequeña en el encuadre): '
+            'los porcentajes de tejido dependen de la luz de la sala')
+      else if (illum.clipped)
+        QualityGate('color', 'Color y exposición', GateStatus.warn,
+            'La tarjeta salió quemada: el color se normalizó de forma aproximada '
+            '(desbalance de la luz ${illum.castRatio.toStringAsFixed(2)}×). Evita el flash directo sobre la tarjeta')
+      else if (illum.castRatio > params.illumStrongCastRatio)
+        QualityGate('color', 'Color y exposición', GateStatus.pass,
+            'Luz con dominante de color fuerte (${illum.castRatio.toStringAsFixed(2)}×), corregida con la tarjeta')
+      else
+        QualityGate('color', 'Color y exposición', GateStatus.pass,
+            'Normalizada con la tarjeta (desbalance ${illum.castRatio.toStringAsFixed(2)}×)'),
       if (spec.isPlaceholder)
         const QualityGate('card_spec', 'Geometría de la tarjeta', GateStatus.warn,
             'card_spec.json es provisional: las medidas no son confiables hasta cargar la geometría del impreso real'),
@@ -180,6 +215,7 @@ class ReferenceCalibrator {
         'tag_side_px': tagSide,
         'tags': [for (final d in dets) d.toJson()],
         'card_is_placeholder': spec.isPlaceholder,
+        'illumination': illum?.toJson(),
         'h_photo_to_rect': photoToRect.toJson(),
       },
     );
@@ -364,6 +400,9 @@ class ReferenceCalibrator {
       ),
       const QualityGate('perspective', 'Corrección de perspectiva', GateStatus.warn,
           'Sin tarjeta no se corrige la perspectiva: la medida asume foto perpendicular a la herida'),
+      const QualityGate('color', 'Color y exposición', GateStatus.warn,
+          'El disco no sirve de referencia neutra: el color NO se normaliza y los porcentajes de tejido '
+          'dependen de la luz de la sala. Para composición del lecho, usa la tarjeta'),
     ];
     final result = CalibrationResult(
       mode: CalibrationMode.disc,
