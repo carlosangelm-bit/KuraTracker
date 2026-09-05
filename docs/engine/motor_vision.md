@@ -95,8 +95,13 @@ algoritmo (mismo pipeline validado antes en Python):
 | Disco de respaldo (cenital) | área −0,6 % | < 5 % |
 
 **Real — pendiente (bloqueante para uso clínico):**
-1. `card_spec.json` con la geometría **medida** del impreso real → `is_placeholder=false`
-   (hasta entonces el motor muestra la compuerta «Geometría de la tarjeta» en aviso).
+1. **Imprimir la tarjeta** desde `tools/wound_calibrate_proto/print/` (generada con
+   `make_print_card.py` a partir del mismo `card_spec.json` que lee el motor, así que la
+   geometría es conocida por construcción). Imprimir al 100 %, comprobar con regla que la
+   escala impresa mide 50 mm (y la de control de la hoja, 100 mm) → entonces
+   `is_placeholder=false` (hasta entonces el motor muestra la compuerta «Geometría de la
+   tarjeta» en aviso). Si se manda a imprenta con otro diseño, medir el impreso y actualizar
+   el spec.
 2. Fotos reales con tarjeta + objeto de medida conocida → error contra regla.
 3. Ajustar `tissue.rules` / `prototypes_lab` con fotos etiquetadas por el equipo
    clínico (María). Los colores de tejido reales varían mucho más que los sintéticos.

@@ -5,7 +5,7 @@
   "card_size_mm": {
     "width": 85.6,
     "height": 54.0,
-    "_note": "PLACEHOLDER: tamano tarjeta credito. Medir el impreso real."
+    "_note": "Tamano tarjeta de credito (85.6 x 54 mm). El impreso se genera desde ESTE archivo con tools/wound_calibrate_proto/make_print_card.py, asi que la geometria es conocida por construccion; verificar con regla que la escala impresa mida 50 mm y entonces poner is_placeholder=false."
   },
   "tags": [
     {
@@ -15,8 +15,7 @@
         10.0,
         10.0
       ],
-      "size_mm": 10.0,
-      "_note": "PLACEHOLDER"
+      "size_mm": 10.0
     },
     {
       "id": 1,
@@ -25,8 +24,7 @@
         75.6,
         10.0
       ],
-      "size_mm": 10.0,
-      "_note": "PLACEHOLDER"
+      "size_mm": 10.0
     },
     {
       "id": 2,
@@ -35,8 +33,7 @@
         75.6,
         44.0
       ],
-      "size_mm": 10.0,
-      "_note": "PLACEHOLDER"
+      "size_mm": 10.0
     },
     {
       "id": 3,
@@ -45,8 +42,7 @@
         10.0,
         44.0
       ],
-      "size_mm": 10.0,
-      "_note": "PLACEHOLDER"
+      "size_mm": 10.0
     }
   ],
   "reference_circle": {
@@ -55,20 +51,20 @@
       42.8,
       27.0
     ],
-    "_note": "diameter_mm=12.7 (0.50\") es un valor DE ESPECIFICACION del disenio, no un placeholder. center_mm es PLACEHOLDER: medir donde queda el circulo en el impreso real.",
+    "_note": "diameter_mm=12.7 (0.50\") es especificacion de diseno. center_mm = centro de la tarjeta.",
     "check_mode": "solid",
     "_check_mode_note": "'solid' = el circulo impreso es un disco relleno oscuro (se mide su diametro equivalente); 'skip' = no verificar (p. ej. anillo fino)."
   },
   "ruler": {
     "origin_mm": [
-      10.0,
-      50.0
+      17.0,
+      52.0
     ],
     "direction": [
       1.0,
       0.0
     ],
-    "length_mm": 60.0,
-    "_note": "PLACEHOLDER: origen/orientacion/longitud de la regla impresa. Solo se usa como cross-check opcional de escala."
+    "length_mm": 50.0,
+    "_note": "Escala impresa para verificar que la impresora no reescalo (debe medir 50 mm). Va en la banda inferior libre entre los tags; el motor NO la usa."
   }
 }
