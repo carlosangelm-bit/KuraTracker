@@ -32,7 +32,7 @@ class DemoSeed {
   // una sola vez en instalaciones demo previas (wipeAll + _seed), evitando
   // duplicados y datos viejos. Cada rediseño del roster sube este número.
   // v12: roster curado por escenario (clínica 7 / hospital 5 / cuidadores 3).
-  static const String _seedFlag = 'seeded_v30';
+  static const String _seedFlag = 'seeded_v31';
 
   static Future<void> ensureSeeded(LocalStore store) async {
     if (store.getBool(_seedFlag)) return;
@@ -377,6 +377,8 @@ class DemoSeed {
         'folio': 'ENF-0001',
         'full_name': 'Enfermería Demo',
         'role_title': 'Enfermería',
+        'cedula_profesional': '11223366',
+        'especialidad': 'Enfermería',
         'is_active': true,
         'created_at': iso(now.subtract(const Duration(days: 5))),
       },
@@ -387,6 +389,7 @@ class DemoSeed {
         'folio': '',
         'full_name': 'Administrador Procomsa',
         'role_title': 'Administrador',
+        'cedula_profesional': '11223377',
         'primary_site_id': siteClinicaCdmx,
         'is_active': true,
         'created_at': iso(now.subtract(const Duration(days: 400))),
@@ -398,6 +401,8 @@ class DemoSeed {
         'folio': 'K2024-0001',
         'full_name': 'Dra. Ana Martínez',
         'role_title': 'Especialista / Médico',
+        'cedula_profesional': '11223344',
+        'especialidad': 'Angiología / Clínica de heridas',
         'primary_site_id': siteClinicaCdmx,
         'is_active': true,
         'created_at': iso(now.subtract(const Duration(days: 400))),
@@ -409,6 +414,8 @@ class DemoSeed {
         'folio': 'K2024-0002',
         'full_name': 'Lic. Carlos Ramírez',
         'role_title': 'Especialista',
+        'cedula_profesional': '11223355',
+        'especialidad': 'Enfermería especializada en heridas',
         'primary_site_id': siteClinicaGdl,
         'is_active': true,
         'created_at': iso(now.subtract(const Duration(days: 250))),
@@ -420,6 +427,7 @@ class DemoSeed {
         'folio': '',
         'full_name': 'Administradora Vitalis',
         'role_title': 'Administrador',
+        'cedula_profesional': '11223388',
         'primary_site_id': siteVitalisMty,
         'is_active': true,
         'created_at': iso(now.subtract(const Duration(days: 30))),
