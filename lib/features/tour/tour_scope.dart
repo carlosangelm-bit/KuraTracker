@@ -123,29 +123,33 @@ class _TourScopeState extends ConsumerState<TourScope> {
             onSkip: () => ref.read(tourProvider.notifier).stop(),
           ),
         if (showLauncher)
-          Positioned(
-            // Bottom-LEFT y elevado sobre la barra flotante, para no empalmarse
-            // con el FAB "Nuevo paciente" (bottom-right). En escritorio se
-            // desplaza para librar el NavigationRail.
-            left: MediaQuery.of(context).size.width >= 900 ? 88 : 16,
-            bottom: MediaQuery.of(context).viewPadding.bottom +
-                kFloatingNavBarHeight +
-                12,
-            child: _TourLauncher(onTap: _startForRole),
-          ),
+          _floatingLauncher(context, _TourLauncher(onTap: _startForRole)),
         if (showHelp)
-          Positioned(
-            left: MediaQuery.of(context).size.width >= 900 ? 88 : 16,
-            bottom: MediaQuery.of(context).viewPadding.bottom +
-                kFloatingNavBarHeight +
-                12,
-            child: _HelpLauncher(onTap: () => openSupportAssistant(ref)),
-          ),
+          _floatingLauncher(
+              context, _HelpLauncher(onTap: () => openSupportAssistant(ref))),
         // Panel de chat del asistente (overlay flotante, no ruta). Se mantiene
         // MONTADO mientras esté activo (Offstage al minimizar) para conservar la
         // conversación; al cerrar se desmonta y se descarta.
         if (!_isDemo && chat.active) _chatPanel(context, chat.open),
       ],
+    );
+  }
+
+  /// Ancla el lanzador flotante (Tour en demo / Ayuda en prod) SIN empalmarse
+  /// con la navegación ni con el FAB "Nuevo paciente" (bottom-right):
+  ///  - Escritorio (≥900): abajo-DERECHA, elevado por encima del FAB. El anclaje
+  ///    viejo (`left: 88`) caía ENCIMA del NavigationRail, que en español mide
+  ///    ~140px (más que los 88 supuestos), robándole toques al rail.
+  ///  - Móvil (<900): abajo-izquierda, elevado sobre la barra flotante (el FAB
+  ///    vive en bottom-right, así que la izquierda queda libre).
+  Positioned _floatingLauncher(BuildContext context, Widget child) {
+    final mq = MediaQuery.of(context);
+    final wide = mq.size.width >= 900;
+    return Positioned(
+      left: wide ? null : 16,
+      right: wide ? 16 : null,
+      bottom: wide ? 84 : mq.viewPadding.bottom + kFloatingNavBarHeight + 12,
+      child: child,
     );
   }
 
