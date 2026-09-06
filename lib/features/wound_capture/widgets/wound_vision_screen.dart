@@ -66,11 +66,21 @@ class _WoundVisionScreenState extends State<WoundVisionScreen> {
   final List<Pt> _trace = [];
   double _sensitivity = 0.5;
   bool _showTissue = true;
+  // El paso de marcar/trazar se abre a PANTALLA COMPLETA (imagen al máximo, con
+  // zoom y desplazamiento); las medidas y «Aplicar» aparecen al salir de él.
+  bool _tracing = true;
+  final TransformationController _tc = TransformationController();
 
   @override
   void initState() {
     super.initState();
     _start();
+  }
+
+  @override
+  void dispose() {
+    _tc.dispose();
+    super.dispose();
   }
 
   Future<void> _start() async {
@@ -187,43 +197,309 @@ class _WoundVisionScreenState extends State<WoundVisionScreen> {
   @override
   Widget build(BuildContext context) {
     final cal = _calibration?.result;
+    if (cal == null) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Medir con foto')),
+        body: _buildCalibrating(),
+      );
+    }
+    return _tracing ? _buildTracing(context, cal) : _buildResults(context, cal);
+  }
+
+  // ---------------------------------------------------------------------------
+  // FASE 1 · TRAZADO a pantalla completa: la foto ocupa todo el alto disponible,
+  // con zoom (pellizco) y desplazamiento (arrastre) para ajustar el borde con
+  // precisión. Los controles flotan SOBRE la imagen (no le quitan espacio). El
+  // botón «Ver medidas» sale del modo de trazado a la fase de resultados.
+  // ---------------------------------------------------------------------------
+  Widget _buildTracing(BuildContext context, CalibrationResult cal) {
+    final hint = _mode == _Mode.auto
+        ? 'Toca DENTRO de la herida; pellizca para acercar y arrastra para mover. Si tiene varios tejidos, toca cada uno.'
+        : 'Toca los puntos del contorno en orden (mínimo 3); se cierra solo. Pellizca para acercar y arrastra para mover.';
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Medir con foto'),
-        actions: [
-          if (cal != null)
-            IconButton(
-              tooltip: _showTissue ? 'Ocultar tejido' : 'Ver tejido',
-              icon: Icon(_showTissue ? Icons.layers : Icons.layers_clear_outlined),
-              onPressed: () => setState(() => _showTissue = !_showTissue),
-            ),
-        ],
-      ),
-      body: cal == null ? _buildCalibrating() : _buildWorkspace(context, cal),
-      bottomNavigationBar: cal == null
-          ? null
-          : SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+      backgroundColor: const Color(0xFF141118),
+      body: SafeArea(
+        child: Stack(
+          children: [
+            Positioned.fill(child: _buildInteractiveImage(cal)),
+            if (_busy)
+              const Positioned.fill(
+                child: ColoredBox(
+                  color: Color(0x66000000),
+                  child: Center(child: CircularProgressIndicator(color: Colors.white)),
+                ),
+              ),
+            // Barra superior flotante: cerrar · modo · tejido · deshacer · limpiar.
+            Positioned(
+              top: 8,
+              left: 8,
+              right: 8,
+              child: _overlayBar(
                 child: Row(
                   children: [
-                    Expanded(
-                      child: Text(
-                        'Apoyo a la decisión clínica — no sustituye el juicio clínico. '
-                        'Revisa y ajusta las medidas antes de guardar.',
-                        style: TextStyle(fontSize: 11, color: KuraColors.darkText.withOpacity(0.6)),
-                      ),
+                    IconButton(
+                      tooltip: 'Cerrar',
+                      icon: const Icon(Icons.close, color: Colors.white),
+                      onPressed: () => Navigator.of(context).pop(),
                     ),
-                    const SizedBox(width: 12),
-                    FilledButton.icon(
-                      onPressed: _result == null || _busy ? null : _apply,
-                      icon: const Icon(Icons.check),
-                      label: const Text('Aplicar a la valoración'),
+                    SegmentedButton<_Mode>(
+                      segments: const [
+                        ButtonSegment(
+                            value: _Mode.auto,
+                            icon: Icon(Icons.touch_app_outlined),
+                            tooltip: 'Tocar la herida'),
+                        ButtonSegment(
+                            value: _Mode.manual,
+                            icon: Icon(Icons.gesture),
+                            tooltip: 'Trazar a mano'),
+                      ],
+                      selected: {_mode},
+                      showSelectedIcon: false,
+                      onSelectionChanged: _busy
+                          ? null
+                          : (s) {
+                              setState(() {
+                                _mode = s.first;
+                                _result = null;
+                                _error = null;
+                              });
+                              _reanalyze();
+                            },
+                      style: const ButtonStyle(visualDensity: VisualDensity.compact),
+                    ),
+                    const Spacer(),
+                    IconButton(
+                      tooltip: _showTissue ? 'Ocultar tejido' : 'Ver tejido',
+                      icon: Icon(_showTissue ? Icons.layers : Icons.layers_clear_outlined,
+                          color: Colors.white),
+                      onPressed: () => setState(() => _showTissue = !_showTissue),
+                    ),
+                    IconButton(
+                      tooltip: 'Deshacer último punto',
+                      onPressed: _busy || (_mode == _Mode.auto ? _seeds.isEmpty : _trace.isEmpty)
+                          ? null
+                          : _undo,
+                      icon: const Icon(Icons.undo, color: Colors.white),
+                    ),
+                    IconButton(
+                      tooltip: 'Limpiar',
+                      onPressed: _busy || (_seeds.isEmpty && _trace.isEmpty) ? null : _clear,
+                      icon: const Icon(Icons.delete_sweep_outlined, color: Colors.white),
                     ),
                   ],
                 ),
               ),
             ),
+            // Barra inferior flotante: sensibilidad (auto) · pista · «Ver medidas».
+            Positioned(
+              bottom: 8,
+              left: 8,
+              right: 8,
+              child: _overlayBar(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (_mode == _Mode.auto)
+                      Row(
+                        children: [
+                          const Text('Sensibilidad',
+                              style: TextStyle(fontSize: 12, color: Colors.white70)),
+                          Expanded(
+                            child: Slider(
+                              value: _sensitivity,
+                              min: 0,
+                              max: 1,
+                              divisions: 10,
+                              label: _sensitivity < 0.5
+                                  ? 'Más estricta'
+                                  : (_sensitivity > 0.5 ? 'Más amplia' : 'Neutra'),
+                              onChanged: _busy ? null : (v) => setState(() => _sensitivity = v),
+                              onChangeEnd: (_) => _reanalyze(),
+                            ),
+                          ),
+                        ],
+                      ),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(_error ?? hint,
+                              style: const TextStyle(color: Colors.white70, fontSize: 12)),
+                        ),
+                        const SizedBox(width: 12),
+                        FilledButton.icon(
+                          onPressed: _result == null || _busy
+                              ? null
+                              : () => setState(() => _tracing = false),
+                          icon: const Icon(Icons.straighten),
+                          label: const Text('Ver medidas'),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _overlayBar({required Widget child}) => Material(
+        color: const Color(0xCC1E1B26),
+        borderRadius: BorderRadius.circular(14),
+        elevation: 4,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+          child: child,
+        ),
+      );
+
+  /// Imagen rectificada + tejido + marcas dentro de un [InteractiveViewer]
+  /// (zoom/pan). El [GestureDetector] va DENTRO del hijo del viewer, así que su
+  /// `localPosition` llega en coordenadas del hijo SIN transformar por el zoom:
+  /// el mapeo toque→píxel (y por tanto la calibración) se conserva intacto.
+  Widget _buildInteractiveImage(CalibrationResult cal) {
+    final res = _result;
+    return LayoutBuilder(builder: (context, c) {
+      // Ajuste tipo BoxFit.contain calculado a mano para mapear toques → px.
+      final scale = math.min(c.maxWidth / cal.width, c.maxHeight / cal.height);
+      final dw = cal.width * scale, dh = cal.height * scale;
+      final ox = (c.maxWidth - dw) / 2, oy = (c.maxHeight - dh) / 2;
+      return InteractiveViewer(
+        transformationController: _tc,
+        minScale: 1,
+        maxScale: 10,
+        boundaryMargin: const EdgeInsets.all(120),
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTapUp: (d) {
+            final lx = (d.localPosition.dx - ox) / scale, ly = (d.localPosition.dy - oy) / scale;
+            _onTap(Pt(lx, ly));
+          },
+          child: Stack(
+            children: [
+              Positioned(
+                left: ox,
+                top: oy,
+                width: dw,
+                height: dh,
+                child: Image.memory(cal.rectifiedPng, fit: BoxFit.fill, gaplessPlayback: true),
+              ),
+              if (res != null && _showTissue)
+                Positioned(
+                  left: ox,
+                  top: oy,
+                  width: dw,
+                  height: dh,
+                  child: Image.memory(res.overlayPng, fit: BoxFit.fill, gaplessPlayback: true),
+                ),
+              Positioned(
+                left: ox,
+                top: oy,
+                width: dw,
+                height: dh,
+                child: CustomPaint(
+                  painter: _MarksPainter(
+                    seeds: _mode == _Mode.auto ? _seeds : const [],
+                    trace: _mode == _Mode.manual ? _trace : const [],
+                    scale: scale,
+                    excluded: cal.excludedRects,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // FASE 2 · RESULTADOS: medidas, composición del lecho, calidad y «Aplicar».
+  // Una vista previa con «Editar contorno» reabre la fase de trazado.
+  // ---------------------------------------------------------------------------
+  Widget _buildResults(BuildContext context, CalibrationResult cal) {
+    final gates = _result?.gates ?? cal.gates;
+    return Scaffold(
+      appBar: AppBar(title: const Text('Medir con foto')),
+      body: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            _resultPreview(cal),
+            const SizedBox(height: 12),
+            _buildMetrics(cal, gates),
+          ],
+        ),
+      ),
+      bottomNavigationBar: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Apoyo a la decisión clínica — no sustituye el juicio clínico. '
+                  'Revisa y ajusta las medidas antes de guardar.',
+                  style: TextStyle(fontSize: 11, color: KuraColors.darkText.withOpacity(0.6)),
+                ),
+              ),
+              const SizedBox(width: 12),
+              FilledButton.icon(
+                onPressed: _result == null || _busy ? null : _apply,
+                icon: const Icon(Icons.check),
+                label: const Text('Aplicar a la valoración'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _resultPreview(CalibrationResult cal) {
+    final res = _result;
+    return Container(
+      decoration:
+          BoxDecoration(color: const Color(0xFF1E1B26), borderRadius: BorderRadius.circular(12)),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        children: [
+          SizedBox(
+            height: 260,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                Image.memory(cal.rectifiedPng, fit: BoxFit.contain, gaplessPlayback: true),
+                if (res != null && _showTissue)
+                  Image.memory(res.overlayPng, fit: BoxFit.contain, gaplessPlayback: true),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            child: Row(
+              children: [
+                TextButton.icon(
+                  onPressed: () => setState(() => _tracing = true),
+                  icon: const Icon(Icons.edit_outlined, color: Colors.white),
+                  label: Text(_mode == _Mode.auto ? 'Editar / marcar' : 'Editar contorno',
+                      style: const TextStyle(color: Colors.white)),
+                ),
+                const Spacer(),
+                IconButton(
+                  tooltip: _showTissue ? 'Ocultar tejido' : 'Ver tejido',
+                  icon: Icon(_showTissue ? Icons.layers : Icons.layers_clear_outlined,
+                      color: Colors.white70),
+                  onPressed: () => setState(() => _showTissue = !_showTissue),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -265,147 +541,12 @@ class _WoundVisionScreenState extends State<WoundVisionScreen> {
     );
   }
 
-  Widget _buildWorkspace(BuildContext context, CalibrationResult cal) {
-    final res = _result;
-    final gates = res?.gates ?? cal.gates;
-    return LayoutBuilder(builder: (context, constraints) {
-      final wide = constraints.maxWidth >= 900;
-      final imagePane = _buildImagePane(cal);
-      final sidePane = _buildSidePane(cal, gates);
-      if (wide) {
-        return Row(
-          children: [
-            Expanded(flex: 3, child: imagePane),
-            SizedBox(width: 360, child: sidePane),
-          ],
-        );
-      }
-      return Column(
-        children: [
-          Expanded(flex: 3, child: imagePane),
-          Expanded(flex: 2, child: sidePane),
-        ],
-      );
-    });
-  }
-
-  Widget _buildImagePane(CalibrationResult cal) {
-    final res = _result;
-    return Container(
-      color: const Color(0xFF1E1B26),
-      child: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
-            child: Row(
-              children: [
-                SegmentedButton<_Mode>(
-                  segments: const [
-                    ButtonSegment(value: _Mode.auto, icon: Icon(Icons.touch_app_outlined), label: Text('Tocar la herida')),
-                    ButtonSegment(value: _Mode.manual, icon: Icon(Icons.gesture), label: Text('Trazar a mano')),
-                  ],
-                  selected: {_mode},
-                  onSelectionChanged: _busy
-                      ? null
-                      : (s) {
-                          setState(() {
-                            _mode = s.first;
-                            _result = null;
-                            _error = null;
-                          });
-                          _reanalyze();
-                        },
-                  style: const ButtonStyle(visualDensity: VisualDensity.compact),
-                ),
-                const Spacer(),
-                IconButton(
-                  tooltip: 'Deshacer último punto',
-                  onPressed: _busy || (_mode == _Mode.auto ? _seeds.isEmpty : _trace.isEmpty) ? null : _undo,
-                  icon: const Icon(Icons.undo, color: Colors.white70),
-                ),
-                IconButton(
-                  tooltip: 'Limpiar',
-                  onPressed: _busy || (_seeds.isEmpty && _trace.isEmpty) ? null : _clear,
-                  icon: const Icon(Icons.delete_sweep_outlined, color: Colors.white70),
-                ),
-              ],
-            ),
-          ),
-          Expanded(
-            child: LayoutBuilder(builder: (context, c) {
-              // Ajuste tipo BoxFit.contain calculado a mano para mapear toques → px.
-              final scale = math.min(c.maxWidth / cal.width, c.maxHeight / cal.height);
-              final dw = cal.width * scale, dh = cal.height * scale;
-              final ox = (c.maxWidth - dw) / 2, oy = (c.maxHeight - dh) / 2;
-              return GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTapUp: (d) {
-                  final lx = (d.localPosition.dx - ox) / scale, ly = (d.localPosition.dy - oy) / scale;
-                  _onTap(Pt(lx, ly));
-                },
-                child: Stack(
-                  children: [
-                    Positioned(
-                      left: ox,
-                      top: oy,
-                      width: dw,
-                      height: dh,
-                      child: Image.memory(cal.rectifiedPng, fit: BoxFit.fill, gaplessPlayback: true),
-                    ),
-                    if (res != null && _showTissue)
-                      Positioned(
-                        left: ox,
-                        top: oy,
-                        width: dw,
-                        height: dh,
-                        child: Image.memory(res.overlayPng, fit: BoxFit.fill, gaplessPlayback: true),
-                      ),
-                    Positioned(
-                      left: ox,
-                      top: oy,
-                      width: dw,
-                      height: dh,
-                      child: CustomPaint(
-                        painter: _MarksPainter(
-                          seeds: _mode == _Mode.auto ? _seeds : const [],
-                          trace: _mode == _Mode.manual ? _trace : const [],
-                          scale: scale,
-                          excluded: cal.excludedRects,
-                        ),
-                      ),
-                    ),
-                    if (_busy)
-                      const Positioned.fill(
-                        child: ColoredBox(
-                          color: Color(0x66000000),
-                          child: Center(child: CircularProgressIndicator(color: Colors.white)),
-                        ),
-                      ),
-                  ],
-                ),
-              );
-            }),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
-            child: Text(
-              _mode == _Mode.auto
-                  ? 'Toca DENTRO de la herida. Si tiene varios tejidos (esfacelo, necrosis, borde en epitelización), toca cada uno.'
-                  : 'Toca los puntos del contorno en orden; el polígono se cierra solo (mínimo 3).',
-              style: const TextStyle(color: Colors.white70, fontSize: 12),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSidePane(CalibrationResult cal, List<QualityGate> gates) {
+  Widget _buildMetrics(CalibrationResult cal, List<QualityGate> gates) {
     final res = _result;
     final m = res?.measurement;
     final t = res?.tissue;
-    return ListView(
-      padding: const EdgeInsets.all(16),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Row(
           children: [
@@ -420,24 +561,6 @@ class _WoundVisionScreenState extends State<WoundVisionScreen> {
           ],
         ),
         const SizedBox(height: 8),
-        if (_mode == _Mode.auto) ...[
-          Row(
-            children: [
-              const Text('Sensibilidad', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
-              Expanded(
-                child: Slider(
-                  value: _sensitivity,
-                  min: 0,
-                  max: 1,
-                  divisions: 10,
-                  label: _sensitivity < 0.5 ? 'Más estricta' : (_sensitivity > 0.5 ? 'Más amplia' : 'Neutra'),
-                  onChanged: _busy ? null : (v) => setState(() => _sensitivity = v),
-                  onChangeEnd: (_) => _reanalyze(),
-                ),
-              ),
-            ],
-          ),
-        ],
         if (_error != null)
           Container(
             margin: const EdgeInsets.only(bottom: 8),
@@ -463,9 +586,7 @@ class _WoundVisionScreenState extends State<WoundVisionScreen> {
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 16),
             child: Text(
-              _mode == _Mode.auto
-                  ? 'Toca la herida en la imagen para delimitarla y medirla.'
-                  : 'Traza el contorno de la herida en la imagen.',
+              'Aún no hay medidas: usa «Editar contorno» para marcar o trazar la herida.',
               style: TextStyle(color: KuraColors.darkText.withOpacity(0.6)),
             ),
           ),
