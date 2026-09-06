@@ -48,8 +48,12 @@ void main() {
           expect(res, isNotNull);
           final m = res!.measurement;
           expect((m.areaCm2 * 100 / truth.areaMm2 - 1).abs(), lessThan(0.03), reason: 'área ${m.areaCm2} cm²');
-          expect((m.lengthCm * 10 / truth.lengthMm - 1).abs(), lessThan(0.03), reason: 'largo ${m.lengthCm} cm');
-          expect((m.widthCm * 10 / truth.widthMm - 1).abs(), lessThan(0.03), reason: 'ancho ${m.widthCm} cm');
+          // OFICIAL (convención regla): largo = eje Y, ancho = eje X (bounding box axial).
+          expect((m.lengthCm * 10 / truth.bboxYmm - 1).abs(), lessThan(0.04), reason: 'largo (Y) ${m.lengthCm} cm');
+          expect((m.widthCm * 10 / truth.bboxXmm - 1).abs(), lessThan(0.04), reason: 'ancho (X) ${m.widthCm} cm');
+          // ADICIONAL (vision_meta): Feret máx/perp = eje mayor/menor de la elipse.
+          expect((m.feretLengthCm * 10 / truth.lengthMm - 1).abs(), lessThan(0.04), reason: 'Feret largo ${m.feretLengthCm} cm');
+          expect((m.feretWidthCm * 10 / truth.widthMm - 1).abs(), lessThan(0.05), reason: 'Feret ancho ${m.feretWidthCm} cm');
           expect((m.perimeterCm * 10 / truth.perimeterMm - 1).abs(), lessThan(0.05), reason: 'perímetro');
           expect((res.tissue.granulacion - truth.granPct).abs(), lessThanOrEqualTo(4));
           expect((res.tissue.esfacelo - truth.sloughPct).abs(), lessThanOrEqualTo(4));
@@ -77,7 +81,9 @@ void main() {
       final rimAreaMm2 = math.pi * 21 * 14;
       expect((full.measurement.areaCm2 * 100 / rimAreaMm2 - 1).abs(), lessThan(0.05));
       expect(full.tissue.epitelizacion, greaterThan(20));
-      expect((full.measurement.lengthCm * 10 / 42 - 1).abs(), lessThan(0.04));
+      // El anillo agranda la herida: se comprueba con el Feret (eje mayor,
+      // invariante a la rotación), que crece a 2×21 = 42 mm.
+      expect((full.measurement.feretLengthCm * 10 / 42 - 1).abs(), lessThan(0.04));
     });
 
     test('con 4 tags parcialmente fuera de la foto reporta el fallo, no una medida', () {
@@ -108,7 +114,8 @@ void main() {
       final res = engine.analyze(outcome, seeds: [seedRect]);
       expect(res, isNotNull);
       expect((res!.measurement.areaCm2 * 100 / truth.areaMm2 - 1).abs(), lessThan(0.05));
-      expect((res.measurement.lengthCm * 10 / truth.lengthMm - 1).abs(), lessThan(0.05));
+      // Feret (eje mayor, invariante a la rotación de la foto cenital).
+      expect((res.measurement.feretLengthCm * 10 / truth.lengthMm - 1).abs(), lessThan(0.05));
       expect(res.measurementSource, 'vision_disc');
       expect(res.gates.any((g) => g.id == 'perspective' && g.status == GateStatus.warn), isTrue);
     });
@@ -145,10 +152,38 @@ void main() {
       expect(res.manualTrace, isTrue);
       expect(res.measurementSource, 'vision_manual_trace');
       expect(res.measurement.areaCm2, closeTo(6.0, 0.05));
-      // Largo = diagonal (Feret máximo), ancho = extensión perpendicular a la diagonal.
-      expect(res.measurement.lengthCm, closeTo(3.606, 0.03));
+      // OFICIAL (convención regla, ejes X/Y): largo = Y = 20 mm, ancho = X = 30 mm.
+      expect(res.measurement.lengthCm, closeTo(2.0, 0.03));
+      expect(res.measurement.widthCm, closeTo(3.0, 0.03));
+      // ADICIONAL: Feret = diagonal del rectángulo (√(30²+20²) = 36.06 mm).
+      expect(res.measurement.feretLengthCm, closeTo(3.606, 0.03));
       expect(res.measurement.perimeterCm, closeTo(10.0, 0.05));
       expect(res.tissue.granulacion + res.tissue.esfacelo + res.tissue.necrosis + res.tissue.epitelizacion, 100);
+    });
+
+    test('figura 40×30 mm alineada a ejes: largo 4.0, ancho 3.0, elipse 9.4 cm² (validación Carlos)', () {
+      final (metric, truth) = renderScene(spec);
+      final (photo, _) = perspectivePhoto(metric, truth.pxPerMm, tilt: 0.1);
+      final outcome = engine.calibratePhotoRaster(photo);
+      final cal = outcome.result!;
+      // Rectángulo 40 (Y, cabeza-pies) × 30 (X, lateral) mm centrado.
+      final c = truth.woundCenterMm;
+      final poly = [
+        seedFor(cal, Pt(c.x - 15, c.y - 20)),
+        seedFor(cal, Pt(c.x + 15, c.y - 20)),
+        seedFor(cal, Pt(c.x + 15, c.y + 20)),
+        seedFor(cal, Pt(c.x - 15, c.y + 20)),
+      ];
+      final m = engine.analyzeManualTrace(outcome, polygon: poly)!.measurement;
+      // Área REAL (planimetría) = 40×30 = 12.00 cm² — no cambia con la convención.
+      expect(m.areaCm2, closeTo(12.0, 0.1));
+      // OFICIAL convención regla.
+      expect(m.lengthCm, closeTo(4.0, 0.03)); // Y
+      expect(m.widthCm, closeTo(3.0, 0.03)); // X
+      // El estimado de elipse (L×A×0,785) que alimenta area_cm2/logarea/Kundin.
+      expect(m.ellipseEstimateCm2, closeTo(9.42, 0.1));
+      // Feret (diagonal) queda como dato adicional, no oficial.
+      expect(m.feretLengthCm, closeTo(5.0, 0.05));
     });
   });
 

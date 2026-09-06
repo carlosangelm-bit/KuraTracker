@@ -28,8 +28,13 @@ class SceneColors {
 
 class SceneTruth {
   final double areaMm2; // por conteo de píxeles del lienzo
-  final double lengthMm;
-  final double widthMm;
+  final double lengthMm; // eje MAYOR de la elipse (= Feret máximo)
+  final double widthMm; // eje MENOR (= ancho perpendicular al Feret)
+  // Bounding box AXIAL (ejes X/Y de la imagen) de la elipse rotada. Es la
+  // medida OFICIAL de convención regla (largo = Y, ancho = X). Para una elipse
+  // rotada difiere del mayor/menor; coincide solo cuando el ángulo es 0.
+  final double bboxXmm; // extensión en X (ancho oficial)
+  final double bboxYmm; // extensión en Y (largo oficial)
   final double perimeterMm;
   final double granPct, sloughPct, necroPct;
   final double pxPerMm;
@@ -38,6 +43,8 @@ class SceneTruth {
     required this.areaMm2,
     required this.lengthMm,
     required this.widthMm,
+    required this.bboxXmm,
+    required this.bboxYmm,
     required this.perimeterMm,
     required this.granPct,
     required this.sloughPct,
@@ -164,10 +171,16 @@ List<List<int>> tagBitmap(int id) {
     fill((mx, my) => inside(mx, my, woundA, woundB) && uv(mx, my).$1 <= thr, SceneColors.necrosis);
   }
   final a = woundA, b = woundB;
+  // Bounding box axial de la elipse rotada woundAngleDeg: half-extents por eje.
+  final thBox = woundAngleDeg * math.pi / 180;
+  final hx = math.sqrt(math.pow(a * math.cos(thBox), 2) + math.pow(b * math.sin(thBox), 2));
+  final hy = math.sqrt(math.pow(a * math.sin(thBox), 2) + math.pow(b * math.cos(thBox), 2));
   final truth = SceneTruth(
     areaMm2: n / (pxPerMm * pxPerMm),
     lengthMm: 2 * a,
     widthMm: 2 * b,
+    bboxXmm: 2 * hx,
+    bboxYmm: 2 * hy,
     perimeterMm: math.pi * (3 * (a + b) - math.sqrt((3 * a + b) * (a + 3 * b))),
     granPct: 100 * (1 - sloughFrac - necroFrac),
     sloughPct: 100 * sloughFrac,

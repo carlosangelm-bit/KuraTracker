@@ -44,11 +44,43 @@ Abre `WoundVisionScreen` (`lib/features/wound_capture/widgets/wound_vision_scree
 | Medida | Método | Nota |
 |---|---|---|
 | **Área** | Planimetría: píxeles de la máscara × (mm/px)² | Va a `area_planimetric_cm2`. **`area_cm2` no cambia**: sigue siendo L × A × 0,785 (alimenta el pronóstico, calibrado con ese estimado; ver `medicion_oficial.md`). |
-| **Largo** | Diámetro de Feret máximo (mayor distancia entre dos puntos del contorno) | Redondeado a 0,1 cm al aplicar. |
-| **Ancho** | Máxima extensión perpendicular al eje del largo | Convención «largo × ancho perpendicular». |
+| **Largo (oficial)** | Extensión en el eje **Y** de la imagen rectificada (marco de la tarjeta) | Convención de **regla** (cabeza-pies). Redondeado a 0,1 cm al aplicar. |
+| **Ancho (oficial)** | Extensión en el eje **X** de la imagen rectificada | Convención de regla (lateral). |
+| **Feret máx / ancho perp.** | Mayor distancia entre dos puntos y su perpendicular | **Dato adicional** en `vision_meta` (`feret_length_cm`/`feret_width_cm`). **Nunca** es la medida oficial. |
 | **Perímetro** | Polígono simplificado (Douglas–Peucker, ε = 1 px) | Evita la sobreestimación en escalera. |
 | **Tejido** | Reglas HSV por píxel + prototipo Lab más cercano | Porcentajes enteros que suman 100. |
 | **Profundidad / volumen** | **No se miden** desde una foto | Siguen manuales (Kundin). |
+
+### Convención de largo/ancho: ejes X/Y (regla), no Feret
+
+El expediente lleva largo y ancho en **convención de regla** — los ejes **X/Y**
+de la imagen rectificada (el marco métrico de la tarjeta) — porque así fueron
+concebidas y validadas la fórmula de Kundin (volumen) y el estimado de elipse
+`L × A × 0,785`. **María validó la constante 0,785 contra medidas de regla**, no
+contra el eje de Feret.
+
+Antes el motor reportaba **largo = Feret máximo** (mayor distancia entre dos
+puntos, en cualquier dirección) y **ancho = su perpendicular**, y alimentaba con
+esos valores `ellipseArea` → `area_cm2` (que alimenta el modelo pronóstico
+`logarea`) y el volumen de Kundin. Para una herida oblicua al eje del cuerpo el
+Feret sobreestima ambos ejes. Medido con una figura de 40×30 mm (área real
+12,00 cm²):
+
+| | Largo × Ancho | Estimado elipse |
+|---|---|---|
+| Convención regla (X/Y) | 4,0 × 3,0 | **9,4 cm²** |
+| Feret (antes) | 5,0 × 4,8 | 18,8 cm² |
+
+Es decir, un centro premium habría tenido pronósticos corridos ~2× frente a uno
+básico. Hoy: **largo = extensión en Y, ancho = extensión en X**; el Feret y su
+ancho perpendicular se conservan en `vision_meta` (`feret_length_cm` /
+`feret_width_cm`) como dato de inspección, nunca como la medida oficial. El área
+por planimetría (`area_planimetric_cm2`) **no cambia**: sigue siendo la medida
+real, en su columna aparte, a la espera de validación clínica.
+
+**Protocolo de captura:** coloca la tarjeta **alineada con el eje cabeza-pies del
+paciente**, para que el X/Y de la foto corresponda al del cuerpo (largo =
+cabeza-pies, ancho = lateral). La pista en pantalla lo recuerda.
 
 ## Normalización de color: por qué la tarjeta también es referencia de color
 

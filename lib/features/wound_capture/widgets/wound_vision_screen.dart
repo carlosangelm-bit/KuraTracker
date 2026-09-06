@@ -529,7 +529,8 @@ class _WoundVisionScreenState extends State<WoundVisionScreen> {
             Text(
               'Para medir en centímetros la foto debe incluir la tarjeta de calibración '
               'WoundCalibrate (plana, completa y sin reflejos) o el disco de referencia verde, '
-              'junto a la herida y en el mismo plano.',
+              'junto a la herida y en el mismo plano. Coloca la tarjeta ALINEADA con el eje '
+              'cabeza-pies del paciente: así el largo se mide en ese eje y el ancho a lo ancho.',
               textAlign: TextAlign.center,
               style: TextStyle(fontSize: 12, color: KuraColors.darkText.withOpacity(0.6)),
             ),

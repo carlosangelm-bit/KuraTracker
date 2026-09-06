@@ -103,11 +103,18 @@ class TissueComposition {
 
 /// Medidas geométricas en unidades clínicas.
 class WoundMeasurementResult {
-  final double areaCm2; // por conteo de píxeles (planimetría)
-  final double lengthCm; // diámetro de Feret máximo
-  final double widthCm; // extensión perpendicular al largo
+  final double areaCm2; // por conteo de píxeles (planimetría) — NO cambia
+  // OFICIAL (convención de regla, ejes X/Y de la rectificada = marco de la
+  // tarjeta, alineada al eje cabeza-pies): largo = extensión en Y, ancho = en X.
+  // Alimentan ellipseArea/Kundin y area_cm2 (ver docs/engine/motor_vision.md).
+  final double lengthCm; // extensión en el eje Y (cabeza-pies)
+  final double widthCm; // extensión en el eje X (lateral)
   final double perimeterCm;
-  final double ellipseEstimateCm2; // L × A × 0.785, para comparar con el estimado manual
+  final double ellipseEstimateCm2; // L × A × 0.785 (0.785 validado vs regla)
+  // Feret máximo y su ancho perpendicular: dato ADICIONAL (vision_meta), nunca
+  // la medida oficial. Sirve para inspección/QA, no para el expediente.
+  final double feretLengthCm; // diámetro de Feret máximo (cualquier dirección)
+  final double feretWidthCm; // extensión perpendicular al eje de Feret
   final Pt lengthA; // extremos del eje de largo (px rectificados)
   final Pt lengthB;
   final Pt widthA; // extremos del ancho (px rectificados)
@@ -119,6 +126,8 @@ class WoundMeasurementResult {
     required this.widthCm,
     required this.perimeterCm,
     required this.ellipseEstimateCm2,
+    required this.feretLengthCm,
+    required this.feretWidthCm,
     required this.lengthA,
     required this.lengthB,
     required this.widthA,
@@ -131,6 +140,9 @@ class WoundMeasurementResult {
         'width_cm': widthCm,
         'perimeter_cm': perimeterCm,
         'ellipse_estimate_cm2': ellipseEstimateCm2,
+        // Adicional, no oficial: Feret y su ancho perpendicular.
+        'feret_length_cm': feretLengthCm,
+        'feret_width_cm': feretWidthCm,
       };
 }
 
