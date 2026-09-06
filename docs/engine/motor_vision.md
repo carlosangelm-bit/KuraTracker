@@ -204,6 +204,41 @@ algoritmo (mismo pipeline validado antes en Python):
    cruda: si no, se calibran umbrales contra la luz de ese día.
 4. Disco de respaldo: fijar el insumo (diámetro y color) y ajustar `fallback_disc`.
 
+## Trazo envolvente: el dedo rodea, el motor afina
+
+Pedirle al clínico que siga el borde exacto con el dedo es pedir una precisión
+que el dedo no tiene: tapa lo que traza, y en la práctica el trazo acaba por
+fuera. Medido, tomando el trazo como borde exacto:
+
+| | Error de área | Diferencia entre dos trazados |
+|---|---|---|
+| Dedo con zoom | −2,6 % | ±2,1 % |
+| Dedo sin zoom | −3,4 % | ±4,1 % |
+| Trazando 1 mm por fuera (lo normal) | **+11 %** | — |
+
+Así que el trazo **deja de ser la medida y pasa a ser la región de búsqueda**
+(`analyzeEnclosingTrace` + `enclosing_trace_refiner.dart`). El gesto impreciso
+regala, además, lo que al motor más le costaba construir — un modelo de piel
+sana fiable:
+
+- fuera del lazo → piel, por construcción;
+- la banda inmediatamente por fuera → **muestra de piel sana garantizada**;
+- dentro del lazo → candidato, se decide píxel a píxel.
+
+| Margen del lazo | Área del trazo crudo | Área refinada | Dispersión entre trazos |
+|---|---|---|---|
+| 3 mm | +38 % | −0,2 % | ±0,0 % |
+| 6 mm | +89 % | −0,1 % | ±0,0 % |
+| 12 mm | +210 % | −0,2 % | ±0,1 % |
+
+El único fallo real es que el trazo se meta **dentro** de la lesión: esa parte se
+pierde. Lo detecta la compuerta `enclosing_trace` — en la validación, **todos**
+los casos sin aviso quedaron en −0,1 % y **todos** los errores grandes (hasta
+−70 %) cayeron en el grupo avisado.
+
+Nota: el resultado cuenta como medición **automática** (`vision_card`), no como
+trazo manual, porque el contorno lo determinó el motor y no el dedo.
+
 ## Disco de respaldo: hasta dónde llega
 
 Medido con cámara pinhole (25 cm, focal típica de teléfono), comparando disco

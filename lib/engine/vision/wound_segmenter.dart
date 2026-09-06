@@ -183,9 +183,9 @@ class ColorRegionSegmenter implements WoundSegmenter {
     final dw = Float64List(ww * wh);
     final ds = Float64List(ww * wh);
     for (var it = 0; it < p.iterations; it++) {
-      final regionPts = _collect(lab, region);
+      final regionPts = collectLab(lab, region);
       final k = math.min(p.subClusters, math.max(1, regionPts.length ~/ 20));
-      final protos = <Float64List>[...seedProtos, ..._kmeans(regionPts, k), ...tissueProtos];
+      final protos = <Float64List>[...seedProtos, ...kmeans(regionPts, k), ...tissueProtos];
       // Fondo: 1ª iteración = banda exterior del ROI; después, todo lo que queda
       // fuera de la región dilatada (un anillo de ringWidthPx la separa).
       BitMask bgMask = it == 0 ? borderBand.and(allowW).andNot(region) : region.dilate(p.ringWidthPx).not().and(allowW);
@@ -214,7 +214,7 @@ class ColorRegionSegmenter implements WoundSegmenter {
         if (keptBg >= math.max(10, 0.15 * bgMask.count)) bgMask = filtered;
       }
       if (bgMask.count < 10) bgMask = region.not().and(allowW);
-      final bgProtos = _kmeans(_collect(lab, bgMask), 2);
+      final bgProtos = kmeans(collectLab(lab, bgMask), 2);
       if (bgProtos.isEmpty) break;
       for (var i = 0; i < ww * wh; i++) {
         final kk = i * 3;
@@ -263,7 +263,7 @@ class ColorRegionSegmenter implements WoundSegmenter {
   }
 
   /// Reúne los valores Lab de los píxeles activos de [mask] (plano).
-  static Float64List _collect(Float64List lab, BitMask mask) {
+  static Float64List collectLab(Float64List lab, BitMask mask) {
     final n = mask.count;
     final out = Float64List(n * 3);
     var j = 0;
@@ -277,7 +277,7 @@ class ColorRegionSegmenter implements WoundSegmenter {
   }
 
   /// k-means sencillo sobre puntos Lab planos. Inicializa por cuantiles de L*.
-  static List<Float64List> _kmeans(Float64List pts, int k, {int iters = 8}) {
+  static List<Float64List> kmeans(Float64List pts, int k, {int iters = 8}) {
     final n = pts.length ~/ 3;
     if (n == 0) return const [];
     if (k <= 1 || n < k) {

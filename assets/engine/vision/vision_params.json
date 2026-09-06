@@ -128,5 +128,12 @@
     "fill_min": 0.8,
     "aspect_min": 0.8,
     "_note": "Disco adhesivo VERDE saturado de diametro conocido (19 mm por defecto; ajustar al insumo real). Solo da escala, NO corrige perspectiva: la foto debe ser cenital. Verde porque no aparece en piel ni en tejido de herida."
+  },
+  "enclosing_trace": {
+    "skin_band_mm": 6.0,
+    "min_skin_delta_e": 18.0,
+    "seed_percentile": 70.0,
+    "touch_frac": 0.02,
+    "_note": "Trazo ENVOLVENTE: el clinico rodea la herida POR FUERA y el motor busca el borde real dentro del lazo. El trazo NO es la medida, es la region de busqueda. skin_band_mm = ancho de la banda por fuera del lazo que se toma como PIEL SANA garantizada (el clinico afirma que la herida esta dentro). seed_percentile/min_skin_delta_e = como se elige la semilla de herida dentro del lazo (lo que menos se parece a esa piel). touch_frac = fraccion de la herida que puede tocar el trazo antes de avisar que pudo quedar lesion FUERA del lazo. Medido en sintetico: el area del trazo crudo sobreestima +38% a +210% segun el margen; refinada queda en -0.1% con dispersion +-0.0% entre trazos distintos. Todos los errores grandes (hasta -70%, trazo metido DENTRO de la herida) quedaron avisados por touchesTrace."
   }
 }

@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:image/image.dart' as img;
 
+import 'enclosing_trace_refiner.dart';
 import 'rasters.dart';
 import 'reference_calibrator.dart';
 import 'tissue_classifier.dart';
@@ -155,6 +156,81 @@ class WoundVisionEngine {
       overlayPng: overlay,
       gates: gates,
       engineVersion: engineVersion,
+      manualTrace: false,
+    );
+  }
+
+  /// Trazo ENVOLVENTE: el clínico **rodea la herida por fuera** y el motor busca
+  /// el borde real dentro del lazo (ver [EnclosingTraceRefiner]).
+  ///
+  /// Es el modo pensado para el dedo: no exige puntería, porque el trazo deja de
+  /// ser la medida y pasa a ser la región de búsqueda. Si el refinado no
+  /// encuentra la herida dentro del lazo, devuelve null y la UI puede ofrecer
+  /// tomar el trazo tal cual ([analyzeManualTrace]).
+  WoundVisionResult? analyzeEnclosingTrace(
+    CalibrationOutcome cal, {
+    required List<Pt> polygon,
+    double? sensitivity,
+  }) {
+    final result = cal.result;
+    if (result == null || polygon.length < 3) return null;
+    final rect = cal.rectified ?? decodeRectified(result);
+    if (rect == null) return null;
+    final valid = cal.valid ?? BitMask.filled(rect.width, rect.height, true);
+
+    final ref = EnclosingTraceRefiner(params).refine(
+      rect: rect,
+      valid: valid,
+      polygon: polygon,
+      mmPerRectPx: result.mmPerPx,
+      excludedRects: result.excludedRects,
+      sensitivity: sensitivity,
+    );
+    if (ref == null) return null;
+
+    final tissue = classifier.classify(ref.work, ref.mask);
+    final measured = WoundMeasurer.measureMask(
+      ref.mask,
+      mmPerWorkPx: ref.mmPerWorkPx(result.mmPerPx),
+      toRectified: ref.toRectified,
+      contourEpsilonPx: params.contourEpsilonPx,
+    );
+    if (measured == null) return null;
+    final (contour, measurement) = measured;
+
+    final gates = [
+      ...result.gates,
+      _overexposureGate(rect, ref.mask, ref.factor, ref.offsetX, ref.offsetY),
+      if (ref.touchesTrace)
+        const QualityGate('enclosing_trace', 'Trazo envolvente', GateStatus.warn,
+            'La herida llega hasta el trazo: puede haber quedado lesión FUERA del lazo y la medida quedarse corta. '
+            'Vuelve a rodearla dejando un margen de piel sana alrededor.')
+      else
+        const QualityGate('enclosing_trace', 'Trazo envolvente', GateStatus.pass,
+            'Borde encontrado dentro del trazo, con piel sana alrededor'),
+    ];
+    final overlay = _renderOverlay(
+      width: rect.width,
+      height: rect.height,
+      contour: contour,
+      measurement: measurement,
+      tissueLabels: tissue.labels,
+      tissueMask: ref.mask,
+      factor: ref.factor,
+      offsetX: ref.offsetX,
+      offsetY: ref.offsetY,
+      roi: null,
+    );
+    return WoundVisionResult(
+      calibration: result,
+      contourPx: contour,
+      measurement: measurement,
+      tissue: tissue.composition,
+      overlayPng: overlay,
+      gates: gates,
+      engineVersion: engineVersion,
+      // El contorno lo determinó el MOTOR dentro del lazo, no el dedo: la
+      // medición es automática, no un trazo manual.
       manualTrace: false,
     );
   }

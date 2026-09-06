@@ -135,6 +135,12 @@ class VisionParams {
   final List<String> prototypeClasses;
   final double contourEpsilonPx;
 
+  // Trazo envolvente (ver enclosing_trace_refiner.dart)
+  final double enclosingSkinBandMm;
+  final double enclosingMinSkinDeltaE;
+  final double enclosingSeedPercentile;
+  final double enclosingTouchFrac;
+
   // Tejido
   final List<TissueRule> tissueRules;
   final Map<String, List<double>> tissuePrototypesLab;
@@ -178,6 +184,10 @@ class VisionParams {
     required this.bgTissueRejectDeltaE,
     required this.prototypeClasses,
     required this.contourEpsilonPx,
+    required this.enclosingSkinBandMm,
+    required this.enclosingMinSkinDeltaE,
+    required this.enclosingSeedPercentile,
+    required this.enclosingTouchFrac,
     required this.tissueRules,
     required this.tissuePrototypesLab,
     required this.discDiameterMm,
@@ -196,6 +206,7 @@ class VisionParams {
     final q = (j['quality'] as Map).cast<String, dynamic>();
     final s = (j['segmentation'] as Map).cast<String, dynamic>();
     final t = (j['tissue'] as Map).cast<String, dynamic>();
+    final en = ((j['enclosing_trace'] as Map?) ?? const {}).cast<String, dynamic>();
     final d = (j['fallback_disc'] as Map).cast<String, dynamic>();
     final protos = (t['prototypes_lab'] as Map).cast<String, dynamic>();
     return VisionParams(
@@ -232,6 +243,10 @@ class VisionParams {
       bgTissueRejectDeltaE: (s['bg_tissue_reject_delta_e'] as num?)?.toDouble() ?? 0,
       prototypeClasses: (s['prototype_classes'] as List).cast<String>(),
       contourEpsilonPx: (s['contour_epsilon_px'] as num).toDouble(),
+      enclosingSkinBandMm: (en['skin_band_mm'] as num?)?.toDouble() ?? 6.0,
+      enclosingMinSkinDeltaE: (en['min_skin_delta_e'] as num?)?.toDouble() ?? 18.0,
+      enclosingSeedPercentile: (en['seed_percentile'] as num?)?.toDouble() ?? 70.0,
+      enclosingTouchFrac: (en['touch_frac'] as num?)?.toDouble() ?? 0.02,
       tissueRules: [
         for (final r in (t['rules'] as List)) TissueRule.fromJson((r as Map).cast<String, dynamic>()),
       ],
