@@ -40,13 +40,21 @@ alter type public.user_role add value if not exists 'master';
 -- -----------------------------------------------------------------------------
 -- 1. Helper RLS: is_master() (mismo patron que is_admin(), 0002)
 -- -----------------------------------------------------------------------------
+-- OJO (corregido): la comparacion va por TEXTO, no por el literal de enum.
+-- `alter type ... add value` de arriba y este cuerpo viven en la MISMA
+-- transaccion cuando la migracion se aplica con `supabase db push`, y Postgres
+-- rechaza usar el valor recien agregado como literal ahi mismo
+-- (55P04 "unsafe use of new value ... of enum type"). En produccion no se noto
+-- porque 0001-0040 se aplicaron a mano en el SQL Editor, que hace autocommit
+-- por sentencia; solo revienta al levantar una base DESDE CERO. Mismo patron
+-- que ya usa 0045 para 'enfermeria' (current_user_role()::text = '...').
 create or replace function public.is_master()
 returns boolean
 language sql stable security definer
 set search_path = public, pg_temp
 as $$
   select exists (
-    select 1 from public.profiles where id = auth.uid() and role = 'master'::public.user_role
+    select 1 from public.profiles where id = auth.uid() and role::text = 'master'
   );
 $$;
 
