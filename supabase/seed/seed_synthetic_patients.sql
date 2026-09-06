@@ -11,8 +11,9 @@
 -- folios son ficticios.
 --
 -- REQUISITOS PREVIOS (en este orden):
---   1) Haber aplicado 0001_core_schema.sql, 0002_triggers_and_functions.sql,
---      0003_row_level_security.sql y 0004_storage_buckets.sql.
+--   1) Haber aplicado TODAS las migraciones de supabase/migrations/ (desde
+--      0011 sites/staff/patients exigen organization_id NOT NULL; este seed
+--      lo resuelve solo — ver "ORGANIZACION DESTINO" abajo).
 --   2) Crear en Supabase Auth (Authentication > Users) AL MENOS un usuario
 --      admin real (con el que haras login), por ejemplo:
 --        email: admin@curamas.mx
@@ -54,13 +55,43 @@
 -- =============================================================================
 
 -- -----------------------------------------------------------------------------
+-- 00. ORGANIZACION DESTINO (multi-centro, desde la migracion 0011)
+-- -----------------------------------------------------------------------------
+-- sites / staff / patients llevan organization_id NOT NULL. Este seed resuelve
+-- la organizacion destino UNA vez, en la tabla temporal seed_ctx, y todos los
+-- INSERT la leen con (select org_id from seed_ctx):
+--   * Por defecto: la organizacion mas antigua (Kura+, la que crea 0011) —
+--     mismo criterio que handle_new_auth_user().
+--   * Para dirigirlo a OTRO centro (p. ej. el sandbox), fija antes en la misma
+--     sesion:  set kt.seed_org_id = '<uuid de la organizacion>';
+--     (seed_sandbox.sql lo hace por ti.)
+create temp table if not exists seed_ctx on commit preserve rows as
+select coalesce(
+  nullif(current_setting('kt.seed_org_id', true), '')::uuid,
+  (select id from public.organizations order by created_at asc limit 1)
+) as org_id;
+
+do $$
+begin
+  if (select org_id from seed_ctx) is null then
+    raise exception 'seed_synthetic_patients: no hay ninguna organizacion; aplica las migraciones primero.';
+  end if;
+end $$;
+
+-- -----------------------------------------------------------------------------
 -- 0. LIMPIEZA DE CORRIDAS PREVIAS DE ESTE SEED (idempotencia)
 -- -----------------------------------------------------------------------------
 -- Se identifican por el patron de folio 'SEED-...' y se borran en cascada
 -- (las FK on delete cascade se encargan de wounds/consultations/etc. de
 -- estos pacientes; los folios de personal/sitio de seed tambien se limpian).
 
+-- Las consultas FINALIZADAS son inmutables por trigger (0097) y el borrado en
+-- cascada del paciente las toca. Como esto es limpieza de datos SINTETICOS de
+-- una corrida previa del mismo seed, se apaga el candado solo durante el
+-- DELETE y se vuelve a encender de inmediato (patron indicado en la 0097).
+alter table public.consultations disable trigger trg_prevent_finalized_consultation_change;
 delete from public.patients where folio like 'SEED-%';
+alter table public.consultations enable trigger trg_prevent_finalized_consultation_change;
 delete from public.staff where folio = 'SEED-K0001';
 delete from public.sites where name = 'Kura+ Piloto (sede semilla)';
 
@@ -72,19 +103,20 @@ delete from public.sites where name = 'Kura+ Piloto (sede semilla)';
 -- los valores '00000000-0000-4000-a000-0000000000s1' / '...s2' por los ids
 -- de tu propio personal en la tabla staff_patient_assignments.
 
-insert into public.sites (id, name, kind, address, is_active)
+insert into public.sites (id, name, kind, address, is_active, organization_id)
 values (
   '00000000-0000-4000-a000-000000000001',
   'Kura+ Piloto (sede semilla)',
   'clinica',
   'Sede de pruebas - datos sinteticos',
-  true
+  true,
+  (select org_id from seed_ctx)
 );
 
 -- staff sin profile_id (no vinculado a ningun usuario de auth.users): sirve
 -- solo para poder asignar pacientes de prueba sin depender de que un
 -- clinico real ya se haya registrado. Un admin puede reasignar despues.
-insert into public.staff (id, profile_id, folio, full_name, role_title, primary_site_id, is_active)
+insert into public.staff (id, profile_id, folio, full_name, role_title, primary_site_id, is_active, organization_id)
 values (
   '00000000-0000-4000-a000-000000000002',
   null,
@@ -92,7 +124,8 @@ values (
   'Kurador de pruebas (semilla)',
   'Kurador',
   '00000000-0000-4000-a000-000000000001',
-  true
+  true,
+  (select org_id from seed_ctx)
 );
 
 -- -----------------------------------------------------------------------------
@@ -105,7 +138,7 @@ values (
 insert into public.patients (
   id, folio, full_name, birth_date, sex, primary_site_id, mobility,
   has_identified_caregiver, caregiver_name, caregiver_phone, fragile_patient,
-  background_notes, is_active
+  background_notes, is_active, organization_id
 ) values (
   '10000000-0000-4000-a000-000000000001',
   'SEED-PA2026-0001',
@@ -121,7 +154,8 @@ insert into public.patients (
   'PACIENTE SINTETICO (piloto). Diabetes mellitus tipo 2 de 12 anos de '
   'evolucion, control glucemico aceptable. Herida de pie diabetico de '
   'inicio reciente, sin signos de isquemia.',
-  true
+  true,
+  (select org_id from seed_ctx)
 );
 
 insert into public.staff_patient_assignments (id, staff_id, patient_id)
@@ -321,7 +355,7 @@ insert into public.sheehan_checkpoints (
 insert into public.patients (
   id, folio, full_name, birth_date, sex, primary_site_id, mobility,
   has_identified_caregiver, caregiver_name, caregiver_phone, fragile_patient,
-  background_notes, is_active
+  background_notes, is_active, organization_id
 ) values (
   '10000000-0000-4000-a000-000000000002',
   'SEED-PA2026-0002',
@@ -336,7 +370,8 @@ insert into public.patients (
   false,
   'PACIENTE SINTETICO (piloto). Sin antecedentes relevantes. Herida '
   'traumatica punzocortante en antebrazo, atendida el mismo dia del evento.',
-  true
+  true,
+  (select org_id from seed_ctx)
 );
 
 insert into public.staff_patient_assignments (id, staff_id, patient_id)
@@ -471,7 +506,7 @@ insert into public.kura_recommendations (
 insert into public.patients (
   id, folio, full_name, birth_date, sex, primary_site_id, mobility,
   has_identified_caregiver, caregiver_name, caregiver_phone, fragile_patient,
-  background_notes, is_active
+  background_notes, is_active, organization_id
 ) values (
   '10000000-0000-4000-a000-000000000003',
   'SEED-PA2026-0003',
@@ -487,7 +522,8 @@ insert into public.patients (
   'PACIENTE SINTETICO (piloto). Sin comorbilidades registradas. Herida '
   'traumatica por aplastamiento en pierna, con perfusion reducida (ITB '
   'moderado) que amerita seguimiento prolongado.',
-  true
+  true,
+  (select org_id from seed_ctx)
 );
 
 insert into public.staff_patient_assignments (id, staff_id, patient_id)
@@ -538,6 +574,7 @@ insert into public.wound_assessments (
   'serosanguinolento',
   'moderado',
   '{}',
+  'ninguno',
   'irregular',
   '{eritematosa}'
 );
@@ -675,7 +712,7 @@ insert into public.sheehan_checkpoints (
 insert into public.patients (
   id, folio, full_name, birth_date, sex, primary_site_id, mobility,
   has_identified_caregiver, caregiver_name, caregiver_phone, fragile_patient,
-  background_notes, is_active
+  background_notes, is_active, organization_id
 ) values (
   '10000000-0000-4000-a000-000000000004',
   'SEED-PA2026-0004',
@@ -691,7 +728,8 @@ insert into public.patients (
   'PACIENTE SINTETICO (piloto). Paciente fragil, encamada, con LPP sacra '
   'de evolucion subaguda. Movilidad reducida registrada como comorbilidad '
   'estructural para el motor.',
-  true
+  true,
+  (select org_id from seed_ctx)
 );
 
 insert into public.staff_patient_assignments (id, staff_id, patient_id)
@@ -749,6 +787,7 @@ insert into public.wound_assessments (
   'moderado',
   '{}',
   'leve',
+  'irregular',
   '{macerada}'
 );
 
@@ -843,7 +882,7 @@ insert into public.kura_recommendations (
 insert into public.patients (
   id, folio, full_name, birth_date, sex, primary_site_id, mobility,
   has_identified_caregiver, caregiver_name, caregiver_phone, fragile_patient,
-  background_notes, is_active
+  background_notes, is_active, organization_id
 ) values (
   '10000000-0000-4000-a000-000000000005',
   'SEED-PA2026-0005',
@@ -860,7 +899,8 @@ insert into public.patients (
   'tabaquismo activo. CASO DE SEGURIDAD: ITB/ABI < 0.5 (isquemia critica). '
   'El motor NO debe sugerir desbridamiento ni compresion graduada; debe '
   'generar alerta de seguridad e interconsulta urgente a angiologia.',
-  true
+  true,
+  (select org_id from seed_ctx)
 );
 
 insert into public.staff_patient_assignments (id, staff_id, patient_id)
@@ -1021,7 +1061,7 @@ insert into public.kura_recommendations (
 insert into public.patients (
   id, folio, full_name, birth_date, sex, primary_site_id, mobility,
   has_identified_caregiver, caregiver_name, caregiver_phone, fragile_patient,
-  background_notes, is_active
+  background_notes, is_active, organization_id
 ) values (
   '10000000-0000-4000-a000-000000000006',
   'SEED-PA2026-0006',
@@ -1037,7 +1077,8 @@ insert into public.patients (
   'PACIENTE SINTETICO (piloto). Obesidad registrada como comorbilidad. '
   'Dehiscencia de herida quirurgica post-laparotomia (WUWHS G4), con '
   'infeccion sistemica asociada.',
-  true
+  true,
+  (select org_id from seed_ctx)
 );
 
 insert into public.staff_patient_assignments (id, staff_id, patient_id)
@@ -1210,3 +1251,36 @@ insert into public.kura_recommendations (
 --     set staff_id = '<id-de-tu-staff-real>'
 --     where staff_id = '00000000-0000-4000-a000-000000000002';
 -- =============================================================================
+
+-- -----------------------------------------------------------------------------
+-- 8. CONSENTIMIENTOS (0026) — privacidad y fotografia otorgados
+-- -----------------------------------------------------------------------------
+-- Sin consentimiento de fotografia la captura de seguimiento queda bloqueada
+-- (canSave). Se otorgan a los 6 pacientes semilla para que el flujo completo
+-- sea navegable de inmediato.
+insert into public.consents (patient_id, type, granted, granted_at, signed_by)
+select p.id, t.type, true, now() - interval '1 day', 'Paciente (sintetico)'
+  from public.patients p
+  cross join (select unnest(array['privacidad','fotografia']::public.consent_type[]) as type) t
+ where p.folio like 'SEED-%'
+on conflict (patient_id, type) do nothing;
+
+-- -----------------------------------------------------------------------------
+-- 9. ASIGNACION OPCIONAL A UN STAFF REAL (kt.seed_staff_id)
+-- -----------------------------------------------------------------------------
+-- Los 6 pacientes quedan asignados al "Kurador de pruebas (semilla)" (sin
+-- cuenta). Un clinico solo ve a SUS pacientes asignados (RLS), asi que para
+-- verlos con una cuenta real fija antes, en la misma sesion:
+--   set kt.seed_staff_id = '<uuid de public.staff>';
+-- y se agrega esa asignacion a los 6 (seed_sandbox.sql lo hace con la Dra.
+-- Clinica Sandbox). Sin la variable, este bloque no hace nada.
+insert into public.staff_patient_assignments (staff_id, patient_id)
+select nullif(current_setting('kt.seed_staff_id', true), '')::uuid, p.id
+  from public.patients p
+ where p.folio like 'SEED-%'
+   and nullif(current_setting('kt.seed_staff_id', true), '') is not null
+   and exists (select 1 from public.staff s
+                where s.id = nullif(current_setting('kt.seed_staff_id', true), '')::uuid)
+on conflict do nothing;
+
+drop table if exists seed_ctx;

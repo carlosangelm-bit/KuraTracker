@@ -20,6 +20,21 @@ class AppConfig {
   static bool get isSupabaseConfigured =>
       supabaseUrl.isNotEmpty && supabaseAnonKey.isNotEmpty;
 
+  /// Etiqueta del entorno de despliegue: `production` (app.kuramas.com),
+  /// `sandbox` (entorno de pruebas con su propio proyecto Supabase, rama
+  /// `staging`) o vacío (build local / demo). La inyecta el CI con
+  /// `--dart-define=APP_ENV=...`. NO participa en [isSupabaseConfigured]: solo
+  /// decide si se muestra el banner de [isSandbox].
+  static const String appEnv = String.fromEnvironment(
+    'APP_ENV',
+    defaultValue: '',
+  );
+
+  /// true cuando este build apunta al sandbox. Enciende el banner naranja
+  /// "SANDBOX" en toda la app para que nadie confunda datos de prueba con el
+  /// expediente real. En producción y en la demo es false.
+  static bool get isSandbox => appEnv == 'sandbox';
+
   /// URL PÚBLICA de la función portera de leads de la demo (demo-lead). Es una
   /// URL, NO una credencial (el token de Bitrix vive en los secrets de Supabase,
   /// del lado del servidor). Vacía en la Fase 1 / sin configurar: el formulario

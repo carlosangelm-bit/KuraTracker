@@ -1,0 +1,142 @@
+name: Sandbox · seed de datos
+
+# Siembra (o RE-siembra desde cero) los datos sintéticos del SANDBOX:
+#   1. supabase/seed/seed_sandbox.sql        → centros de prueba, 7 cuentas,
+#                                              catálogo, hospital, cuidadores.
+#   2. supabase/seed/seed_synthetic_patients.sql → los 6 pacientes clínicos
+#                                              validados contra el motor.
+# Es idempotente: se puede correr las veces que haga falta para "resetear" los
+# datos del sandbox después de una sesión de pruebas.
+#
+# Corre ÚNICAMENTE contra el environment "staging" y se niega si la cadena de
+# conexión contiene el ref del proyecto de producción.
+#
+# SECRETS (Settings → Environments → staging):
+#   SUPABASE_PROJECT_REF    Ref del proyecto sandbox. Ya existe: es el mismo que
+#                           usa `supabase db push` en deploy.yml.
+#   SUPABASE_DB_PASSWORD    Contraseña de la BD del sandbox. SOLO la contraseña,
+#                           NO una cadena de conexión completa. Ya existe.
+#   SANDBOX_USER_PASSWORD   Contraseña de las 7 cuentas de prueba (≥ 8 chars).
+#
+# Ya NO hace falta SUPABASE_DB_URL: el workflow arma la cadena del Session
+# pooler solo (ver el paso "Armar cadena de conexión"). Ese secreto era la pieza
+# más frágil de todo el flujo — obligaba a elegir a mano entre las tres cadenas
+# que ofrece Supabase (la de Direct connection resuelve por IPv6 y los runners
+# de GitHub son IPv4, así que falla con "Network is unreachable") y a
+# percent-encodear la contraseña. Si lo tienes guardado, ya puedes borrarlo.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Escribe SANDBOX para confirmar que quieres re-sembrar el entorno de pruebas'
+        required: true
+        type: string
+
+concurrency:
+  group: sandbox-seed
+  cancel-in-progress: false
+
+env:
+  PROD_PROJECT_REF: mhnhgnzajdjhllypdutr
+  # Host del Session pooler del sandbox. Es IPv4 (los runners de GitHub no
+  # tienen IPv6). Depende de la REGIÓN del proyecto: si algún día se mueve el
+  # sandbox de us-west-2, este valor cambia — sale de Supabase → Connect →
+  # Direct/Connection string → Session pooler → Connection parameters → host.
+  POOLER_HOST: aws-0-us-west-2.pooler.supabase.com
+
+jobs:
+  seed:
+    runs-on: ubuntu-latest
+    environment: staging
+    env:
+      SANDBOX_USER_PASSWORD: ${{ secrets.SANDBOX_USER_PASSWORD }}
+    steps:
+      - name: Confirmación
+        run: |
+          [ "${{ inputs.confirm }}" = "SANDBOX" ] || { echo "::error::Escribe SANDBOX en el campo de confirmación."; exit 1; }
+
+      - uses: actions/checkout@v4
+
+      # Arma la cadena del Session pooler a partir de PROJECT_REF + DB_PASSWORD.
+      # El host del pooler es determinista y el percent-encoding lo hace python,
+      # asi que no hay forma de "copiar la cadena equivocada".
+      - name: Armar cadena de conexión
+        env:
+          KT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+          KT_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: |
+          test -n "$KT_REF"                || { echo "::error::Falta SUPABASE_PROJECT_REF en el environment staging"; exit 1; }
+          test -n "$KT_DB_PASSWORD"        || { echo "::error::Falta SUPABASE_DB_PASSWORD en el environment staging"; exit 1; }
+          test -n "$SANDBOX_USER_PASSWORD" || { echo "::error::Falta SANDBOX_USER_PASSWORD en el environment staging"; exit 1; }
+          [ "${#SANDBOX_USER_PASSWORD}" -ge 8 ] || { echo "::error::SANDBOX_USER_PASSWORD debe tener al menos 8 caracteres"; exit 1; }
+          # Error clasico: pegar la cadena de conexion entera en el secreto de la
+          # contraseña. Romperia tambien `supabase db push` en deploy.yml, asi
+          # que conviene cacharlo aqui y decirlo con todas sus letras.
+          case "$KT_DB_PASSWORD" in
+            *://*|postgresql:*|postgres:*)
+              echo "::error::SUPABASE_DB_PASSWORD contiene una cadena de conexión, no una contraseña. Debe ser SOLO la contraseña de la base (la misma que usa supabase db push)."; exit 1;;
+          esac
+          [ "$KT_REF" != "$PROD_PROJECT_REF" ] || { echo "::error::SUPABASE_PROJECT_REF apunta al proyecto de PRODUCCIÓN. Abortado."; exit 1; }
+          enc=$(python3 -c 'import os,urllib.parse; print(urllib.parse.quote(os.environ["KT_DB_PASSWORD"], safe=""))')
+          url="postgresql://postgres.${KT_REF}:${enc}@${POOLER_HOST}:5432/postgres"
+          echo "::add-mask::$url"
+          echo "SUPABASE_DB_URL=$url" >> "$GITHUB_ENV"
+          echo "OK · cadena armada contra $POOLER_HOST"
+
+      - name: Instalar psql
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client >/dev/null
+
+      # Separa "no conecta" de "el SQL falló". Sin esto, un error de conexion
+      # (contraseña sin percent-encodear, cadena de Direct connection en vez de
+      # Session pooler, proyecto pausado) se veia igual que un error de SQL.
+      - name: Probar conexión
+        run: |
+          if ! out=$(psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -At \
+                       -c "select 'conexion ok - db=' || current_database() || ' - user=' || current_user" 2>&1); then
+            echo "::group::Salida de psql"
+            echo "$out"
+            echo "::endgroup::"
+            echo "::error::No se pudo conectar con SUPABASE_DB_URL. Revisa: (a) que sea la cadena del *Session pooler* y no la de Direct connection (esa es solo IPv6 y los runners son IPv4), (b) que [YOUR-PASSWORD] este sustituido, y (c) que los caracteres especiales de la contraseña esten percent-encodeados."
+            exit 1
+          fi
+          echo "$out"
+
+      # Los tres archivos en UNA sesión: el preámbulo fija kt.env y la
+      # contraseña como GUC de sesión (la contraseña entra como variable de
+      # psql, :'pwd', así no se escribe en ningún archivo ni sale en el log);
+      # seed_sandbox.sql deja kt.seed_org_id / kt.seed_staff_id para que los 6
+      # pacientes caigan en la Clínica Sandbox asignados a la Dra. Clínica Sandbox.
+      - name: Sembrar
+        run: |
+          set -o pipefail
+          printf "%s\n" \
+            "select set_config('kt.env', 'sandbox', false);" \
+            "select set_config('kt.sandbox_password', :'pwd', false);" > /tmp/preambulo.sql
+          # OJO: se imprime la COLA COMPLETA del log, no un grep. Un grep por
+          # 'ERROR|LINE|DETAIL|HINT' deja el fallo MUDO cuando psql muere por algo
+          # que no es un error de SQL (conexion, permisos, timeout). GitHub
+          # enmascara los secretos en el log, asi que volcar la salida es seguro.
+          if ! psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -q -v pwd="$SANDBOX_USER_PASSWORD" \
+                 -f /tmp/preambulo.sql \
+                 -f supabase/seed/seed_sandbox.sql \
+                 -f supabase/seed/seed_synthetic_patients.sql > /tmp/seed.log 2>&1; then
+            echo "::group::Salida completa de psql"
+            tail -n 80 /tmp/seed.log
+            echo "::endgroup::"
+            echo "::error::El seed falló - abre el grupo 'Salida completa de psql' de arriba."
+            exit 1
+          fi
+          echo "Seed aplicado sin errores."
+
+      - name: Verificar
+        run: |
+          psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -At -c "
+            select 'centros_test=' || count(*) from public.organizations where is_test;
+            select 'cuentas=' || count(*) from auth.users where email like '%@sandbox.kuratracker.mx' or email like '%@cuidador.kuramas.com';
+            select 'pacientes_sandbox=' || count(*) from public.patients p join public.organizations o on o.id = p.organization_id where o.is_test;
+          " | tee /tmp/verify.txt
+          grep -q 'centros_test=3' /tmp/verify.txt || { echo '::error::Se esperaban 3 centros de prueba'; exit 1; }
+          grep -q 'cuentas=7' /tmp/verify.txt || { echo '::error::Se esperaban 7 cuentas'; exit 1; }
+          grep -q 'pacientes_sandbox=10' /tmp/verify.txt || { echo '::error::Se esperaban 10 pacientes sintéticos'; exit 1; }
+          echo "Sandbox sembrado. Cuentas: ver cabecera de supabase/seed/seed_sandbox.sql"
