@@ -12,12 +12,18 @@ name: Sandbox · seed de datos
 # conexión contiene el ref del proyecto de producción.
 #
 # SECRETS (Settings → Environments → staging):
-#   SUPABASE_DB_URL         Cadena de conexión "Session pooler" del proyecto
-#                           sandbox (Project Settings → Database → Connection
-#                           string → Session pooler; IPv4). Incluye la
-#                           contraseña de la BD. Formato:
-#                           postgresql://postgres.<ref>:<pwd>@aws-0-<region>.pooler.supabase.com:5432/postgres
+#   SUPABASE_PROJECT_REF    Ref del proyecto sandbox. Ya existe: es el mismo que
+#                           usa `supabase db push` en deploy.yml.
+#   SUPABASE_DB_PASSWORD    Contraseña de la BD del sandbox. SOLO la contraseña,
+#                           NO una cadena de conexión completa. Ya existe.
 #   SANDBOX_USER_PASSWORD   Contraseña de las 7 cuentas de prueba (≥ 8 chars).
+#
+# Ya NO hace falta SUPABASE_DB_URL: el workflow arma la cadena del Session
+# pooler solo (ver el paso "Armar cadena de conexión"). Ese secreto era la pieza
+# más frágil de todo el flujo — obligaba a elegir a mano entre las tres cadenas
+# que ofrece Supabase (la de Direct connection resuelve por IPv6 y los runners
+# de GitHub son IPv4, así que falla con "Network is unreachable") y a
+# percent-encodear la contraseña. Si lo tienes guardado, ya puedes borrarlo.
 
 on:
   workflow_dispatch:
@@ -33,13 +39,17 @@ concurrency:
 
 env:
   PROD_PROJECT_REF: mhnhgnzajdjhllypdutr
+  # Host del Session pooler del sandbox. Es IPv4 (los runners de GitHub no
+  # tienen IPv6). Depende de la REGIÓN del proyecto: si algún día se mueve el
+  # sandbox de us-west-2, este valor cambia — sale de Supabase → Connect →
+  # Direct/Connection string → Session pooler → Connection parameters → host.
+  POOLER_HOST: aws-0-us-west-2.pooler.supabase.com
 
 jobs:
   seed:
     runs-on: ubuntu-latest
     environment: staging
     env:
-      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
       SANDBOX_USER_PASSWORD: ${{ secrets.SANDBOX_USER_PASSWORD }}
     steps:
       - name: Confirmación
@@ -48,15 +58,31 @@ jobs:
 
       - uses: actions/checkout@v4
 
-      - name: Verificar secrets y guardia anti-producción
+      # Arma la cadena del Session pooler a partir de PROJECT_REF + DB_PASSWORD.
+      # El host del pooler es determinista y el percent-encoding lo hace python,
+      # asi que no hay forma de "copiar la cadena equivocada".
+      - name: Armar cadena de conexión
+        env:
+          KT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+          KT_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
         run: |
-          test -n "$SUPABASE_DB_URL"        || { echo "::error::Falta SUPABASE_DB_URL en el environment staging"; exit 1; }
-          test -n "$SANDBOX_USER_PASSWORD"  || { echo "::error::Falta SANDBOX_USER_PASSWORD en el environment staging"; exit 1; }
+          test -n "$KT_REF"                || { echo "::error::Falta SUPABASE_PROJECT_REF en el environment staging"; exit 1; }
+          test -n "$KT_DB_PASSWORD"        || { echo "::error::Falta SUPABASE_DB_PASSWORD en el environment staging"; exit 1; }
+          test -n "$SANDBOX_USER_PASSWORD" || { echo "::error::Falta SANDBOX_USER_PASSWORD en el environment staging"; exit 1; }
           [ "${#SANDBOX_USER_PASSWORD}" -ge 8 ] || { echo "::error::SANDBOX_USER_PASSWORD debe tener al menos 8 caracteres"; exit 1; }
-          case "$SUPABASE_DB_URL" in
-            *"$PROD_PROJECT_REF"*) echo "::error::SUPABASE_DB_URL apunta al proyecto de PRODUCCIÓN. Abortado."; exit 1;;
+          # Error clasico: pegar la cadena de conexion entera en el secreto de la
+          # contraseña. Romperia tambien `supabase db push` en deploy.yml, asi
+          # que conviene cacharlo aqui y decirlo con todas sus letras.
+          case "$KT_DB_PASSWORD" in
+            *://*|postgresql:*|postgres:*)
+              echo "::error::SUPABASE_DB_PASSWORD contiene una cadena de conexión, no una contraseña. Debe ser SOLO la contraseña de la base (la misma que usa supabase db push)."; exit 1;;
           esac
-          echo "OK"
+          [ "$KT_REF" != "$PROD_PROJECT_REF" ] || { echo "::error::SUPABASE_PROJECT_REF apunta al proyecto de PRODUCCIÓN. Abortado."; exit 1; }
+          enc=$(python3 -c 'import os,urllib.parse; print(urllib.parse.quote(os.environ["KT_DB_PASSWORD"], safe=""))')
+          url="postgresql://postgres.${KT_REF}:${enc}@${POOLER_HOST}:5432/postgres"
+          echo "::add-mask::$url"
+          echo "SUPABASE_DB_URL=$url" >> "$GITHUB_ENV"
+          echo "OK · cadena armada contra $POOLER_HOST"
 
       - name: Instalar psql
         run: sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client >/dev/null
