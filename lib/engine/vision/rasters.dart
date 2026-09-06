@@ -102,8 +102,8 @@ class RgbRaster {
   /// (0,0); fuera de rango devuelve null).
   bool sampleBilinear(double x, double y, List<double> outRgb) {
     if (x < 0 || y < 0 || x > width - 1 || y > height - 1) return false;
-    final x0 = math.min(x.floor(), width - 2).clamp(0, math.max(0, width - 2));
-    final y0 = math.min(y.floor(), height - 2).clamp(0, math.max(0, height - 2));
+    final x0 = math.min(x.floor(), width - 2).clamp(0, math.max(0, width - 2)).toInt();
+    final y0 = math.min(y.floor(), height - 2).clamp(0, math.max(0, height - 2)).toInt();
     final fx = (x - x0).clamp(0.0, 1.0), fy = (y - y0).clamp(0.0, 1.0);
     final x1 = math.min(x0 + 1, width - 1), y1 = math.min(y0 + 1, height - 1);
     final k00 = (y0 * width + x0) * 3, k10 = (y0 * width + x1) * 3;
