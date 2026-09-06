@@ -49,7 +49,7 @@
     "sensitivity_default": 0.5,
     "sensitivity_span": 0.6,
     "stage_a_delta_e": 18.0,
-    "roi_expand": 0.8,
+    "roi_expand": 1.5,
     "roi_pad_px": 12,
     "roi_band_frac": 0.08,
     "prototype_classes": [
@@ -58,7 +58,8 @@
       "necrosis"
     ],
     "contour_epsilon_px": 1.0,
-    "_note": "Etapa A: crecimiento desde cada semilla por similitud Lab (stage_a_delta_e). ROI = caja de la etapa A expandida (roi_expand) + roi_pad_px. Etapa B (iterativa): prototipos de herida = parches semilla + k-means (sub_clusters) + prototipos de tejido listados en prototype_classes; fondo = banda exterior del ROI (roi_band_frac) en la 1a iteracion y luego todo lo que queda fuera de la region dilatada ring_width_px (el anillo de separacion no cuenta ni como herida ni como fondo). Un pixel es herida si dist_herida * escala < dist_fondo, con escala = 1 + (sensibilidad-0.5)*2*sensitivity_span."
+    "bg_tissue_reject_delta_e": 25.0,
+    "_note": "Etapa A: crecimiento desde cada semilla por similitud Lab (stage_a_delta_e). ROI = caja de la etapa A expandida (roi_expand) + roi_pad_px. Etapa B (iterativa): prototipos de herida = parches semilla + k-means (sub_clusters) + prototipos de tejido listados en prototype_classes; fondo = banda exterior del ROI (roi_band_frac) en la 1a iteracion y luego todo lo que queda fuera de la region dilatada ring_width_px. Un pixel es herida si dist_herida * escala < dist_fondo, con escala = 1 + (sensibilidad-0.5)*2*sensitivity_span. bg_tissue_reject_delta_e: en la 1a iteracion se QUITAN del modelo de fondo los pixeles cuya distancia Lab a algun prototipo de tejido sea menor que este umbral. Sin esto, una herida ALARGADA (ulcera venosa, dehiscencia lineal) llega a la banda exterior del ROI, envenena el modelo de fondo y el motor pierde sus extremos: medido, hasta -30% de area y el esfacelo entero. roi_expand se subio de 0.8 a 1.5 por la misma razon. 0 desactiva el filtro."
   },
   "tissue": {
     "rules": [

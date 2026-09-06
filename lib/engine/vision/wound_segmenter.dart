@@ -189,6 +189,30 @@ class ColorRegionSegmenter implements WoundSegmenter {
       // Fondo: 1ª iteración = banda exterior del ROI; después, todo lo que queda
       // fuera de la región dilatada (un anillo de ringWidthPx la separa).
       BitMask bgMask = it == 0 ? borderBand.and(allowW).andNot(region) : region.dilate(p.ringWidthPx).not().and(allowW);
+      if (it == 0 && p.bgTissueRejectDeltaE > 0 && tissueProtos.isNotEmpty) {
+        // Una herida ALARGADA (úlcera venosa, dehiscencia lineal) llega hasta la
+        // banda exterior del ROI y envenenaría el modelo de fondo: el motor
+        // acabaría tratando su propio esfacelo como piel y perdería los extremos
+        // de la lesión (medido: hasta −30 % de área). Se quitan del fondo los
+        // píxeles que se parezcan a tejido de herida.
+        final filtered = BitMask(ww, wh);
+        var keptBg = 0;
+        for (var i = 0; i < ww * wh; i++) {
+          if (bgMask.data[i] == 0) continue;
+          var dMin = double.infinity;
+          for (final pr in tissueProtos) {
+            final d = ColorSpaces.labDistance(lab, i * 3, pr, 0);
+            if (d < dMin) dMin = d;
+          }
+          if (dMin > p.bgTissueRejectDeltaE) {
+            filtered.data[i] = 1;
+            keptBg++;
+          }
+        }
+        // Solo si queda fondo suficiente para modelarlo (si no, la banda entera
+        // era herida y conviene quedarse con el criterio geométrico).
+        if (keptBg >= math.max(10, 0.15 * bgMask.count)) bgMask = filtered;
+      }
       if (bgMask.count < 10) bgMask = region.not().and(allowW);
       final bgProtos = _kmeans(_collect(lab, bgMask), 2);
       if (bgProtos.isEmpty) break;

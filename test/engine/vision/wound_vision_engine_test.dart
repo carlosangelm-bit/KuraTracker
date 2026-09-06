@@ -200,4 +200,31 @@ void main() {
     expect((meta['contour_px'] as List).length, greaterThan(8));
     expect(meta['mm_per_px'], closeTo(0.25, 0.01));
   });
+
+  // Regresión: heridas ALARGADAS en cualquier orientación. Una úlcera venosa o
+  // una dehiscencia lineal llega hasta la banda exterior del ROI, que el motor
+  // usa como modelo de fondo en la primera iteración. Sin el filtro
+  // `bg_tissue_reject_delta_e` (y con el `roi_expand` antiguo de 0,8), el motor
+  // tomaba su propio esfacelo por piel y perdía los extremos de la lesión:
+  // medido, hasta −30 % de área y el esfacelo entero (30 % → 0 %).
+  group('heridas alargadas y verticales', () {
+    for (final angulo in [0.0, 45.0, 90.0, 135.0]) {
+      for (final ejes in [(20.0, 12.0), (35.0, 8.0)]) {
+        test('herida ${ejes.$1 * 2}×${ejes.$2 * 2} mm orientada a $angulo°', () {
+          final (metric, truth) =
+              renderScene(spec, woundA: ejes.$1, woundB: ejes.$2, woundAngleDeg: angulo);
+          final (photo, _) = perspectivePhoto(metric, truth.pxPerMm, tilt: 0.10);
+          final outcome = engine.calibratePhotoRaster(photo);
+          expect(outcome.failure, isNull, reason: outcome.failure?.message);
+          final res = engine.analyze(outcome, seeds: [seedFor(outcome.result!, truth.woundCenterMm)]);
+          expect(res, isNotNull);
+          final errArea = (res!.measurement.areaCm2 * 100 / truth.areaMm2 - 1) * 100;
+          expect(errArea.abs(), lessThan(5.0), reason: 'área ${errArea.toStringAsFixed(1)} %');
+          // Lo que se perdía primero eran los extremos, donde vive el esfacelo.
+          expect(res.tissue.esfacelo, greaterThan(20),
+              reason: 'esfacelo ${res.tissue.esfacelo} (verdad 30): el motor perdió los extremos');
+        });
+      }
+    }
+  });
 }

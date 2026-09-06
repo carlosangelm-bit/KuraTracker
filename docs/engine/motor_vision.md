@@ -187,6 +187,7 @@ algoritmo (mismo pipeline validado antes en Python):
 | Composición del lecho | exacta al 1 % | — |
 | Disco de respaldo (cenital) | área −0,6 % | < 5 % |
 | Estabilidad ante 6 condiciones de luz | área ±0,5 %, tejido ±1 punto | — |
+| Heridas alargadas en 4 orientaciones | área < 1 % | < 5 % |
 
 **Real — pendiente (bloqueante para uso clínico):**
 1. **Imprimir la tarjeta** desde `tools/wound_calibrate_proto/print/` (generada con
@@ -202,6 +203,33 @@ algoritmo (mismo pipeline validado antes en Python):
    sintéticos. **Etiquetar sobre la imagen YA normalizada**, no sobre la foto
    cruda: si no, se calibran umbrales contra la luz de ese día.
 4. Disco de respaldo: fijar el insumo (diámetro y color) y ajustar `fallback_disc`.
+
+## Disco de respaldo: hasta dónde llega
+
+Medido con cámara pinhole (25 cm, focal típica de teléfono), comparando disco
+contra tarjeta en las mismas escenas:
+
+| Situación | Disco | Tarjeta |
+|---|---|---|
+| Área, referencia y herida en el mismo plano, cámara 0–25° | −0,5 a −1,4 % | < 0,5 % |
+| Largo/ancho a 30° de inclinación | +1,6 / −2,6 % | < 0,5 % |
+| Inclinación máxima utilizable | ~30° (deja de detectarse a 40°) | > 50° |
+| Composición del lecho | **no fiable** (sin corrección de color) | ±1 punto |
+| Desnivel referencia↔herida | **+8,5 % de área por cada cm** | igual: **+8,5 % por cm** |
+
+Dos conclusiones que no eran obvias:
+
+1. **Para área, el disco es mejor de lo esperado**, incluso inclinado: el escorzo
+   comprime al disco y a la herida por igual y el efecto se cancela en el área
+   (no en el largo ni en el ancho, que sí se degradan). La compuerta `disc_tilt`
+   (0,90 ≈ 26°) es conservadora para área y adecuada para largo/ancho.
+2. **El error dominante no distingue disco de tarjeta**: es el **desnivel** entre
+   la referencia y la herida. Un centímetro de diferencia —trivial en una
+   pantorrilla, un talón o un sacro— cuesta ~8,5 % de área, más que cualquier
+   otro factor medido. La regla de captura («pegar la referencia en la misma
+   superficie, junto a la herida, no en una zona más alta o más baja») pesa más
+   que la elección de insumo. Ninguna de las dos referencias puede detectar este
+   error: haría falta profundidad real (LiDAR o dos fotos).
 
 ## Compuertas de calidad (`vision_params.json → quality`)
 

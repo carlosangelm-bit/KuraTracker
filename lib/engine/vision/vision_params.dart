@@ -131,6 +131,7 @@ class VisionParams {
   final double roiExpand;
   final int roiPadPx;
   final double roiBandFrac;
+  final double bgTissueRejectDeltaE;
   final List<String> prototypeClasses;
   final double contourEpsilonPx;
 
@@ -174,6 +175,7 @@ class VisionParams {
     required this.roiExpand,
     required this.roiPadPx,
     required this.roiBandFrac,
+    required this.bgTissueRejectDeltaE,
     required this.prototypeClasses,
     required this.contourEpsilonPx,
     required this.tissueRules,
@@ -227,6 +229,7 @@ class VisionParams {
       roiExpand: (s['roi_expand'] as num).toDouble(),
       roiPadPx: (s['roi_pad_px'] as num).toInt(),
       roiBandFrac: (s['roi_band_frac'] as num).toDouble(),
+      bgTissueRejectDeltaE: (s['bg_tissue_reject_delta_e'] as num?)?.toDouble() ?? 0,
       prototypeClasses: (s['prototype_classes'] as List).cast<String>(),
       contourEpsilonPx: (s['contour_epsilon_px'] as num).toDouble(),
       tissueRules: [
