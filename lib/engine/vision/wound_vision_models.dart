@@ -105,10 +105,11 @@ class TissueComposition {
 class WoundMeasurementResult {
   final double areaCm2; // por conteo de píxeles (planimetría) — NO cambia
   // OFICIAL (convención de regla, ejes X/Y de la rectificada = marco de la
-  // tarjeta, alineada al eje cabeza-pies): largo = extensión en Y, ancho = en X.
-  // Alimentan ellipseArea/Kundin y area_cm2 (ver docs/engine/motor_vision.md).
-  final double lengthCm; // extensión en el eje Y (cabeza-pies)
-  final double widthCm; // extensión en el eje X (lateral)
+  // tarjeta): largo = extensión en X (borde LARGO de la tarjeta ∥ cabeza-pies),
+  // ancho = extensión en Y (lateral). Alimentan ellipseArea/Kundin y area_cm2
+  // (ver docs/engine/motor_vision.md).
+  final double lengthCm; // extensión en el eje X (cabeza-pies)
+  final double widthCm; // extensión en el eje Y (lateral)
   final double perimeterCm;
   final double ellipseEstimateCm2; // L × A × 0.785 (0.785 validado vs regla)
   // Feret máximo y su ancho perpendicular: dato ADICIONAL (vision_meta), nunca

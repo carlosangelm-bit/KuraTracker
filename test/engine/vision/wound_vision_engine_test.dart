@@ -48,9 +48,10 @@ void main() {
           expect(res, isNotNull);
           final m = res!.measurement;
           expect((m.areaCm2 * 100 / truth.areaMm2 - 1).abs(), lessThan(0.03), reason: 'área ${m.areaCm2} cm²');
-          // OFICIAL (convención regla): largo = eje Y, ancho = eje X (bounding box axial).
-          expect((m.lengthCm * 10 / truth.bboxYmm - 1).abs(), lessThan(0.04), reason: 'largo (Y) ${m.lengthCm} cm');
-          expect((m.widthCm * 10 / truth.bboxXmm - 1).abs(), lessThan(0.04), reason: 'ancho (X) ${m.widthCm} cm');
+          // OFICIAL (convención regla): largo = eje X (borde largo ∥ cabeza-pies),
+          // ancho = eje Y (bounding box axial).
+          expect((m.lengthCm * 10 / truth.bboxXmm - 1).abs(), lessThan(0.04), reason: 'largo (X) ${m.lengthCm} cm');
+          expect((m.widthCm * 10 / truth.bboxYmm - 1).abs(), lessThan(0.04), reason: 'ancho (Y) ${m.widthCm} cm');
           // ADICIONAL (vision_meta): Feret máx/perp = eje mayor/menor de la elipse.
           expect((m.feretLengthCm * 10 / truth.lengthMm - 1).abs(), lessThan(0.04), reason: 'Feret largo ${m.feretLengthCm} cm');
           expect((m.feretWidthCm * 10 / truth.widthMm - 1).abs(), lessThan(0.05), reason: 'Feret ancho ${m.feretWidthCm} cm');
@@ -152,9 +153,9 @@ void main() {
       expect(res.manualTrace, isTrue);
       expect(res.measurementSource, 'vision_manual_trace');
       expect(res.measurement.areaCm2, closeTo(6.0, 0.05));
-      // OFICIAL (convención regla, ejes X/Y): largo = Y = 20 mm, ancho = X = 30 mm.
-      expect(res.measurement.lengthCm, closeTo(2.0, 0.03));
-      expect(res.measurement.widthCm, closeTo(3.0, 0.03));
+      // OFICIAL (convención regla): largo = X = 30 mm, ancho = Y = 20 mm.
+      expect(res.measurement.lengthCm, closeTo(3.0, 0.03));
+      expect(res.measurement.widthCm, closeTo(2.0, 0.03));
       // ADICIONAL: Feret = diagonal del rectángulo (√(30²+20²) = 36.06 mm).
       expect(res.measurement.feretLengthCm, closeTo(3.606, 0.03));
       expect(res.measurement.perimeterCm, closeTo(10.0, 0.05));
@@ -166,20 +167,20 @@ void main() {
       final (photo, _) = perspectivePhoto(metric, truth.pxPerMm, tilt: 0.1);
       final outcome = engine.calibratePhotoRaster(photo);
       final cal = outcome.result!;
-      // Rectángulo 40 (Y, cabeza-pies) × 30 (X, lateral) mm centrado.
+      // Rectángulo 40 (X, cabeza-pies = borde largo) × 30 (Y, lateral) mm centrado.
       final c = truth.woundCenterMm;
       final poly = [
-        seedFor(cal, Pt(c.x - 15, c.y - 20)),
-        seedFor(cal, Pt(c.x + 15, c.y - 20)),
-        seedFor(cal, Pt(c.x + 15, c.y + 20)),
-        seedFor(cal, Pt(c.x - 15, c.y + 20)),
+        seedFor(cal, Pt(c.x - 20, c.y - 15)),
+        seedFor(cal, Pt(c.x + 20, c.y - 15)),
+        seedFor(cal, Pt(c.x + 20, c.y + 15)),
+        seedFor(cal, Pt(c.x - 20, c.y + 15)),
       ];
       final m = engine.analyzeManualTrace(outcome, polygon: poly)!.measurement;
       // Área REAL (planimetría) = 40×30 = 12.00 cm² — no cambia con la convención.
       expect(m.areaCm2, closeTo(12.0, 0.1));
       // OFICIAL convención regla.
-      expect(m.lengthCm, closeTo(4.0, 0.03)); // Y
-      expect(m.widthCm, closeTo(3.0, 0.03)); // X
+      expect(m.lengthCm, closeTo(4.0, 0.03)); // X (borde largo ∥ cabeza-pies)
+      expect(m.widthCm, closeTo(3.0, 0.03)); // Y (lateral)
       // El estimado de elipse (L×A×0,785) que alimenta area_cm2/logarea/Kundin.
       expect(m.ellipseEstimateCm2, closeTo(9.42, 0.1));
       // Feret (diagonal) queda como dato adicional, no oficial.

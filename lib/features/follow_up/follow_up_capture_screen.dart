@@ -413,7 +413,7 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
     final bytes = _photoAfterCleaningBytes ?? _photoWithMeasurementBytes;
     if (bytes == null) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('Primero toma la foto de la herida con la tarjeta de calibración, alineada con el eje cabeza-pies del paciente, para poder medirla.'),
+        content: Text('Primero toma la foto de la herida con la tarjeta de calibración, con su borde LARGO paralelo al eje cabeza-pies del paciente, para poder medirla.'),
       ));
       return;
     }

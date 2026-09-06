@@ -44,8 +44,8 @@ Abre `WoundVisionScreen` (`lib/features/wound_capture/widgets/wound_vision_scree
 | Medida | Método | Nota |
 |---|---|---|
 | **Área** | Planimetría: píxeles de la máscara × (mm/px)² | Va a `area_planimetric_cm2`. **`area_cm2` no cambia**: sigue siendo L × A × 0,785 (alimenta el pronóstico, calibrado con ese estimado; ver `medicion_oficial.md`). |
-| **Largo (oficial)** | Extensión en el eje **Y** de la imagen rectificada (marco de la tarjeta) | Convención de **regla** (cabeza-pies). Redondeado a 0,1 cm al aplicar. |
-| **Ancho (oficial)** | Extensión en el eje **X** de la imagen rectificada | Convención de regla (lateral). |
+| **Largo (oficial)** | Extensión en el eje **X** de la imagen rectificada (= borde LARGO de la tarjeta) | Convención de **regla** (cabeza-pies). Redondeado a 0,1 cm al aplicar. |
+| **Ancho (oficial)** | Extensión en el eje **Y** de la imagen rectificada (borde corto) | Convención de regla (lateral). |
 | **Feret máx / ancho perp.** | Mayor distancia entre dos puntos y su perpendicular | **Dato adicional** en `vision_meta` (`feret_length_cm`/`feret_width_cm`). **Nunca** es la medida oficial. |
 | **Perímetro** | Polígono simplificado (Douglas–Peucker, ε = 1 px) | Evita la sobreestimación en escalera. |
 | **Tejido** | Reglas HSV por píxel + prototipo Lab más cercano | Porcentajes enteros que suman 100. |
@@ -72,15 +72,28 @@ Feret sobreestima ambos ejes. Medido con una figura de 40×30 mm (área real
 | Feret (antes) | 5,0 × 4,8 | 18,8 cm² |
 
 Es decir, un centro premium habría tenido pronósticos corridos ~2× frente a uno
-básico. Hoy: **largo = extensión en Y, ancho = extensión en X**; el Feret y su
+básico. Hoy: **largo = extensión en X, ancho = extensión en Y**; el Feret y su
 ancho perpendicular se conservan en `vision_meta` (`feret_length_cm` /
 `feret_width_cm`) como dato de inspección, nunca como la medida oficial. El área
 por planimetría (`area_planimetric_cm2`) **no cambia**: sigue siendo la medida
 real, en su columna aparte, a la espera de validación clínica.
 
-**Protocolo de captura:** coloca la tarjeta **alineada con el eje cabeza-pies del
-paciente**, para que el X/Y de la foto corresponda al del cuerpo (largo =
-cabeza-pies, ancho = lateral). La pista en pantalla lo recuerda.
+**Protocolo de captura (sin ambigüedad):** la tarjeta es apaisada (85,6 × 54 mm).
+Coloca su **borde LARGO paralelo al eje cabeza-pies** del paciente (el borde largo
+a lo largo del cuerpo/miembro, como se pondría una regla). La rectificación lleva
+el borde largo al eje X, así que con esa colocación **largo = cabeza-pies** y
+**ancho = lateral**. Es la posición que un clínico hace por inercia al dejar la
+tarjeta junto a la herida; la pista en pantalla lo muestra con un diagrama.
+
+```
+      cabeza ↑
+       ┌───┐
+       │   │   borde LARGO de la tarjeta
+       │ ● │   ∥ eje cabeza-pies  (● = herida al lado)
+       │   │
+       └───┘
+      pies  ↓
+```
 
 ## Normalización de color: por qué la tarjeta también es referencia de color
 

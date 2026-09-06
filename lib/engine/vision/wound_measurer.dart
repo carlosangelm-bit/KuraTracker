@@ -9,8 +9,9 @@ import 'wound_vision_models.dart';
 /// Convención de medidas (documentada en docs/engine/motor_vision.md):
 ///  - Área (planimetría): conteo de píxeles × (mm/px)². Es la medida "real",
 ///    se guarda aparte (area_planimetric_cm2) y NO cambia con esta convención.
-///  - Largo/Ancho OFICIALES: extensión en los ejes Y/X de la imagen rectificada
-///    (marco de la tarjeta, alineada al eje cabeza-pies) — convención de REGLA.
+///  - Largo/Ancho OFICIALES: extensión en los ejes X/Y de la imagen rectificada
+///    (largo = X = borde LARGO de la tarjeta ∥ cabeza-pies; ancho = Y = lateral)
+///    — convención de REGLA.
 ///    Alimentan el estimado de elipse (L × A × 0,785, validado por María contra
 ///    regla) y por tanto area_cm2/Kundin. El Feret máximo y su ancho
 ///    perpendicular se guardan como dato adicional en vision_meta, nunca oficial.
@@ -55,13 +56,15 @@ class WoundMeasurer {
     final hull = Poly.convexHull(poly);
 
     // MEDIDA OFICIAL — convención de regla en los ejes X/Y de la imagen
-    // rectificada (marco métrico de la tarjeta). Por protocolo la tarjeta se
-    // alinea con el eje cabeza-pies, así que Y = LARGO (cabeza-pies) y X = ANCHO
-    // (lateral). Esto es lo que alimenta ellipseArea/Kundin y area_cm2, cuya
-    // constante 0,785 María validó contra medidas de regla — no el Feret, que
-    // corría el estimado ~2× (ver docs/engine/motor_vision.md). El toRectified
-    // es escala+traslación (sin rotación), así que el bounding box en el espacio
-    // de `poly` conserva los ejes del marco rectificado.
+    // rectificada (marco métrico de la tarjeta). La rectificación lleva la
+    // tarjeta apaisada (85,6 × 54 mm) a orientación canónica: su BORDE LARGO es
+    // el eje X, el corto el eje Y. Por protocolo el borde largo se coloca
+    // PARALELO al eje cabeza-pies, así que X = LARGO (cabeza-pies) y Y = ANCHO
+    // (lateral). Esto alimenta ellipseArea/Kundin y area_cm2, cuya constante
+    // 0,785 María validó contra medidas de regla — no el Feret, que corría el
+    // estimado ~2× (ver docs/engine/motor_vision.md). El toRectified es
+    // escala+traslación (sin rotación), así que el bounding box en el espacio de
+    // `poly` conserva los ejes del marco rectificado.
     var xMin = double.infinity, xMax = -double.infinity;
     var yMin = double.infinity, yMax = -double.infinity;
     for (final p in poly) {
@@ -70,11 +73,11 @@ class WoundMeasurer {
       if (p.y < yMin) yMin = p.y;
       if (p.y > yMax) yMax = p.y;
     }
-    final widthMm = (xMax - xMin) * mmPerPx; // X = ancho
-    final lengthMm = (yMax - yMin) * mmPerPx; // Y = largo
+    final lengthMm = (xMax - xMin) * mmPerPx; // X = largo (borde largo ∥ cabeza-pies)
+    final widthMm = (yMax - yMin) * mmPerPx; // Y = ancho (lateral)
     final xMid = (xMin + xMax) / 2, yMid = (yMin + yMax) / 2;
-    final lengthA = toRectified(Pt(xMid, yMin)), lengthB = toRectified(Pt(xMid, yMax));
-    final widthA = toRectified(Pt(xMin, yMid)), widthB = toRectified(Pt(xMax, yMid));
+    final lengthA = toRectified(Pt(xMin, yMid)), lengthB = toRectified(Pt(xMax, yMid));
+    final widthA = toRectified(Pt(xMid, yMin)), widthB = toRectified(Pt(xMid, yMax));
 
     // DATO ADICIONAL (vision_meta), NUNCA la medida oficial: Feret máximo (mayor
     // distancia entre dos puntos, en cualquier dirección) y su ancho

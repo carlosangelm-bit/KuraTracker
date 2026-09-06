@@ -529,15 +529,69 @@ class _WoundVisionScreenState extends State<WoundVisionScreen> {
             Text(
               'Para medir en centímetros la foto debe incluir la tarjeta de calibración '
               'WoundCalibrate (plana, completa y sin reflejos) o el disco de referencia verde, '
-              'junto a la herida y en el mismo plano. Coloca la tarjeta ALINEADA con el eje '
-              'cabeza-pies del paciente: así el largo se mide en ese eje y el ancho a lo ancho.',
+              'junto a la herida y en el mismo plano. Coloca el BORDE LARGO de la tarjeta '
+              'paralelo al eje cabeza-pies (a lo largo del cuerpo, como una regla): así el largo '
+              'se mide de cabeza a pies y el ancho a lo ancho.',
               textAlign: TextAlign.center,
               style: TextStyle(fontSize: 12, color: KuraColors.darkText.withOpacity(0.6)),
             ),
+            const SizedBox(height: 12),
+            _cardOrientationDiagram(),
             const SizedBox(height: 20),
             OutlinedButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Volver')),
           ],
         ),
+      ),
+    );
+  }
+
+  /// Diagrama de colocación: el borde LARGO de la tarjeta paralelo al eje
+  /// cabeza-pies (a lo largo del cuerpo), con la herida (●) al lado. Es la
+  /// posición inercial y la que hace que el motor mida el largo de cabeza a pies.
+  Widget _cardOrientationDiagram() {
+    final cap = TextStyle(fontSize: 11, color: KuraColors.darkText.withOpacity(0.7));
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: KuraColors.chipBg,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text('cabeza', style: cap),
+          const Icon(Icons.keyboard_arrow_up, size: 16, color: KuraColors.primary),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              // Tarjeta: borde LARGO vertical (∥ cabeza-pies).
+              Container(
+                width: 30,
+                height: 64,
+                decoration: BoxDecoration(
+                  border: Border.all(color: KuraColors.primary, width: 2),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: const Center(
+                  child: RotatedBox(
+                    quarterTurns: 3,
+                    child: Text('tarjeta',
+                        style: TextStyle(fontSize: 8, color: KuraColors.primary, fontWeight: FontWeight.w700)),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              const Icon(Icons.circle, size: 12, color: KuraColors.warning), // herida
+            ],
+          ),
+          const Icon(Icons.keyboard_arrow_down, size: 16, color: KuraColors.primary),
+          Text('pies', style: cap),
+          const SizedBox(height: 4),
+          Text('Borde LARGO de la tarjeta ∥ eje cabeza-pies',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: KuraColors.darkText.withOpacity(0.8))),
+        ],
       ),
     );
   }
