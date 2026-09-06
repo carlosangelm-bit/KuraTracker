@@ -1,0 +1,92 @@
+name: Sandbox · seed de datos
+
+# Siembra (o RE-siembra desde cero) los datos sintéticos del SANDBOX:
+#   1. supabase/seed/seed_sandbox.sql        → centros de prueba, 7 cuentas,
+#                                              catálogo, hospital, cuidadores.
+#   2. supabase/seed/seed_synthetic_patients.sql → los 6 pacientes clínicos
+#                                              validados contra el motor.
+# Es idempotente: se puede correr las veces que haga falta para "resetear" los
+# datos del sandbox después de una sesión de pruebas.
+#
+# Corre ÚNICAMENTE contra el environment "staging" y se niega si la cadena de
+# conexión contiene el ref del proyecto de producción.
+#
+# SECRETS (Settings → Environments → staging):
+#   SUPABASE_DB_URL         Cadena de conexión "Session pooler" del proyecto
+#                           sandbox (Project Settings → Database → Connection
+#                           string → Session pooler; IPv4). Incluye la
+#                           contraseña de la BD. Formato:
+#                           postgresql://postgres.<ref>:<pwd>@aws-0-<region>.pooler.supabase.com:5432/postgres
+#   SANDBOX_USER_PASSWORD   Contraseña de las 7 cuentas de prueba (≥ 8 chars).
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Escribe SANDBOX para confirmar que quieres re-sembrar el entorno de pruebas'
+        required: true
+        type: string
+
+concurrency:
+  group: sandbox-seed
+  cancel-in-progress: false
+
+env:
+  PROD_PROJECT_REF: mhnhgnzajdjhllypdutr
+
+jobs:
+  seed:
+    runs-on: ubuntu-latest
+    environment: staging
+    env:
+      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+      SANDBOX_USER_PASSWORD: ${{ secrets.SANDBOX_USER_PASSWORD }}
+    steps:
+      - name: Confirmación
+        run: |
+          [ "${{ inputs.confirm }}" = "SANDBOX" ] || { echo "::error::Escribe SANDBOX en el campo de confirmación."; exit 1; }
+
+      - uses: actions/checkout@v4
+
+      - name: Verificar secrets y guardia anti-producción
+        run: |
+          test -n "$SUPABASE_DB_URL"        || { echo "::error::Falta SUPABASE_DB_URL en el environment staging"; exit 1; }
+          test -n "$SANDBOX_USER_PASSWORD"  || { echo "::error::Falta SANDBOX_USER_PASSWORD en el environment staging"; exit 1; }
+          [ "${#SANDBOX_USER_PASSWORD}" -ge 8 ] || { echo "::error::SANDBOX_USER_PASSWORD debe tener al menos 8 caracteres"; exit 1; }
+          case "$SUPABASE_DB_URL" in
+            *"$PROD_PROJECT_REF"*) echo "::error::SUPABASE_DB_URL apunta al proyecto de PRODUCCIÓN. Abortado."; exit 1;;
+          esac
+          echo "OK"
+
+      - name: Instalar psql
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client >/dev/null
+
+      # Los tres archivos en UNA sesión: el preámbulo fija kt.env y la
+      # contraseña como GUC de sesión (la contraseña entra como variable de
+      # psql, :'pwd', así no se escribe en ningún archivo ni sale en el log);
+      # seed_sandbox.sql deja kt.seed_org_id / kt.seed_staff_id para que los 6
+      # pacientes caigan en la Clínica Sandbox asignados a la Dra. Clínica Sandbox.
+      - name: Sembrar
+        run: |
+          set -o pipefail
+          printf "%s\n" \
+            "select set_config('kt.env', 'sandbox', false);" \
+            "select set_config('kt.sandbox_password', :'pwd', false);" > /tmp/preambulo.sql
+          psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -q -v pwd="$SANDBOX_USER_PASSWORD" \
+            -f /tmp/preambulo.sql \
+            -f supabase/seed/seed_sandbox.sql \
+            -f supabase/seed/seed_synthetic_patients.sql > /tmp/seed.log 2>&1 \
+            || { echo "::error::El seed falló:"; grep -E 'ERROR|LINE|DETAIL|HINT' /tmp/seed.log; exit 1; }
+          echo "Seed aplicado sin errores."
+
+      - name: Verificar
+        run: |
+          psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -At -c "
+            select 'centros_test=' || count(*) from public.organizations where is_test;
+            select 'cuentas=' || count(*) from auth.users where email like '%@sandbox.kuratracker.mx' or email like '%@cuidador.kuramas.com';
+            select 'pacientes_sandbox=' || count(*) from public.patients p join public.organizations o on o.id = p.organization_id where o.is_test;
+          " | tee /tmp/verify.txt
+          grep -q 'centros_test=3' /tmp/verify.txt || { echo '::error::Se esperaban 3 centros de prueba'; exit 1; }
+          grep -q 'cuentas=7' /tmp/verify.txt || { echo '::error::Se esperaban 7 cuentas'; exit 1; }
+          grep -q 'pacientes_sandbox=10' /tmp/verify.txt || { echo '::error::Se esperaban 10 pacientes sintéticos'; exit 1; }
+          echo "Sandbox sembrado. Cuentas: ver cabecera de supabase/seed/seed_sandbox.sql"

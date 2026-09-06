@@ -67,6 +67,13 @@ Lo que **no** viaja con el clone y hay que tener en la máquina nueva:
 - Hosting: **app.kuramas.com** (prod) y **demo.kuramas.com** (demo) en Cloudflare Pages;
   DNS en Google Cloud DNS (**no tocar DNS**). `tracker.kuramas.com` = Custom Domain de
   Supabase.
+- **Sandbox (staging)**: la rama **`staging`** corre el MISMO `deploy.yml` con el
+  environment de GitHub `staging` → proyecto Supabase propio + Cloudflare Pages
+  `kuratracker-sandbox` (`kuratracker-sandbox.pages.dev`), app con `APP_ENV=sandbox`
+  (franja naranja SANDBOX), sin demo. Datos sintéticos: workflow manual "Sandbox ·
+  seed de datos" (`seed_sandbox.sql` + `seed_synthetic_patients.sql`; 7 cuentas
+  `*@sandbox.kuratracker.mx`, 3 centros `is_test`). Flujo: feature → `staging` →
+  probar → `main`. Runbook: `SANDBOX_SETUP.md`. Nunca datos reales en el sandbox.
 
 ## Convenciones
 
