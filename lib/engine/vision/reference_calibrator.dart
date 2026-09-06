@@ -401,8 +401,10 @@ class ReferenceCalibrator {
       const QualityGate('perspective', 'Corrección de perspectiva', GateStatus.warn,
           'Sin tarjeta no se corrige la perspectiva: la medida asume foto perpendicular a la herida'),
       const QualityGate('color', 'Color y exposición', GateStatus.warn,
-          'El disco no sirve de referencia neutra: el color NO se normaliza y los porcentajes de tejido '
-          'dependen de la luz de la sala. Para composición del lecho, usa la tarjeta'),
+          'El disco no es una referencia neutra: el color NO se normaliza. La medida de ÁREA aguanta '
+          '(el motor compara la herida con la piel de la misma foto), pero bajo luz cálida el esfacelo '
+          'y la piel se confunden y los porcentajes del lecho fallan — y sin referencia neutra el motor '
+          'tampoco puede avisarte de que la luz era mala. Para composición del lecho, usa la tarjeta'),
     ];
     final result = CalibrationResult(
       mode: CalibrationMode.disc,

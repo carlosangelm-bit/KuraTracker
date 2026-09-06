@@ -249,8 +249,23 @@ contra tarjeta en las mismas escenas:
 | Área, referencia y herida en el mismo plano, cámara 0–25° | −0,5 a −1,4 % | < 0,5 % |
 | Largo/ancho a 30° de inclinación | +1,6 / −2,6 % | < 0,5 % |
 | Inclinación máxima utilizable | ~30° (deja de detectarse a 40°) | > 50° |
-| Composición del lecho | **no fiable** (sin corrección de color) | ±1 punto |
+| Composición del lecho | **no fiable** bajo luz cálida; correcta bajo luz neutra, pero **sin forma de saber cuál fue** | ±1 punto |
 | Desnivel referencia↔herida | **+8,5 % de área por cada cm** | igual: **+8,5 % por cm** |
+
+Con el **trazo envolvente**, el disco mejoró en un frente y no en el otro. El
+modelo de piel se muestrea en la misma foto, así que un cambio de **exposición**
+ya no afecta: la subexposición pasó de −29,7 % de área (y el esfacelo a 0) a
++0,2 % y el lecho correcto. Pero la **dominante de color** sigue rompiéndolo
+(−29,8 %), y por una razón física, no de algoritmo: bajo luz cálida el esfacelo
+amarillo y la piel pierden el **44 % de su separación de color**. Esa información
+se perdió al capturar; ninguna referencia local la recupera.
+
+Y la piel de alrededor **no puede sustituir a la tarjeta** como referencia de
+blanco, por un motivo que importa clínicamente: su propio color cambia con el
+fototipo (relación R/G de 1,14 en piel muy clara a 1,55 en piel muy oscura).
+Normalizar contra ella confundiría «paciente de piel oscura» con «luz cálida» y
+aplicaría la corrección al revés — un sesgo sistemático contra los fototipos
+oscuros. No se hace, a propósito.
 
 Dos conclusiones que no eran obvias:
 
