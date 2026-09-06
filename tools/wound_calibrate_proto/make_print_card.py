@@ -74,23 +74,32 @@ def render_card(spec, dpi=DPI):
     ru = spec['ruler']
     ox, oy = ru['origin_mm']
     L = ru['length_mm']
-    f_tiny = _font(False, px(1.1))
-    d.line([px(ox), px(oy), px(ox + L), px(oy)], fill=0, width=max(2, px(0.3)))
-    for i in range(int(L) + 1):
-        h = 1.8 if i % 10 == 0 else (1.2 if i % 5 == 0 else 0.7)
-        d.line([px(ox + i), px(oy), px(ox + i), px(oy - h)], fill=0, width=max(1, px(0.18)))
-    for i in range(0, int(L) + 1, 10):
-        d.text((px(ox + i) - px(0.7), px(oy - 3.5)), str(i), fill=0, font=f_tiny)
-    d.text((px(ox + L + 0.8), px(oy - 1.6)), 'mm', fill=0, font=f_tiny)
-    # Textos (dentro de la banda libre entre los tags)
-    x_text = px(17.5)
-    d.text((x_text, px(5.0)), 'KuraTracker · WoundCalibrate', fill=0, font=_font(True, px(2.4)))
-    d.text((x_text, px(8.6)), 'Tarjeta de calibración · tag36h11 #%s · círculo %.1f mm'
-           % ('-'.join(str(t['id']) for t in spec['tags']), rc['diameter_mm']), fill=0, font=_font(False, px(1.4)))
-    f_note = _font(False, px(1.15))
-    d.text((x_text, px(37.0)), 'Colocar PLANA junto a la herida, en el mismo plano.', fill=0, font=f_note)
-    d.text((x_text, px(39.0)), 'No recortar los marcadores. Imprimir al 100 %.', fill=0, font=f_note)
-    d.text((x_text, px(41.0)), 'Verificar: la escala debe medir %d mm exactos.' % int(L), fill=0, font=f_note)
+    if L > 0:
+        esc = min(1.0, min(W, H) / 54.0)          # marcas proporcionales al tamaño
+        f_tiny = _font(False, max(6, px(1.1 * esc)))
+        d.line([px(ox), px(oy), px(ox + L), px(oy)], fill=0, width=max(2, px(0.3 * esc)))
+        paso = 10 if L >= 30 else 5
+        for i in range(int(L) + 1):
+            h = (1.8 if i % paso == 0 else (1.2 if i % 5 == 0 else 0.7)) * esc
+            d.line([px(ox + i), px(oy), px(ox + i), px(oy - h)], fill=0, width=max(1, px(0.18 * esc)))
+        for i in range(0, int(L) + 1, paso):
+            d.text((px(ox + i) - px(0.7 * esc), px(oy - 3.5 * esc)), str(i), fill=0, font=f_tiny)
+    # Textos: solo si la tarjeta es lo bastante grande. En una tarjeta pequeña
+    # las instrucciones no caben y estorbarían a los marcadores — van en el
+    # instructivo, no impresas.
+    libre_mm = min(W, H) - 2 * (max(t['size_mm'] for t in spec['tags']) + 2)
+    if W >= 70 and libre_mm > 14:
+        x_text = px((W - min(W, H) * 0.0) / 2 - 25)
+        d.text((px(17.5), px(5.0)), 'KuraTracker · WoundCalibrate', fill=0, font=_font(True, px(2.4)))
+        d.text((px(17.5), px(8.6)), 'Tarjeta de calibración · tag36h11 #%s · círculo %.1f mm'
+               % ('-'.join(str(t['id']) for t in spec['tags']), rc['diameter_mm']), fill=0, font=_font(False, px(1.4)))
+        f_note = _font(False, px(1.15))
+        d.text((px(17.5), px(H - 17.0)), 'Colocar PLANA junto a la herida, en el mismo plano.', fill=0, font=f_note)
+        d.text((px(17.5), px(H - 15.0)), 'No recortar los marcadores. Imprimir al 100 %.', fill=0, font=f_note)
+        d.text((px(17.5), px(H - 13.0)), 'Verificar: la escala debe medir %d mm exactos.' % int(L), fill=0, font=f_note)
+    else:
+        # Identificación mínima, en el margen inferior.
+        d.text((px(2.0), px(1.6)), 'KuraTracker %.0f×%.0f' % (W, H), fill=0, font=_font(False, px(1.8)))
     d.rectangle([0, 0, img.width - 1, img.height - 1], outline=0, width=max(1, px(0.15)))
     return img
 
