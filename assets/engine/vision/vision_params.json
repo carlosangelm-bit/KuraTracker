@@ -116,7 +116,10 @@
         6
       ]
     },
-    "_note": "Las reglas se evaluan en orden sobre HSV (H en grados, S y V en 0-1); h_min > h_max = arco que cruza 0/360. Un pixel que no cumple ninguna regla va al prototipo Lab mas cercano. Los prototipos tambien sirven como semillas de color en la segmentacion (prototype_classes). AJUSTAR con fotos etiquetadas por el equipo clinico (Maria)."
+    "specular_v_min": 0.88,
+    "specular_s_max": 0.18,
+    "specular_warn_fraction": 0.1,
+    "_note": "Las reglas se evaluan en orden sobre HSV (H en grados, S y V en 0-1); h_min > h_max = arco que cruza 0/360. Un pixel que no cumple ninguna regla va al prototipo Lab mas cercano. Los prototipos tambien sirven como semillas de color en la segmentacion (prototype_classes). AJUSTAR con fotos etiquetadas por el equipo clinico (Maria). specular_v_min/s_max: un brillo especular (tejido humedo, flash, luz rasante) es CLARO y DESATURADO, que es exactamente la firma de la epitelizacion; sin filtrarlo el motor lee los reflejos como cicatrizacion (medido: 0% -> 62% de epitelizacion falsa con reflejos cubriendo la mitad de la herida). Esos pixeles se marcan NO EVALUABLES y se excluyen del reparto: los porcentajes suman 100 sobre el tejido que SI se ve, y la fraccion no evaluable se reporta aparte. Verificado que no toca la epitelizacion real. specular_warn_fraction: a partir de que fraccion se avisa al clinico."
   },
   "fallback_disc": {
     "diameter_mm": 19.0,

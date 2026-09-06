@@ -144,6 +144,9 @@ class VisionParams {
   // Tejido
   final List<TissueRule> tissueRules;
   final Map<String, List<double>> tissuePrototypesLab;
+  final double specularVMin;
+  final double specularSMax;
+  final double specularWarnFraction;
 
   // Disco de respaldo
   final double discDiameterMm;
@@ -190,6 +193,9 @@ class VisionParams {
     required this.enclosingTouchFrac,
     required this.tissueRules,
     required this.tissuePrototypesLab,
+    required this.specularVMin,
+    required this.specularSMax,
+    required this.specularWarnFraction,
     required this.discDiameterMm,
     required this.discHueMin,
     required this.discHueMax,
@@ -253,6 +259,9 @@ class VisionParams {
       tissuePrototypesLab: {
         for (final e in protos.entries) e.key: (e.value as List).map((v) => (v as num).toDouble()).toList(),
       },
+      specularVMin: (t['specular_v_min'] as num?)?.toDouble() ?? 0.88,
+      specularSMax: (t['specular_s_max'] as num?)?.toDouble() ?? 0.18,
+      specularWarnFraction: (t['specular_warn_fraction'] as num?)?.toDouble() ?? 0.10,
       discDiameterMm: (d['diameter_mm'] as num).toDouble(),
       discHueMin: (d['hue_min'] as num).toDouble(),
       discHueMax: (d['hue_max'] as num).toDouble(),

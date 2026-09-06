@@ -14,6 +14,9 @@ class TissueClass {
   static const int epitelizacion = 3;
   static const int none = 255;
 
+  /// Píxel NO EVALUABLE por brillo especular: no se sabe qué tejido hay debajo.
+  static const int specular = 254;
+
   static const names = ['granulacion', 'esfacelo', 'necrosis', 'epitelizacion'];
 
   static int indexOf(String name) {
@@ -24,9 +27,18 @@ class TissueClass {
 
 /// Salida del clasificador: mapa de etiquetas (escala de trabajo) + porcentajes.
 class TissueResult {
-  final Uint8List labels; // por píxel de la máscara de trabajo; 255 fuera de la herida
+  /// Por píxel de la máscara de trabajo: 0–3 = tejido, 254 = brillo (no
+  /// evaluable), 255 = fuera de la herida.
+  final Uint8List labels;
+
+  /// Porcentajes sobre el tejido EVALUABLE (suman 100).
   final TissueComposition composition;
-  const TissueResult(this.labels, this.composition);
+
+  /// Fracción de la herida descartada por brillo especular (0–1). Los
+  /// porcentajes de arriba NO la incluyen: describen lo que sí se ve.
+  final double specularFraction;
+
+  const TissueResult(this.labels, this.composition, {this.specularFraction = 0});
 }
 
 /// Contrato: sustituible por un modelo aprendido cuando exista dataset propio.
@@ -53,11 +65,23 @@ class RuleTissueClassifier implements TissueClassifier {
     };
     final counts = List<int>.filled(4, 0);
     var total = 0;
+    var specular = 0;
+    var inWound = 0;
     for (var i = 0, k = 0; i < n; i++, k += 3) {
       if (mask.data[i] == 0) continue;
-      total++;
+      inWound++;
       final r = work.data[k], g = work.data[k + 1], b = work.data[k + 2];
       ColorSpaces.rgbToHsv(r, g, b, hsv);
+      // Brillo especular: claro y desaturado. Es la misma firma que la
+      // epitelización, así que sin este filtro los reflejos (tejido húmedo,
+      // flash, luz rasante) se leerían como cicatrización. No se sabe qué hay
+      // debajo: se marca NO EVALUABLE y se excluye del reparto.
+      if (hsv[2] >= p.specularVMin && hsv[1] <= p.specularSMax) {
+        labels[i] = TissueClass.specular;
+        specular++;
+        continue;
+      }
+      total++;
       var cls = TissueClass.none;
       for (final rule in p.tissueRules) {
         if (_matches(rule, hsv[0], hsv[1], hsv[2])) {
@@ -80,7 +104,8 @@ class RuleTissueClassifier implements TissueClassifier {
       labels[i] = cls;
       counts[cls]++;
     }
-    if (total == 0) return TissueResult(labels, TissueComposition.zero);
+    final specFrac = inWound == 0 ? 0.0 : specular / inWound;
+    if (total == 0) return TissueResult(labels, TissueComposition.zero, specularFraction: specFrac);
     final pct = _roundTo100([for (final c in counts) c * 100.0 / total]);
     return TissueResult(
       labels,
@@ -90,6 +115,7 @@ class RuleTissueClassifier implements TissueClassifier {
         necrosis: pct[TissueClass.necrosis],
         epitelizacion: pct[TissueClass.epitelizacion],
       ),
+      specularFraction: specFrac,
     );
   }
 

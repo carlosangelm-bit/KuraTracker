@@ -135,6 +135,7 @@ class WoundVisionEngine {
     final gates = [
       ...result.gates,
       _overexposureGate(rect, seg.mask, seg.factor, seg.offsetX, seg.offsetY),
+      _specularGate(tissue),
     ];
     final overlay = _renderOverlay(
       width: rect.width,
@@ -201,6 +202,7 @@ class WoundVisionEngine {
     final gates = [
       ...result.gates,
       _overexposureGate(rect, ref.mask, ref.factor, ref.offsetX, ref.offsetY),
+      _specularGate(tissue),
       if (ref.touchesTrace)
         const QualityGate('enclosing_trace', 'Trazo envolvente', GateStatus.warn,
             'La herida llega hasta el trazo: puede haber quedado lesión FUERA del lazo y la medida quedarse corta. '
@@ -286,6 +288,7 @@ class WoundVisionEngine {
       gates: [
         ...result.gates,
         _overexposureGate(rect, mask, f, x0, y0),
+        _specularGate(tissue),
         const QualityGate('manual_trace', 'Contorno', GateStatus.warn, 'Contorno trazado a mano por el clínico'),
       ],
       engineVersion: engineVersion,
@@ -294,6 +297,25 @@ class WoundVisionEngine {
   }
 
   // ---------------------------------------------------------------------------
+
+  /// Aviso cuando una parte apreciable de la herida quedó no evaluable por
+  /// brillo. Importa porque un reflejo tiene la misma firma que la
+  /// epitelización: si no se filtrara, el motor leería los brillos como
+  /// cicatrización (medido: hasta 62 % de epitelización inventada).
+  QualityGate _specularGate(TissueResult t) {
+    final pct = t.specularFraction * 100;
+    if (t.specularFraction <= params.specularWarnFraction) {
+      return QualityGate('brillo', 'Brillos en la herida', GateStatus.pass,
+          pct < 0.5 ? 'Sin reflejos que estorben' : '${pct.toStringAsFixed(0)} % con brillo, descartado del lecho');
+    }
+    return QualityGate(
+      'brillo',
+      'Brillos en la herida',
+      GateStatus.warn,
+      '${pct.toStringAsFixed(0)} % de la herida no se puede evaluar por reflejos. Los porcentajes del lecho '
+          'describen solo el resto. Cambia el ángulo o apaga el flash y repite la foto.',
+    );
+  }
 
   QualityGate _overexposureGate(RgbRaster rect, BitMask mask, int f, int ox, int oy) {
     var burnt = 0, total = 0;

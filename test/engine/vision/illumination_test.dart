@@ -10,6 +10,9 @@
 // KuraTracker: si los porcentajes del lecho se mueven porque cambió la sala,
 // la tendencia entre visitas (y el checkpoint de Sheehan que la consume)
 // queda contaminada.
+import 'dart:math' as math;
+import 'dart:typed_data';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kuratracker/engine/vision/rasters.dart';
 import 'package:kuratracker/engine/vision/vision_geometry.dart';
@@ -142,6 +145,70 @@ void main() {
       final outcome = engine.calibratePhotoRaster(photo);
       final gate = outcome.result!.gates.firstWhere((g) => g.id == 'color');
       expect(gate.status, GateStatus.warn);
+    });
+  });
+
+  // Brillos especulares (tejido húmedo, flash, luz rasante). Un reflejo es
+  // CLARO y DESATURADO — exactamente la firma de la epitelización —, así que
+  // sin filtrarlo el motor lee los reflejos como cicatrización: medido, hasta
+  // 62 % de epitelización inventada. Es el peor error posible en seguimiento:
+  // un falso positivo de mejoría.
+  group('brillos especulares', () {
+    final engine = WoundVisionEngine(spec: spec, params: params);
+
+    /// Añade manchas blancas saturadas dentro de la herida.
+    RgbRaster conReflejos(RgbRaster src, SceneTruth truth, double cobertura) {
+      final out = RgbRaster(src.width, src.height, Uint8List.fromList(src.data));
+      if (cobertura <= 0) return out;
+      final rnd = math.Random(4);
+      final ppm = truth.pxPerMm;
+      final cx = truth.woundCenterMm.x * ppm, cy = truth.woundCenterMm.y * ppm;
+      final a = 20.0 * ppm, b = 12.0 * ppm;
+      final sig = math.sqrt(cobertura * math.pi * a * b / (12 * math.pi));
+      for (var k = 0; k < 12; k++) {
+        final t = rnd.nextDouble() * 2 * math.pi, rr = math.sqrt(rnd.nextDouble()) * 0.8;
+        final mx = cx + a * rr * math.cos(t), my = cy + b * rr * math.sin(t);
+        for (var y = (my - 3 * sig).floor(); y < (my + 3 * sig).ceil(); y++) {
+          for (var x = (mx - 3 * sig).floor(); x < (mx + 3 * sig).ceil(); x++) {
+            if (x < 0 || y < 0 || x >= out.width || y >= out.height) continue;
+            final d2 = (x - mx) * (x - mx) + (y - my) * (y - my);
+            final g = math.exp(-d2 / (2 * sig * sig));
+            final i = (y * out.width + x) * 3;
+            for (var c = 0; c < 3; c++) {
+              out.data[i + c] = (out.data[i + c] + 255 * g * 1.2).round().clamp(0, 255);
+            }
+          }
+        }
+      }
+      return out;
+    }
+
+    test('los reflejos NO se cuentan como epitelización', () {
+      final (metric, truth) = renderScene(spec);
+      final conBrillo = conReflejos(metric, truth, 0.30);
+      final (photo, _) = perspectivePhoto(conBrillo, truth.pxPerMm, tilt: 0.10);
+      final outcome = engine.calibratePhotoRaster(photo);
+      final res = engine.analyze(outcome, seeds: [seedFor(outcome.result!, truth.woundCenterMm)]);
+      expect(res, isNotNull);
+      // Sin el filtro esto llegaba a 43–62 %. La verdad de la escena es 0 %.
+      expect(res!.tissue.epitelizacion, lessThan(20),
+          reason: 'epitelización ${res.tissue.epitelizacion} % — los brillos se están leyendo como cicatrización');
+      // Y el resto del lecho sigue reconociéndose.
+      expect(res.tissue.granulacion, greaterThan(35));
+      expect(res.tissue.esfacelo, greaterThan(15));
+      final gate = res.gates.firstWhere((g) => g.id == 'brillo');
+      expect(gate.status, GateStatus.warn, reason: gate.detail);
+      expect(gate.detail, contains('no se puede evaluar'));
+    });
+
+    test('sin reflejos, la compuerta pasa y no se descarta nada', () {
+      final (metric, truth) = renderScene(spec);
+      final (photo, _) = perspectivePhoto(metric, truth.pxPerMm, tilt: 0.10);
+      final outcome = engine.calibratePhotoRaster(photo);
+      final res = engine.analyze(outcome, seeds: [seedFor(outcome.result!, truth.woundCenterMm)])!;
+      final gate = res.gates.firstWhere((g) => g.id == 'brillo');
+      expect(gate.status, GateStatus.pass);
+      expect((res.tissue.granulacion - 60).abs(), lessThanOrEqualTo(3));
     });
   });
 }

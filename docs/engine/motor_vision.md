@@ -239,6 +239,40 @@ los casos sin aviso quedaron en −0,1 % y **todos** los errores grandes (hasta
 Nota: el resultado cuenta como medición **automática** (`vision_card`), no como
 trazo manual, porque el contorno lo determinó el motor y no el dedo.
 
+## Flash: arregla el color, inventa cicatrización
+
+El flash es luz de color conocido (~5500 K), así que **sí resuelve la dominante
+de color incluso sin tarjeta**: con luz cálida ambiente, el área pasó de −30,0 %
+a −0,3 % y el lecho de 86/0/14 a 61/30/10 con solo activarlo.
+
+Pero introduce un problema peor. El tejido de herida está húmedo y devuelve
+**reflejos especulares**, que son claros y desaturados — exactamente la firma de
+la epitelización. Sin filtrarlos, el motor los lee como cicatrización:
+
+| Reflejos cubren | Epitelización reportada (verdad: 0 %) |
+|---|---|
+| 5 % | 9 % |
+| 15 % | 25 % |
+| 30 % | 43 % |
+| 50 % | **62 %** |
+
+Es el peor error posible en un producto de seguimiento: un **falso positivo de
+mejoría**. Por eso los píxeles con brillo (`tissue.specular_v_min` /
+`specular_s_max`) se marcan **no evaluables** y se excluyen del reparto: los
+porcentajes suman 100 sobre el tejido que sí se ve, la fracción descartada viaja
+en `vision_meta` y la compuerta `brillo` avisa a partir del 10 %. Con el filtro,
+el caso del 30 % baja de 43 % a 12 % de epitelización falsa, y está verificado
+que **no toca la epitelización real**.
+
+**Por eso el flash NO se activa por defecto:**
+
+- **Con tarjeta es innecesario** — la normalización ya corrige la luz — y solo
+  añade riesgo de reflejos.
+- **Sin tarjeta cambia un problema por otro.** Y hay una asimetría que decide:
+  el clínico **ve** los reflejos en la pantalla y puede cambiar el ángulo; **no
+  ve** la dominante de color, porque su propio cerebro la compensa (constancia
+  del color). Un defecto visible y corregible es preferible a uno invisible.
+
 ## Disco de respaldo: hasta dónde llega
 
 Medido con cámara pinhole (25 cm, focal típica de teléfono), comparando disco

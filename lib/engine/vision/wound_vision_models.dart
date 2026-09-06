@@ -99,6 +99,8 @@ class TissueComposition {
         'necrosis_pct': necrosis,
         'epitelizacion_pct': epitelizacion,
       };
+
+  double get suma => granulacion + esfacelo + necrosis + epitelizacion;
 }
 
 /// Medidas geométricas en unidades clínicas.
