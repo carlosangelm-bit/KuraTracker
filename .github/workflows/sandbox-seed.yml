@@ -61,6 +61,21 @@ jobs:
       - name: Instalar psql
         run: sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client >/dev/null
 
+      # Separa "no conecta" de "el SQL falló". Sin esto, un error de conexion
+      # (contraseña sin percent-encodear, cadena de Direct connection en vez de
+      # Session pooler, proyecto pausado) se veia igual que un error de SQL.
+      - name: Probar conexión
+        run: |
+          if ! out=$(psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -At \
+                       -c "select 'conexion ok - db=' || current_database() || ' - user=' || current_user" 2>&1); then
+            echo "::group::Salida de psql"
+            echo "$out"
+            echo "::endgroup::"
+            echo "::error::No se pudo conectar con SUPABASE_DB_URL. Revisa: (a) que sea la cadena del *Session pooler* y no la de Direct connection (esa es solo IPv6 y los runners son IPv4), (b) que [YOUR-PASSWORD] este sustituido, y (c) que los caracteres especiales de la contraseña esten percent-encodeados."
+            exit 1
+          fi
+          echo "$out"
+
       # Los tres archivos en UNA sesión: el preámbulo fija kt.env y la
       # contraseña como GUC de sesión (la contraseña entra como variable de
       # psql, :'pwd', así no se escribe en ningún archivo ni sale en el log);
@@ -72,11 +87,20 @@ jobs:
           printf "%s\n" \
             "select set_config('kt.env', 'sandbox', false);" \
             "select set_config('kt.sandbox_password', :'pwd', false);" > /tmp/preambulo.sql
-          psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -q -v pwd="$SANDBOX_USER_PASSWORD" \
-            -f /tmp/preambulo.sql \
-            -f supabase/seed/seed_sandbox.sql \
-            -f supabase/seed/seed_synthetic_patients.sql > /tmp/seed.log 2>&1 \
-            || { echo "::error::El seed falló:"; grep -E 'ERROR|LINE|DETAIL|HINT' /tmp/seed.log; exit 1; }
+          # OJO: se imprime la COLA COMPLETA del log, no un grep. Un grep por
+          # 'ERROR|LINE|DETAIL|HINT' deja el fallo MUDO cuando psql muere por algo
+          # que no es un error de SQL (conexion, permisos, timeout). GitHub
+          # enmascara los secretos en el log, asi que volcar la salida es seguro.
+          if ! psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -q -v pwd="$SANDBOX_USER_PASSWORD" \
+                 -f /tmp/preambulo.sql \
+                 -f supabase/seed/seed_sandbox.sql \
+                 -f supabase/seed/seed_synthetic_patients.sql > /tmp/seed.log 2>&1; then
+            echo "::group::Salida completa de psql"
+            tail -n 80 /tmp/seed.log
+            echo "::endgroup::"
+            echo "::error::El seed falló - abre el grupo 'Salida completa de psql' de arriba."
+            exit 1
+          fi
           echo "Seed aplicado sin errores."
 
       - name: Verificar
