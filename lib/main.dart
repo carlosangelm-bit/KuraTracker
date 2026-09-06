@@ -128,8 +128,51 @@ class KuraTrackerApp extends ConsumerWidget {
       routerConfig: router,
       // Recorrido guiado (solo demo): navega por los flujos y explica cada
       // pantalla. En producción es transparente (no se muestra).
-      builder: (context, child) =>
-          TourScope(child: child ?? const SizedBox.shrink()),
+      builder: (context, child) => TourScope(
+        child: SandboxBanner(child: child ?? const SizedBox.shrink()),
+      ),
+    );
+  }
+}
+
+/// Franja fija "SANDBOX · datos de prueba" en la parte superior de la app,
+/// SOLO cuando el build se compiló con `--dart-define=APP_ENV=sandbox` (rama
+/// `staging`). En producción y en la demo no agrega nada al árbol.
+class SandboxBanner extends StatelessWidget {
+  const SandboxBanner({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!AppConfig.isSandbox) return child;
+    return Column(
+      children: [
+        const Material(
+          color: Color(0xFFE65100),
+          child: SafeArea(
+            bottom: false,
+            child: SizedBox(
+              height: 22,
+              width: double.infinity,
+              child: Center(
+                child: Text(
+                  'SANDBOX · entorno de pruebas · datos sintéticos, no es el expediente real',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.6,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+        Expanded(child: child),
+      ],
     );
   }
 }

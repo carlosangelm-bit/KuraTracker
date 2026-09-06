@@ -56,6 +56,22 @@ supabase migration repair --status applied 0001 0002 ... 0040
 Después, `db push` solo aplicará las nuevas (0041 en adelante) y el pipeline
 queda 100% automático.
 
+## Sandbox (rama `staging`) — mismo `deploy.yml`, environment `staging`
+
+Un push a **`staging`** corre `deploy.yml` con el environment de GitHub
+`staging`: migra y despliega a **otro** proyecto Supabase y a Cloudflare Pages
+`kuratracker-sandbox` (`https://kuratracker-sandbox.pages.dev`), sin publicar
+la demo y con la app compilada con `APP_ENV=sandbox` (franja naranja). Guardias
+en el workflow abortan si algún secret de `staging` apunta al proyecto de
+producción. Setup completo y flujo de trabajo: **[`SANDBOX_SETUP.md`](../../SANDBOX_SETUP.md)**.
+
+## sandbox-seed.yml — datos sintéticos del sandbox (manual)
+
+Actions → "Sandbox · seed de datos" → Run workflow → confirmar con `SANDBOX`.
+Corre `supabase/seed/seed_sandbox.sql` + `seed_synthetic_patients.sql` contra
+`SUPABASE_DB_URL` del environment `staging`. Idempotente: sirve para resetear
+los datos de prueba. Cuentas resultantes: ver cabecera de `seed_sandbox.sql`.
+
 ## supabase-migrations.yml — migraciones manuales (respaldo)
 
 Solo disparo **manual** (Actions → "Supabase migrations" → Run workflow) para

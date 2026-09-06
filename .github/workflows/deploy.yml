@@ -26,11 +26,29 @@ name: Deploy (migraciones + build + Cloudflare Pages)
 # SEGURIDAD: el job de migraciones usa el environment "production"; si defines
 # "Required reviewers" en Settings → Environments → production, cada corrida
 # pedirá aprobación manual antes de tocar la BD.
+#
+# ─── SANDBOX (rama `staging`) ────────────────────────────────────────────────
+# El MISMO workflow sirve al entorno de pruebas: un push a `staging` corre los
+# mismos jobs pero con el environment de GitHub "staging", cuyos secrets apuntan
+# a OTRO proyecto Supabase y a OTRO proyecto de Cloudflare Pages
+# (kuratracker-sandbox). Los nombres de los secrets son los mismos en ambos
+# environments; GitHub resuelve el valor según el environment del job.
+# Diferencias en staging: (1) no se compila ni publica la demo, (2) la app se
+# compila con APP_ENV=sandbox (banner naranja "SANDBOX"), (3) un guardia aborta
+# si algún secret de staging apunta al proyecto de PRODUCCIÓN. Ver SANDBOX_SETUP.md.
 
 on:
   push:
-    branches: [main]
+    branches: [main, staging]
   workflow_dispatch: {}
+
+# Un solo lugar para "¿esto es producción o sandbox?". main → production;
+# cualquier otra rama (staging) → staging.
+env:
+  DEPLOY_ENV: ${{ github.ref_name == 'main' && 'production' || 'staging' }}
+  # Ref del proyecto Supabase de PRODUCCIÓN (público: va en la URL del cliente).
+  # Solo se usa para el guardia anti-cruce del sandbox.
+  PROD_PROJECT_REF: mhnhgnzajdjhllypdutr
 
 # Concurrencia a nivel de JOB (no de workflow): `migrations` (supabase db push)
 # y `deploy_functions` NUNCA se cancelan a media aplicación
@@ -59,16 +77,28 @@ jobs:
   migrations:
     needs: checks
     concurrency:
-      group: db-migrations-main
+      group: db-migrations-${{ github.ref_name }}
       cancel-in-progress: false
     runs-on: ubuntu-latest
-    environment: production
+    environment: ${{ github.ref_name == 'main' && 'production' || 'staging' }}
     env:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
       SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
     steps:
       - uses: actions/checkout@v4
+      # Guardia anti-cruce: en staging, los secrets del environment DEBEN apuntar
+      # a otro proyecto. Si falta un secret en el environment "staging", GitHub
+      # cae al secret de REPOSITORIO (el de prod) sin avisar — por eso se
+      # verifica el ref explícitamente antes de tocar nada.
+      - name: Guardia sandbox ≠ producción
+        if: env.DEPLOY_ENV != 'production'
+        run: |
+          if [ "$SUPABASE_PROJECT_REF" = "$PROD_PROJECT_REF" ]; then
+            echo "::error::El environment 'staging' apunta al proyecto Supabase de PRODUCCIÓN ($PROD_PROJECT_REF). Define SUPABASE_PROJECT_REF/SUPABASE_DB_PASSWORD/SUPABASE_URL/SUPABASE_ANON_KEY en Settings → Environments → staging."
+            exit 1
+          fi
+          echo "OK: staging apunta a $SUPABASE_PROJECT_REF"
       - uses: supabase/setup-cli@v1
         with:
           # Fijado (no 'latest'): 'latest' resolvía dinámicamente y a veces tomaba
@@ -95,15 +125,19 @@ jobs:
   deploy_functions:
     needs: [checks, migrations]
     concurrency:
-      group: deploy-functions-main
+      group: deploy-functions-${{ github.ref_name }}
       cancel-in-progress: false
     runs-on: ubuntu-latest
-    environment: production
+    environment: ${{ github.ref_name == 'main' && 'production' || 'staging' }}
     env:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
     steps:
       - uses: actions/checkout@v4
+      - name: Guardia sandbox ≠ producción
+        if: env.DEPLOY_ENV != 'production'
+        run: |
+          [ "$SUPABASE_PROJECT_REF" != "$PROD_PROJECT_REF" ] || { echo "::error::staging apunta al proyecto de PRODUCCIÓN"; exit 1; }
       - uses: supabase/setup-cli@v1
         with:
           # Fijado (no 'latest'): 'latest' resolvía dinámicamente y a veces tomaba
@@ -148,13 +182,18 @@ jobs:
   build_deploy:
     needs: [checks, migrations]
     concurrency:
-      group: build-deploy-main
+      group: build-deploy-${{ github.ref_name }}
       cancel-in-progress: true
     runs-on: ubuntu-latest
     # Mismo environment que el job de migraciones: así este job también puede
-    # leer los secrets scoped al environment "production" (SUPABASE_URL/ANON_KEY,
+    # leer los secrets scoped al environment (SUPABASE_URL/ANON_KEY,
     # CLOUDFLARE_*), no solo los de repositorio.
-    environment: production
+    environment: ${{ github.ref_name == 'main' && 'production' || 'staging' }}
+    env:
+      # Proyecto de Cloudflare Pages destino del build con Supabase.
+      CF_PAGES_PROJECT: ${{ github.ref_name == 'main' && 'kuratracker-prod' || 'kuratracker-sandbox' }}
+      # Etiqueta de entorno que la app muestra (banner) cuando no es producción.
+      APP_ENV: ${{ github.ref_name == 'main' && 'production' || 'sandbox' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -175,6 +214,11 @@ jobs:
           test -n "$SUPABASE_ANON_KEY"     || { echo "Falta SUPABASE_ANON_KEY"; exit 1; }
           test -n "$CLOUDFLARE_API_TOKEN"  || { echo "Falta CLOUDFLARE_API_TOKEN"; exit 1; }
           test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo "Falta CLOUDFLARE_ACCOUNT_ID"; exit 1; }
+          if [ "$DEPLOY_ENV" != "production" ]; then
+            case "$SUPABASE_URL" in
+              *"$PROD_PROJECT_REF"*) echo "::error::staging compilaría contra la URL de Supabase de PRODUCCIÓN"; exit 1;;
+            esac
+          fi
 
       - run: flutter pub get
 
@@ -192,20 +236,24 @@ jobs:
           fi
           echo "OK: sin dolares escapados en interpolaciones."
 
-      # ---------- PROD (con credenciales reales de Supabase) ----------
-      - name: Build web (prod)
+      # ---------- APP con Supabase (prod en main / sandbox en staging) ----------
+      # APP_ENV=sandbox enciende el banner naranja "SANDBOX" (lib/core/config/
+      # app_config.dart → AppConfig.isSandbox). En main vale 'production' y la
+      # app se ve exactamente igual que antes.
+      - name: Build web (${{ env.APP_ENV }})
         run: |
           flutter build web --release \
             --dart-define=SUPABASE_URL="${{ secrets.SUPABASE_URL }}" \
             --dart-define=SUPABASE_ANON_KEY="${{ secrets.SUPABASE_ANON_KEY }}" \
+            --dart-define=APP_ENV="$APP_ENV" \
             --dart-define=SHOPIFY_STOREFRONT_TOKEN="${{ secrets.SHOPIFY_STOREFRONT_TOKEN }}"
 
-      - name: Deploy prod → kuratracker-prod
+      - name: Deploy → ${{ env.CF_PAGES_PROJECT }}
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFARE_ACCOUNT_ID }}
-          command: pages deploy build/web --project-name=kuratracker-prod --branch=main --commit-dirty=true
+          command: pages deploy build/web --project-name=${{ env.CF_PAGES_PROJECT }} --branch=main --commit-dirty=true
 
       # ---------- DEMO (sin credenciales → modo local/sintético) ----------
       # flutter clean garantiza que los const String.fromEnvironment se
@@ -216,7 +264,9 @@ jobs:
       # ANON_KEY como dart-define, así que la demo sigue en modo demo
       # (isSupabaseConfigured solo mira esos dos). AVISO_URL es la URL del aviso
       # de privacidad (pendiente; vacío = la leyenda no muestra enlace).
+      # La demo (LocalStore, demo.kuramas.com) solo se publica desde main.
       - name: Build web (demo)
+        if: env.DEPLOY_ENV == 'production'
         run: |
           flutter clean
           flutter pub get
@@ -227,6 +277,7 @@ jobs:
             --dart-define=DEMO_EVENT="${{ vars.DEMO_EVENT || 'Congreso de heridas · sep 2026' }}"
 
       - name: Deploy demo → kuratracker-demo
+        if: env.DEPLOY_ENV == 'production'
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFARE_API_TOKEN }}
