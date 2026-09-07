@@ -316,7 +316,14 @@ jobs:
           # defecto. Se enciende poniendo la variable de repo/entorno
           # VISION_ENABLED=true y re-desplegando (o en local con el dart-define
           # de abajo). Ausente/false ⇒ el botón de medición automática no se ve.
-          VISION_ENABLED: ${{ vars.VISION_ENABLED || 'false' }}
+          #
+          # En main SIEMPRE false, pase lo que pase con la variable. Motivo: la
+          # variable es de repositorio (vale igual para sandbox y para main), y
+          # el clasificador todavía confunde piel oscura con necrosis; si se deja
+          # en true para probar en sandbox, se encendería en PRODUCCIÓN en cuanto
+          # algo llegue a main. El candado por rama no depende de que nadie se
+          # acuerde de apagar la variable. Fuera de main sí respeta la variable.
+          VISION_ENABLED: ${{ github.ref_name != 'main' && (vars.VISION_ENABLED || 'false') || 'false' }}
         run: |
           flutter build web --release \
             --dart-define=SUPABASE_URL="${{ secrets.SUPABASE_URL }}" \
