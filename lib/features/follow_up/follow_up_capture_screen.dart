@@ -407,6 +407,31 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
     super.dispose();
   }
 
+  // Correcciones del clínico al motor (capa E): al APLICAR viajan aquí y se
+  // persisten con el wound_measurement_id ya creado, en el guardado.
+  List<Map<String, dynamic>> _pendingCorrections = [];
+
+  /// Persiste correcciones del clínico (dataset). Best-effort: nunca rompe el
+  /// guardado. measurementId null = sesión abandonada (fila sin medición).
+  Future<void> _persistCorrections(List<Map<String, dynamic>> rows,
+      {String? measurementId}) async {
+    if (rows.isEmpty) return;
+    final repo = ref.read(dataRepositoryProvider).valueOrNull;
+    final user = ref.read(sessionProvider).user;
+    if (repo == null || user == null) return;
+    for (final row in rows) {
+      try {
+        await repo.addVisionCorrection({
+          ...row,
+          'wound_id': widget.woundId,
+          if (measurementId != null) 'wound_measurement_id': measurementId,
+          'created_by': user.id,
+          'created_by_role': user.role.name,
+        });
+      } catch (_) {/* best-effort */}
+    }
+  }
+
   /// «Medir con foto»: corre el motor de visión sobre la foto "después de
   /// limpiar" (o la de medición) y pre-llena largo, ancho y composición del
   /// lecho. El clínico revisa y edita; el origen queda en measurement_source.
@@ -418,9 +443,15 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
       ));
       return;
     }
-    final applied = await WoundVisionScreen.open(context, bytes);
+    final applied = await WoundVisionScreen.open(
+      context,
+      bytes,
+      // Sesión abandonada con correcciones: se guardan sin measurement_id.
+      onKeepOrphanCorrections: (rows) => _persistCorrections(rows),
+    );
     if (applied == null || !mounted) return;
     final r = applied.result;
+    _pendingCorrections = applied.corrections; // se persisten al guardar la medición
     setState(() {
       _lengthCtrl.text = applied.lengthCm.toStringAsFixed(1);
       _widthCtrl.text = applied.widthCm.toStringAsFixed(1);
@@ -2750,6 +2781,11 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
         'area_planimetric_cm2': _areaPlanimetricCm2,
         'vision_meta': _visionMeta == null ? null : {..._visionMeta!, 'edited': _visionEdited},
       });
+
+      // Correcciones del clínico (capa E): ya con el wound_measurement_id.
+      // Best-effort dentro de _persistCorrections: no rompe el guardado.
+      await _persistCorrections(_pendingCorrections, measurementId: measurement.id);
+      _pendingCorrections = [];
 
       await repo.createAssessment({
         'consultation_id': consultationId,

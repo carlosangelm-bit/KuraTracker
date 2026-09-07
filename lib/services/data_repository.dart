@@ -1347,6 +1347,15 @@ class DataRepository {
     return InventoryMovement.fromJson(saved);
   }
 
+  /// Inserta una corrección del clínico al clasificador de visión (dataset de
+  /// entrenamiento; tabla wound_vision_corrections, migraciones 0109/0110). El
+  /// [data] ya trae wound_id, clinician_class, points, engine_version, etc.; la
+  /// RLS acota por membresía del centro. Best-effort: no debe romper el guardado
+  /// de la medición si falla.
+  Future<void> addVisionCorrection(Map<String, dynamic> data) async {
+    await _store.insertRow('wound_vision_corrections', data);
+  }
+
   /// Ajusta la existencia en Shopify (espejo Kura+) si el artículo está ligado
   /// y el centro es espejo. Solo producción; nunca rompe el flujo local.
   Future<void> _maybePushShopifyAdjust(InventoryItem item, int delta) async {

@@ -118,6 +118,30 @@ class _WoundCaptureScreenState extends ConsumerState<WoundCaptureScreen> {
   /// «Medir con foto»: abre el motor de visión sobre una de las fotos de la
   /// valoración y, si el clínico aplica el resultado, pre-llena largo, ancho y
   /// composición del lecho (editables) con trazabilidad en vision_meta.
+  // Correcciones del clínico al motor (capa E): al APLICAR se persisten con el
+  // wound_measurement_id ya creado, en el guardado.
+  List<Map<String, dynamic>> _pendingCorrections = [];
+
+  /// Persiste correcciones (dataset). Best-effort: nunca rompe el guardado.
+  Future<void> _persistCorrections(List<Map<String, dynamic>> rows,
+      {required String woundId, String? measurementId}) async {
+    if (rows.isEmpty) return;
+    final repo = ref.read(dataRepositoryProvider).valueOrNull;
+    final user = ref.read(sessionProvider).user;
+    if (repo == null || user == null) return;
+    for (final row in rows) {
+      try {
+        await repo.addVisionCorrection({
+          ...row,
+          'wound_id': woundId,
+          if (measurementId != null) 'wound_measurement_id': measurementId,
+          'created_by': user.id,
+          'created_by_role': user.role.name,
+        });
+      } catch (_) {/* best-effort */}
+    }
+  }
+
   Future<void> _measureWithPhoto(WoundCaptureController controller) async {
     final formState = controller.state;
     final photos = [
@@ -157,9 +181,20 @@ class _WoundCaptureScreenState extends ConsumerState<WoundCaptureScreen> {
       );
     }
     if (chosen == null || !mounted) return;
-    final applied = await WoundVisionScreen.open(context, chosen);
+    // Orphan (salir sin aplicar): solo si la herida YA existe (una herida nueva
+    // aún no tiene id). El caso aplicado se persiste al guardar.
+    final realWoundId =
+        (widget.woundId != null && widget.woundId != 'new') ? widget.woundId : null;
+    final applied = await WoundVisionScreen.open(
+      context,
+      chosen,
+      onKeepOrphanCorrections: realWoundId == null
+          ? null
+          : (rows) => _persistCorrections(rows, woundId: realWoundId),
+    );
     if (applied == null || !mounted) return;
     final r = applied.result;
+    _pendingCorrections = applied.corrections;
     formState.applyVisionMeasurement(
       lengthCm: applied.lengthCm,
       widthCm: applied.widthCm,
@@ -666,6 +701,11 @@ class _WoundCaptureScreenState extends ConsumerState<WoundCaptureScreen> {
           'area_planimetric_cm2': formState.areaPlanimetricCm2,
           'vision_meta': formState.visionMetaForSave,
         });
+
+        // Correcciones del clínico (capa E): ya con wound_id + measurement_id.
+        await _persistCorrections(_pendingCorrections,
+            woundId: wound.id, measurementId: measurement.id);
+        _pendingCorrections = [];
 
         await repo.upsertPerfusion({
           'consultation_id': consultationId,

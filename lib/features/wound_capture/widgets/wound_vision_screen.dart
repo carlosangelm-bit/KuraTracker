@@ -15,10 +15,16 @@ class WoundVisionApplyResult {
   final WoundVisionResult result;
   final Uint8List rectifiedPng;
   final Uint8List overlayPng;
+  /// Correcciones del clínico al clasificador (dataset de entrenamiento). Cada
+  /// una: {clinician_class, note?, engine_version, calibration_mode, mm_per_px,
+  /// rectified_size, points:[{x,y,engine_class,lab}]}. La pantalla de captura
+  /// les añade wound_id/created_by/rol y (si aplica) wound_measurement_id.
+  final List<Map<String, dynamic>> corrections;
   const WoundVisionApplyResult({
     required this.result,
     required this.rectifiedPng,
     required this.overlayPng,
+    this.corrections = const [],
   });
 
   /// Largo/ancho redondeados a 0,1 cm como los captura el clínico con regla.
@@ -36,14 +42,26 @@ class WoundVisionApplyResult {
 class WoundVisionScreen extends StatefulWidget {
   final Uint8List photoBytes;
 
-  const WoundVisionScreen({super.key, required this.photoBytes});
+  /// Persistencia de correcciones cuando el clínico marcó algunas pero SALE sin
+  /// aplicar la medición (caso de fallo del motor, la señal más valiosa). La
+  /// pantalla de captura persiste esas correcciones sin wound_measurement_id.
+  final Future<void> Function(List<Map<String, dynamic>> corrections)? onKeepOrphanCorrections;
+
+  const WoundVisionScreen({super.key, required this.photoBytes, this.onKeepOrphanCorrections});
 
   /// Abre la pantalla y devuelve el resultado aplicado (o null si se canceló).
-  static Future<WoundVisionApplyResult?> open(BuildContext context, Uint8List photoBytes) {
+  static Future<WoundVisionApplyResult?> open(
+    BuildContext context,
+    Uint8List photoBytes, {
+    Future<void> Function(List<Map<String, dynamic>> corrections)? onKeepOrphanCorrections,
+  }) {
     return Navigator.of(context).push<WoundVisionApplyResult>(
       MaterialPageRoute(
         fullscreenDialog: true,
-        builder: (_) => WoundVisionScreen(photoBytes: photoBytes),
+        builder: (_) => WoundVisionScreen(
+          photoBytes: photoBytes,
+          onKeepOrphanCorrections: onKeepOrphanCorrections,
+        ),
       ),
     );
   }
@@ -93,6 +111,138 @@ class _WoundVisionScreenState extends State<WoundVisionScreen> {
   String? _classOverlayKey;
   TissueInspection? _inspection; // resultado del inspector (tap)
   Pt? _inspectRectPx; // punto tocado (px rectificados) para el marcador
+
+  // --- Correcciones del clínico (dataset de entrenamiento, capa E) ---
+  // 8 clases: los 4 tejidos + piel_no_herida + brillo + otro(nota) + no_estoy_seguro.
+  static const Map<String, String> _clinicianClasses = {
+    'granulacion': 'Granulación',
+    'esfacelo': 'Esfacelo',
+    'necrosis': 'Necrosis',
+    'epitelizacion': 'Epitelización',
+    'piel_no_herida': 'Es piel, no herida',
+    'brillo': 'Brillo / reflejo',
+    'otro': 'Otro (con nota)',
+    'no_estoy_seguro': 'No estoy seguro',
+  };
+  bool _correcting = false; // modo corrección: los toques marcan zona (no inspeccionan)
+  final List<Map<String, dynamic>> _pendingPoints = []; // puntos de la corrección en curso
+  final List<Map<String, dynamic>> _corrections = []; // correcciones guardadas (para persistir)
+
+  /// Lab promedio de un parche (~5×5 px rectificados) alrededor de un punto, en
+  /// el espacio de trabajo (que ya es un promedio por el downscale → menos ruido
+  /// del sensor). Devuelve [L,a,b] o null si cae fuera del mapa.
+  List<double>? _patchLab(TissueMap m, int rx, int ry) {
+    if (m.factor <= 0) return null;
+    final cx = (rx - m.offsetX) ~/ m.factor, cy = (ry - m.offsetY) ~/ m.factor;
+    final r = math.max(1, (2 / m.factor).round()); // radio en px de trabajo
+    var n = 0;
+    var l = 0.0, a = 0.0, b = 0.0;
+    for (var dy = -r; dy <= r; dy++) {
+      for (var dx = -r; dx <= r; dx++) {
+        final x = cx + dx, y = cy + dy;
+        if (x < 0 || y < 0 || x >= m.width || y >= m.height) continue;
+        final i = (y * m.width + x) * 3;
+        l += m.lab[i];
+        a += m.lab[i + 1];
+        b += m.lab[i + 2];
+        n++;
+      }
+    }
+    if (n == 0) return null;
+    return [l / n, a / n, b / n];
+  }
+
+  void _addCorrectionPoint(CalibrationResult cal, WoundVisionResult res, int rx, int ry) {
+    if (rx < 0 || ry < 0 || rx >= cal.width || ry >= cal.height) return;
+    final lab = _patchLab(res.tissueMap, rx, ry);
+    final eng = res.tissueMap.labelAtRectPx(rx, ry);
+    if (lab == null || eng == null) return;
+    setState(() {
+      _pendingPoints.add({
+        'x': rx,
+        'y': ry,
+        'engine_class': eng, // lo que puso el motor ahí (0..3, 254 brillo)
+        'lab': [
+          double.parse(lab[0].toStringAsFixed(2)),
+          double.parse(lab[1].toStringAsFixed(2)),
+          double.parse(lab[2].toStringAsFixed(2)),
+        ],
+      });
+    });
+  }
+
+  Future<void> _saveCorrection(CalibrationResult cal, WoundVisionResult res) async {
+    if (_pendingPoints.isEmpty) return;
+    final picked = await _pickClinicianClass();
+    if (picked == null || !mounted) return;
+    setState(() {
+      _corrections.add({
+        'clinician_class': picked.$1,
+        if (picked.$2 != null && picked.$2!.trim().isNotEmpty) 'note': picked.$2!.trim(),
+        'engine_version': res.engineVersion,
+        'calibration_mode': cal.mode == CalibrationMode.card ? 'card' : 'disc',
+        'mm_per_px': cal.mmPerPx,
+        'rectified_size': [cal.width, cal.height],
+        'points': List<Map<String, dynamic>>.from(_pendingPoints),
+      });
+      _pendingPoints.clear();
+    });
+  }
+
+  /// Selector de la clase REAL (8 opciones). Para 'otro' pide una nota.
+  Future<(String, String?)?> _pickClinicianClass() async {
+    final cls = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Padding(
+              padding: EdgeInsets.all(12),
+              child: Text('¿Qué tejido es EN REALIDAD?', style: TextStyle(fontWeight: FontWeight.w700)),
+            ),
+            for (final e in _clinicianClasses.entries)
+              ListTile(
+                dense: true,
+                title: Text(e.value),
+                onTap: () => Navigator.pop(ctx, e.key),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (cls == null || !mounted) return null;
+    if (cls != 'otro') return (cls, null);
+    final ctrl = TextEditingController();
+    final note = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('¿Qué es? (obligatorio)'),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          decoration: const InputDecoration(hintText: 'Describe el tejido/estructura'),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, ctrl.text.trim()), child: const Text('Guardar')),
+        ],
+      ),
+    );
+    if (note == null || note.isEmpty) return null; // 'otro' exige nota (constraint 0109)
+    return ('otro', note);
+  }
+
+  void _undoCorrection() {
+    setState(() {
+      if (_pendingPoints.isNotEmpty) {
+        _pendingPoints.removeLast();
+      } else if (_corrections.isNotEmpty) {
+        _corrections.removeLast();
+      }
+    });
+  }
 
   Uint8List _classOverlayFor(CalibrationResult cal, WoundVisionResult res) {
     final key = '${identityHashCode(res)}|${(_classesOn.toList()..sort()).join(',')}|${_classOpacity.toStringAsFixed(2)}';
@@ -307,23 +457,64 @@ class _WoundVisionScreenState extends State<WoundVisionScreen> {
   void _apply() {
     final res = _result, cal = _calibration?.result;
     if (res == null || cal == null) return;
+    // Al APLICAR, las correcciones viajan con el resultado; la pantalla de
+    // captura las persiste con el wound_measurement_id ya creado.
     Navigator.of(context).pop(WoundVisionApplyResult(
       result: res,
       rectifiedPng: cal.rectifiedPng,
       overlayPng: res.overlayPng,
+      corrections: List<Map<String, dynamic>>.from(_corrections),
     ));
+  }
+
+  /// Salir sin aplicar: si hay correcciones marcadas, preguntar UNA vez si se
+  /// conservan (sesión abandonada = la señal más valiosa). Si sí, se persisten
+  /// SIN measurement_id vía [onKeepOrphanCorrections].
+  Future<void> _attemptExit() async {
+    if (_corrections.isEmpty) {
+      if (mounted) Navigator.of(context).pop();
+      return;
+    }
+    final keep = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('¿Conservar las correcciones?'),
+        content: Text(
+            'Marcaste ${_corrections.length} corrección(es) pero no aplicaste la medición. '
+            '¿Las guardamos para entrenar el motor? (sin ellas, esta señal se pierde)'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Descartar')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Conservar')),
+        ],
+      ),
+    );
+    if (!mounted) return;
+    if (keep == true && widget.onKeepOrphanCorrections != null) {
+      await widget.onKeepOrphanCorrections!(List<Map<String, dynamic>>.from(_corrections));
+    }
+    if (mounted) Navigator.of(context).pop();
   }
 
   @override
   Widget build(BuildContext context) {
     final cal = _calibration?.result;
+    final Widget body;
     if (cal == null) {
-      return Scaffold(
+      body = Scaffold(
         appBar: AppBar(title: const Text('Medir con foto')),
         body: _buildCalibrating(),
       );
+    } else {
+      body = _tracing ? _buildTracing(context, cal) : _buildResults(context, cal);
     }
-    return _tracing ? _buildTracing(context, cal) : _buildResults(context, cal);
+    // Intercepta el back del sistema/AppBar para preguntar por las correcciones.
+    return PopScope(
+      canPop: _corrections.isEmpty,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _attemptExit();
+      },
+      child: body,
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -366,7 +557,7 @@ class _WoundVisionScreenState extends State<WoundVisionScreen> {
                     IconButton(
                       tooltip: 'Cerrar',
                       icon: const Icon(Icons.close, color: Colors.white),
-                      onPressed: () => Navigator.of(context).pop(),
+                      onPressed: _attemptExit,
                     ),
                     SegmentedButton<_Mode>(
                       segments: const [
@@ -645,16 +836,21 @@ class _WoundVisionScreenState extends State<WoundVisionScreen> {
                 behavior: HitTestBehavior.opaque,
                 // INSPECTOR: tocar un punto (con la vista de clases activa) dice
                 // qué clase asignó el motor y su ΔE a cada prototipo.
+                // Corrigiendo: los toques marcan la ZONA. Si no, INSPECCIONAN.
                 onTapUp: (res == null || !_showTissue)
                     ? null
                     : (d) {
                         final rx = ((d.localPosition.dx - ox) / scale).round();
                         final ry = ((d.localPosition.dy - oy) / scale).round();
-                        final insp = res.tissueMap.inspectRectPx(rx, ry);
-                        setState(() {
-                          _inspection = insp;
-                          _inspectRectPx = insp == null ? null : Pt(rx.toDouble(), ry.toDouble());
-                        });
+                        if (_correcting) {
+                          _addCorrectionPoint(cal, res, rx, ry);
+                        } else {
+                          final insp = res.tissueMap.inspectRectPx(rx, ry);
+                          setState(() {
+                            _inspection = insp;
+                            _inspectRectPx = insp == null ? null : Pt(rx.toDouble(), ry.toDouble());
+                          });
+                        }
                       },
                 child: Stack(
                   fit: StackFit.expand,
@@ -662,7 +858,7 @@ class _WoundVisionScreenState extends State<WoundVisionScreen> {
                     Image.memory(cal.rectifiedPng, fit: BoxFit.contain, gaplessPlayback: true),
                     if (res != null && _showTissue)
                       Image.memory(_classOverlayFor(cal, res), fit: BoxFit.contain, gaplessPlayback: true),
-                    if (_showTissue && _inspectRectPx != null)
+                    if (_showTissue && !_correcting && _inspectRectPx != null)
                       Positioned(
                         left: ox + _inspectRectPx!.x * scale - 9,
                         top: oy + _inspectRectPx!.y * scale - 9,
@@ -670,6 +866,16 @@ class _WoundVisionScreenState extends State<WoundVisionScreen> {
                           child: Icon(Icons.add_circle_outline, size: 18, color: Colors.white),
                         ),
                       ),
+                    // Marcadores de los puntos de la corrección en curso.
+                    if (_correcting)
+                      for (final p in _pendingPoints)
+                        Positioned(
+                          left: ox + (p['x'] as int) * scale - 5,
+                          top: oy + (p['y'] as int) * scale - 5,
+                          child: const IgnorePointer(
+                            child: Icon(Icons.circle, size: 10, color: Color(0xFFFFEB3B)),
+                          ),
+                        ),
                   ],
                 ),
               ),
@@ -699,7 +905,7 @@ class _WoundVisionScreenState extends State<WoundVisionScreen> {
               ],
             ),
           ),
-          if (res != null && _showTissue) _classControls(res),
+          if (res != null && _showTissue) _classControls(cal, res),
         ],
       ),
     );
@@ -707,7 +913,7 @@ class _WoundVisionScreenState extends State<WoundVisionScreen> {
 
   /// Controles de la vista por clase: interruptores por clase (con su color),
   /// opacidad, leyenda con % y fracción de brillo, y lectura del inspector.
-  Widget _classControls(WoundVisionResult res) {
+  Widget _classControls(CalibrationResult cal, WoundVisionResult res) {
     // Fracción por brillo, contada del propio mapa (254 / evaluables+brillo).
     var spec = 0, tot = 0;
     for (final l in res.tissueMap.labels) {
@@ -801,6 +1007,56 @@ class _WoundVisionScreenState extends State<WoundVisionScreen> {
           ] else
             Text('Toca un punto de la imagen para inspeccionar la clasificación.',
                 style: TextStyle(fontSize: 11, color: white70)),
+
+          // --- Correcciones del clínico (dataset de entrenamiento) ---
+          const Divider(height: 18, color: Colors.white24),
+          Row(
+            children: [
+              const Icon(Icons.rate_review_outlined, size: 16, color: Colors.white70),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  'Corregir el motor'
+                  '${_corrections.isEmpty ? '' : ' · ${_corrections.length} guardada${_corrections.length == 1 ? '' : 's'}'}',
+                  style: const TextStyle(fontSize: 12, color: Colors.white),
+                ),
+              ),
+              Switch(
+                value: _correcting,
+                onChanged: (v) => setState(() {
+                  _correcting = v;
+                  if (v) {
+                    _inspection = null;
+                    _inspectRectPx = null;
+                  } else {
+                    _pendingPoints.clear();
+                  }
+                }),
+              ),
+            ],
+          ),
+          if (_correcting) ...[
+            Text(
+              'Toca la ZONA mal clasificada (unos toques bastan) y guárdala diciendo qué es EN REALIDAD. '
+              '${_pendingPoints.length} punto(s) marcados.',
+              style: TextStyle(fontSize: 11, color: white70),
+            ),
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                FilledButton.icon(
+                  onPressed: _pendingPoints.isEmpty ? null : () => _saveCorrection(cal, res),
+                  icon: const Icon(Icons.check, size: 16),
+                  label: const Text('Guardar corrección'),
+                ),
+                const SizedBox(width: 8),
+                TextButton(
+                  onPressed: (_pendingPoints.isEmpty && _corrections.isEmpty) ? null : _undoCorrection,
+                  child: Text('Deshacer', style: TextStyle(color: white70)),
+                ),
+              ],
+            ),
+          ],
         ],
       ),
     );
