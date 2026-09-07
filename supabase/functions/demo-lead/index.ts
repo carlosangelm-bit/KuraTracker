@@ -203,9 +203,17 @@ serve(async (req) => {
     sourceId: SOURCE_ID,
     sourceDescription,
     comments,
-    email: [{ value: email, valueType: "WORK" }],
+    // Correo y teléfono son MULTIFIELDS. En la API universal (crm.item.*) van
+    // dentro de `fm` con `typeId`; las llaves `email`/`phone` de crm.lead.add se
+    // IGNORAN en silencio (los leads del 2 al 5-sep-2026 llegaron sin correo).
+    // Ref: apidocs.bitrix24.com → crm.item.add → "fm".
+    fm: [
+      { typeId: "EMAIL", valueType: "WORK", value: email },
+      ...(phone.length > 0
+        ? [{ typeId: "PHONE", valueType: "WORK", value: phone }]
+        : []),
+    ],
   };
-  if (phone.length > 0) fields.phone = [{ value: phone, valueType: "WORK" }];
   // Responsable OPCIONAL: solo se fija si BITRIX_ASSIGNED_BY_ID es un número
   // válido. Ausente o mal puesto → no se manda y el lead cae en la cuenta del
   // webhook (no se envía un NaN).
