@@ -413,12 +413,17 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
 
   /// Persiste correcciones del clínico (dataset). Best-effort: nunca rompe el
   /// guardado. measurementId null = sesión abandonada (fila sin medición).
+  /// Si alguna fila rebota (RLS o red) NO se traga en silencio: queda en el log
+  /// y se avisa con un SnackBar discreto, para que el clínico se entere en la
+  /// misma sesión y no cuando abramos la tabla la semana siguiente.
   Future<void> _persistCorrections(List<Map<String, dynamic>> rows,
       {String? measurementId}) async {
     if (rows.isEmpty) return;
     final repo = ref.read(dataRepositoryProvider).valueOrNull;
     final user = ref.read(sessionProvider).user;
     if (repo == null || user == null) return;
+    final messenger = ScaffoldMessenger.of(context);
+    var failed = 0;
     for (final row in rows) {
       try {
         await repo.addVisionCorrection({
@@ -428,7 +433,19 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
           'created_by': user.id,
           'created_by_role': user.role.name,
         });
-      } catch (_) {/* best-effort */}
+      } catch (e) {
+        failed++;
+        debugPrint('Corrección de visión no guardada (wound_id=${widget.woundId}): $e');
+      }
+    }
+    if (failed > 0 && mounted) {
+      messenger.showSnackBar(SnackBar(
+        content: Text(failed == rows.length
+            ? 'No se pudo guardar la corrección del motor (permiso o conexión). No quedó registrada.'
+            : 'No se pudieron guardar $failed de ${rows.length} correcciones del motor.'),
+        backgroundColor: Colors.orange.shade800,
+        duration: const Duration(seconds: 5),
+      ));
     }
   }
 
