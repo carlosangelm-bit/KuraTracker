@@ -516,35 +516,11 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
                     required: const [ConsentType.fotografia],
                     actionLabel: 'la toma de fotografía del seguimiento',
                   ),
-                Text('Fecha de la visita', style: _sectionStyle(context)),
-                const SizedBox(height: 8),
-                OutlinedButton.icon(
-                  icon: const Icon(Icons.calendar_today, size: 16),
-                  label: Text(DateFormat('dd/MM/yyyy').format(_visitDate)),
-                  onPressed: () async {
-                    final picked = await showDatePicker(
-                      context: context,
-                      initialDate: _visitDate,
-                      firstDate: DateTime(2020),
-                      lastDate: DateTime.now().add(const Duration(days: 1)),
-                    );
-                    if (picked != null) setState(() => _visitDate = picked);
-                  },
-                ),
-
-                // -----------------------------------------------------------------
-                // PASO 1: Composicion del lecho + limpieza (se captura ANTES de
-                // curar/desbridar) -> justo aqui, INMEDIATAMENTE antes de este
-                // paso, se pide la 1a foto de seguimiento (despues de limpiar,
-                // sin medicion). El orden refleja la secuencia real del
-                // Protocolo de Fotografias y Medicion: limpiar -> fotografiar
-                // sin medir -> evaluar el lecho -> medir -> fotografiar con
-                // medicion.
-                // -----------------------------------------------------------------
-                const SizedBox(height: 20),
-                if (repo != null && wound != null) _phase0Profile(repo, wound),
-                _phaseHeader(1, 'Procedimiento físico',
-                    'Limpiar → fotografiar la herida → medir'),
+                // Fotografía al INICIO del flujo (en consulta es lo primero que se
+                // toma). El gating se conserva: el banner de consentimiento va
+                // arriba y guardar sigue exigiendo el consentimiento de fotografía
+                // (canSave). La nota §1.2 recuerda que la foto va después de limpiar
+                // y antes de medir (la medición sigue más abajo).
                 Text('Fotografía de la herida', style: _sectionStyle(context)),
                 const SizedBox(height: 4),
                 const Text(
@@ -561,6 +537,34 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
                   savedPath: _savedPhotoAfterCleaningPath,
                   onPick: () => _pickPhotoSource(withMeasurement: false),
                 ),
+                const SizedBox(height: 24),
+                Text('Fecha de la visita', style: _sectionStyle(context)),
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.calendar_today, size: 16),
+                  label: Text(DateFormat('dd/MM/yyyy').format(_visitDate)),
+                  onPressed: () async {
+                    final picked = await showDatePicker(
+                      context: context,
+                      initialDate: _visitDate,
+                      firstDate: DateTime(2020),
+                      lastDate: DateTime.now().add(const Duration(days: 1)),
+                    );
+                    if (picked != null) setState(() => _visitDate = picked);
+                  },
+                ),
+
+                // Protocolo de Fotografías y Medición (secuencia física real):
+                // limpiar → fotografiar SIN medir → evaluar el lecho → medir →
+                // (2ª foto con medición). La 1ª foto se movió al INICIO del flujo
+                // (arriba, tras el banner de consentimiento): en consulta es lo
+                // primero que se toma. Su nota §1.2 recuerda que va después de
+                // limpiar. La secuencia se conserva: la foto sigue ANTES de medir,
+                // y la composición del lecho en Fase 2.
+                const SizedBox(height: 20),
+                if (repo != null && wound != null) _phase0Profile(repo, wound),
+                _phaseHeader(1, 'Procedimiento físico',
+                    'Limpiar → fotografiar (foto al inicio del flujo) → medir'),
 
                 // Medición 2D/3D/manual → inmediatamente después, la 2ª foto
                 // (con medición). La composición del lecho se evalúa en la

@@ -71,6 +71,17 @@ class _WoundVisionScreenState extends State<WoundVisionScreen> {
   bool _tracing = true;
   final TransformationController _tc = TransformationController();
 
+  // --- Trazo a mano alzada (modo manual): 1 dedo dibuja, 2 dedos zoom/pinch ---
+  // Los toques y cada arrastre se agrupan en `_strokeStarts` (índice en `_trace`
+  // donde empezó el grupo) para que Deshacer borre el TRAZO completo del último
+  // arrastre (o el último vértice suelto), no punto por punto.
+  int _pointers = 0; // punteros activos sobre la imagen
+  final List<int> _strokeStarts = []; // inicio (en _trace) de cada grupo
+  int? _strokePendingStart; // inicio del arrastre en curso (aún sin commit)
+  bool _strokeCommitted = false; // el arrastre ya empujó su entrada en _strokeStarts
+  Pt? _lastDrawPx; // último punto añadido, para submuestrear por distancia
+  static const double _minDrawStepPx = 2.0; // submuestreo (px rectificados)
+
   @override
   void initState() {
     super.initState();
@@ -158,18 +169,79 @@ class _WoundVisionScreenState extends State<WoundVisionScreen> {
       if (_mode == _Mode.auto) {
         _seeds.add(imagePx);
       } else {
+        // Vértice suelto: su propio grupo para Deshacer.
+        _strokeStarts.add(_trace.length);
         _trace.add(imagePx);
       }
     });
     _reanalyze();
   }
 
+  // --- Trazo a mano alzada, dirigido por eventos de puntero (dentro del hijo
+  // del InteractiveViewer, así el zoom no distorsiona el mapeo local→px). Un
+  // dedo dibuja; al bajar el segundo se abandona el trazo en curso y el gesto
+  // pasa al viewer (zoom). No se re-analiza a mitad de arrastre (caro): solo al
+  // levantar el dedo.
+  void _drawBegin() {
+    if (_mode != _Mode.manual || _busy) return;
+    _strokePendingStart = _trace.length;
+    _strokeCommitted = false;
+    _lastDrawPx = null;
+  }
+
+  void _drawExtend(Pt imagePx) {
+    final cal = _calibration?.result;
+    if (cal == null || _busy || _mode != _Mode.manual || _pointers != 1) return;
+    if (_strokePendingStart == null) return;
+    if (imagePx.x < 0 || imagePx.y < 0 || imagePx.x >= cal.width || imagePx.y >= cal.height) return;
+    if (_lastDrawPx != null) {
+      final dx = imagePx.x - _lastDrawPx!.x, dy = imagePx.y - _lastDrawPx!.y;
+      if (dx * dx + dy * dy < _minDrawStepPx * _minDrawStepPx) return; // submuestreo
+    }
+    setState(() {
+      if (!_strokeCommitted) {
+        _strokeStarts.add(_strokePendingStart!);
+        _strokeCommitted = true;
+      }
+      _trace.add(imagePx);
+      _lastDrawPx = imagePx;
+    });
+  }
+
+  void _drawEnd() {
+    final committed = _strokeCommitted;
+    _strokePendingStart = null;
+    _strokeCommitted = false;
+    _lastDrawPx = null;
+    if (committed) _reanalyze(); // re-mide una vez, al terminar el trazo
+  }
+
+  /// Al bajar un 2º dedo: se descarta el trazo en curso (el gesto es zoom, no
+  /// dibujo) — resuelve la carrera "segundo dedo justo después del primero".
+  void _drawAbort() {
+    if (_strokePendingStart == null) return;
+    setState(() {
+      if (_strokeCommitted) {
+        _trace.removeRange(_strokePendingStart!, _trace.length);
+        if (_strokeStarts.isNotEmpty && _strokeStarts.last == _strokePendingStart) {
+          _strokeStarts.removeLast();
+        }
+      }
+      _strokePendingStart = null;
+      _strokeCommitted = false;
+      _lastDrawPx = null;
+    });
+  }
+
   void _undo() {
     setState(() {
       if (_mode == _Mode.auto) {
         if (_seeds.isNotEmpty) _seeds.removeLast();
-      } else {
-        if (_trace.isNotEmpty) _trace.removeLast();
+      } else if (_strokeStarts.isNotEmpty) {
+        final start = _strokeStarts.removeLast();
+        if (start <= _trace.length) _trace.removeRange(start, _trace.length);
+      } else if (_trace.isNotEmpty) {
+        _trace.removeLast(); // respaldo
       }
     });
     _reanalyze();
@@ -179,6 +251,10 @@ class _WoundVisionScreenState extends State<WoundVisionScreen> {
     setState(() {
       _seeds.clear();
       _trace.clear();
+      _strokeStarts.clear();
+      _strokePendingStart = null;
+      _strokeCommitted = false;
+      _lastDrawPx = null;
       _result = null;
       _error = null;
     });
@@ -371,14 +447,47 @@ class _WoundVisionScreenState extends State<WoundVisionScreen> {
         transformationController: _tc,
         minScale: 1,
         maxScale: 10,
+        // En modo manual se DESACTIVA el pan del viewer: así 1 dedo dibuja sin
+        // competir con el viewer (sin carrera de arena) y 2 dedos siguen haciendo
+        // zoom (pinch). En modo automático el pan queda activo (los toques colocan
+        // semillas, no se arrastra). scaleEnabled siempre (zoom con 2 dedos).
+        panEnabled: _mode == _Mode.auto,
         boundaryMargin: const EdgeInsets.all(120),
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTapUp: (d) {
-            final lx = (d.localPosition.dx - ox) / scale, ly = (d.localPosition.dy - oy) / scale;
-            _onTap(Pt(lx, ly));
+        // Listener DENTRO del hijo del viewer: su localPosition llega en coords
+        // del hijo (sin transformar por el zoom), igual que onTapUp. Cuenta
+        // punteros para decidir dibujo (1) vs zoom (2+).
+        child: Listener(
+          onPointerDown: (e) {
+            _pointers++;
+            if (_mode == _Mode.manual && !_busy) {
+              if (_pointers == 1) {
+                _drawBegin();
+              } else if (_pointers >= 2) {
+                _drawAbort();
+              }
+            }
           },
-          child: Stack(
+          onPointerMove: (e) {
+            if (_mode == _Mode.manual && _pointers == 1) {
+              final lx = (e.localPosition.dx - ox) / scale, ly = (e.localPosition.dy - oy) / scale;
+              _drawExtend(Pt(lx, ly));
+            }
+          },
+          onPointerUp: (e) {
+            if (_pointers > 0) _pointers--;
+            if (_pointers == 0 && _mode == _Mode.manual) _drawEnd();
+          },
+          onPointerCancel: (e) {
+            if (_pointers > 0) _pointers--;
+            if (_pointers == 0 && _mode == _Mode.manual) _drawEnd();
+          },
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTapUp: (d) {
+              final lx = (d.localPosition.dx - ox) / scale, ly = (d.localPosition.dy - oy) / scale;
+              _onTap(Pt(lx, ly));
+            },
+            child: Stack(
             children: [
               Positioned(
                 left: ox,
@@ -410,6 +519,7 @@ class _WoundVisionScreenState extends State<WoundVisionScreen> {
                 ),
               ),
             ],
+          ),
           ),
         ),
       );
