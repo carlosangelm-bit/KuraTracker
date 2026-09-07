@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 
+import 'color_spaces.dart';
 import 'vision_geometry.dart';
 
 /// Cómo se obtuvo la escala (px → mm).
@@ -149,6 +150,66 @@ class WoundMeasurementResult {
       };
 }
 
+/// Lo que el motor asignó a un píxel + su ΔE a cada prototipo de tejido.
+/// Alimenta el INSPECTOR de la pantalla ("por qué se equivoca"): p. ej. una piel
+/// oscura perilesional a ΔE 11 del prototipo de necrosis mientras la herida está
+/// a ΔE 26 del suyo.
+class TissueInspection {
+  final int label; // TissueClass: 0..3, 254 brillo, 255 fuera
+  final Map<int, double> deltaEByClass; // clase (0..3) → ΔE al prototipo
+  const TissueInspection(this.label, this.deltaEByClass);
+}
+
+/// Mapa de etiquetas por píxel del clasificador (espacio de TRABAJO) + lo
+/// necesario para dibujarlo sobre la rectificada e inspeccionarlo. Es EXPOSICIÓN
+/// de lo que el motor ya calculó: no cambia ninguna clasificación ni medida.
+class TissueMap {
+  final Uint8List labels; // width*height, TissueClass ints (254 brillo, 255 fuera)
+  final int width; // px de trabajo
+  final int height;
+  // rectPx = workPx * factor + offset. Para mapear toques de la rectificada.
+  final int factor;
+  final int offsetX;
+  final int offsetY;
+  final Float64List lab; // Lab del raster de trabajo (width*height*3), como lo vio el clasificador
+  final Map<int, List<double>> prototypes; // clase (0..3) → Lab del prototipo
+
+  const TissueMap({
+    required this.labels,
+    required this.width,
+    required this.height,
+    required this.factor,
+    required this.offsetX,
+    required this.offsetY,
+    required this.lab,
+    required this.prototypes,
+  });
+
+  int? _workIndex(int rectX, int rectY) {
+    if (factor <= 0) return null;
+    final wx = (rectX - offsetX) ~/ factor, wy = (rectY - offsetY) ~/ factor;
+    if (wx < 0 || wy < 0 || wx >= width || wy >= height) return null;
+    return wy * width + wx;
+  }
+
+  /// Clase asignada a un punto de la rectificada, o null si cae fuera del mapa.
+  int? labelAtRectPx(int rectX, int rectY) {
+    final i = _workIndex(rectX, rectY);
+    return i == null ? null : labels[i];
+  }
+
+  /// Inspección en un punto de la rectificada: clase + ΔE a cada prototipo.
+  TissueInspection? inspectRectPx(int rectX, int rectY) {
+    final i = _workIndex(rectX, rectY);
+    if (i == null) return null;
+    final de = <int, double>{};
+    for (final e in prototypes.entries) {
+      de[e.key] = ColorSpaces.labDistance(lab, i * 3, Float64List.fromList(e.value), 0);
+    }
+    return TissueInspection(labels[i], de);
+  }
+}
+
 /// Resultado completo de un análisis (segmentación + tejido + medidas).
 class WoundVisionResult {
   final CalibrationResult calibration;
@@ -159,6 +220,7 @@ class WoundVisionResult {
   final List<QualityGate> gates; // compuertas de calibración + de la herida
   final String engineVersion;
   final bool manualTrace; // true si el contorno lo trazó el clínico (sin segmentación)
+  final TissueMap tissueMap; // etiquetas por píxel + prototipos (para ver clase a clase e inspeccionar)
 
   const WoundVisionResult({
     required this.calibration,
@@ -169,6 +231,7 @@ class WoundVisionResult {
     required this.gates,
     required this.engineVersion,
     required this.manualTrace,
+    required this.tissueMap,
   });
 
   /// Valor para `wound_measurements.measurement_source`.

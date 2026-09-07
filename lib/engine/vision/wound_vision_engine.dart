@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:image/image.dart' as img;
 
+import 'color_spaces.dart';
 import 'enclosing_trace_refiner.dart';
 import 'rasters.dart';
 import 'reference_calibrator.dart';
@@ -159,6 +160,7 @@ class WoundVisionEngine {
       gates: gates,
       engineVersion: engineVersion,
       manualTrace: false,
+      tissueMap: _tissueMap(tissue, seg.work, seg.factor, seg.offsetX, seg.offsetY),
     );
   }
 
@@ -236,6 +238,7 @@ class WoundVisionEngine {
       // El contorno lo determinó el MOTOR dentro del lazo, no el dedo: la
       // medición es automática, no un trazo manual.
       manualTrace: false,
+      tissueMap: _tissueMap(tissue, ref.work, ref.factor, ref.offsetX, ref.offsetY),
     );
   }
 
@@ -295,6 +298,7 @@ class WoundVisionEngine {
       ],
       engineVersion: engineVersion,
       manualTrace: true,
+      tissueMap: _tissueMap(tissue, work, f, x0, y0),
     );
   }
 
@@ -328,6 +332,84 @@ class WoundVisionEngine {
               'Reencuadra con la herida y la tarjeta completas, y repite la foto.'
           : 'La herida está completa dentro del encuadre.',
     );
+  }
+
+  /// EXPOSICIÓN (no cambia lógica): empaqueta el mapa de etiquetas del
+  /// clasificador + Lab de trabajo + prototipos, para ver clase a clase e
+  /// inspeccionar en la pantalla. Los porcentajes salen de tissue.composition,
+  /// intactos.
+  TissueMap _tissueMap(TissueResult tissue, RgbRaster work, int factor, int offX, int offY) {
+    return TissueMap(
+      labels: tissue.labels,
+      width: work.width,
+      height: work.height,
+      factor: factor,
+      offsetX: offX,
+      offsetY: offY,
+      lab: ColorSpaces.rasterToLab(work),
+      prototypes: {
+        for (final e in params.tissuePrototypesLab.entries)
+          if (TissueClass.indexOf(e.key) != TissueClass.none) TissueClass.indexOf(e.key): e.value,
+      },
+    );
+  }
+
+  /// DIBUJADO (no cambia lógica): capa por CLASE de tejido para ver píxel a píxel
+  /// qué asignó el motor. Colores ANTINATURALES (requisito: distinguir el
+  /// diagnóstico del tejido subyacente) y PATRÓN de damero para el brillo/no
+  /// evaluable. [classes] = clases visibles (0..3 y 254=brillo). [opacity] 0..1.
+  /// Se dibuja a resolución rectificada (igual que overlayPng) para alinearse
+  /// con la imagen; cada píxel de trabajo cubre factor×factor.
+  static Uint8List renderClassOverlay(
+    TissueMap map, {
+    required int rectWidth,
+    required int rectHeight,
+    required Set<int> classes,
+    required double opacity,
+  }) {
+    final a = (opacity.clamp(0.0, 1.0) * 255).round();
+    final image = img.Image(width: rectWidth, height: rectHeight, numChannels: 4);
+    for (var y = 0; y < map.height; y++) {
+      for (var x = 0; x < map.width; x++) {
+        final lbl = map.labels[y * map.width + x];
+        if (!classes.contains(lbl)) continue;
+        var r = 0, g = 0, b = 0;
+        switch (lbl) {
+          case TissueClass.granulacion:
+            r = 0x00; g = 0xE5; b = 0xFF; // cian
+            break;
+          case TissueClass.esfacelo:
+            r = 0xFF; g = 0x00; b = 0xEA; // magenta
+            break;
+          case TissueClass.necrosis:
+            r = 0xC6; g = 0xFF; b = 0x00; // verde lima
+            break;
+          case TissueClass.epitelizacion:
+            r = 0xFF; g = 0x8A; b = 0x00; // naranja
+            break;
+          case TissueClass.specular:
+            break; // color por píxel (damero) abajo
+          default:
+            continue; // 255 fuera u otros: no se pintan
+        }
+        for (var dy = 0; dy < map.factor; dy++) {
+          final gy = map.offsetY + y * map.factor + dy;
+          if (gy < 0 || gy >= rectHeight) continue;
+          for (var dx = 0; dx < map.factor; dx++) {
+            final gx = map.offsetX + x * map.factor + dx;
+            if (gx < 0 || gx >= rectWidth) continue;
+            if (lbl == TissueClass.specular) {
+              final on = (((gx >> 2) + (gy >> 2)) & 1) == 0; // damero ~4px
+              final v = on ? 255 : 25;
+              image.setPixelRgba(gx, gy, v, v, v, a);
+            } else {
+              image.setPixelRgba(gx, gy, r, g, b, a);
+            }
+          }
+        }
+      }
+    }
+    return img.encodePng(image);
   }
 
   QualityGate _specularGate(TissueResult t) {

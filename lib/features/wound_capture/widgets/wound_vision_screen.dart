@@ -73,6 +73,40 @@ class _WoundVisionScreenState extends State<WoundVisionScreen> {
   bool get _isTraceMode => _mode == _Mode.rodear || _mode == _Mode.manual;
   double _sensitivity = 0.5;
   bool _showTissue = true;
+
+  // --- Vista por CLASE de tejido + inspector (fase de resultados) ---
+  // Clases: 0 granulación, 1 esfacelo, 2 necrosis, 3 epitelización, 254 brillo.
+  // Colores ANTINATURALES (requisito: distinguir el diagnóstico del tejido).
+  static const Map<int, String> _classNames = {
+    0: 'Granulación', 1: 'Esfacelo', 2: 'Necrosis', 3: 'Epitelización', 254: 'Brillo / no eval.'
+  };
+  static const Map<int, Color> _classColors = {
+    0: Color(0xFF00E5FF), // cian
+    1: Color(0xFFFF00EA), // magenta
+    2: Color(0xFFC6FF00), // verde lima
+    3: Color(0xFFFF8A00), // naranja
+    254: Color(0xFFB0B0B0), // brillo: gris (en el overlay va en patrón de damero)
+  };
+  final Set<int> _classesOn = {0, 1, 2, 3, 254};
+  double _classOpacity = 0.6;
+  Uint8List? _classOverlay; // PNG memoizado
+  String? _classOverlayKey;
+  TissueInspection? _inspection; // resultado del inspector (tap)
+  Pt? _inspectRectPx; // punto tocado (px rectificados) para el marcador
+
+  Uint8List _classOverlayFor(CalibrationResult cal, WoundVisionResult res) {
+    final key = '${identityHashCode(res)}|${(_classesOn.toList()..sort()).join(',')}|${_classOpacity.toStringAsFixed(2)}';
+    if (_classOverlayKey == key && _classOverlay != null) return _classOverlay!;
+    _classOverlay = WoundVisionEngine.renderClassOverlay(
+      res.tissueMap,
+      rectWidth: cal.width,
+      rectHeight: cal.height,
+      classes: _classesOn,
+      opacity: _classOpacity,
+    );
+    _classOverlayKey = key;
+    return _classOverlay!;
+  }
   // El paso de marcar/trazar se abre a PANTALLA COMPLETA (imagen al máximo, con
   // zoom y desplazamiento); las medidas y «Aplicar» aparecen al salir de él.
   bool _tracing = true;
@@ -599,30 +633,65 @@ class _WoundVisionScreenState extends State<WoundVisionScreen> {
       clipBehavior: Clip.antiAlias,
       child: Column(
         children: [
-          SizedBox(
-            height: 260,
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                Image.memory(cal.rectifiedPng, fit: BoxFit.contain, gaplessPlayback: true),
-                if (res != null && _showTissue)
-                  Image.memory(res.overlayPng, fit: BoxFit.contain, gaplessPlayback: true),
-              ],
-            ),
-          ),
+          LayoutBuilder(builder: (context, c) {
+            const boxH = 260.0;
+            final boxW = c.maxWidth;
+            final scale = math.min(boxW / cal.width, boxH / cal.height);
+            final dw = cal.width * scale, dh = cal.height * scale;
+            final ox = (boxW - dw) / 2, oy = (boxH - dh) / 2;
+            return SizedBox(
+              height: boxH,
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                // INSPECTOR: tocar un punto (con la vista de clases activa) dice
+                // qué clase asignó el motor y su ΔE a cada prototipo.
+                onTapUp: (res == null || !_showTissue)
+                    ? null
+                    : (d) {
+                        final rx = ((d.localPosition.dx - ox) / scale).round();
+                        final ry = ((d.localPosition.dy - oy) / scale).round();
+                        final insp = res.tissueMap.inspectRectPx(rx, ry);
+                        setState(() {
+                          _inspection = insp;
+                          _inspectRectPx = insp == null ? null : Pt(rx.toDouble(), ry.toDouble());
+                        });
+                      },
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    Image.memory(cal.rectifiedPng, fit: BoxFit.contain, gaplessPlayback: true),
+                    if (res != null && _showTissue)
+                      Image.memory(_classOverlayFor(cal, res), fit: BoxFit.contain, gaplessPlayback: true),
+                    if (_showTissue && _inspectRectPx != null)
+                      Positioned(
+                        left: ox + _inspectRectPx!.x * scale - 9,
+                        top: oy + _inspectRectPx!.y * scale - 9,
+                        child: const IgnorePointer(
+                          child: Icon(Icons.add_circle_outline, size: 18, color: Colors.white),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            );
+          }),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             child: Row(
               children: [
                 TextButton.icon(
-                  onPressed: () => setState(() => _tracing = true),
+                  onPressed: () => setState(() {
+                    _tracing = true;
+                    _inspection = null;
+                    _inspectRectPx = null;
+                  }),
                   icon: const Icon(Icons.edit_outlined, color: Colors.white),
                   label: Text(_mode == _Mode.auto ? 'Editar / marcar' : 'Editar contorno',
                       style: const TextStyle(color: Colors.white)),
                 ),
                 const Spacer(),
                 IconButton(
-                  tooltip: _showTissue ? 'Ocultar tejido' : 'Ver tejido',
+                  tooltip: _showTissue ? 'Ocultar clases' : 'Ver clases',
                   icon: Icon(_showTissue ? Icons.layers : Icons.layers_clear_outlined,
                       color: Colors.white70),
                   onPressed: () => setState(() => _showTissue = !_showTissue),
@@ -630,6 +699,108 @@ class _WoundVisionScreenState extends State<WoundVisionScreen> {
               ],
             ),
           ),
+          if (res != null && _showTissue) _classControls(res),
+        ],
+      ),
+    );
+  }
+
+  /// Controles de la vista por clase: interruptores por clase (con su color),
+  /// opacidad, leyenda con % y fracción de brillo, y lectura del inspector.
+  Widget _classControls(WoundVisionResult res) {
+    // Fracción por brillo, contada del propio mapa (254 / evaluables+brillo).
+    var spec = 0, tot = 0;
+    for (final l in res.tissueMap.labels) {
+      if (l <= 3) tot++;
+      if (l == 254) {
+        spec++;
+        tot++;
+      }
+    }
+    final specPct = tot == 0 ? 0.0 : 100 * spec / tot;
+    final t = res.tissue;
+    final pctByClass = {0: t.granulacion, 1: t.esfacelo, 2: t.necrosis, 3: t.epitelizacion};
+    final insp = _inspection;
+    final white70 = Colors.white.withValues(alpha: 0.7);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Interruptores por clase (color antinatural en el avatar).
+          Wrap(
+            spacing: 6,
+            runSpacing: 4,
+            children: [
+              for (final k in const [0, 1, 2, 3, 254])
+                FilterChip(
+                  visualDensity: VisualDensity.compact,
+                  selected: _classesOn.contains(k),
+                  avatar: CircleAvatar(radius: 7, backgroundColor: _classColors[k]),
+                  label: Text(
+                    k == 254
+                        ? _classNames[k]!
+                        : '${_classNames[k]!} ${pctByClass[k]!.round()}%',
+                    style: const TextStyle(fontSize: 11),
+                  ),
+                  onSelected: (v) => setState(() {
+                    if (v) {
+                      _classesOn.add(k);
+                    } else {
+                      _classesOn.remove(k);
+                    }
+                    _classOverlayKey = null; // fuerza re-render del overlay
+                  }),
+                ),
+            ],
+          ),
+          Row(
+            children: [
+              Text('Opacidad', style: TextStyle(fontSize: 12, color: white70)),
+              Expanded(
+                child: Slider(
+                  value: _classOpacity,
+                  min: 0.1,
+                  max: 1.0,
+                  onChanged: (v) => setState(() => _classOpacity = v),
+                ),
+              ),
+              Text('Descartado por brillo: ${specPct.toStringAsFixed(0)}%',
+                  style: TextStyle(fontSize: 11, color: white70)),
+            ],
+          ),
+          // INSPECTOR: clase asignada + ΔE a cada prototipo (ascendente). Deja
+          // ver, p. ej., piel a ΔE 11 de necrosis mientras la herida está a 26.
+          if (insp != null) ...[
+            const SizedBox(height: 4),
+            Text(
+              'Punto tocado → el motor lo llamó: ${_classNames[insp.label] ?? (insp.label == 255 ? 'fuera' : 'clase ${insp.label}')}',
+              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Colors.white),
+            ),
+            const SizedBox(height: 2),
+            for (final e in (insp.deltaEByClass.entries.toList()
+                  ..sort((a, b) => a.value.compareTo(b.value))))
+              Row(
+                children: [
+                  Container(
+                    width: 10,
+                    height: 10,
+                    margin: const EdgeInsets.only(right: 6),
+                    decoration: BoxDecoration(color: _classColors[e.key], shape: BoxShape.circle),
+                  ),
+                  Text(
+                    '${_classNames[e.key]}: ΔE ${e.value.toStringAsFixed(1)}',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: e.key == insp.label ? Colors.white : white70,
+                      fontWeight: e.key == insp.label ? FontWeight.w700 : FontWeight.w400,
+                    ),
+                  ),
+                ],
+              ),
+          ] else
+            Text('Toca un punto de la imagen para inspeccionar la clasificación.',
+                style: TextStyle(fontSize: 11, color: white70)),
         ],
       ),
     );
