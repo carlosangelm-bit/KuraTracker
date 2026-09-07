@@ -136,6 +136,7 @@ class WoundVisionEngine {
       ...result.gates,
       _overexposureGate(rect, seg.mask, seg.factor, seg.offsetX, seg.offsetY),
       _specularGate(tissue),
+      _frameContactGate(contour, rect.width, rect.height),
     ];
     final overlay = _renderOverlay(
       width: rect.width,
@@ -203,6 +204,7 @@ class WoundVisionEngine {
       ...result.gates,
       _overexposureGate(rect, ref.mask, ref.factor, ref.offsetX, ref.offsetY),
       _specularGate(tissue),
+      _frameContactGate(contour, rect.width, rect.height),
       if (ref.touchesTrace)
         const QualityGate('enclosing_trace', 'Trazo envolvente', GateStatus.warn,
             'La herida llega hasta el trazo: puede haber quedado lesión FUERA del lazo y la medida quedarse corta. '
@@ -302,6 +304,32 @@ class WoundVisionEngine {
   /// brillo. Importa porque un reflejo tiene la misma firma que la
   /// epitelización: si no se filtrara, el motor leería los brillos como
   /// cicatrización (medido: hasta 62 % de epitelización inventada).
+  /// Compuerta: la herida toca el BORDE del encuadre (marco de la imagen
+  /// rectificada). Entonces la lesión puede continuar fuera de la foto y el área
+  /// medida quedar incompleta. Pasa a `warn`; no invalida la medición.
+  QualityGate _frameContactGate(List<Pt> contourRect, int width, int height) {
+    const margin = 2.0;
+    var touches = false;
+    for (final p in contourRect) {
+      if (p.x <= margin ||
+          p.y <= margin ||
+          p.x >= width - 1 - margin ||
+          p.y >= height - 1 - margin) {
+        touches = true;
+        break;
+      }
+    }
+    return QualityGate(
+      'frame_contact',
+      'Herida en el borde de la foto',
+      touches ? GateStatus.warn : GateStatus.pass,
+      touches
+          ? 'La herida toca el borde del encuadre: parte puede quedar fuera y el área quedar incompleta. '
+              'Reencuadra con la herida y la tarjeta completas, y repite la foto.'
+          : 'La herida está completa dentro del encuadre.',
+    );
+  }
+
   QualityGate _specularGate(TissueResult t) {
     final pct = t.specularFraction * 100;
     if (t.specularFraction <= params.specularWarnFraction) {

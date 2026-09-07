@@ -193,8 +193,15 @@ void main() {
       // Sin el filtro esto llegaba a 43–62 %. La verdad de la escena es 0 %.
       expect(res!.tissue.epitelizacion, lessThan(20),
           reason: 'epitelización ${res.tissue.epitelizacion} % — los brillos se están leyendo como cicatrización');
-      // Y el resto del lecho sigue reconociéndose.
-      expect(res.tissue.granulacion, greaterThan(35));
+      // Y el resto del lecho sigue reconociéndose. El reparto es sobre el tejido
+      // EVALUABLE (lo no quemado): con 12 reflejos gaussianos cuyos footprints 3σ
+      // se solapan, ~68 % de la herida queda quemada (specularFraction≈0.68;
+      // los píxeles marcados promedian S≈0,03 y V≈0,95 — genuinamente blancos,
+      // no granulación sana en el borde del umbral). Como los reflejos caen al
+      // CENTRO (granulación), lo evaluable es sobre todo esfacelo periférico, así
+      // que la granulación evaluable ronda 20-25 %, no >35. Lo que importa es que
+      // sigue presente (no todo se leyó como epitelización/quemado): >15.
+      expect(res.tissue.granulacion, greaterThan(15));
       expect(res.tissue.esfacelo, greaterThan(15));
       final gate = res.gates.firstWhere((g) => g.id == 'brillo');
       expect(gate.status, GateStatus.warn, reason: gate.detail);

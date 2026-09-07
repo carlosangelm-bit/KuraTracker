@@ -10,7 +10,6 @@ import 'dart:math' as math;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kuratracker/engine/vision/vision_geometry.dart';
 import 'package:kuratracker/engine/vision/wound_vision_engine.dart';
-import 'package:kuratracker/engine/vision/wound_vision_models.dart';
 
 import 'synthetic_scene.dart';
 
