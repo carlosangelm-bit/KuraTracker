@@ -35,6 +35,16 @@ class AppConfig {
   /// expediente real. En producción y en la demo es false.
   static bool get isSandbox => appEnv == 'sandbox';
 
+  /// Motor de visión ("Medir con foto"): trabajo en curso, APAGADO por defecto.
+  /// La inyecta el CI/build con `--dart-define=VISION_ENABLED=true` para
+  /// encenderlo (p. ej. al probar en sandbox). Condiciona SOLO la ENTRADA al
+  /// motor (el botón de medición automática); el motor en lib/engine/vision no
+  /// se toca. Independiente de [isSupabaseConfigured] y de [isSandbox].
+  static const bool visionEnabled = bool.fromEnvironment(
+    'VISION_ENABLED',
+    defaultValue: false,
+  );
+
   /// URL PÚBLICA de la función portera de leads de la demo (demo-lead). Es una
   /// URL, NO una credencial (el token de Bitrix vive en los secrets de Supabase,
   /// del lado del servidor). Vacía en la Fase 1 / sin configurar: el formulario

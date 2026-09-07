@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 
+import '../../core/config/app_config.dart';
 import '../../core/providers/session_provider.dart';
 import '../../core/theme/kura_theme.dart';
 import '../../core/utils/image_pick_error.dart';
@@ -574,7 +575,10 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
                 const SizedBox(height: 12),
                 // Medición por foto (motor de visión on-device): propone largo,
                 // ancho y composición del lecho a partir de la foto con tarjeta.
-                Row(
+                // Gateado por VISION_ENABLED (apagado por defecto): sin el flag no
+                // se ofrece la medición automática (la captura manual sigue igual).
+                if (AppConfig.visionEnabled) ...[
+                  Row(
                   children: [
                     Expanded(
                       child: OutlinedButton.icon(
@@ -609,6 +613,7 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
                       style: TextStyle(fontSize: 11, color: KuraColors.darkText.withOpacity(0.6)),
                     ),
                   ),
+                ],
                 const SizedBox(height: 12),
                 Row(
                   children: [

@@ -13,6 +13,7 @@ import 'package:intl/intl.dart';
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 
+import '../../core/config/app_config.dart';
 import '../../core/theme/kura_theme.dart';
 import '../../core/utils/image_pick_error.dart';
 import '../../services/image_transcode.dart';
@@ -1192,6 +1193,9 @@ class _WoundCaptureScreenState extends ConsumerState<WoundCaptureScreen> {
             children: [
               // Medición por foto (motor de visión on-device). Propone largo,
               // ancho y composición del lecho; el clínico revisa y edita.
+              // Gateado por VISION_ENABLED (apagado por defecto): sin el flag no
+              // se ofrece la medición automática (la captura manual sigue igual).
+              if (AppConfig.visionEnabled) ...[
               Row(
                 children: [
                   Expanded(
@@ -1243,6 +1247,7 @@ class _WoundCaptureScreenState extends ConsumerState<WoundCaptureScreen> {
                     ],
                   ),
                 ),
+              ],
               const SizedBox(height: 4),
               Row(
                 children: [
