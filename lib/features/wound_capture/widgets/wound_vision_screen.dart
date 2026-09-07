@@ -52,7 +52,11 @@ class WoundVisionScreen extends StatefulWidget {
   State<WoundVisionScreen> createState() => _WoundVisionScreenState();
 }
 
-enum _Mode { auto, manual }
+// rodear: el dedo va POR FUERA de la herida; el trazo es ZONA DE BÚSQUEDA y el
+//   motor afina el borde real (analyzeEnclosingTrace) — el que mejor mide.
+// auto: toques-semilla dentro de la herida (analyze).
+// manual: el trazo se toma como el borde EXACTO (analyzeManualTrace).
+enum _Mode { rodear, auto, manual }
 
 class _WoundVisionScreenState extends State<WoundVisionScreen> {
   WoundVisionEngine? _engine;
@@ -61,9 +65,12 @@ class _WoundVisionScreenState extends State<WoundVisionScreen> {
   String? _error;
   bool _busy = true;
   String _busyLabel = 'Buscando la referencia de escala…';
-  _Mode _mode = _Mode.auto;
+  _Mode _mode = _Mode.rodear; // POR DEFECTO: el que mejor mide
   final List<Pt> _seeds = [];
   final List<Pt> _trace = [];
+  // Modos que usan _trace (dibujo/trazo): rodear (zona de búsqueda) y manual
+  // (borde exacto). auto usa semillas.
+  bool get _isTraceMode => _mode == _Mode.rodear || _mode == _Mode.manual;
   double _sensitivity = 0.5;
   bool _showTissue = true;
   // El paso de marcar/trazar se abre a PANTALLA COMPLETA (imagen al máximo, con
@@ -123,13 +130,15 @@ class _WoundVisionScreenState extends State<WoundVisionScreen> {
       setState(() => _result = null);
       return;
     }
-    if (_mode == _Mode.manual && _trace.length < 3) {
+    if (_isTraceMode && _trace.length < 3) {
       setState(() => _result = null);
       return;
     }
     setState(() {
       _busy = true;
-      _busyLabel = _mode == _Mode.auto ? 'Delimitando la herida…' : 'Midiendo el contorno…';
+      _busyLabel = _mode == _Mode.auto
+          ? 'Delimitando la herida…'
+          : (_mode == _Mode.rodear ? 'Afinando el borde…' : 'Midiendo el contorno…');
     });
     try {
       final res = await compute(
@@ -137,8 +146,9 @@ class _WoundVisionScreenState extends State<WoundVisionScreen> {
         _AnalyzeArgs(
           engine: engine,
           calibration: cal,
+          mode: _mode,
           seeds: _mode == _Mode.auto ? List<Pt>.from(_seeds) : const [],
-          trace: _mode == _Mode.manual ? List<Pt>.from(_trace) : const [],
+          trace: _isTraceMode ? List<Pt>.from(_trace) : const [],
           sensitivity: _sensitivity,
         ),
       );
@@ -183,7 +193,7 @@ class _WoundVisionScreenState extends State<WoundVisionScreen> {
   // pasa al viewer (zoom). No se re-analiza a mitad de arrastre (caro): solo al
   // levantar el dedo.
   void _drawBegin() {
-    if (_mode != _Mode.manual || _busy) return;
+    if (!_isTraceMode || _busy) return;
     _strokePendingStart = _trace.length;
     _strokeCommitted = false;
     _lastDrawPx = null;
@@ -191,7 +201,7 @@ class _WoundVisionScreenState extends State<WoundVisionScreen> {
 
   void _drawExtend(Pt imagePx) {
     final cal = _calibration?.result;
-    if (cal == null || _busy || _mode != _Mode.manual || _pointers != 1) return;
+    if (cal == null || _busy || !_isTraceMode || _pointers != 1) return;
     if (_strokePendingStart == null) return;
     if (imagePx.x < 0 || imagePx.y < 0 || imagePx.x >= cal.width || imagePx.y >= cal.height) return;
     if (_lastDrawPx != null) {
@@ -289,9 +299,15 @@ class _WoundVisionScreenState extends State<WoundVisionScreen> {
   // botón «Ver medidas» sale del modo de trazado a la fase de resultados.
   // ---------------------------------------------------------------------------
   Widget _buildTracing(BuildContext context, CalibrationResult cal) {
-    final hint = _mode == _Mode.auto
-        ? 'Toca DENTRO de la herida; pellizca para acercar y arrastra para mover. Si tiene varios tejidos, toca cada uno.'
-        : 'Toca los puntos del contorno en orden (mínimo 3); se cierra solo. Pellizca para acercar y arrastra para mover.';
+    final hint = switch (_mode) {
+      _Mode.rodear =>
+        'RODEA la herida POR FUERA con el dedo (por piel sana, sin pisar el borde): '
+            'el motor afina el borde real. 1 dedo dibuja, 2 dedos hacen zoom.',
+      _Mode.auto =>
+        'Toca DENTRO de la herida; pellizca para acercar y arrastra para mover. Si tiene varios tejidos, toca cada uno.',
+      _Mode.manual =>
+        'Traza el borde EXACTO de la herida (mínimo 3 puntos); se cierra solo. 1 dedo dibuja, 2 dedos hacen zoom.',
+    };
     return Scaffold(
       backgroundColor: const Color(0xFF141118),
       body: SafeArea(
@@ -320,6 +336,10 @@ class _WoundVisionScreenState extends State<WoundVisionScreen> {
                     ),
                     SegmentedButton<_Mode>(
                       segments: const [
+                        ButtonSegment(
+                            value: _Mode.rodear,
+                            icon: Icon(Icons.highlight_alt),
+                            tooltip: 'Rodear la herida'),
                         ButtonSegment(
                             value: _Mode.auto,
                             icon: Icon(Icons.touch_app_outlined),
@@ -376,7 +396,9 @@ class _WoundVisionScreenState extends State<WoundVisionScreen> {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    if (_mode == _Mode.auto)
+                    // Sensibilidad: aplica a auto (semillas) y rodear (afina el
+                    // borde). Manual toma el trazo tal cual, no la usa.
+                    if (_mode != _Mode.manual)
                       Row(
                         children: [
                           const Text('Sensibilidad',
@@ -447,10 +469,10 @@ class _WoundVisionScreenState extends State<WoundVisionScreen> {
         transformationController: _tc,
         minScale: 1,
         maxScale: 10,
-        // En modo manual se DESACTIVA el pan del viewer: así 1 dedo dibuja sin
-        // competir con el viewer (sin carrera de arena) y 2 dedos siguen haciendo
-        // zoom (pinch). En modo automático el pan queda activo (los toques colocan
-        // semillas, no se arrastra). scaleEnabled siempre (zoom con 2 dedos).
+        // En los modos de TRAZO (rodear/manual) se DESACTIVA el pan del viewer:
+        // así 1 dedo dibuja sin competir con el viewer (sin carrera de arena) y 2
+        // dedos siguen haciendo zoom (pinch). En automático el pan queda activo
+        // (los toques colocan semillas, no se arrastra). scaleEnabled siempre.
         panEnabled: _mode == _Mode.auto,
         boundaryMargin: const EdgeInsets.all(120),
         // Listener DENTRO del hijo del viewer: su localPosition llega en coords
@@ -459,7 +481,7 @@ class _WoundVisionScreenState extends State<WoundVisionScreen> {
         child: Listener(
           onPointerDown: (e) {
             _pointers++;
-            if (_mode == _Mode.manual && !_busy) {
+            if (_isTraceMode && !_busy) {
               if (_pointers == 1) {
                 _drawBegin();
               } else if (_pointers >= 2) {
@@ -468,18 +490,18 @@ class _WoundVisionScreenState extends State<WoundVisionScreen> {
             }
           },
           onPointerMove: (e) {
-            if (_mode == _Mode.manual && _pointers == 1) {
+            if (_isTraceMode && _pointers == 1) {
               final lx = (e.localPosition.dx - ox) / scale, ly = (e.localPosition.dy - oy) / scale;
               _drawExtend(Pt(lx, ly));
             }
           },
           onPointerUp: (e) {
             if (_pointers > 0) _pointers--;
-            if (_pointers == 0 && _mode == _Mode.manual) _drawEnd();
+            if (_pointers == 0 && _isTraceMode) _drawEnd();
           },
           onPointerCancel: (e) {
             if (_pointers > 0) _pointers--;
-            if (_pointers == 0 && _mode == _Mode.manual) _drawEnd();
+            if (_pointers == 0 && _isTraceMode) _drawEnd();
           },
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
@@ -512,7 +534,7 @@ class _WoundVisionScreenState extends State<WoundVisionScreen> {
                 child: CustomPaint(
                   painter: _MarksPainter(
                     seeds: _mode == _Mode.auto ? _seeds : const [],
-                    trace: _mode == _Mode.manual ? _trace : const [],
+                    trace: _isTraceMode ? _trace : const [],
                     scale: scale,
                     excluded: cal.excludedRects,
                   ),
@@ -778,12 +800,14 @@ CalibrationOutcome _calibrateTask(_CalibrateArgs a) => a.engine.calibratePhoto(a
 class _AnalyzeArgs {
   final WoundVisionEngine engine;
   final CalibrationOutcome calibration;
+  final _Mode mode;
   final List<Pt> seeds;
   final List<Pt> trace;
   final double sensitivity;
   const _AnalyzeArgs({
     required this.engine,
     required this.calibration,
+    required this.mode,
     required this.seeds,
     required this.trace,
     required this.sensitivity,
@@ -791,10 +815,17 @@ class _AnalyzeArgs {
 }
 
 WoundVisionResult? _analyzeTask(_AnalyzeArgs a) {
-  if (a.trace.length >= 3) {
-    return a.engine.analyzeManualTrace(a.calibration, polygon: a.trace);
+  switch (a.mode) {
+    case _Mode.rodear:
+      // El trazo va POR FUERA: zona de búsqueda; el motor afina el borde real.
+      return a.engine.analyzeEnclosingTrace(a.calibration,
+          polygon: a.trace, sensitivity: a.sensitivity);
+    case _Mode.manual:
+      // El trazo ES el borde exacto.
+      return a.engine.analyzeManualTrace(a.calibration, polygon: a.trace);
+    case _Mode.auto:
+      return a.engine.analyze(a.calibration, seeds: a.seeds, sensitivity: a.sensitivity);
   }
-  return a.engine.analyze(a.calibration, seeds: a.seeds, sensitivity: a.sensitivity);
 }
 
 // -----------------------------------------------------------------------------
