@@ -3973,6 +3973,30 @@ class DataRepository {
       'status': AdmissionStatus.egresado.dbValue,
       'discharged_at': DateTime.now().toIso8601String(),
     });
+    // Al egresar, CANCELAR (no borrar) las tareas AUTO pendientes con fecha
+    // FUTURA de esta admisión: ya no hay ronda que las ejecute, y sin esto
+    // seguirían apareciendo en la agenda de rondas sin ubicación. Las HECHAS y
+    // las SALTADAS no se tocan — son historia clínica. Se materializa con
+    // .toList() antes de actualizar para no iterar el `where` perezoso del store
+    // mientras se muta. Motivo: egreso.
+    final now = DateTime.now();
+    final toCancel = _store
+        .getAll(Collections.preventiveTasks)
+        .map(PreventiveTask.fromJson)
+        .where((t) =>
+            t.admissionId == admissionId &&
+            t.source == 'auto' &&
+            t.isPending &&
+            t.scheduledAt.isAfter(now))
+        .toList();
+    for (final t in toCancel) {
+      await _store.updateRow(Collections.preventiveTasks, t.id, {
+        'status': PreventiveTaskStatus.canceled.dbValue,
+        'notes': (t.notes == null || t.notes!.trim().isEmpty)
+            ? 'Cancelada al egresar'
+            : '${t.notes} · Cancelada al egresar',
+      });
+    }
   }
 
   // -- Valoración de riesgo (Braden) --
