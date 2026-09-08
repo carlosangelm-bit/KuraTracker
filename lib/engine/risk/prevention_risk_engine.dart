@@ -282,8 +282,16 @@ class PreventionRulesCatalog {
   /// generar la agenda de prevención.
   final int cadenceHorizonHours;
 
-  const PreventionRulesCatalog._(
-      this.version, this._rules, this._cadences, this.cadenceHorizonHours);
+  /// Horas que un resultado de escala PERMANENTE sigue vigente para regenerar su
+  /// cuidado (por scaleId, p.ej. GLOBIAD 24, MDRPI 4). Al vencer, el plan pide
+  /// REVALORAR. Interino por investigación, pendiente de María.
+  final Map<String, int> _scaleValidity;
+
+  const PreventionRulesCatalog._(this.version, this._rules, this._cadences,
+      this.cadenceHorizonHours, this._scaleValidity);
+
+  /// Vigencia (horas) de un resultado de escala, o null si no está configurada.
+  int? scaleValidityHours(String scaleId) => _scaleValidity[scaleId];
 
   static PreventionRulesCatalog? _cached;
 
@@ -301,11 +309,18 @@ class PreventionRulesCatalog {
     rawCadences.forEach((k, v) {
       cadences[k] = ActionCadence.fromJson((v as Map).cast<String, dynamic>());
     });
+    final scaleValidity = <String, int>{};
+    ((json['scaleValidity'] as Map?)?.cast<String, dynamic>() ?? const {})
+        .forEach((k, v) {
+      final h = (v as num?)?.toInt();
+      if (h != null) scaleValidity[k] = h;
+    });
     final catalog = PreventionRulesCatalog._(
       (json['version'] as String?) ?? '',
       rules,
       cadences,
       (json['cadenceHorizonHours'] as num?)?.toInt() ?? 24,
+      scaleValidity,
     );
     _cached = catalog;
     return catalog;

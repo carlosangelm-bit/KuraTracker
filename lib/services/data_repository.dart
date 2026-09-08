@@ -4791,8 +4791,25 @@ class DataRepository {
   /// última valoración (a diferencia de STAR/ASEPSIS/…, que son eventos puntuales
   /// y NO entran al plan regenerable). Sin valoración o sin conducta → vacío.
   List<ScheduledActionSpec> _globiadSpecs(
-      String patientId, PreventionRulesCatalog catalog) {
-    final category = latestScaleAssessment(patientId, 'GLOBIAD')?.categoryResult;
+      String patientId, PreventionRulesCatalog catalog, DateTime now) {
+    final a = latestScaleAssessment(patientId, 'GLOBIAD');
+    if (a == null) return const [];
+    // VIGENCIA (interino): si el resultado venció, el plan pide REVALORAR en vez
+    // de seguir regenerando el cuidado derivado de un dato viejo. Una sola tarea
+    // en el horizonte (everyHours = horizonte → count 1).
+    final validity = catalog.scaleValidityHours('GLOBIAD');
+    if (validity != null && now.difference(a.assessedAt).inHours >= validity) {
+      return [
+        ScheduledActionSpec(
+          ruleId: 'globiad',
+          actionId: 'revalorar_globiad',
+          actionLabel: 'Revalorar GLOBIAD (resultado vencido)',
+          title: 'Revalorar GLOBIAD (resultado vencido)',
+          everyHours: catalog.cadenceHorizonHours,
+        ),
+      ];
+    }
+    final category = a.categoryResult;
     if (category == null) return const [];
     final perdida = category.startsWith('2'); // 2A/2B
     final infeccion = category.endsWith('B'); // 1B/2B
@@ -4860,7 +4877,7 @@ class DataRepository {
       String patientId, String actionId, PreventionRulesCatalog catalog) {
     final all = [
       ...catalog.schedulableActionsFor(computeRisk(patientId, catalog)),
-      ..._globiadSpecs(patientId, catalog),
+      ..._globiadSpecs(patientId, catalog, DateTime.now()),
     ];
     for (final s in _dedupByAction(all)) {
       if (s.actionId == actionId) return {s.ruleId, ...s.alsoFromRuleIds};
@@ -4876,7 +4893,7 @@ class DataRepository {
     DateTime? now,
   }) async {
     final rules = catalog.schedulableActionsFor(computeRisk(patientId, catalog));
-    final permanentScale = _globiadSpecs(patientId, catalog);
+    final permanentScale = _globiadSpecs(patientId, catalog, now ?? DateTime.now());
     final merged = _dedupByAction([...rules, ...permanentScale]);
     return generatePreventiveTasksFromSpecs(
       patientId,
