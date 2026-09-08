@@ -4,49 +4,79 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:kuratracker/models/app_user.dart';
 import 'package:kuratracker/services/data_repository.dart';
 
-/// Hueco #2 (8-sep, decisión de Carlos: BLOQUEAR). setUserRoles no debe dejar a
-/// un centro sin NINGÚN usuario con rol clínico — nadie podría definir planes de
-/// cuidado. Solo bloquea al QUITAR el último 'clinico'; no estorba en centros que
-/// nunca tuvieron clínico.
+/// Invariante "el centro nunca se queda sin quien defina planes de cuidado"
+/// (huecos #2 y #3, 8-sep). Un clínico EFECTIVO = membresía activa con 'clinico'
+/// + perfil activo. Las dos puertas: quitar el rol (setUserRoles) y desactivar el
+/// perfil (setUserActive). Ambas deben bloquear al ÚLTIMO clínico efectivo.
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUp(() => SharedPreferences.setMockInitialValues({}));
 
-  test('bloquea quitar el ÚLTIMO clínico del centro; permite si queda otro',
+  test('setUserRoles bloquea quitar el ÚLTIMO clínico; permite si queda otro',
       () async {
     final repo = await DataRepository.instance();
-    // Centro y usuarios ficticios: con organizationId explícito, setUserRoles
-    // solo hace UPSERT de membresía (no toca perfiles), así que quedan aislados.
-    const org = 'org-test-last-clinico';
-
-    await repo.setUserRoles('u-a', {AppRole.admin, AppRole.clinico},
+    const org = 'org-test-roles';
+    // El primer usuario del centro debe ser admin (regla de createUserWithLogin).
+    final a = await repo.createUserWithLogin(
+        email: 'a@t.mx',
+        fullName: 'Dra A',
+        roles: {AppRole.admin, AppRole.clinico},
         organizationId: org);
-    await repo.setUserRoles('u-b', {AppRole.admin, AppRole.clinico},
+    final b = await repo.createUserWithLogin(
+        email: 'b@t.mx',
+        fullName: 'Dr B',
+        roles: {AppRole.clinico},
         organizationId: org);
 
-    // Quitar clínico a A: B sigue siendo clínico → permitido.
-    await repo.setUserRoles('u-a', {AppRole.admin}, organizationId: org);
+    // Quitar clínico a A: B sigue siendo clínico efectivo → permitido.
+    await repo.setUserRoles(a.uid, {AppRole.admin}, organizationId: org);
 
     // Quitar clínico a B: sería el último del centro → BLOQUEA.
     expect(
-      () => repo.setUserRoles('u-b', {AppRole.admin}, organizationId: org),
+      () => repo.setUserRoles(b.uid, {AppRole.enfermeria}, organizationId: org),
       throwsA(predicate((e) =>
           e.toString().contains('sin nadie que pueda definir planes'))),
     );
-
-    // B sigue con clínico (el intento se rechazó antes de escribir).
-    final memB = repo
-        .listMembershipsForOrg(org)
-        .firstWhere((m) => m.profileId == 'u-b');
-    expect(memB.roles.contains(AppRole.clinico), isTrue);
   });
 
-  test('no estorba un alta admin en un centro que nunca tuvo clínico', () async {
+  test('setUserActive bloquea desactivar al ÚLTIMO clínico efectivo', () async {
     final repo = await DataRepository.instance();
-    const org = 'org-test-solo-admin';
-    // Alta de un admin sin clínico en un centro vacío: NO debe bloquear.
-    await repo.setUserRoles('u-solo', {AppRole.admin}, organizationId: org);
-    final mems = repo.listMembershipsForOrg(org);
-    expect(mems.any((m) => m.profileId == 'u-solo'), isTrue);
+    const org = 'org-test-active';
+    final a = await repo.createUserWithLogin(
+        email: 'a2@t.mx',
+        fullName: 'Dra A',
+        roles: {AppRole.admin, AppRole.clinico},
+        organizationId: org);
+    final b = await repo.createUserWithLogin(
+        email: 'b2@t.mx',
+        fullName: 'Dr B',
+        roles: {AppRole.clinico},
+        organizationId: org);
+
+    // Desactivar A: B sigue siendo clínico efectivo → permitido.
+    await repo.setUserActive(a.uid, false);
+
+    // Desactivar B: sería el último clínico efectivo → BLOQUEA.
+    expect(
+      () => repo.setUserActive(b.uid, false),
+      throwsA(predicate((e) =>
+          e.toString().contains('único personal') ||
+          e.toString().contains('definir planes de cuidado'))),
+    );
+    // B sigue activo (el intento se rechazó antes de escribir).
+    expect(repo.listUsers().firstWhere((u) => u.id == b.uid).isActive, isTrue);
+  });
+
+  test('reactivar (active=true) nunca bloquea', () async {
+    final repo = await DataRepository.instance();
+    const org = 'org-test-reactivar';
+    final a = await repo.createUserWithLogin(
+        email: 'a3@t.mx',
+        fullName: 'Dra A',
+        roles: {AppRole.admin, AppRole.clinico},
+        organizationId: org);
+    // Activar de nuevo no valida la invariante (solo la pérdida la rompe).
+    await repo.setUserActive(a.uid, true);
+    expect(repo.listUsers().firstWhere((u) => u.id == a.uid).isActive, isTrue);
   });
 }

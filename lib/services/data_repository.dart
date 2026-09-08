@@ -385,7 +385,60 @@ class DataRepository {
     return match.isEmpty ? null : match.first;
   }
 
+  // ---- Invariante "el centro nunca se queda sin quien defina planes" ----
+  // Un clínico EFECTIVO en un centro = membresía activa con 'clinico' Y perfil
+  // activo. Un perfil inactivo no puede iniciar sesión (isActive en el restore de
+  // sesión), así que su rol clínico no cuenta. Una sola definición para los tres
+  // caminos que podían romper la invariante: setUserRoles (quitar rol),
+  // setUserActive (desactivar perfil) y el trigger server-side (0108/0109).
+
+  /// True si algún usuario DISTINTO de [excludeUserId] es clínico efectivo en
+  /// [org] (membresía activa con 'clinico' + perfil activo).
+  bool _orgHasOtherEffectiveClinico(String org, String excludeUserId) {
+    final activeProfileIds = <String>{
+      for (final p in _store.getAll(Collections.profiles))
+        if (p['is_active'] as bool? ?? true) p['id'] as String,
+    };
+    return listMembershipsForOrg(org).any((m) =>
+        m.profileId != excludeUserId &&
+        m.isActive &&
+        m.roles.contains(AppRole.clinico) &&
+        activeProfileIds.contains(m.profileId));
+  }
+
+  /// True si [userId] es HOY clínico efectivo en [org].
+  bool _isEffectiveClinico(String org, String userId) {
+    final profs =
+        _store.getAll(Collections.profiles).where((p) => p['id'] == userId);
+    final userActive =
+        profs.isEmpty ? false : (profs.first['is_active'] as bool? ?? true);
+    if (!userActive) return false;
+    return listMembershipsForOrg(org).any((m) =>
+        m.profileId == userId &&
+        m.isActive &&
+        m.roles.contains(AppRole.clinico));
+  }
+
   Future<void> setUserActive(String userId, bool active) async {
+    // Guardia "último clínico del centro", segunda puerta (hueco #3, 8-sep):
+    // desactivar el perfil lo saca de TODOS sus centros (no puede iniciar
+    // sesión). Si en algún centro es el único clínico efectivo, se rechaza — ese
+    // centro se quedaría sin nadie que pueda definir planes de cuidado. Es la
+    // puerta MÁS probable (dar de baja a quien se va > editarle los roles).
+    if (!active) {
+      final clinicoOrgs = listMembershipsFor(userId)
+          .where((m) => m.isActive && m.roles.contains(AppRole.clinico))
+          .map((m) => m.organizationId)
+          .toSet();
+      for (final org in clinicoOrgs) {
+        if (!_orgHasOtherEffectiveClinico(org, userId)) {
+          throw Exception(
+              'No puedes desactivar a este usuario: es el único personal '
+              'sanitario del centro y nadie más podría definir planes de '
+              'cuidado.');
+        }
+      }
+    }
     await _store.updateRow(Collections.profiles, userId, {'is_active': active});
   }
 
@@ -438,19 +491,16 @@ class DataRepository {
     // cuidado — se rechaza. Solo aplica al quitar (no bloquea altas admin en
     // centros que nunca tuvieron clínico). La misma regla vive en un trigger de
     // Postgres (server-side) para el acceso directo por PostgREST.
-    if (targetOrg != null && !roles.contains(AppRole.clinico)) {
-      final memsOrg = listMembershipsForOrg(targetOrg);
-      final userEraClinico = memsOrg.any((m) =>
-          m.profileId == userId && m.roles.contains(AppRole.clinico));
-      final quedaOtroClinico = memsOrg.any((m) =>
-          m.profileId != userId &&
-          m.isActive &&
-          m.roles.contains(AppRole.clinico));
-      if (userEraClinico && !quedaOtroClinico) {
-        throw Exception(
-            'No puedes quitar el rol de personal sanitario: este centro se '
-            'quedaría sin nadie que pueda definir planes de cuidado.');
-      }
+    // Solo bloquea si el usuario es HOY clínico efectivo del centro (nit: si su
+    // membresía o su perfil ya estaban inactivos, el centro ya estaba sin él —
+    // bloquear no arreglaría nada y dejaría ese centro imposible de editar).
+    if (targetOrg != null &&
+        !roles.contains(AppRole.clinico) &&
+        _isEffectiveClinico(targetOrg, userId) &&
+        !_orgHasOtherEffectiveClinico(targetOrg, userId)) {
+      throw Exception(
+          'No puedes quitar el rol de personal sanitario: este centro se '
+          'quedaría sin nadie que pueda definir planes de cuidado.');
     }
 
     // La autoridad de los roles POR CENTRO es la MEMBRESÍA (0106): editar solo el
@@ -584,6 +634,9 @@ class DataRepository {
       'role': primaryRoleOf(roles).dbValue,
       'roles': roles.map((r) => r.dbValue).toList(),
       'is_active': true,
+      // Explícito para LocalStore (no rellena defaults); en Supabase coincide con
+      // el default de la columna. Sin esto, releer la fila revienta el parse.
+      'created_at': DateTime.now().toIso8601String(),
     });
     if (hasClinico || hasEnfermeria) {
       await createStaff(
