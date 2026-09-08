@@ -307,6 +307,25 @@ class PreventionRulesCatalog {
   /// con su propio ruleId). Ver generatePreventiveTasksFromSpecs.
   Set<String> get ruleIds => _rules.map((r) => r.id).toSet();
 
+  /// La acción POSTURAL (cambio de posición) que la regla de la banda de Braden
+  /// asigna a este puntaje, o null si la banda no programa cambios (sin_riesgo).
+  /// FUENTE ÚNICA del mapeo banda→acción postural: buildPreventivePlan la usa en
+  /// vez de su propia escalera de cortes, que divergía de las reglas (Hueco 2).
+  /// Postural = acción cuyo id empieza con 'cambios_'.
+  String? posturalActionForBraden(int braden) {
+    for (final r in _rules) {
+      if (r.dimension != RiskDimension.lpp) continue;
+      final min = (r.when['bradenMin'] as num?)?.toInt();
+      final max = (r.when['bradenMax'] as num?)?.toInt();
+      if (min == null || max == null) continue;
+      if (braden < min || braden > max) continue;
+      for (final a in r.actions) {
+        if (a.id.startsWith('cambios_')) return a.id;
+      }
+    }
+    return null;
+  }
+
   /// Especificaciones de tareas recurrentes para un resultado de riesgo: por
   /// cada acción con cadencia (dedup por id de acción, conservando la de mayor
   /// frecuencia), su regla de origen, título y cada-cuántas-horas.

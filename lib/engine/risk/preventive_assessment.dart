@@ -1,4 +1,3 @@
-import '../params/clinical_params.dart';
 import 'braden_scale.dart';
 import 'prevention_risk_engine.dart' show PreventionRulesCatalog, ScheduledActionSpec;
 
@@ -83,18 +82,14 @@ PreventivePlan buildPreventivePlan(
   String? posturalId;
   var veryHigh = false;
   if (braden != null) {
-    // Cortes de CONDUCTA desde ClinicalParams (nunca literales); la banda
-    // muy_alto desde braden_scale.json (fuente única): antes el techo de muy_alto
-    // era un 9 hardcodeado que ningún guard veía.
-    final params = ClinicalParams.I;
-    if (braden <= params.bradenAltoMuyAltoMax) {
-      posturalId = 'cambios_2h_registro';
-      veryHigh = bradenScale.bandFor(braden)?.id == 'muy_alto';
-    } else if (braden <= params.bradenEnRiesgoMax) {
-      posturalId = 'cambios_2_3h';
-    } else {
-      posturalId = null; // sobre "en riesgo": sin cambios programados (solo observación)
-    }
+    // Hueco 2: la acción postural sale del MAPEO banda→acción de las reglas
+    // (fuente única), no de una escalera de cortes propia que divergía de
+    // prevention_rules.json (p. ej. en 18–23: la escalera daba null, la regla
+    // lpp_bajo da cambios_4h). Así los dos caminos coinciden y el re-bandeo de
+    // Fase C los mueve a la vez. La banda muy_alto (que agrega la valoración de
+    // piel completa) sigue saliendo de braden_scale.json (fuente única).
+    posturalId = catalog.posturalActionForBraden(braden);
+    veryHigh = bradenScale.bandFor(braden)?.id == 'muy_alto';
   } else {
     switch (a.mobility) {
       case Movilidad.encamado:
