@@ -4793,10 +4793,13 @@ class DataRepository {
     if (a == null) return const [];
     final category = a.categoryResult;
     if (category == null) return const [];
-    final perdida = category.startsWith('2'); // 2A/2B
     final infeccion = category.endsWith('B'); // 1B/2B
     final specs = <ScheduledActionSpec>[];
-    if (perdida) {
+    // Control de humedad para CUALQUIER GLOBIAD (validado por María, protocolo
+    // LCRD: "Manejo de humedad y DAI - 1A/1B"): una DAI 1A (eritema sin pérdida)
+    // ya exige manejo de humedad. Antes sólo la pérdida (2A/2B) lo generaba, y un
+    // 1A quedaba sin cuidado.
+    {
       final c = catalog.cadenceFor('control_humedad');
       final title = c?.title ?? 'Control de humedad / barrera cutánea';
       specs.add(ScheduledActionSpec(

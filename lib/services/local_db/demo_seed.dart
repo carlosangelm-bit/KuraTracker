@@ -1605,8 +1605,9 @@ class DemoSeed {
     // que el camino escala→plan quede a la vista. GLOBIAD como representante:
     //  · Guadalupe (2B: DAI con pérdida + infección) → SÍ dispara conducta
     //    (monitorización + interconsulta), tareas materializadas por el motor.
-    //  · María Elena (1A: eritema sin pérdida) → NO dispara: captura válida que
-    //    correctamente no genera tareas (una banda "sin conducta").
+    //  · María Elena (1A: eritema sin pérdida) → SÍ genera control de humedad (el
+    //    protocolo LCRD pide manejo de humedad desde 1A), pero NO la vigilancia de
+    //    infección (esa es de la subcategoría B).
     // Ambas son aplicables a GLOBIAD (humedad ≤ 2).
     await seedRepo.addScaleAssessment(
       patientId: gpid,

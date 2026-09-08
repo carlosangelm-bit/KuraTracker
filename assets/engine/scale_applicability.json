@@ -170,7 +170,7 @@
       "gate_any": ["etio_vascular", "ivc"],
       "trigger": ["etio_vascular", "ivc"],
       "factors": [],
-      "thresholds": { "sugerida": 3, "obligatoria": 5 }
+      "thresholds": { "sugerida": 1, "obligatoria": 1 }
     },
     {
       "scale_id": "ASEPSIS",

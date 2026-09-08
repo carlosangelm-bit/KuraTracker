@@ -234,7 +234,7 @@
       "domain": "Puntaje ASEPSIS (0-55)",
       "source": {
         "protocolo": "Módulo de hospitalización · Escala ASEPSIS (infección de sitio quirúrgico)",
-        "rationale": "Cortes VALIDADOS por María (coinciden con lo que definió): 0-10 satisfactoria, 11-20 alteración, 21-30 menor, 31-40 moderada, >40 severa; la tarea de ISQ dispara en 21. FUENTE ÚNICA: la etiqueta que ve el clínico y el disparo de la tarea de ISQ salen de estas bandas. La banda severa lee como SEÑAL DE RIESGO (warn), no alerta automática (María).",
+        "rationale": "Cortes VALIDADOS por María (coinciden con lo que definió): 0-10 satisfactoria, 11-20 alteración, 21-30 menor, 31-40 moderada, >40 severa; la tarea de ISQ dispara en 21. FUENTE ÚNICA: la etiqueta que ve el clínico y el disparo de la tarea de ISQ salen de estas bandas. La escala es ASESORA: la tarea de ISQ es una sugerencia de conducta, no una alerta ni un escalamiento automático (María). Severidad monótona (severa >= moderada).",
         "reviewed_by": "María",
         "reviewed_date": "2026-09-08"
       },
@@ -243,7 +243,7 @@
         { "band": "asepsis_alteracion",         "from": 10,   "from_inclusive": false, "to": 20,   "to_inclusive": true,  "label": "Alteración de la cicatrización", "severity": "watch" },
         { "band": "asepsis_infeccion_menor",    "from": 20,   "from_inclusive": false, "to": 30,   "to_inclusive": true,  "label": "Infección menor",                "severity": "warn" },
         { "band": "asepsis_infeccion_moderada", "from": 30,   "from_inclusive": false, "to": 40,   "to_inclusive": true,  "label": "Infección moderada",             "severity": "danger" },
-        { "band": "asepsis_infeccion_severa",   "from": 40,   "from_inclusive": false, "to": null, "to_inclusive": false, "label": "Infección severa",               "severity": "warn" }
+        { "band": "asepsis_infeccion_severa",   "from": 40,   "from_inclusive": false, "to": null, "to_inclusive": false, "label": "Infección severa",               "severity": "danger" }
       ]
     }
   }

@@ -202,9 +202,11 @@ class ScaleInterpretation {
       final improving = !stable && (lowerBetter ? delta < 0 : delta > 0);
       final label =
           stable ? stableLabel : (improving ? improvingLabel : worseningLabel);
-      // "Estable" (sin cambio relevante) es OK, no precaución: no hay deterioro
-      // que vigilar (D2). Antes era 'watch', que lo leía como señal de alarma.
-      final sev = stable ? 'ok' : (improving ? 'ok' : 'danger');
+      // "Estable" y "mejorando" → ok. "Deteriorando" → watch, no danger: un solo
+      // punto de empeoramiento (minDelta=1) no es una alarma; María pidió escalar
+      // "cuando se acompañe de signos de mala evolución". danger queda reservado
+      // para cuando exista el análisis por componentes (bloqueado).
+      final sev = stable ? 'ok' : (improving ? 'ok' : 'watch');
       return (bandId: null, label: label, severity: sev, delta: delta);
     }
     // Bandas por referencia: FUENTE ÚNICA en ClinicalParams (bordes abiertos/
