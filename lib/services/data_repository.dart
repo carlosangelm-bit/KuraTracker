@@ -4835,6 +4835,23 @@ class DataRepository {
   /// re-valorar el Braden o capturar una escala llaman a esto y el resultado es el
   /// mismo sin importar el orden. NO toca las tareas PUNTUALES de escala (STAR,
   /// EXTRAVASACION, ASEPSIS, QUEMADURA, NPIAP/WAGNER/CEAP): son eventos, no plan.
+  /// Reglas que contribuyen a una acción del plan de un paciente, DERIVADAS en
+  /// tiempo de lectura (no persistidas): el plan es función pura del estado, así
+  /// que la procedencia también. La usa la UI para responder «¿por qué esta
+  /// tarea?» cuando el dedup fusionó dos fuentes (p. ej. control_humedad, que
+  /// piden lpp_* y globiad). Vacío si la acción no está en el plan permanente.
+  Set<String> contributingRuleIdsFor(
+      String patientId, String actionId, PreventionRulesCatalog catalog) {
+    final all = [
+      ...catalog.schedulableActionsFor(computeRisk(patientId, catalog)),
+      ..._globiadSpecs(patientId, catalog),
+    ];
+    for (final s in _dedupByAction(all)) {
+      if (s.actionId == actionId) return {s.ruleId, ...s.alsoFromRuleIds};
+    }
+    return const {};
+  }
+
   Future<int> regeneratePreventivePlan(
     String patientId,
     PreventionRulesCatalog catalog, {
@@ -4947,12 +4964,12 @@ class DataRepository {
           assigneeProfileId: assigneeProfileId,
           assigneeKind: assigneeKind,
           source: 'auto',
-          // Justificación de las fuentes fusionadas por el dedup (Bug 2): la
-          // tarea lleva un ruleId (el ganador), pero enfermería debe poder ver
-          // que otra regla también la indica.
-          notes: s.alsoFromRuleIds.isEmpty
-              ? null
-              : 'También indicada por: ${s.alsoFromRuleIds.join(', ')}',
+          // La procedencia de un dedup NO se persiste en `notes` (invisible en la
+          // UI, se sobrescribe al completar con comentario, y contamina la
+          // documentación clínica con metadato de máquina). El plan es función
+          // pura del estado, así que la procedencia se DERIVA en lectura con
+          // contributingRuleIdsFor(). Si algún día se quiere persistida para el
+          // expediente, va en su propia columna por migración, nunca en notes.
           createdBy: createdBy,
         );
         created++;

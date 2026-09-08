@@ -51,13 +51,15 @@ void main() {
     SharedPreferences.setMockInitialValues({});
     final store = await LocalStore.instance();
     await DemoSeed.resetAndReseed(store);
+    final repo = await DataRepository.forSeeding(LocalStoreDataStore(store));
+    final catalog = await PreventionRulesCatalog.load();
 
     // Guadalupe (Braden 9 + GLOBIAD 2B): lpp_muy_alto pide control_humedad c/8h
     // y GLOBIAD también. El dedup cruzado deja UNA sola serie (3 en 24 h), no 6.
     final guadalupe = store
         .getAll(Collections.patients)
         .firstWhere((p) => (p['full_name'] as String).contains('Guadalupe'));
-    final pid = guadalupe['id'];
+    final pid = guadalupe['id'] as String;
 
     final humedad = store
         .getAll(Collections.preventiveTasks)
@@ -65,9 +67,12 @@ void main() {
         .toList();
     expect(humedad.length, 3,
         reason: 'control_humedad debe aparecer una sola vez (3 en 24 h), no 6');
-    // La justificación de la fuente perdedora (globiad) se conserva en notes.
-    expect(humedad.every((t) => (t['notes'] as String? ?? '').contains('globiad')),
-        isTrue,
-        reason: 'la tarea fusionada debe conservar que GLOBIAD también la indica');
+    // La procedencia NO se persiste (nada en notes): se DERIVA en lectura.
+    expect(humedad.every((t) => t['notes'] == null), isTrue,
+        reason: 'la procedencia del dedup no se escribe en notes (documentación clínica)');
+    final contribs = repo.contributingRuleIdsFor(pid, 'control_humedad', catalog);
+    expect(contribs.contains('globiad'), isTrue);
+    expect(contribs.any((r) => r.startsWith('lpp_')), isTrue,
+        reason: 'la derivación en lectura muestra ambas fuentes (lpp_* y globiad)');
   });
 }
