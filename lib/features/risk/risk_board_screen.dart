@@ -57,17 +57,36 @@ RiskLevel? bradenBandLevel(int? braden) {
   }
 }
 
-/// Nivel EFECTIVO de una entrada del tablero: la banda de Braden si existe
-/// (color del panel), si no el nivel de las reglas; null = sin valoración.
-RiskLevel? _effectiveLevel(_RiskEntry e) =>
-    bradenBandLevel(e.bradenScore) ?? (e.risk.hasAlerts ? e.risk.level : null);
+/// Rango de severidad (mayor = más grave). null = ausente (no participa).
+int _severityRank(RiskLevel l) => switch (l) {
+      RiskLevel.alto => 3,
+      RiskLevel.medio => 2,
+      RiskLevel.bajo => 1,
+      RiskLevel.sinRiesgo => 0,
+    };
 
-/// Clave estable del nivel para el filtro ('alto'/'medio'/'bajo'/'sin').
+/// Nivel EFECTIVO de una entrada del tablero: la MAYOR severidad entre la banda
+/// de Braden y el nivel de las alertas. NUNCA se usa `??`: la banda de Braden no
+/// puede enmascarar una alerta más grave. Un Braden 20 (sin_riesgo) con una
+/// alerta ALTA (p.ej. EAP isquémica) sale ALTO, no "sin riesgo". null = ni banda
+/// ni alertas (sin valoración).
+RiskLevel? _effectiveLevel(_RiskEntry e) {
+  final band = bradenBandLevel(e.bradenScore);
+  final alerts = e.risk.hasAlerts ? e.risk.level : null;
+  if (band == null) return alerts;
+  if (alerts == null) return band;
+  return _severityRank(band) >= _severityRank(alerts) ? band : alerts;
+}
+
+/// Clave estable del nivel para el filtro. 'sin_riesgo' (valorado, sin riesgo) y
+/// 'sin' (sin valoración) son estados OPUESTOS: nunca al mismo bucket — en un
+/// tablero de triage, "nunca valorado" es justo el que exige acción.
 String _levelKey(RiskLevel? l) => switch (l) {
       RiskLevel.alto => 'alto',
       RiskLevel.medio => 'medio',
       RiskLevel.bajo => 'bajo',
-      _ => 'sin',
+      RiskLevel.sinRiesgo => 'sin_riesgo',
+      null => 'sin',
     };
 
 /// Tablero de riesgo (módulo de Prevención): lista de pacientes con alertas
@@ -173,7 +192,8 @@ class _RiskBoardScreenState extends ConsumerState<RiskBoardScreen> {
         RiskLevel.alto => 0,
         RiskLevel.medio => 1,
         RiskLevel.bajo => 2,
-        _ => 3, // sin valoración / sin riesgo
+        RiskLevel.sinRiesgo => 3, // valorado, sin riesgo
+        null => 4, // sin valoración (al final)
       };
     }
     entries.sort((a, b) {
@@ -506,6 +526,11 @@ class _CountsHeader extends StatelessWidget {
           chip('Alto', count(RiskLevel.alto), KuraColors.danger, 'alto'),
           chip('Medio', count(RiskLevel.medio), KuraColors.warning, 'medio'),
           chip('Bajo', count(RiskLevel.bajo), KuraColors.success, 'bajo'),
+          // "Sin riesgo" (valorado) y "Sin valoración" son estados OPUESTOS y
+          // van en cubetas distintas: el segundo exige acción (nunca valorado).
+          if (count(RiskLevel.sinRiesgo) > 0 || selected == 'sin_riesgo')
+            chip(RiskLevel.sinRiesgo.label, count(RiskLevel.sinRiesgo), Colors.teal,
+                'sin_riesgo'),
           if (sinVal > 0 || selected == 'sin')
             chip('Sin valoración', sinVal, Colors.grey, 'sin'),
         ],

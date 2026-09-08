@@ -940,6 +940,20 @@ class _PatientRiskScreenState extends ConsumerState<PatientRiskScreen> {
                           child: const Text('Editar'),
                         ),
                       ),
+                    // Estado vacío HONESTO (C3): un paciente valorado en la banda
+                    // "sin riesgo" y sin alertas de LPP no tiene plan que mostrar.
+                    // Se dice explícito, no una lista vacía que se lea como "el
+                    // módulo no hace nada". El título sale de la escala (fuente
+                    // única), no de un literal.
+                    if (isHospital &&
+                        braden?.bradenScore != null &&
+                        scale?.bandFor(braden!.bradenScore!)?.id == 'sin_riesgo' &&
+                        result.lpp.isEmpty)
+                      _InfoTile(
+                        icon: Icons.verified_outlined,
+                        title: scale!.bandFor(braden!.bradenScore!)!.label,
+                        body: 'No requiere plan de prevención programado.',
+                      ),
                     _CompliancePanel(repo: repo, patient: patient),
                     _PatientAuditLog(repo: repo, patientId: widget.patientId),
                     // Signos a vigilar (solo lectura): qué observar, no tareas.

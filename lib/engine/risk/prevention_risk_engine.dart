@@ -50,7 +50,10 @@ extension RiskLevelX on RiskLevel {
         RiskLevel.alto => 'Riesgo alto',
         RiskLevel.medio => 'Riesgo medio',
         RiskLevel.bajo => 'Riesgo bajo',
-        RiskLevel.sinRiesgo => 'Sin riesgo detectado',
+        // 'Sin riesgo' (no 'detectado'): la etiqueta la usa tanto la agregación
+        // de alertas como la BANDA de Braden (bradenBandLevel), y 'detectado'
+        // afirmaba «ninguna regla disparó», falso cuando viene de la banda.
+        RiskLevel.sinRiesgo => 'Sin riesgo',
       };
 }
 

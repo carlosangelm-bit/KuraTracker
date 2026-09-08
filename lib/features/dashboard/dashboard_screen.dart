@@ -444,6 +444,10 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
         case RiskLevel.medio:
           medio++;
         case RiskLevel.bajo:
+        case RiskLevel.sinRiesgo:
+          // sin_riesgo (Braden 19–23) es un paciente VALORADO en zona verde: se
+          // agrupa con "bajo" en el resumen, NUNCA con "sin valoración" (que es
+          // no tener Braden). El default queda sólo para band == null.
           bajo++;
         default:
           sinVal++;
