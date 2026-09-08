@@ -40,10 +40,34 @@ void main() {
     // Re-valorar el Braden (mismo valor) → re-materializa el plan de LPP.
     await repo.autoGeneratePlanIfHospital(pid, catalog, organizationId: orgId);
 
-    // Las tareas de GLOBIAD sobreviven; las de LPP se regeneran (no se acumulan).
+    // Las tareas de GLOBIAD (vigilancia) sobreviven; las de LPP se regeneran.
     expect(countRule('globiad'), globiadBefore,
         reason: 'Bug 1: re-generar LPP NO debe borrar las tareas de GLOBIAD');
     expect(countRule('lpp_muy_alto'), lppBefore,
         reason: 'las tareas de LPP se regeneran sin duplicarse');
+  });
+
+  test('Bug 2 · control_humedad NO se duplica entre lpp_* y globiad (dedup cruzado)', () async {
+    SharedPreferences.setMockInitialValues({});
+    final store = await LocalStore.instance();
+    await DemoSeed.resetAndReseed(store);
+
+    // Guadalupe (Braden 9 + GLOBIAD 2B): lpp_muy_alto pide control_humedad c/8h
+    // y GLOBIAD también. El dedup cruzado deja UNA sola serie (3 en 24 h), no 6.
+    final guadalupe = store
+        .getAll(Collections.patients)
+        .firstWhere((p) => (p['full_name'] as String).contains('Guadalupe'));
+    final pid = guadalupe['id'];
+
+    final humedad = store
+        .getAll(Collections.preventiveTasks)
+        .where((t) => t['patient_id'] == pid && t['action_id'] == 'control_humedad')
+        .toList();
+    expect(humedad.length, 3,
+        reason: 'control_humedad debe aparecer una sola vez (3 en 24 h), no 6');
+    // La justificación de la fuente perdedora (globiad) se conserva en notes.
+    expect(humedad.every((t) => (t['notes'] as String? ?? '').contains('globiad')),
+        isTrue,
+        reason: 'la tarea fusionada debe conservar que GLOBIAD también la indica');
   });
 }

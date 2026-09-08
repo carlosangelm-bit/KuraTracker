@@ -109,6 +109,14 @@ class ActionCadence {
 
 /// Especificación de una tarea recurrente a materializar en la agenda de
 /// prevención (Fase 3): de qué regla/acción sale, su título y cadencia.
+///
+/// EJE «una sola vez vs permanente» (naturaleza de la tarea): sólo las tareas
+/// PERMANENTES (órdenes vigentes que se recomputan desde la última valoración)
+/// entran a un plan REGENERABLE. Las PUNTUALES (un evento que se cumple o no)
+/// no se regeneran: regenerarlas es falsearlas. Un ScheduledActionSpec es, por
+/// construcción, permanente (recurrente sobre un horizonte). Es el mismo eje que
+/// «indicación puntual vs tarea de ronda» y «ronda vs cita de seguimiento» que
+/// gobierna la carga de la investigación de escalas — mismo nombre a propósito.
 class ScheduledActionSpec {
   final String ruleId;
   final String actionId;
@@ -116,13 +124,29 @@ class ScheduledActionSpec {
   final String title;
   final int everyHours;
 
+  /// Reglas que ADEMÁS piden esta misma acción (dedup cruzado por actionId): al
+  /// fusionar dos fuentes en una tarea, la justificación de la perdedora no debe
+  /// desaparecer del expediente. `ruleId` es la fuente ganadora (mayor frecuencia);
+  /// aquí van las demás. Vacío = una sola fuente.
+  final List<String> alsoFromRuleIds;
+
   const ScheduledActionSpec({
     required this.ruleId,
     required this.actionId,
     required this.actionLabel,
     required this.title,
     required this.everyHours,
+    this.alsoFromRuleIds = const [],
   });
+
+  ScheduledActionSpec withAlsoFrom(List<String> also) => ScheduledActionSpec(
+        ruleId: ruleId,
+        actionId: actionId,
+        actionLabel: actionLabel,
+        title: title,
+        everyHours: everyHours,
+        alsoFromRuleIds: also,
+      );
 }
 
 /// Conducta de ESCALAMIENTO: se muestra cuando el profesional responde con un

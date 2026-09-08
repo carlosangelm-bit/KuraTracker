@@ -4330,10 +4330,14 @@ class DataRepository {
     return ScaleAssessment.fromJson(saved);
   }
 
-  /// Traduce el resultado de GLOBIAD (DAI) a tratamiento en la bitácora, SOLO en
-  /// centros hospital: 2A/2B (pérdida de piel) → intensifica el control de
-  /// humedad / barrera cutánea; subcategoría B (infección) → agrega vigilancia.
-  /// Idempotente por rule_id 'globiad' (no toca el plan preventivo de Braden).
+  /// Registra la conducta de GLOBIAD (DAI). GLOBIAD es una orden PERMANENTE
+  /// (control de humedad / vigilancia de infección mientras la DAI persista), así
+  /// que ya no materializa tareas por su cuenta: delega en regeneratePreventivePlan,
+  /// que reúne reglas + GLOBIAD en una pasada con dedup cruzado por actionId (cierra
+  /// el Bug 2: control_humedad dejaba de duplicarse entre lpp_* y globiad). La
+  /// valoración ya está guardada (addScaleAssessment) cuando se llama a esto, así que
+  /// la conducta sale de la ÚLTIMA valoración persistida (order-independiente).
+  /// `category` se conserva por compatibilidad de la firma. Solo hospital.
   Future<int> applyGlobiadTreatment(
     String patientId,
     String category, {
@@ -4342,58 +4346,12 @@ class DataRepository {
     String? createdBy,
   }) async {
     if (centerTypeFor(organizationId) != CenterType.hospital) return 0;
-    final now = DateTime.now();
-    // Limpia tareas GLOBIAD futuras pendientes (refleja la valoración actual).
-    final existing = _store
-        .getAll(Collections.preventiveTasks)
-        .map(PreventiveTask.fromJson)
-        .where((t) =>
-            t.patientId == patientId &&
-            t.ruleId == 'globiad' &&
-            t.isPending &&
-            !t.scheduledAt.isBefore(now))
-        .toList();
-    for (final t in existing) {
-      await _store.deleteRow(Collections.preventiveTasks, t.id);
-    }
-    final perdida = category.startsWith('2'); // 2A/2B
-    final infeccion = category.endsWith('B'); // 1B/2B
-    if (!perdida && !infeccion) return 0;
-
-    final admissionId = activeAdmission(patientId)?.id;
-    var created = 0;
-    Future<void> materialize(String actionId, String title, int everyHours) async {
-      // Horizonte desde el asset (no inline): cuando se resuelva "ronda vs
-      // seguimiento" va a cambiar, y no queremos tres lugares que lo repiten.
-      final count =
-          (catalog.cadenceHorizonHours / everyHours).floor().clamp(1, 24);
-      for (var i = 1; i <= count; i++) {
-        await createPreventiveTask(
-          patientId: patientId,
-          organizationId: organizationId,
-          title: title,
-          scheduledAt: now.add(Duration(hours: everyHours * i)),
-          admissionId: admissionId,
-          ruleId: 'globiad',
-          actionId: actionId,
-          actionLabel: title,
-          source: 'auto',
-          createdBy: createdBy,
-        );
-        created++;
-      }
-    }
-
-    if (perdida) {
-      final c = catalog.cadenceFor('control_humedad');
-      await materialize('control_humedad',
-          c?.title ?? 'Control de humedad / barrera cutánea', c?.everyHours ?? 8);
-    }
-    if (infeccion) {
-      await materialize('vigilancia_infeccion_dai',
-          'Vigilancia/tratamiento de infección de la piel (DAI)', 12);
-    }
-    return created;
+    return regeneratePreventivePlan(
+      patientId,
+      catalog,
+      organizationId: organizationId,
+      createdBy: createdBy,
+    );
   }
 
   /// STAR: color del colgajo comprometido (categoría 1b/2b/3) → agenda una
@@ -4812,6 +4770,92 @@ class DataRepository {
   /// las tareas AUTO FUTURAS pendientes del paciente y crea el plan fresco sobre
   /// el horizonte del catálogo. No toca tareas hechas/saltadas (historial) ni
   /// las manuales. Devuelve cuántas tareas creó.
+  /// Specs PERMANENTES de GLOBIAD (DAI) desde la ÚLTIMA valoración del paciente:
+  /// pérdida cutánea (2A/2B) → control_humedad; infección (…B) → vigilancia. Es
+  /// una orden VIGENTE mientras la DAI persista, por eso se recomputa desde la
+  /// última valoración (a diferencia de STAR/ASEPSIS/…, que son eventos puntuales
+  /// y NO entran al plan regenerable). Sin valoración o sin conducta → vacío.
+  List<ScheduledActionSpec> _globiadSpecs(
+      String patientId, PreventionRulesCatalog catalog) {
+    final category = latestScaleAssessment(patientId, 'GLOBIAD')?.categoryResult;
+    if (category == null) return const [];
+    final perdida = category.startsWith('2'); // 2A/2B
+    final infeccion = category.endsWith('B'); // 1B/2B
+    final specs = <ScheduledActionSpec>[];
+    if (perdida) {
+      final c = catalog.cadenceFor('control_humedad');
+      final title = c?.title ?? 'Control de humedad / barrera cutánea';
+      specs.add(ScheduledActionSpec(
+        ruleId: 'globiad',
+        actionId: 'control_humedad',
+        actionLabel: title,
+        title: title,
+        everyHours: c?.everyHours ?? 8,
+      ));
+    }
+    if (infeccion) {
+      const title = 'Vigilancia/tratamiento de infección de la piel (DAI)';
+      specs.add(const ScheduledActionSpec(
+        ruleId: 'globiad',
+        actionId: 'vigilancia_infeccion_dai',
+        actionLabel: title,
+        title: title,
+        everyHours: 12,
+      ));
+    }
+    return specs;
+  }
+
+  /// Dedup CRUZADO por actionId (Bug 2): cuando dos fuentes PERMANENTES piden la
+  /// misma acción, gana la de MAYOR frecuencia (menor everyHours) y las demás
+  /// reglas se conservan en alsoFromRuleIds — nunca se pierde la justificación.
+  List<ScheduledActionSpec> _dedupByAction(List<ScheduledActionSpec> specs) {
+    final byAction = <String, ScheduledActionSpec>{};
+    for (final s in specs) {
+      final cur = byAction[s.actionId];
+      if (cur == null) {
+        byAction[s.actionId] = s;
+        continue;
+      }
+      final winner = s.everyHours < cur.everyHours ? s : cur;
+      final loser = identical(winner, s) ? cur : s;
+      final also = <String>{
+        ...winner.alsoFromRuleIds,
+        ...loser.alsoFromRuleIds,
+        loser.ruleId,
+      }..remove(winner.ruleId);
+      byAction[s.actionId] = winner.withAlsoFrom(also.toList());
+    }
+    return byAction.values.toList();
+  }
+
+  /// Plan preventivo REGENERABLE: reúne en UNA pasada todas las fuentes
+  /// PERMANENTES —reglas por banda (LPP) + escalas permanentes (GLOBIAD; MDRPI
+  /// pendiente)— dedup cruzado por actionId, y materializa. Order-INDEPENDIENTE:
+  /// re-valorar el Braden o capturar una escala llaman a esto y el resultado es el
+  /// mismo sin importar el orden. NO toca las tareas PUNTUALES de escala (STAR,
+  /// EXTRAVASACION, ASEPSIS, QUEMADURA, NPIAP/WAGNER/CEAP): son eventos, no plan.
+  Future<int> regeneratePreventivePlan(
+    String patientId,
+    PreventionRulesCatalog catalog, {
+    required String? organizationId,
+    String? createdBy,
+  }) async {
+    final rules = catalog.schedulableActionsFor(computeRisk(patientId, catalog));
+    final permanentScale = _globiadSpecs(patientId, catalog);
+    final merged = _dedupByAction([...rules, ...permanentScale]);
+    return generatePreventiveTasksFromSpecs(
+      patientId,
+      merged,
+      horizonHours: catalog.cadenceHorizonHours,
+      organizationId: organizationId,
+      // Fuentes permanentes: reglas del catálogo + GLOBIAD. Lo puntual NO se
+      // limpia aquí (lo protege la limpieza consciente del ruleId, Bug 1).
+      ownedRuleIds: {...catalog.ruleIds, 'globiad'},
+      createdBy: createdBy,
+    );
+  }
+
   Future<int> generatePreventiveTasksFor(
     String patientId,
     PreventionRulesCatalog catalog, {
@@ -4903,6 +4947,12 @@ class DataRepository {
           assigneeProfileId: assigneeProfileId,
           assigneeKind: assigneeKind,
           source: 'auto',
+          // Justificación de las fuentes fusionadas por el dedup (Bug 2): la
+          // tarea lleva un ruleId (el ganador), pero enfermería debe poder ver
+          // que otra regla también la indica.
+          notes: s.alsoFromRuleIds.isEmpty
+              ? null
+              : 'También indicada por: ${s.alsoFromRuleIds.join(', ')}',
           createdBy: createdBy,
         );
         created++;
@@ -4924,7 +4974,10 @@ class DataRepository {
     String? createdBy,
   }) async {
     if (centerTypeFor(organizationId) != CenterType.hospital) return;
-    await generatePreventiveTasksFor(
+    // Regenerador UNIFICADO (C0): reglas por banda + escalas permanentes, en una
+    // pasada con dedup cruzado. Antes usaba generatePreventiveTasksFor (solo
+    // reglas), que dejaba a GLOBIAD duplicar control_humedad (Bug 2).
+    await regeneratePreventivePlan(
       patientId,
       catalog,
       organizationId: organizationId,
