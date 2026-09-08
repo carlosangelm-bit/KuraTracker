@@ -1481,11 +1481,16 @@ class DemoSeed {
       // (al valorar Braden se materializa el plan por banda). Ya no se escribe
       // ninguna fila de preventive_tasks a mano; si el motor no genera nada para
       // este Braden, el paciente queda SIN tareas a propósito (hueco visible).
+      // Reloj inyectable (C1): el plan se genera "como si fuera hace 12 h", de modo
+      // que la mitad de las tareas cae en el pasado y el cumplimiento simulado
+      // (abajo) puede completarlas por la vía real sin el estado absurdo de "hecha
+      // antes de estar vencida".
       await seedRepo.autoGeneratePlanIfHospital(
         pid,
         rulesCatalog,
         organizationId: organizationIdHospital,
         createdBy: enfermeriaProfileId,
+        now: now.subtract(const Duration(hours: 12)),
       );
       return pid;
     }
@@ -1617,6 +1622,7 @@ class DemoSeed {
       organizationId: organizationIdHospital,
       catalog: rulesCatalog,
       createdBy: enfermeriaProfileId,
+      now: now.subtract(const Duration(hours: 12)),
     );
     await seedRepo.addScaleAssessment(
       patientId: mpid,
@@ -1632,7 +1638,36 @@ class DemoSeed {
       organizationId: organizationIdHospital,
       catalog: rulesCatalog,
       createdBy: enfermeriaProfileId,
+      now: now.subtract(const Duration(hours: 12)),
     );
+
+    // Cumplimiento simulado (C1) POR LA VÍA REAL: como el plan se generó hace 12 h,
+    // cada paciente tiene tareas ya vencidas. Enfermería completó la mayoría, saltó
+    // una y dejó las dos más recientes sin hacer — nada inventado
+    // (completePreventiveTask / skipPreventiveTask). Determinista por paciente, así
+    // el panel de cumplimiento hospitalario vuelve a mostrar un mix realista sin
+    // falsear (antes, tras Fase B, quedaba en 0 %).
+    for (final p in store
+        .getAll(Collections.patients)
+        .where((p) => p['organization_id'] == organizationIdHospital)) {
+      final pid = p['id'] as String;
+      final overdue = seedRepo
+          .listPreventiveTasks(patientId: pid)
+          .where((t) => t.isPending && t.scheduledAt.isBefore(now))
+          .toList()
+        ..sort((a, b) => a.scheduledAt.compareTo(b.scheduledAt));
+      for (var i = 0; i < overdue.length; i++) {
+        // Deja las 2 vencidas más recientes sin hacer (incumplimiento visible).
+        if (i >= overdue.length - 2) break;
+        if (i == 1) {
+          await seedRepo.skipPreventiveTask(overdue[i].id,
+              byProfileId: enfermeriaProfileId);
+        } else {
+          await seedRepo.completePreventiveTask(overdue[i],
+              byProfileId: enfermeriaProfileId, staffId: enfermeriaStaffId);
+        }
+      }
+    }
 
     // ================================================================
     // ESCENARIO 3 — CUIDADORES (rosa): 3 pacientes a domicilio.

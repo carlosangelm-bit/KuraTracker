@@ -4344,6 +4344,7 @@ class DataRepository {
     required String? organizationId,
     required PreventionRulesCatalog catalog,
     String? createdBy,
+    DateTime? now,
   }) async {
     if (centerTypeFor(organizationId) != CenterType.hospital) return 0;
     return regeneratePreventivePlan(
@@ -4351,6 +4352,7 @@ class DataRepository {
       catalog,
       organizationId: organizationId,
       createdBy: createdBy,
+      now: now,
     );
   }
 
@@ -4857,6 +4859,7 @@ class DataRepository {
     PreventionRulesCatalog catalog, {
     required String? organizationId,
     String? createdBy,
+    DateTime? now,
   }) async {
     final rules = catalog.schedulableActionsFor(computeRisk(patientId, catalog));
     final permanentScale = _globiadSpecs(patientId, catalog);
@@ -4870,6 +4873,7 @@ class DataRepository {
       // limpia aquí (lo protege la limpieza consciente del ruleId, Bug 1).
       ownedRuleIds: {...catalog.ruleIds, 'globiad'},
       createdBy: createdBy,
+      now: now,
     );
   }
 
@@ -4880,6 +4884,7 @@ class DataRepository {
     String? assigneeProfileId,
     String assigneeKind = 'staff',
     String? createdBy,
+    DateTime? now,
   }) async {
     final risk = computeRisk(patientId, catalog);
     final specs = catalog.schedulableActionsFor(risk);
@@ -4895,6 +4900,7 @@ class DataRepository {
       assigneeProfileId: assigneeProfileId,
       assigneeKind: assigneeKind,
       createdBy: createdBy,
+      now: now,
     );
   }
 
@@ -4913,9 +4919,16 @@ class DataRepository {
     String assigneeKind = 'staff',
     String? createdBy,
     bool skipNight = false,
+    DateTime? now,
   }) async {
     final admissionId = activeAdmission(patientId)?.id;
-    final now = DateTime.now();
+    // Reloj INYECTABLE (C1): el default es la hora real, pero la semilla lo
+    // retrasa para generar el plan "como si fuera hace 12 h" y poder completar
+    // por vías reales algunas tareas ya vencidas (cumplimiento sin falsear). Se
+    // usa TANTO para la frontera de limpieza como para la base de agendado, así
+    // que ambas se mueven juntas y no se produce el estado absurdo de "hecha
+    // antes de estar vencida". También hace determinista el efecto del re-bandeo.
+    final clock = now ?? DateTime.now();
     // Ventana nocturna que se omite si skipNight (cuidados que no se realizan
     // de noche para no interrumpir el descanso): 22:00–06:00 hora local.
     bool isNight(DateTime d) => d.hour >= 22 || d.hour < 6;
@@ -4938,7 +4951,7 @@ class DataRepository {
             t.patientId == patientId &&
             t.source == 'auto' &&
             t.isPending &&
-            !t.scheduledAt.isBefore(now) &&
+            !t.scheduledAt.isBefore(clock) &&
             owned.contains(t.ruleId))
         .toList();
     for (final t in existing) {
@@ -4950,7 +4963,7 @@ class DataRepository {
       // Nº de ocurrencias en el horizonte (cap defensivo a 24 por acción).
       final count = (horizonHours / s.everyHours).floor().clamp(1, 24);
       for (var i = 1; i <= count; i++) {
-        final at = now.add(Duration(hours: s.everyHours * i));
+        final at = clock.add(Duration(hours: s.everyHours * i));
         if (skipNight && isNight(at)) continue; // se omite el cuidado nocturno
         await createPreventiveTask(
           patientId: patientId,
@@ -4989,6 +5002,7 @@ class DataRepository {
     PreventionRulesCatalog catalog, {
     required String? organizationId,
     String? createdBy,
+    DateTime? now,
   }) async {
     if (centerTypeFor(organizationId) != CenterType.hospital) return;
     // Regenerador UNIFICADO (C0): reglas por banda + escalas permanentes, en una
@@ -4999,6 +5013,7 @@ class DataRepository {
       catalog,
       organizationId: organizationId,
       createdBy: createdBy,
+      now: now,
     );
   }
 
