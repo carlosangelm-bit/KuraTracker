@@ -51,5 +51,18 @@ void main() {
     // Re-generar el plan (reglas + escalas permanentes) mantiene la inspección.
     await repo.autoGeneratePlanIfHospital(pid, catalog, organizationId: orgId, now: t0);
     expect(insp().length, 6, reason: 'MDRPI permanente se regenera, no se pierde');
+
+    // Y NO se auto-cancela por "vigencia": una regeneración mucho después (≥ 4 h)
+    // sigue dando 6 inspecciones, no una sola tarea de revalorar (MDRPI no lleva
+    // vigencia separada — la inspección c/4h ES la revaloración).
+    await repo.autoGeneratePlanIfHospital(pid, catalog,
+        organizationId: orgId, now: t0.add(const Duration(hours: 8)));
+    expect(insp().length, greaterThan(1),
+        reason: 'la inspección NO se colapsa a una sola tarea de revalorar');
+    expect(
+        store.getAll(Collections.preventiveTasks).any((t) =>
+            t['patient_id'] == pid && t['action_id'] == 'revalorar_mdrpi'),
+        isFalse,
+        reason: 'MDRPI ya no emite revalorar (cadencia = revaloración)');
   });
 }

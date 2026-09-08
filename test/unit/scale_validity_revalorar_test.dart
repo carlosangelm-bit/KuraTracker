@@ -47,13 +47,14 @@ void main() {
         reason: 'GLOBIAD 2B vigente debe regenerar su vigilancia');
     expect(has('revalorar_globiad'), isFalse);
 
-    // VENCIDO: 48 h después (vigencia GLOBIAD = 24 h) → revalorar, sin cuidado derivado.
+    // VENCIDO: 48 h después (vigencia GLOBIAD = 24 h) → se AGREGA revalorar y el
+    // cuidado CONTINÚA (no se suspende por un lapso administrativo).
     await clearTasks();
     await repo.regeneratePreventivePlan(pid, catalog,
         organizationId: orgId, now: DateTime.now().add(const Duration(hours: 48)));
     expect(has('revalorar_globiad'), isTrue,
-        reason: 'GLOBIAD vencido debe pedir revalorar');
-    expect(has('vigilancia_infeccion_dai'), isFalse,
-        reason: 'no regenera cuidado de un resultado vencido');
+        reason: 'GLOBIAD vencido debe AGREGAR la exigencia de revalorar');
+    expect(has('vigilancia_infeccion_dai'), isTrue,
+        reason: 'el cuidado derivado SIGUE; vencer no lo suspende');
   });
 }

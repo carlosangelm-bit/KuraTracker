@@ -4791,21 +4791,6 @@ class DataRepository {
       String patientId, PreventionRulesCatalog catalog, DateTime now) {
     final a = latestScaleAssessment(patientId, 'GLOBIAD');
     if (a == null) return const [];
-    // VIGENCIA (interino): si el resultado venció, el plan pide REVALORAR en vez
-    // de seguir regenerando el cuidado derivado de un dato viejo. Una sola tarea
-    // en el horizonte (everyHours = horizonte → count 1).
-    final validity = catalog.scaleValidityHours('GLOBIAD');
-    if (validity != null && now.difference(a.assessedAt).inHours >= validity) {
-      return [
-        ScheduledActionSpec(
-          ruleId: 'globiad',
-          actionId: 'revalorar_globiad',
-          actionLabel: 'Revalorar GLOBIAD (resultado vencido)',
-          title: 'Revalorar GLOBIAD (resultado vencido)',
-          everyHours: catalog.cadenceHorizonHours,
-        ),
-      ];
-    }
     final category = a.categoryResult;
     if (category == null) return const [];
     final perdida = category.startsWith('2'); // 2A/2B
@@ -4833,6 +4818,23 @@ class DataRepository {
         everyHours: 12,
       ));
     }
+    // VIGENCIA (interino): al vencer NO se suspende el cuidado —una DAI 2B no se
+    // resolvió porque nadie volvió a llenar el formato—; se AGREGA la exigencia de
+    // revalorar (una tarea en el horizonte) y el cuidado derivado SIGUE. En GLOBIAD
+    // la vigencia sí aplica: el cuidado (control de humedad) y la valoración
+    // (recapturar GLOBIAD) son actos DISTINTOS.
+    final validity = catalog.scaleValidityHours('GLOBIAD');
+    if (validity != null &&
+        specs.isNotEmpty &&
+        now.difference(a.assessedAt).inHours >= validity) {
+      specs.add(ScheduledActionSpec(
+        ruleId: 'globiad',
+        actionId: 'revalorar_globiad',
+        actionLabel: 'Revalorar GLOBIAD (resultado vencido; el cuidado continúa)',
+        title: 'Revalorar GLOBIAD (resultado vencido; el cuidado continúa)',
+        everyHours: catalog.cadenceHorizonHours,
+      ));
+    }
     return specs;
   }
 
@@ -4845,18 +4847,11 @@ class DataRepository {
       String patientId, PreventionRulesCatalog catalog, DateTime now) {
     final a = latestScaleAssessment(patientId, 'MDRPI');
     if (a == null) return const [];
-    final validity = catalog.scaleValidityHours('MDRPI');
-    if (validity != null && now.difference(a.assessedAt).inHours >= validity) {
-      return [
-        ScheduledActionSpec(
-          ruleId: 'mdrpi',
-          actionId: 'revalorar_mdrpi',
-          actionLabel: 'Revalorar MDRPI (resultado vencido)',
-          title: 'Revalorar MDRPI (resultado vencido)',
-          everyHours: catalog.cadenceHorizonHours,
-        ),
-      ];
-    }
+    // MDRPI NO lleva vigencia separada: la inspección del sitio del dispositivo
+    // CADA 4 H *es* la revaloración (mirar la piel bajo el dispositivo). Vigencia
+    // y cadencia serían el mismo acto y se auto-cancelarían (una regeneración a
+    // las 4 h barrería las inspecciones y dejaría sólo "revalorar"). La cadencia
+    // basta cuando el cuidado ES la revaloración.
     const title = 'Inspección del sitio del dispositivo (cada 4 h)';
     return const [
       ScheduledActionSpec(
