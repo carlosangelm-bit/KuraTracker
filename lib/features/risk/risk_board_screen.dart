@@ -65,18 +65,22 @@ int _severityRank(RiskLevel l) => switch (l) {
       RiskLevel.sinRiesgo => 0,
     };
 
-/// Nivel EFECTIVO de una entrada del tablero: la MAYOR severidad entre la banda
-/// de Braden y el nivel de las alertas. NUNCA se usa `??`: la banda de Braden no
-/// puede enmascarar una alerta más grave. Un Braden 20 (sin_riesgo) con una
-/// alerta ALTA (p.ej. EAP isquémica) sale ALTO, no "sin riesgo". null = ni banda
-/// ni alertas (sin valoración).
-RiskLevel? _effectiveLevel(_RiskEntry e) {
-  final band = bradenBandLevel(e.bradenScore);
-  final alerts = e.risk.hasAlerts ? e.risk.level : null;
+/// Composición de nivel efectivo: la MAYOR severidad entre la banda de Braden y
+/// el nivel de alertas. La banda NUNCA enmascara una alerta más grave (nada de
+/// `??`): un Braden 20 (sin_riesgo) con una alerta ALTA (p.ej. EAP isquémica)
+/// sale ALTO, no "sin riesgo". null = ninguna de las dos (sin valoración).
+///
+/// PÚBLICA y PURA a propósito: fue un bug de clase merge-blocker (la banda
+/// enmascaraba la alerta), así que la composición tiene reja de test.
+RiskLevel? effectiveRiskLevel(RiskLevel? band, RiskLevel? alerts) {
   if (band == null) return alerts;
   if (alerts == null) return band;
   return _severityRank(band) >= _severityRank(alerts) ? band : alerts;
 }
+
+/// Nivel EFECTIVO de una entrada del tablero.
+RiskLevel? _effectiveLevel(_RiskEntry e) => effectiveRiskLevel(
+    bradenBandLevel(e.bradenScore), e.risk.hasAlerts ? e.risk.level : null);
 
 /// Clave estable del nivel para el filtro. 'sin_riesgo' (valorado, sin riesgo) y
 /// 'sin' (sin valoración) son estados OPUESTOS: nunca al mismo bucket — en un

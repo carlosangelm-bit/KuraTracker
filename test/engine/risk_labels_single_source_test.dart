@@ -19,6 +19,7 @@ import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kuratracker/engine/params/clinical_params.dart';
+import 'package:kuratracker/engine/risk/prevention_risk_engine.dart';
 
 const _singleSource = 'lib/engine/risk/braden_scale.dart';
 const _otherScaleOwner = 'lib/engine/risk/prevention_risk_engine.dart';
@@ -106,6 +107,23 @@ void main() {
       reason: 'Etiquetas de banda de Braden hardcodeadas (deben leerse de '
           'BradenScale.bandFor / braden_scale.json):\n${offenders.join('\n')}',
     );
+  });
+
+  test('RiskLevel.sinRiesgo.label DUPLICA la etiqueta de la banda sin_riesgo A PROPÓSITO', () {
+    // bradenBandLevel mapea la banda de Braden al enum RiskLevel, así que la
+    // etiqueta del enum ('Sin riesgo') COINCIDE con la de la banda sin_riesgo del
+    // JSON. El literal vive en prevention_risk_engine.dart, EXCLUIDO del guard de
+    // etiquetas — por eso hace falta este pin: si alguien renombra la banda en el
+    // JSON, el enum no la sigue solo, y este test obliga a decidir aquí.
+    final j = jsonDecode(File('assets/engine/braden_scale.json').readAsStringSync())
+        as Map<String, dynamic>;
+    final band = (j['risk_levels'] as List)
+        .cast<Map<String, dynamic>>()
+        .firstWhere((b) => b['id'] == 'sin_riesgo');
+    expect(RiskLevel.sinRiesgo.label, band['label'],
+        reason: 'Son iguales a propósito. Si cambia la etiqueta de la banda '
+            'sin_riesgo en braden_scale.json, decide si RiskLevel.sinRiesgo debe '
+            'seguirla (lo usan el tablero y las tarjetas de paciente).');
   });
 
   test('la prosa de scale_applicability.json (braden_riesgo/braden_bajo) sigue en sincronía con ClinicalParams',
