@@ -67,6 +67,43 @@ void main() {
     expect(repo.listUsers().firstWhere((u) => u.id == b.uid).isActive, isTrue);
   });
 
+  test('protege al gerente clínico aunque su MEMBRESÍA no traiga clinico', () async {
+    // El caso que rompía la guardia vieja (8-sep): la capacidad de definir planes
+    // la decide el PERFIL (canDiagnose), no la membresía — que por omisión no
+    // trae 'clinico'. Aquí el perfil sí puede (roles con clinico), pero su
+    // membresía se deja SIN clinico (solo 'admin', el estado por omisión). La
+    // guardia debe protegerlo igual, porque mira el perfil.
+    final repo = await DataRepository.instance();
+    const org = 'org-test-gerente';
+    final a = await repo.createUserWithLogin(
+        email: 'gerente@t.mx',
+        fullName: 'Gerencia Clínica',
+        roles: {AppRole.admin, AppRole.clinico},
+        organizationId: org);
+    // Reemplaza la membresía por una SIN clinico (solo 'admin').
+    final mem = repo
+        .listMembershipsFor(a.uid)
+        .firstWhere((m) => m.organizationId == org);
+    await repo.removeMembership(mem.id);
+    await repo.addMembership(a.uid, org, AppRole.admin);
+    expect(
+        repo
+            .listMembershipsFor(a.uid)
+            .firstWhere((m) => m.organizationId == org)
+            .roles
+            .contains(AppRole.clinico),
+        isFalse,
+        reason: 'la membresía quedó sin clinico (estado por omisión)');
+
+    // Es el único que puede definir planes: desactivarlo → BLOQUEA (por perfil).
+    expect(
+      () => repo.setUserActive(a.uid, false),
+      throwsA(predicate((e) =>
+          e.toString().contains('único personal') ||
+          e.toString().contains('definir planes de cuidado'))),
+    );
+  });
+
   test('reactivar (active=true) nunca bloquea', () async {
     final repo = await DataRepository.instance();
     const org = 'org-test-reactivar';

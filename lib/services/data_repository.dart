@@ -386,52 +386,67 @@ class DataRepository {
   }
 
   // ---- Invariante "el centro nunca se queda sin quien defina planes" ----
-  // Un clínico EFECTIVO en un centro = membresía activa con 'clinico' Y perfil
-  // activo. Un perfil inactivo no puede iniciar sesión (isActive en el restore de
-  // sesión), así que su rol clínico no cuenta. Una sola definición para los tres
-  // caminos que podían romper la invariante: setUserRoles (quitar rol),
-  // setUserActive (desactivar perfil) y el trigger server-side (0108/0109).
+  // La CAPACIDAD de definir planes la decide el PERFIL (canDiagnose sobre
+  // effectiveRoles), NO la membresía: un gerente clínico es un `admin` cuyo
+  // rellenado admin→{admin,clinico} le da la capacidad, pero su membresía por
+  // omisión no trae 'clinico'. Medir membership.roles dejaba fuera justo ese caso
+  // (8-sep). Aquí se evalúa lo MISMO que el botón "Definir plan de cuidados".
+  // Una sola definición para los tres caminos: setUserRoles, setUserActive y los
+  // triggers server-side (0111).
 
-  /// True si algún usuario DISTINTO de [excludeUserId] es clínico efectivo en
-  /// [org] (membresía activa con 'clinico' + perfil activo).
-  bool _orgHasOtherEffectiveClinico(String org, String excludeUserId) {
-    final activeProfileIds = <String>{
+  /// Réplica de AppUser.canDiagnose desde una fila de perfil: 'clinico' en el
+  /// conjunto efectivo, con el rellenado de gerencia clínica (roles vacío +
+  /// role=admin ⇒ {admin,clinico}). No usa AppUser.fromJson para no exigir
+  /// full_name/email de la fila.
+  bool _profileCanDefinePlans(Map<String, dynamic> p) {
+    final rolesList =
+        ((p['roles'] as List?) ?? const []).map((e) => e.toString()).toList();
+    if (rolesList.isNotEmpty) return rolesList.contains('clinico');
+    final role = p['role'] as String?;
+    return role == 'admin' || role == 'clinico';
+  }
+
+  bool _userCanDefinePlans(String userId) {
+    final profs =
+        _store.getAll(Collections.profiles).where((p) => p['id'] == userId);
+    if (profs.isEmpty) return false;
+    final p = profs.first;
+    return (p['is_active'] as bool? ?? true) && _profileCanDefinePlans(p);
+  }
+
+  /// True si algún usuario DISTINTO de [excludeUserId], con membresía ACTIVA en
+  /// [org] y perfil ACTIVO, PUEDE definir planes (capacidad de perfil).
+  bool _orgHasOtherCapable(String org, String excludeUserId) {
+    final capableActiveProfiles = <String>{
       for (final p in _store.getAll(Collections.profiles))
-        if (p['is_active'] as bool? ?? true) p['id'] as String,
+        if ((p['is_active'] as bool? ?? true) && _profileCanDefinePlans(p))
+          p['id'] as String,
     };
     return listMembershipsForOrg(org).any((m) =>
         m.profileId != excludeUserId &&
         m.isActive &&
-        m.roles.contains(AppRole.clinico) &&
-        activeProfileIds.contains(m.profileId));
+        capableActiveProfiles.contains(m.profileId));
   }
 
-  /// True si [userId] es HOY clínico efectivo en [org].
-  bool _isEffectiveClinico(String org, String userId) {
-    final profs =
-        _store.getAll(Collections.profiles).where((p) => p['id'] == userId);
-    final userActive =
-        profs.isEmpty ? false : (profs.first['is_active'] as bool? ?? true);
-    if (!userActive) return false;
-    return listMembershipsForOrg(org).any((m) =>
-        m.profileId == userId &&
-        m.isActive &&
-        m.roles.contains(AppRole.clinico));
+  /// True si [userId] PUEDE definir planes HOY y tiene membresía activa en [org].
+  bool _isCapableInOrg(String org, String userId) {
+    if (!_userCanDefinePlans(userId)) return false;
+    return listMembershipsForOrg(org)
+        .any((m) => m.profileId == userId && m.isActive);
   }
 
   Future<void> setUserActive(String userId, bool active) async {
-    // Guardia "último clínico del centro", segunda puerta (hueco #3, 8-sep):
-    // desactivar el perfil lo saca de TODOS sus centros (no puede iniciar
-    // sesión). Si en algún centro es el único clínico efectivo, se rechaza — ese
-    // centro se quedaría sin nadie que pueda definir planes de cuidado. Es la
-    // puerta MÁS probable (dar de baja a quien se va > editarle los roles).
-    if (!active) {
-      final clinicoOrgs = listMembershipsFor(userId)
-          .where((m) => m.isActive && m.roles.contains(AppRole.clinico))
+    // Guardia "último con capacidad de definir planes", segunda puerta (hueco
+    // #3, 8-sep): desactivar el perfil lo saca de TODOS sus centros (no puede
+    // iniciar sesión). Si en algún centro es el único que puede definir planes,
+    // se rechaza. Es la puerta MÁS probable (dar de baja a quien se va).
+    if (!active && _userCanDefinePlans(userId)) {
+      final orgs = listMembershipsFor(userId)
+          .where((m) => m.isActive)
           .map((m) => m.organizationId)
           .toSet();
-      for (final org in clinicoOrgs) {
-        if (!_orgHasOtherEffectiveClinico(org, userId)) {
+      for (final org in orgs) {
+        if (!_orgHasOtherCapable(org, userId)) {
           throw Exception(
               'No puedes desactivar a este usuario: es el único personal '
               'sanitario del centro y nadie más podría definir planes de '
@@ -484,20 +499,17 @@ class DataRepository {
         prof.isEmpty ? null : prof.first['organization_id'] as String?;
     final targetOrg = organizationId ?? activeOrg;
 
-    // Guardia "último clínico del centro" (hueco #2, 8-sep — decisión de Carlos:
-    // BLOQUEAR). Si este cambio le quita 'clinico' a un usuario que HOY sí lo
-    // tiene en este centro, y no queda ninguna otra membresía ACTIVA con
-    // 'clinico', el centro se quedaría sin nadie que pueda definir planes de
-    // cuidado — se rechaza. Solo aplica al quitar (no bloquea altas admin en
-    // centros que nunca tuvieron clínico). La misma regla vive en un trigger de
-    // Postgres (server-side) para el acceso directo por PostgREST.
-    // Solo bloquea si el usuario es HOY clínico efectivo del centro (nit: si su
-    // membresía o su perfil ya estaban inactivos, el centro ya estaba sin él —
-    // bloquear no arreglaría nada y dejaría ese centro imposible de editar).
+    // Guardia "último con capacidad de definir planes" (hueco #2, 8-sep —
+    // decisión de Carlos: BLOQUEAR). El conjunto NUEVO es explícito (no-vacío,
+    // validado) así que su capacidad = incluye 'clinico' (sin rellenado admin).
+    // Si el cambio le QUITA la capacidad a un usuario que HOY sí la tiene en este
+    // centro, y no queda nadie más con capacidad, se rechaza. Solo aplica al
+    // quitar (no bloquea altas admin en centros que nunca tuvieron clínico). La
+    // misma regla vive en un trigger de Postgres (server-side).
     if (targetOrg != null &&
         !roles.contains(AppRole.clinico) &&
-        _isEffectiveClinico(targetOrg, userId) &&
-        !_orgHasOtherEffectiveClinico(targetOrg, userId)) {
+        _isCapableInOrg(targetOrg, userId) &&
+        !_orgHasOtherCapable(targetOrg, userId)) {
       throw Exception(
           'No puedes quitar el rol de personal sanitario: este centro se '
           'quedaría sin nadie que pueda definir planes de cuidado.');
@@ -744,6 +756,8 @@ class DataRepository {
       'role': role.dbValue,
       'roles': [role.dbValue], // 0106: conjunto (en prod lo deriva el trigger)
       'is_active': true,
+      // Explícito para LocalStore (no rellena defaults); releerla si no revienta.
+      'created_at': DateTime.now().toIso8601String(),
     });
   }
 
