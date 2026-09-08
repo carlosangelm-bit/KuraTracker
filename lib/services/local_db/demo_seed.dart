@@ -1,5 +1,7 @@
 import 'package:uuid/uuid.dart';
+import '../../engine/risk/prevention_risk_engine.dart';
 import '../../features/patients/patients_view_preferences.dart';
+import '../data_repository.dart';
 import 'demo_wound_photos.dart';
 import 'local_store.dart';
 
@@ -32,7 +34,7 @@ class DemoSeed {
   // una sola vez en instalaciones demo previas (wipeAll + _seed), evitando
   // duplicados y datos viejos. Cada rediseño del roster sube este número.
   // v12: roster curado por escenario (clínica 7 / hospital 5 / cuidadores 3).
-  static const String _seedFlag = 'seeded_v31';
+  static const String _seedFlag = 'seeded_v32';
 
   static Future<void> ensureSeeded(LocalStore store) async {
     if (store.getBool(_seedFlag)) return;
@@ -1361,11 +1363,20 @@ class DemoSeed {
     // ================================================================
     var hospSeq = 1;
 
-    /// Crea un paciente hospitalizado con internamiento, Braden y tareas de ronda.
-    /// [tasks] = lista de {title, actionLabel, ruleId, actionId, hours, status},
-    /// donde `hours` es el desfase (en horas) del horario respecto a ahora
-    /// (negativo = pasado) y `status` ∈ {pending, done, skipped}.
-    Future<void> addHospitalPatient({
+    // Repo TRANSITORIO sobre el mismo store (no siembra, no toca el singleton):
+    // la semilla hospitalaria corre el FLUJO REAL (addRiskAssessment +
+    // autoGeneratePlanIfHospital + apply*Treatment) en vez de escribir tareas a
+    // mano. Así las tareas que aparecen son EXACTAMENTE las que el motor genera
+    // para ese Braden/comorbilidades — si un paciente queda sin tareas, es un
+    // hueco real del producto, no algo que la semilla tape.
+    final seedRepo = await DataRepository.forSeeding(LocalStoreDataStore(store));
+    final rulesCatalog = await PreventionRulesCatalog.load();
+
+    /// Crea un paciente hospitalizado con internamiento, Braden y —vía el motor—
+    /// su plan de prevención. Ya NO recibe tareas a mano: las materializa
+    /// autoGeneratePlanIfHospital a partir del Braden y el expediente. Devuelve
+    /// el id del paciente (para colgarle capturas de escala en B3).
+    Future<String> addHospitalPatient({
       required String name,
       required DateTime birth,
       required String sex,
@@ -1374,7 +1385,6 @@ class DemoSeed {
       required String floor,
       required String area,
       required String bed,
-      required List<Map<String, dynamic>> tasks,
       int admittedDaysAgo = 3,
       bool fragile = true,
       // Subescalas de Braden (percepción, humedad, actividad, movilidad,
@@ -1425,19 +1435,15 @@ class DemoSeed {
           'created_at': iso(now.subtract(Duration(days: admittedDaysAgo))),
         }
       ]);
-      await appendRows(Collections.riskAssessments, [
-        {
-          'id': _uuid.v4(),
-          'organization_id': organizationIdHospital,
-          'patient_id': pid,
-          'braden_score': braden,
-          'braden_subscores': bradenSubscores,
-          'assessed_at': iso(now.subtract(const Duration(days: 1))),
-          'assessed_by': enfermeriaProfileId,
-          'notes': bradenNotes,
-          'created_at': iso(now.subtract(const Duration(days: 1))),
-        }
-      ]);
+      // Braden POR LA VÍA REAL (con las 6 subescalas), no un append crudo.
+      await seedRepo.addRiskAssessment(
+        patientId: pid,
+        organizationId: organizationIdHospital,
+        bradenScore: braden,
+        bradenSubscores: bradenSubscores,
+        notes: bradenNotes,
+        staffId: enfermeriaProfileId,
+      );
       if (comorbid.isNotEmpty) {
         await appendRows(Collections.patientComorbidities, [
           for (final c in comorbid)
@@ -1471,48 +1477,26 @@ class DemoSeed {
             },
         ]);
       }
-      await appendRows(Collections.preventiveTasks, [
-        for (final t in tasks)
-          {
-            'id': _uuid.v4(),
-            'organization_id': organizationIdHospital,
-            'patient_id': pid,
-            'rule_id': t['ruleId'],
-            'action_id': t['actionId'],
-            'title': t['title'],
-            'action_label': t['actionLabel'],
-            'scheduled_at': iso(now.add(Duration(hours: t['hours'] as int))),
-            'assignee_profile_id': null,
-            'assignee_kind': 'staff',
-            'status': t['status'],
-            if (t['status'] == 'done') 'done_at': iso(now.add(Duration(hours: t['hours'] as int))),
-            if (t['status'] == 'done') 'done_by': enfermeriaProfileId,
-            'source': 'auto',
-            'created_at': iso(now.subtract(const Duration(hours: 12))),
-          }
-      ]);
+      // Plan de prevención POR EL MOTOR: mismo camino que el hospital en runtime
+      // (al valorar Braden se materializa el plan por banda). Ya no se escribe
+      // ninguna fila de preventive_tasks a mano; si el motor no genera nada para
+      // este Braden, el paciente queda SIN tareas a propósito (hueco visible).
+      await seedRepo.autoGeneratePlanIfHospital(
+        pid,
+        rulesCatalog,
+        organizationId: organizationIdHospital,
+        createdBy: enfermeriaProfileId,
+      );
+      return pid;
     }
 
-    // Tareas típicas de ronda (LPP): plantillas reutilizables.
-    Map<String, dynamic> rondaTask(
-            String title, String label, int hours, String status,
-            {String rule = 'lpp_alto', String action = 'cambios_2h_registro'}) =>
-        {
-          'title': title,
-          'actionLabel': label,
-          'ruleId': rule,
-          'actionId': action,
-          'hours': hours,
-          'status': status,
-        };
-
-    // Banda MUY ALTO (rojo): encamada, cambios cada 2 h. Una vencida sin marcar.
-    await addHospitalPatient(
+    // Banda MUY ALTO: encamada, humedad por incontinencia (activa GLOBIAD).
+    final gpid = await addHospitalPatient(
       name: 'Guadalupe Torres Ibarra',
       birth: DateTime(1943, 7, 5),
       sex: 'F',
       braden: 9,
-      bradenNotes: 'Adulto mayor encamado, incontinencia; riesgo muy alto.',
+      bradenNotes: 'Adulto mayor encamado, incontinencia.',
       // Humedad 1 (piel constantemente húmeda por incontinencia) → activa GLOBIAD.
       bradenSubscores: const {
         'percepcion_sensorial': 1,
@@ -1525,14 +1509,6 @@ class DemoSeed {
       floor: '3',
       area: 'Medicina Interna',
       bed: '08',
-      tasks: [
-        rondaTask('Cambio postural', 'Cambios posturales cada 2 h', -3, 'done'),
-        rondaTask('Cambio postural', 'Cambios posturales cada 2 h', -1, 'pending'),
-        rondaTask('Examen de piel', 'Examen diario de la piel', 2, 'pending',
-            action: 'exam_piel_diario'),
-        rondaTask('Aplicar AGHO', 'AGHO en zonas de riesgo', 5, 'pending',
-            action: 'agho'),
-      ],
     );
 
     // Banda ALTO (ámbar): frágil, cumplimiento parcial.
@@ -1556,12 +1532,6 @@ class DemoSeed {
           'onsetDaysAgo': 6,
         },
       ],
-      tasks: [
-        rondaTask('Cambio postural', 'Cambios posturales cada 2 h', -2, 'done'),
-        rondaTask('Cambio postural', 'Cambios posturales cada 2 h', 1, 'pending'),
-        rondaTask('Protección de talones', 'Taloneras de descarga', 4, 'pending',
-            action: 'taloneras'),
-      ],
     );
 
     // Banda MEDIO: vigilancia, buen cumplimiento.
@@ -1570,7 +1540,7 @@ class DemoSeed {
       birth: DateTime(1955, 10, 2),
       sex: 'M',
       braden: 15,
-      bradenNotes: 'Riesgo medio; deambula con apoyo. Diabético, úlcera de pie.',
+      bradenNotes: 'Deambula con apoyo. Diabético, úlcera de pie.',
       floor: '3',
       area: 'Medicina Interna',
       bed: '12',
@@ -1589,12 +1559,6 @@ class DemoSeed {
           'onsetDaysAgo': 10,
         },
       ],
-      tasks: [
-        rondaTask('Examen de piel', 'Examen diario de la piel', -4, 'done',
-            action: 'exam_piel_diario'),
-        rondaTask('Movilización', 'Fomentar movilización asistida', 3, 'pending',
-            rule: 'lpp_medio', action: 'movilizacion'),
-      ],
     );
 
     // Banda BAJO (verde): control.
@@ -1603,24 +1567,20 @@ class DemoSeed {
       birth: DateTime(1958, 5, 14),
       sex: 'M',
       braden: 19,
-      bradenNotes: 'Riesgo bajo; autónomo, sin datos de LPP.',
+      bradenNotes: 'Autónomo, sin datos de LPP.',
       floor: '4',
       area: 'Geriatría',
       bed: '02',
       fragile: false,
-      tasks: [
-        rondaTask('Examen de piel', 'Examen diario de la piel', -2, 'done',
-            rule: 'lpp_bajo', action: 'exam_piel_diario'),
-      ],
     );
 
-    // Banda MUY ALTO (rojo) #2: postquirúrgica encamada, tarea vencida.
-    await addHospitalPatient(
+    // Banda MUY ALTO #2: postquirúrgica encamada (humedad → aplica GLOBIAD).
+    final mpid = await addHospitalPatient(
       name: 'María Elena Vega Ortiz',
       birth: DateTime(1946, 12, 1),
       sex: 'F',
       braden: 8,
-      bradenNotes: 'Postoperatorio, encamada; riesgo muy alto de LPP.',
+      bradenNotes: 'Postoperatorio, encamada.',
       // Humedad 2 (piel muy húmeda) → activa GLOBIAD.
       bradenSubscores: const {
         'percepcion_sensorial': 1,
@@ -1634,12 +1594,44 @@ class DemoSeed {
       area: 'Cirugía',
       bed: '09',
       admittedDaysAgo: 2,
-      tasks: [
-        rondaTask('Cambio postural', 'Cambios posturales cada 2 h', -5, 'done'),
-        rondaTask('Cambio postural', 'Cambios posturales cada 2 h', -1, 'pending'),
-        rondaTask('Superficie de redistribución', 'Colchón de redistribución de presión',
-            3, 'pending', action: 'superficie'),
-      ],
+    );
+
+    // B3 · Capturas de escala POR LA VÍA REAL (addScaleAssessment + apply*), para
+    // que el camino escala→plan quede a la vista. GLOBIAD como representante:
+    //  · Guadalupe (2B: DAI con pérdida + infección) → SÍ dispara conducta
+    //    (monitorización + interconsulta), tareas materializadas por el motor.
+    //  · María Elena (1A: eritema sin pérdida) → NO dispara: captura válida que
+    //    correctamente no genera tareas (una banda "sin conducta").
+    // Ambas son aplicables a GLOBIAD (humedad ≤ 2).
+    await seedRepo.addScaleAssessment(
+      patientId: gpid,
+      organizationId: organizationIdHospital,
+      scaleId: 'GLOBIAD',
+      categoryResult: '2B',
+      notes: 'DAI con pérdida cutánea e infección.',
+      staffId: enfermeriaProfileId,
+    );
+    await seedRepo.applyGlobiadTreatment(
+      gpid,
+      '2B',
+      organizationId: organizationIdHospital,
+      catalog: rulesCatalog,
+      createdBy: enfermeriaProfileId,
+    );
+    await seedRepo.addScaleAssessment(
+      patientId: mpid,
+      organizationId: organizationIdHospital,
+      scaleId: 'GLOBIAD',
+      categoryResult: '1A',
+      notes: 'Eritema sin pérdida de integridad.',
+      staffId: enfermeriaProfileId,
+    );
+    await seedRepo.applyGlobiadTreatment(
+      mpid,
+      '1A',
+      organizationId: organizationIdHospital,
+      catalog: rulesCatalog,
+      createdBy: enfermeriaProfileId,
     );
 
     // ================================================================

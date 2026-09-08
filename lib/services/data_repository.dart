@@ -132,6 +132,18 @@ class DataRepository {
     return _instance!;
   }
 
+  /// Repo TRANSITORIO sobre un store ya abierto, para uso EXCLUSIVO del seed
+  /// (DemoSeed): permite sembrar por el flujo real (addRiskAssessment +
+  /// autoGeneratePlanIfHospital + apply*Treatment) en vez de escribir tareas a
+  /// mano. NO asigna el singleton ni siembra — evita la reentrada de
+  /// instance()→ensureSeeded (ensureSeeded corre ANTES de fijar _instance).
+  /// Carga ClinicalParams porque el motor de riesgo lo necesita.
+  static Future<DataRepository> forSeeding(DataStore store) async {
+    final repo = DataRepository._(store);
+    await repo.loadClinicalParams();
+    return repo;
+  }
+
   /// Fuerza la re-hidratacion de la cache (backend Supabase) tras login.
   /// No-op en modo local.
   Future<void> hydrateAfterLogin() async {
