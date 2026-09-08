@@ -27,23 +27,23 @@
         { "text": "¿La última valoración de Braden tiene menos de 72 h?", "alarm": "No" }
       ],
       "actions": [
-        { "id": "cambios_2h_registro", "label": "Cambios posturales cada 2 h con registro horario" },
-        { "id": "colchon_antiescaras", "label": "Colchón antiescaras / SEMP dinámica de celdas grandes o reemplazo" },
-        { "id": "valoracion_piel_completa_diaria", "label": "Valoración diaria de piel completa" },
-        { "id": "aporte_proteico_ajuste", "label": "Ajuste proteico 1.25–1.5 g/kg/día" },
-        { "id": "aposito_preventivo", "label": "Apósitos preventivos (hidrocelulares) en sacro y talones" },
-        { "id": "agho", "label": "Ácidos grasos hiperoxigenados (AGHO) en zonas de riesgo" },
-        { "id": "control_humedad", "label": "Control de humedad (incontinencia/sudoración/drenajes) con productos barrera" },
-        { "id": "higiene_ph_neutro", "label": "Higiene con pH neutro; NO masajear prominencias óseas" },
-        { "id": "educacion_prevencion", "label": "Educación a paciente/cuidador y evitar dispositivos tipo rosca/flotador" }
+        { "id": "cambios_2h_registro", "label": "Cambios posturales cada 2 h con registro horario", "horizon": "ronda" },
+        { "id": "colchon_antiescaras", "label": "Colchón antiescaras / SEMP dinámica de celdas grandes o reemplazo", "horizon": "seguimiento" },
+        { "id": "valoracion_piel_completa_diaria", "label": "Valoración diaria de piel completa", "horizon": "ronda" },
+        { "id": "aporte_proteico_ajuste", "label": "Ajuste proteico 1.25–1.5 g/kg/día", "horizon": "seguimiento" },
+        { "id": "aposito_preventivo", "label": "Apósitos preventivos (hidrocelulares) en sacro y talones", "horizon": "ronda" },
+        { "id": "agho", "label": "Ácidos grasos hiperoxigenados (AGHO) en zonas de riesgo", "horizon": "ronda" },
+        { "id": "control_humedad", "label": "Control de humedad (incontinencia/sudoración/drenajes) con productos barrera", "horizon": "ronda" },
+        { "id": "higiene_ph_neutro", "label": "Higiene con pH neutro; NO masajear prominencias óseas", "horizon": "seguimiento" },
+        { "id": "educacion_prevencion", "label": "Educación a paciente/cuidador y evitar dispositivos tipo rosca/flotador", "horizon": "seguimiento" }
       ],
       "escalation": {
         "message": "Hallazgo de alarma: posible lesión por presión ya presente o daño cutáneo en curso. Escalar de prevención a MANEJO.",
         "actions": [
-          { "id": "esc_estadificar", "label": "Valorar y estadificar la lesión (categoría/estadio) y registrarla como herida" },
-          { "id": "esc_notificar", "label": "Notificar al médico/responsable del caso" },
-          { "id": "esc_cuidado_local", "label": "Iniciar cuidado local (apósito adecuado; NO masajear la zona)" },
-          { "id": "esc_reevaluar", "label": "Reevaluar Braden e intensificar prevención" }
+          { "id": "esc_estadificar", "label": "Valorar y estadificar la lesión (categoría/estadio) y registrarla como herida", "horizon": "seguimiento" },
+          { "id": "esc_notificar", "label": "Notificar al médico/responsable del caso", "horizon": "seguimiento" },
+          { "id": "esc_cuidado_local", "label": "Iniciar cuidado local (apósito adecuado; NO masajear la zona)", "horizon": "seguimiento" },
+          { "id": "esc_reevaluar", "label": "Reevaluar Braden e intensificar prevención", "horizon": "seguimiento" }
         ]
       }
     },
@@ -59,22 +59,22 @@
         { "text": "¿La piel está húmeda por incontinencia o sudoración?", "alarm": "Sí" }
       ],
       "actions": [
-        { "id": "cambios_2h_registro", "label": "Cambios posturales cada 2 h con registro horario" },
-        { "id": "semp_dinamica", "label": "Superficie dinámica de aire alternante (SEMP)" },
-        { "id": "aporte_proteico_ajuste", "label": "Ajuste proteico 1.25–1.5 g/kg/día" },
-        { "id": "valoracion_mna", "label": "Valoración nutricional (MNA) y suplementación si hay déficit" },
-        { "id": "aposito_preventivo", "label": "Apósitos preventivos (hidrocelulares) en sacro y talones" },
-        { "id": "agho", "label": "Ácidos grasos hiperoxigenados (AGHO) en zonas de riesgo" },
-        { "id": "exam_piel_diario", "label": "Examen diario de la piel en prominencias y bajo dispositivos" },
-        { "id": "control_humedad", "label": "Control de humedad con productos barrera" }
+        { "id": "cambios_2h_registro", "label": "Cambios posturales cada 2 h con registro horario", "horizon": "ronda" },
+        { "id": "semp_dinamica", "label": "Superficie dinámica de aire alternante (SEMP)", "horizon": "seguimiento" },
+        { "id": "aporte_proteico_ajuste", "label": "Ajuste proteico 1.25–1.5 g/kg/día", "horizon": "seguimiento" },
+        { "id": "valoracion_mna", "label": "Valoración nutricional (MNA) y suplementación si hay déficit", "horizon": "seguimiento" },
+        { "id": "aposito_preventivo", "label": "Apósitos preventivos (hidrocelulares) en sacro y talones", "horizon": "ronda" },
+        { "id": "agho", "label": "Ácidos grasos hiperoxigenados (AGHO) en zonas de riesgo", "horizon": "ronda" },
+        { "id": "exam_piel_diario", "label": "Examen diario de la piel en prominencias y bajo dispositivos", "horizon": "ronda" },
+        { "id": "control_humedad", "label": "Control de humedad con productos barrera", "horizon": "ronda" }
       ],
       "escalation": {
         "message": "Hallazgo de alarma: posible lesión por presión ya presente o daño cutáneo en curso. Escalar de prevención a MANEJO.",
         "actions": [
-          { "id": "esc_estadificar", "label": "Valorar y estadificar la lesión y registrarla como herida" },
-          { "id": "esc_notificar", "label": "Notificar al médico/responsable" },
-          { "id": "esc_cuidado_local", "label": "Iniciar cuidado local (apósito adecuado; NO masajear)" },
-          { "id": "esc_reevaluar", "label": "Reevaluar Braden e intensificar prevención" }
+          { "id": "esc_estadificar", "label": "Valorar y estadificar la lesión y registrarla como herida", "horizon": "seguimiento" },
+          { "id": "esc_notificar", "label": "Notificar al médico/responsable", "horizon": "seguimiento" },
+          { "id": "esc_cuidado_local", "label": "Iniciar cuidado local (apósito adecuado; NO masajear)", "horizon": "seguimiento" },
+          { "id": "esc_reevaluar", "label": "Reevaluar Braden e intensificar prevención", "horizon": "seguimiento" }
         ]
       }
     },
@@ -90,20 +90,20 @@
         { "text": "¿Hay humedad o fricción sobre la piel?", "alarm": "Sí" }
       ],
       "actions": [
-        { "id": "cambios_2_3h", "label": "Cambios posturales cada 2–3 h" },
-        { "id": "semp_estatica", "label": "Superficie estática de alta tecnología (SEMP)" },
-        { "id": "valoracion_mna", "label": "Valoración nutricional (MNA)" },
-        { "id": "agho", "label": "Ácidos grasos hiperoxigenados (AGHO) en zonas de riesgo" },
-        { "id": "aposito_preventivo", "label": "Apósitos preventivos en sacro y talones" },
-        { "id": "exam_piel_diario", "label": "Examen diario de la piel" },
-        { "id": "control_humedad", "label": "Control de humedad con productos barrera" }
+        { "id": "cambios_2_3h", "label": "Cambios posturales cada 2–3 h", "horizon": "ronda" },
+        { "id": "semp_estatica", "label": "Superficie estática de alta tecnología (SEMP)", "horizon": "seguimiento" },
+        { "id": "valoracion_mna", "label": "Valoración nutricional (MNA)", "horizon": "seguimiento" },
+        { "id": "agho", "label": "Ácidos grasos hiperoxigenados (AGHO) en zonas de riesgo", "horizon": "ronda" },
+        { "id": "aposito_preventivo", "label": "Apósitos preventivos en sacro y talones", "horizon": "ronda" },
+        { "id": "exam_piel_diario", "label": "Examen diario de la piel", "horizon": "ronda" },
+        { "id": "control_humedad", "label": "Control de humedad con productos barrera", "horizon": "ronda" }
       ],
       "escalation": {
         "message": "Hallazgo de alarma: signos de daño cutáneo o presión sostenida. Escalar la conducta.",
         "actions": [
-          { "id": "esc_estadificar", "label": "Valorar la piel; si hay lesión, estadificar y registrar como herida" },
-          { "id": "esc_subir_banda", "label": "Intensificar medidas (frecuencia de cambios / SEMP) y reevaluar Braden" },
-          { "id": "esc_notificar", "label": "Notificar al responsable si hay lesión" }
+          { "id": "esc_estadificar", "label": "Valorar la piel; si hay lesión, estadificar y registrar como herida", "horizon": "seguimiento" },
+          { "id": "esc_subir_banda", "label": "Intensificar medidas (frecuencia de cambios / SEMP) y reevaluar Braden", "horizon": "seguimiento" },
+          { "id": "esc_notificar", "label": "Notificar al responsable si hay lesión", "horizon": "seguimiento" }
         ]
       }
     },
@@ -118,17 +118,17 @@
         { "text": "¿La piel está húmeda por incontinencia o sudoración?", "alarm": "Sí" }
       ],
       "actions": [
-        { "id": "cambios_4h", "label": "Cambios posturales cada 4 h" },
-        { "id": "agho", "label": "Hidratación con ácidos grasos hiperoxigenados (AGHO) en sacro/talones" },
-        { "id": "aposito_preventivo", "label": "Apósitos preventivos en sacro y talones" },
-        { "id": "exam_piel_diario", "label": "Examen diario de la piel" },
-        { "id": "educacion_prevencion", "label": "Educación a paciente/cuidador" }
+        { "id": "cambios_4h", "label": "Cambios posturales cada 4 h", "horizon": "ronda" },
+        { "id": "agho", "label": "Hidratación con ácidos grasos hiperoxigenados (AGHO) en sacro/talones", "horizon": "ronda" },
+        { "id": "aposito_preventivo", "label": "Apósitos preventivos en sacro y talones", "horizon": "ronda" },
+        { "id": "exam_piel_diario", "label": "Examen diario de la piel", "horizon": "ronda" },
+        { "id": "educacion_prevencion", "label": "Educación a paciente/cuidador", "horizon": "seguimiento" }
       ],
       "escalation": {
         "message": "Hallazgo de alarma en paciente de bajo riesgo: reforzar prevención y vigilar la zona.",
         "actions": [
-          { "id": "esc_subir_banda", "label": "Aumentar frecuencia de cambios posturales y proteger la zona" },
-          { "id": "esc_reevaluar", "label": "Reevaluar Braden (el riesgo pudo aumentar)" }
+          { "id": "esc_subir_banda", "label": "Aumentar frecuencia de cambios posturales y proteger la zona", "horizon": "seguimiento" },
+          { "id": "esc_reevaluar", "label": "Reevaluar Braden (el riesgo pudo aumentar)", "horizon": "seguimiento" }
         ]
       }
     },
@@ -144,17 +144,17 @@
         { "text": "¿Se le ha realizado la escala de Braden?", "alarm": "No" }
       ],
       "actions": [
-        { "id": "cambios_2h_registro", "label": "Plan de cambios posturales cada 2 h (cada 15 min en sedestación si puede)" },
-        { "id": "semp_estatica", "label": "Valorar superficie de apoyo (SEMP) según riesgo" },
-        { "id": "valorar_braden", "label": "Realizar valoración de Braden si no se ha hecho" },
-        { "id": "exam_piel_diario", "label": "Examen diario de la piel" }
+        { "id": "cambios_2h_registro", "label": "Plan de cambios posturales cada 2 h (cada 15 min en sedestación si puede)", "horizon": "ronda" },
+        { "id": "semp_estatica", "label": "Valorar superficie de apoyo (SEMP) según riesgo", "horizon": "seguimiento" },
+        { "id": "valorar_braden", "label": "Realizar valoración de Braden si no se ha hecho", "horizon": "seguimiento" },
+        { "id": "exam_piel_diario", "label": "Examen diario de la piel", "horizon": "ronda" }
       ],
       "escalation": {
         "message": "Brecha en la prevención (sin SEMP / sin Braden / >2 h sin cambio). Corregir de inmediato.",
         "actions": [
-          { "id": "esc_semp_ahora", "label": "Colocar superficie de apoyo (SEMP) ahora" },
-          { "id": "esc_braden_ahora", "label": "Realizar la valoración de Braden ahora" },
-          { "id": "esc_cambios_ahora", "label": "Iniciar cambios posturales con registro horario" }
+          { "id": "esc_semp_ahora", "label": "Colocar superficie de apoyo (SEMP) ahora", "horizon": "seguimiento" },
+          { "id": "esc_braden_ahora", "label": "Realizar la valoración de Braden ahora", "horizon": "seguimiento" },
+          { "id": "esc_cambios_ahora", "label": "Iniciar cambios posturales con registro horario", "horizon": "seguimiento" }
         ]
       }
     },
@@ -169,15 +169,15 @@
         { "text": "¿Come menos del 50% de sus alimentos?", "alarm": "Sí" }
       ],
       "actions": [
-        { "id": "valoracion_mna", "label": "Valoración nutricional (MNA)" },
-        { "id": "aporte_proteico_ajuste", "label": "Ajuste proteico 1.25–1.5 g/kg/día y suplementación si déficit" },
-        { "id": "interconsulta_nutricion", "label": "Interconsulta a nutrición" }
+        { "id": "valoracion_mna", "label": "Valoración nutricional (MNA)", "horizon": "seguimiento" },
+        { "id": "aporte_proteico_ajuste", "label": "Ajuste proteico 1.25–1.5 g/kg/día y suplementación si déficit", "horizon": "seguimiento" },
+        { "id": "interconsulta_nutricion", "label": "Interconsulta a nutrición", "horizon": "seguimiento" }
       ],
       "escalation": {
         "message": "Desnutrición activa: priorizar soporte nutricional.",
         "actions": [
-          { "id": "esc_nutricion_urgente", "label": "Interconsulta a nutrición prioritaria" },
-          { "id": "esc_suplementar", "label": "Iniciar suplementación proteico-calórica" }
+          { "id": "esc_nutricion_urgente", "label": "Interconsulta a nutrición prioritaria", "horizon": "seguimiento" },
+          { "id": "esc_suplementar", "label": "Iniciar suplementación proteico-calórica", "horizon": "seguimiento" }
         ]
       }
     },
@@ -194,16 +194,16 @@
         { "text": "Infección SISTÉMICA: ¿fiebre ≥38 °C, malestar general, taquicardia o signos de sepsis?", "alarm": "Sí" }
       ],
       "actions": [
-        { "id": "iwii_limpieza", "label": "Limpieza/desbridamiento y control de biocarga según el nivel del continuo" },
-        { "id": "iwii_vigilancia", "label": "Vigilancia estructurada por el continuo IWII 2022 en cada curación" },
-        { "id": "iwii_documentar", "label": "Documentar signos y nivel del continuo en la nota de evolución" }
+        { "id": "iwii_limpieza", "label": "Limpieza/desbridamiento y control de biocarga según el nivel del continuo", "horizon": "seguimiento" },
+        { "id": "iwii_vigilancia", "label": "Vigilancia estructurada por el continuo IWII 2022 en cada curación", "horizon": "seguimiento" },
+        { "id": "iwii_documentar", "label": "Documentar signos y nivel del continuo en la nota de evolución", "horizon": "seguimiento" }
       ],
       "escalation": {
         "message": "Infección local manifiesta, en propagación o sistémica (IWII 2022): escalar el manejo. La propagación/sistémica requiere actuar sin demora y valorar reporte como evento adverso.",
         "actions": [
-          { "id": "esc_iwii_cultivo", "label": "Tomar cultivo y valorar antibioticoterapia según nivel" },
-          { "id": "esc_iwii_notificar", "label": "Notificar al médico tratante" },
-          { "id": "esc_iwii_evento_adverso", "label": "Si hay propagación/sistémica: registrar evento adverso (posible centinela ≤24 h)" }
+          { "id": "esc_iwii_cultivo", "label": "Tomar cultivo y valorar antibioticoterapia según nivel", "horizon": "seguimiento" },
+          { "id": "esc_iwii_notificar", "label": "Notificar al médico tratante", "horizon": "seguimiento" },
+          { "id": "esc_iwii_evento_adverso", "label": "Si hay propagación/sistémica: registrar evento adverso (posible centinela ≤24 h)", "horizon": "seguimiento" }
         ]
       }
     },
@@ -220,18 +220,18 @@
         { "text": "¿Fiebre >38 °C?", "alarm": "Sí" }
       ],
       "actions": [
-        { "id": "vigilancia_sitio_qx", "label": "Vigilancia diaria del sitio quirúrgico (incluye zonas bajo dispositivos)" },
-        { "id": "curacion_esteril", "label": "Curación con técnica estéril" },
-        { "id": "control_glucemia_postop", "label": "Control glucémico postoperatorio (objetivo 110–150 mg/dL)" },
-        { "id": "normotermia", "label": "Mantener normotermia (>35.5 °C)" }
+        { "id": "vigilancia_sitio_qx", "label": "Vigilancia diaria del sitio quirúrgico (incluye zonas bajo dispositivos)", "horizon": "seguimiento" },
+        { "id": "curacion_esteril", "label": "Curación con técnica estéril", "horizon": "seguimiento" },
+        { "id": "control_glucemia_postop", "label": "Control glucémico postoperatorio (objetivo 110–150 mg/dL)", "horizon": "seguimiento" },
+        { "id": "normotermia", "label": "Mantener normotermia (>35.5 °C)", "horizon": "seguimiento" }
       ],
       "escalation": {
         "message": "Signos de alarma de ISQ (infección/dehiscencia). Escalar sin demora.",
         "actions": [
-          { "id": "esc_cultivo", "label": "Tomar cultivo del sitio quirúrgico" },
-          { "id": "esc_referir_cirugia", "label": "Notificar / referir a cirugía" },
-          { "id": "esc_antibiotico", "label": "Valorar antibioticoterapia" },
-          { "id": "esc_clasificar_isq", "label": "Clasificar ISQ (superficial / profunda / órgano-espacio)" }
+          { "id": "esc_cultivo", "label": "Tomar cultivo del sitio quirúrgico", "horizon": "seguimiento" },
+          { "id": "esc_referir_cirugia", "label": "Notificar / referir a cirugía", "horizon": "seguimiento" },
+          { "id": "esc_antibiotico", "label": "Valorar antibioticoterapia", "horizon": "seguimiento" },
+          { "id": "esc_clasificar_isq", "label": "Clasificar ISQ (superficial / profunda / órgano-espacio)", "horizon": "seguimiento" }
         ]
       }
     },
@@ -247,16 +247,16 @@
         { "text": "¿Se palpan los pulsos del pie?", "alarm": "No" }
       ],
       "actions": [
-        { "id": "no_compresion", "label": "NO aplicar compresión sin descartar isquemia" },
-        { "id": "valorar_abi", "label": "Valorar ABI / perfusión" },
-        { "id": "referir_angiologia", "label": "Considerar referencia a angiología" }
+        { "id": "no_compresion", "label": "NO aplicar compresión sin descartar isquemia", "horizon": "seguimiento" },
+        { "id": "valorar_abi", "label": "Valorar ABI / perfusión", "horizon": "seguimiento" },
+        { "id": "referir_angiologia", "label": "Considerar referencia a angiología", "horizon": "seguimiento" }
       ],
       "escalation": {
         "message": "Signos de isquemia: riesgo de necrosis. Escalar con prioridad.",
         "actions": [
-          { "id": "esc_suspender_compresion", "label": "Suspender cualquier compresión" },
-          { "id": "esc_referir_vascular", "label": "Referir a angiología con prioridad" },
-          { "id": "esc_valorar_revasc", "label": "Valorar estudio vascular / revascularización" }
+          { "id": "esc_suspender_compresion", "label": "Suspender cualquier compresión", "horizon": "seguimiento" },
+          { "id": "esc_referir_vascular", "label": "Referir a angiología con prioridad", "horizon": "seguimiento" },
+          { "id": "esc_valorar_revasc", "label": "Valorar estudio vascular / revascularización", "horizon": "seguimiento" }
         ]
       }
     },
@@ -271,15 +271,15 @@
         { "text": "¿Fiebre o malestar general?", "alarm": "Sí" }
       ],
       "actions": [
-        { "id": "vigilar_infeccion", "label": "Vigilancia estrecha de signos de infección" },
-        { "id": "asepsia", "label": "Técnica de curación aséptica rigurosa" },
-        { "id": "cultivo_si_signos", "label": "Umbral bajo para cultivo / antibioticoterapia" }
+        { "id": "vigilar_infeccion", "label": "Vigilancia estrecha de signos de infección", "horizon": "seguimiento" },
+        { "id": "asepsia", "label": "Técnica de curación aséptica rigurosa", "horizon": "seguimiento" },
+        { "id": "cultivo_si_signos", "label": "Umbral bajo para cultivo / antibioticoterapia", "horizon": "seguimiento" }
       ],
       "escalation": {
         "message": "Signos de infección en paciente inmunosuprimido: actuar sin demora.",
         "actions": [
-          { "id": "esc_cultivo_atb", "label": "Tomar cultivo e iniciar/valorar antibiótico" },
-          { "id": "esc_notificar_tratante", "label": "Notificar al médico tratante" }
+          { "id": "esc_cultivo_atb", "label": "Tomar cultivo e iniciar/valorar antibiótico", "horizon": "seguimiento" },
+          { "id": "esc_notificar_tratante", "label": "Notificar al médico tratante", "horizon": "seguimiento" }
         ]
       }
     },
@@ -295,17 +295,17 @@
         { "text": "¿Hay callo o zona de presión sobre la lesión?", "alarm": "Sí" }
       ],
       "actions": [
-        { "id": "descarga_presion", "label": "Descarga de presión (plantilla/férula/reposo)" },
-        { "id": "control_glucemico", "label": "Control glucémico estricto" },
-        { "id": "vigilar_infeccion_profunda", "label": "Vigilar infección profunda / osteomielitis" },
-        { "id": "valorar_idsa", "label": "Clasificar IDSA/IWGDF y valorar referencia" }
+        { "id": "descarga_presion", "label": "Descarga de presión (plantilla/férula/reposo)", "horizon": "seguimiento" },
+        { "id": "control_glucemico", "label": "Control glucémico estricto", "horizon": "seguimiento" },
+        { "id": "vigilar_infeccion_profunda", "label": "Vigilar infección profunda / osteomielitis", "horizon": "seguimiento" },
+        { "id": "valorar_idsa", "label": "Clasificar IDSA/IWGDF y valorar referencia", "horizon": "seguimiento" }
       ],
       "escalation": {
         "message": "Signos de infección o pérdida de sensibilidad: riesgo de progresión.",
         "actions": [
-          { "id": "esc_referir_pd", "label": "Referir (pie diabético) y clasificar IDSA/IWGDF" },
-          { "id": "esc_descarga_estricta", "label": "Descarga estricta de presión" },
-          { "id": "esc_cultivo_atb_pd", "label": "Valorar cultivo / antibiótico" }
+          { "id": "esc_referir_pd", "label": "Referir (pie diabético) y clasificar IDSA/IWGDF", "horizon": "seguimiento" },
+          { "id": "esc_descarga_estricta", "label": "Descarga estricta de presión", "horizon": "seguimiento" },
+          { "id": "esc_cultivo_atb_pd", "label": "Valorar cultivo / antibiótico", "horizon": "seguimiento" }
         ]
       }
     },
@@ -320,15 +320,15 @@
         { "text": "¿Hay signos incipientes de infección?", "alarm": "Sí" }
       ],
       "actions": [
-        { "id": "control_glucemico", "label": "Optimizar control glucémico" },
-        { "id": "vigilar_infeccion", "label": "Vigilar signos de infección" },
-        { "id": "educacion", "label": "Educación al paciente/cuidador sobre cuidado de la herida" }
+        { "id": "control_glucemico", "label": "Optimizar control glucémico", "horizon": "seguimiento" },
+        { "id": "vigilar_infeccion", "label": "Vigilar signos de infección", "horizon": "seguimiento" },
+        { "id": "educacion", "label": "Educación al paciente/cuidador sobre cuidado de la herida", "horizon": "seguimiento" }
       ],
       "escalation": {
         "message": "Descontrol glucémico o signos de infección: intensificar.",
         "actions": [
-          { "id": "esc_ajustar_glucemia", "label": "Ajustar control glucémico" },
-          { "id": "esc_cultivo_dm", "label": "Valorar cultivo / antibiótico si progresa" }
+          { "id": "esc_ajustar_glucemia", "label": "Ajustar control glucémico", "horizon": "seguimiento" },
+          { "id": "esc_cultivo_dm", "label": "Valorar cultivo / antibiótico si progresa", "horizon": "seguimiento" }
         ]
       }
     },
@@ -342,13 +342,13 @@
         { "text": "¿El aporte proteico es suficiente?", "alarm": "No" }
       ],
       "actions": [
-        { "id": "interconsulta_nutricion", "label": "Interconsulta a nutrición" },
-        { "id": "aporte_proteico_ajuste", "label": "Ajuste proteico 1.25–1.5 g/kg/día / suplementación" }
+        { "id": "interconsulta_nutricion", "label": "Interconsulta a nutrición", "horizon": "seguimiento" },
+        { "id": "aporte_proteico_ajuste", "label": "Ajuste proteico 1.25–1.5 g/kg/día / suplementación", "horizon": "seguimiento" }
       ],
       "escalation": {
         "message": "Aporte proteico insuficiente: priorizar soporte nutricional.",
         "actions": [
-          { "id": "esc_nutricion_urgente", "label": "Interconsulta a nutrición prioritaria y suplementación" }
+          { "id": "esc_nutricion_urgente", "label": "Interconsulta a nutrición prioritaria y suplementación", "horizon": "seguimiento" }
         ]
       }
     },
@@ -362,13 +362,13 @@
         { "text": "¿El estado hídrico y nutricional son adecuados?", "alarm": "No" }
       ],
       "actions": [
-        { "id": "vigilar_infeccion", "label": "Vigilancia de infección" },
-        { "id": "coordinar_nefrologia", "label": "Coordinar con nefrología" }
+        { "id": "vigilar_infeccion", "label": "Vigilancia de infección", "horizon": "seguimiento" },
+        { "id": "coordinar_nefrologia", "label": "Coordinar con nefrología", "horizon": "seguimiento" }
       ],
       "escalation": {
         "message": "Estado hídrico/nutricional inadecuado: coordinar manejo.",
         "actions": [
-          { "id": "esc_coordinar_nefro", "label": "Coordinar con nefrología / nutrición" }
+          { "id": "esc_coordinar_nefro", "label": "Coordinar con nefrología / nutrición", "horizon": "seguimiento" }
         ]
       }
     },
@@ -382,8 +382,8 @@
         { "text": "¿El paciente está dispuesto a dejar de fumar?" }
       ],
       "actions": [
-        { "id": "cesacion_tabaquica", "label": "Consejo de cesación tabáquica" },
-        { "id": "vigilar_perfusion", "label": "Vigilar perfusión de la herida" }
+        { "id": "cesacion_tabaquica", "label": "Consejo de cesación tabáquica", "horizon": "seguimiento" },
+        { "id": "vigilar_perfusion", "label": "Vigilar perfusión de la herida", "horizon": "seguimiento" }
       ]
     },
     {
@@ -397,15 +397,15 @@
         { "text": "¿Aparecieron signos de infección o necrosis?", "alarm": "Sí" }
       ],
       "actions": [
-        { "id": "reevaluar_plan", "label": "Reevaluar el plan de tratamiento" },
-        { "id": "descartar_infeccion_isquemia", "label": "Descartar infección / isquemia" },
-        { "id": "interconsulta", "label": "Considerar interconsulta" }
+        { "id": "reevaluar_plan", "label": "Reevaluar el plan de tratamiento", "horizon": "seguimiento" },
+        { "id": "descartar_infeccion_isquemia", "label": "Descartar infección / isquemia", "horizon": "seguimiento" },
+        { "id": "interconsulta", "label": "Considerar interconsulta", "horizon": "seguimiento" }
       ],
       "escalation": {
         "message": "Deterioro con signos de infección/necrosis: reevaluación urgente.",
         "actions": [
-          { "id": "esc_interconsulta_urgente", "label": "Interconsulta / reevaluación urgente del plan" },
-          { "id": "esc_cultivo_det", "label": "Valorar cultivo y estudios según sospecha" }
+          { "id": "esc_interconsulta_urgente", "label": "Interconsulta / reevaluación urgente del plan", "horizon": "seguimiento" },
+          { "id": "esc_cultivo_det", "label": "Valorar cultivo y estudios según sospecha", "horizon": "seguimiento" }
         ]
       }
     }
