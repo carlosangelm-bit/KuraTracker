@@ -77,9 +77,9 @@
       "unit": "puntos Braden",
       "source": {
         "protocolo": "Protocolo LPP",
-        "rationale": "Braden <= 17 = \"en riesgo\": compuerta de GLOBIAD y factor de ISTAP/STAR/MARSI, y umbral de cambios posturales programados. Se decidió re-bandear ETIQUETAS (Braden 5 bandas, 7-sep-2026) SIN redefinir qué significa \"en riesgo\" (sigue <= 17). CONCEPTO DISTINTO de braden_a_cargo_clinica_max (quién trata), aunque hoy compartan el valor 17.",
-        "reviewed_by": "María",
-        "reviewed_date": "2026-07-20"
+        "rationale": "Braden <= 17 = \"en riesgo\": compuerta de GLOBIAD y factor de ISTAP/STAR/MARSI, y umbral de cambios posturales programados. DERIVADO DEL COMPORTAMIENTO ACTUAL, no de una validación independiente: nadie validó 17 como umbral de RIESGO (el 17 validado por María es braden_a_cargo_clinica_max = quién trata). Se SEPARÓ de braden_a_cargo_clinica_max el 8-sep-2026 para que mover el corte de conducta (17->14) no cambie en silencio la compuerta de GLOBIAD ni el peso de ISTAP/STAR/MARSI.",
+        "reviewed_by": "PENDIENTE — derivado del comportamiento actual, sin validación clínica como umbral de riesgo",
+        "reviewed_date": "2026-09-08"
       }
     },
     "abi_incompresible_above": {

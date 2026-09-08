@@ -255,7 +255,17 @@ class _AssessmentSheetState extends ConsumerState<_AssessmentSheet> {
   Widget _preview(PreventionRulesCatalog catalog, BrandTokens t) {
     final repo = ref.watch(dataRepositoryProvider).valueOrNull;
     final braden = repo?.latestRiskAssessment(widget.patientId)?.bradenScore;
-    final plan = buildPreventivePlan(_answers, braden: braden, catalog: catalog);
+    // La escala Braden (fuente única de las bandas) para refinar la frecuencia
+    // de cambios posturales. Se carga al arrancar y queda en caché.
+    final bradenScale = ref.watch(bradenScaleProvider).valueOrNull;
+    if (bradenScale == null) {
+      return const Padding(
+        padding: EdgeInsets.all(24),
+        child: Center(child: CircularProgressIndicator()),
+      );
+    }
+    final plan = buildPreventivePlan(_answers,
+        braden: braden, catalog: catalog, bradenScale: bradenScale);
 
     // Vigilancia de complicación por comorbilidades/infección (solo lectura).
     final complicationSigns = <String>[];

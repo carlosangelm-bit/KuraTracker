@@ -1,4 +1,5 @@
 import '../params/clinical_params.dart';
+import 'braden_scale.dart';
 import 'prevention_risk_engine.dart' show PreventionRulesCatalog, ScheduledActionSpec;
 
 /// Nivel de movilidad (pregunta 1 del cuestionario unificado). Determina la
@@ -61,6 +62,7 @@ PreventivePlan buildPreventivePlan(
   PreventiveAnswers a, {
   int? braden,
   required PreventionRulesCatalog catalog,
+  required BradenScale bradenScale,
 }) {
   final activities = <ScheduledActionSpec>[];
   final watch = <String>[];
@@ -81,13 +83,13 @@ PreventivePlan buildPreventivePlan(
   String? posturalId;
   var veryHigh = false;
   if (braden != null) {
-    // Cortes de CONDUCTA desde ClinicalParams (nunca literales). alto/muy alto y
-    // la compuerta "en riesgo"; el 9 (piso de la banda muy_alto, 6–9) no es un
-    // umbral de conducta y no está en la guardia de números mágicos.
+    // Cortes de CONDUCTA desde ClinicalParams (nunca literales); la banda
+    // muy_alto desde braden_scale.json (fuente única): antes el techo de muy_alto
+    // era un 9 hardcodeado que ningún guard veía.
     final params = ClinicalParams.I;
     if (braden <= params.bradenAltoMuyAltoMax) {
       posturalId = 'cambios_2h_registro';
-      veryHigh = braden <= 9;
+      veryHigh = bradenScale.bandFor(braden)?.id == 'muy_alto';
     } else if (braden <= params.bradenEnRiesgoMax) {
       posturalId = 'cambios_2_3h';
     } else {
