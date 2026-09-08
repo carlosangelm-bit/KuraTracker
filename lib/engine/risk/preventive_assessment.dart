@@ -1,3 +1,4 @@
+import '../params/clinical_params.dart';
 import 'prevention_risk_engine.dart' show PreventionRulesCatalog, ScheduledActionSpec;
 
 /// Nivel de movilidad (pregunta 1 del cuestionario unificado). Determina la
@@ -80,14 +81,17 @@ PreventivePlan buildPreventivePlan(
   String? posturalId;
   var veryHigh = false;
   if (braden != null) {
-    // La banda de Braden manda si hay valoración vigente.
-    if (braden <= 12) {
+    // Cortes de CONDUCTA desde ClinicalParams (nunca literales). alto/muy alto y
+    // la compuerta "en riesgo"; el 9 (piso de la banda muy_alto, 6–9) no es un
+    // umbral de conducta y no está en la guardia de números mágicos.
+    final params = ClinicalParams.I;
+    if (braden <= params.bradenAltoMuyAltoMax) {
       posturalId = 'cambios_2h_registro';
       veryHigh = braden <= 9;
-    } else if (braden <= 17) {
+    } else if (braden <= params.bradenEnRiesgoMax) {
       posturalId = 'cambios_2_3h';
     } else {
-      posturalId = null; // 18–23: sin cambios programados (solo observación)
+      posturalId = null; // sobre "en riesgo": sin cambios programados (solo observación)
     }
   } else {
     switch (a.mobility) {

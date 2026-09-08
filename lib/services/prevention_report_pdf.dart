@@ -4,6 +4,7 @@ import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 
 import '../engine/models/kura_engine_enums.dart';
+import '../engine/risk/braden_scale.dart';
 import '../models/adverse_event.dart';
 import '../models/patient.dart';
 import '../models/preventive_task.dart';
@@ -25,6 +26,11 @@ Future<void> generatePreventionReportPdf({
   final ref = now ?? DateTime.now();
   final fmtDate = DateFormat('dd/MM/yyyy');
   final fmtDateTime = DateFormat('dd/MM/yyyy HH:mm');
+
+  // Bandas de Braden desde el asset (fuente única): antes _bradenBand
+  // reimplementaba tres bandas a mano y NUNCA imprimía "riesgo muy alto" — un
+  // Braden 6 (el peor puntaje) salía como "riesgo alto" en el PDF del expediente.
+  final bradenScale = await BradenScale.load();
 
   final org = repo.organizationById(organizationId);
   final centerName = org?.name ?? 'Centro';
@@ -111,7 +117,7 @@ Future<void> generatePreventionReportPdf({
               children: [
                 pw.Text(
                     'Última valoración: ${lastBraden.bradenScore ?? '—'} '
-                    '(${_bradenBand(lastBraden.bradenScore)}) · '
+                    '(${_bradenBand(lastBraden.bradenScore, bradenScale)}) · '
                     '${fmtDate.format(lastBraden.assessedAt)}',
                     style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
                 if (assessments.length > 1) ...[
@@ -121,7 +127,7 @@ Future<void> generatePreventionReportPdf({
                   ...assessments.take(6).map((a) => pw.Bullet(
                         text:
                             '${fmtDate.format(a.assessedAt)} — Braden ${a.bradenScore ?? '—'} '
-                            '(${_bradenBand(a.bradenScore)})'
+                            '(${_bradenBand(a.bradenScore, bradenScale)})'
                             '${who(a.assessedBy).isNotEmpty ? ' · ${who(a.assessedBy)}' : ''}',
                         style: const pw.TextStyle(fontSize: 9),
                       )),
@@ -232,11 +238,12 @@ Future<void> generatePreventionReportPdf({
 // Helpers de presentación.
 // ---------------------------------------------------------------------------
 
-String _bradenBand(int? s) {
+// Etiqueta de la banda de Braden leída del asset (braden_scale.json), en
+// minúsculas para el texto corrido del reporte. La banda y su etiqueta son
+// fuente única (BradenScale.bandFor); aquí no se reimplementa ningún corte.
+String _bradenBand(int? s, BradenScale scale) {
   if (s == null) return 'sin valoración';
-  if (s <= 12) return 'riesgo alto';
-  if (s <= 17) return 'riesgo medio';
-  return 'riesgo bajo';
+  return scale.bandFor(s)?.label.toLowerCase() ?? 'sin valoración';
 }
 
 PdfColor? _parseHex(String? hex) {

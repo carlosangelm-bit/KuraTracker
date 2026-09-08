@@ -271,8 +271,11 @@ class _PatientRiskScreenState extends ConsumerState<PatientRiskScreen> {
       await repo.applyStarTreatment(widget.patientId, res.category,
           organizationId: orgId, createdBy: by);
     } else if (scaleId == 'EXTRAVASACION') {
-      await repo.applyExtravasacionTreatment(widget.patientId, res.category,
-          organizationId: orgId, createdBy: by);
+      final catalog = ref.read(preventionRulesProvider).valueOrNull;
+      if (catalog != null) {
+        await repo.applyExtravasacionTreatment(widget.patientId, res.category,
+            organizationId: orgId, catalog: catalog, createdBy: by);
+      }
     } else if (const {'NPIAP', 'WAGNER', 'CEAP', 'MDRPI'}.contains(scaleId)) {
       await repo.applyCategoricalScaleTreatment(
           widget.patientId, scaleId, res.category,

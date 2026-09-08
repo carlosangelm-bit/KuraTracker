@@ -4351,7 +4351,10 @@ class DataRepository {
     final admissionId = activeAdmission(patientId)?.id;
     var created = 0;
     Future<void> materialize(String actionId, String title, int everyHours) async {
-      final count = (24 / everyHours).floor().clamp(1, 24);
+      // Horizonte desde el asset (no inline): cuando se resuelva "ronda vs
+      // seguimiento" va a cambiar, y no queremos tres lugares que lo repiten.
+      final count =
+          (catalog.cadenceHorizonHours / everyHours).floor().clamp(1, 24);
       for (var i = 1; i <= count; i++) {
         await createPreventiveTask(
           patientId: patientId,
@@ -4512,6 +4515,7 @@ class DataRepository {
     String patientId,
     String grado, {
     required String? organizationId,
+    required PreventionRulesCatalog catalog,
     String? createdBy,
   }) async {
     if (centerTypeFor(organizationId) != CenterType.hospital) return;
@@ -4520,12 +4524,17 @@ class DataRepository {
     if (g < 1) return;
     final now = DateTime.now();
     final admissionId = activeAdmission(patientId)?.id;
-    for (var i = 1; i <= 6; i++) {
+    // Monitorización cada 4 h sobre el horizonte del asset (no hardcodear 6):
+    // cuando cambie "ronda vs seguimiento", el horizonte sale de un solo lugar.
+    const everyHours = 4;
+    final count =
+        (catalog.cadenceHorizonHours / everyHours).floor().clamp(1, 24);
+    for (var i = 1; i <= count; i++) {
       await createPreventiveTask(
         patientId: patientId,
         organizationId: organizationId,
         title: 'Monitorización de extravasación (cada 4 h)',
-        scheduledAt: now.add(Duration(hours: 4 * i)),
+        scheduledAt: now.add(Duration(hours: everyHours * i)),
         admissionId: admissionId,
         ruleId: 'extravasacion',
         actionId: 'monitoreo_extravasacion',

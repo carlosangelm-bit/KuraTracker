@@ -161,6 +161,11 @@ class ClinicalParams {
   /// Braden máximo (inclusive) para la etiqueta "riesgo alto/muy alto".
   int get bradenAltoMuyAltoMax => _t('braden_alto_muy_alto_max').toInt();
 
+  /// Braden máximo (inclusive) para la compuerta "en riesgo" (GLOBIAD/ISTAP/STAR/
+  /// MARSI y cambios posturales programados). Concepto distinto de
+  /// [bradenACargoClinicaMax] aunque hoy compartan el valor.
+  int get bradenEnRiesgoMax => _t('braden_en_riesgo_max').toInt();
+
   /// ITB por encima del cual las arterias se consideran incompresibles.
   double get abiIncompresibleAbove => _t('abi_incompresible_above').toDouble();
 
@@ -439,6 +444,7 @@ class ClinicalParams {
     'tunel_referencia_min_cm',
     'braden_a_cargo_clinica_max',
     'braden_alto_muy_alto_max',
+    'braden_en_riesgo_max',
     'abi_incompresible_above',
     'abi_high_min',
     'abi_mod_min',
