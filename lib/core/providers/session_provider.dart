@@ -235,11 +235,11 @@ final enabledModulesProvider = Provider<Set<ModuleKey>>((ref) {
   if (user == null) return const {};
   final repo = ref.watch(dataRepositoryProvider).valueOrNull;
   if (repo == null) {
-    return ModuleKey.values
-        .where((m) =>
-            m.availableFor(session.activeCenterType) &&
-            m.defaultFor(session.activeCenterType))
-        .toSet();
+    // Fallback SEGURO (Fase 1 §4): con el AND por licencia, mientras el repo (y
+    // por tanto los derechos) no ha cargado, el conjunto es VACÍO. Es preferible
+    // un nav vacío por un instante que mostrar un módulo sin derecho. Antes se
+    // devolvían los defaults del tipo de centro.
+    return const {};
   }
   return repo.enabledModules(
     organizationId: user.organizationId,

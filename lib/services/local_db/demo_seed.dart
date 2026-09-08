@@ -32,7 +32,7 @@ class DemoSeed {
   // una sola vez en instalaciones demo previas (wipeAll + _seed), evitando
   // duplicados y datos viejos. Cada rediseño del roster sube este número.
   // v12: roster curado por escenario (clínica 7 / hospital 5 / cuidadores 3).
-  static const String _seedFlag = 'seeded_v31';
+  static const String _seedFlag = 'seeded_v32';
 
   static Future<void> ensureSeeded(LocalStore store) async {
     if (store.getBool(_seedFlag)) return;
@@ -356,6 +356,56 @@ class DemoSeed {
         'is_active': true,
         'created_at': iso(now),
       },
+    ]);
+
+    // ---------------- Derechos de licencia (Fase 1 §4) ----------------
+    // Con el AND por licencia, un módulo solo se muestra si el centro tiene el
+    // derecho. Se siembran los derechos de TODOS los centros demo para no ocultar
+    // lo que hoy se ve. Recordar: el AND es derecho AND module_settings/default,
+    // así que otorgar un derecho NO enciende un módulo que el default tenga
+    // apagado (hospital/cuidadores siguen sin insumos ni comercial).
+    await store.saveAll(Collections.orgEntitlements, [
+      for (final orgId in [
+        organizationId,
+        organizationId2,
+        organizationIdHospital,
+        organizationIdCuidadores,
+        organizationIdIndependiente,
+      ]) ...[
+        for (final k in ['clinico', 'insumos', 'comercial', 'admin'])
+          {
+            'id': _uuid.v4(),
+            'organization_id': orgId,
+            'kind': 'module',
+            'key': k,
+            'quantity': null,
+            'status': 'active',
+            'source': 'master',
+            'created_at': iso(now),
+          },
+        {
+          'id': _uuid.v4(),
+          'organization_id': orgId,
+          'kind': 'seat',
+          'key': 'clinico',
+          'quantity': 50,
+          'status': 'active',
+          'source': 'master',
+          'created_at': iso(now),
+        },
+      ],
+      // Protocolo Kura+: solo los centros que lo tienen (principal e independiente).
+      for (final orgId in [organizationId, organizationIdIndependiente])
+        {
+          'id': _uuid.v4(),
+          'organization_id': orgId,
+          'kind': 'seat',
+          'key': 'protocolo',
+          'quantity': 10,
+          'status': 'active',
+          'source': 'master',
+          'created_at': iso(now),
+        },
     ]);
 
     // ---------------- Personal sanitario ----------------

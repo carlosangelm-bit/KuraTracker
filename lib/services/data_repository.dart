@@ -725,21 +725,44 @@ class DataRepository {
     }
   }
 
-  /// Estado EFECTIVO de un módulo para (centro, sitio, usuario), resolviendo
-  /// usuario > sitio > centro > default-por-tipo.
+  /// ¿El centro tiene un derecho de MÓDULO activo con esta `key`? (Fase 1 §4).
+  /// Fuente: org_entitlements (kind='module', status='active'). Fallback SEGURO:
+  /// sin derecho cargado → false (mejor un nav vacío un instante que un módulo
+  /// encendido sin derecho). El webhook/master es quien crea estos derechos.
+  bool hasModuleEntitlement(String? organizationId, String key) {
+    if (organizationId == null) return false;
+    for (final e in _store.getAll(Collections.orgEntitlements)) {
+      if (e['organization_id'] == organizationId &&
+          e['kind'] == 'module' &&
+          e['key'] == key &&
+          e['status'] == 'active') {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /// Estado EFECTIVO de un módulo para (centro, sitio, usuario):
+  ///   tiene DERECHO (org_entitlements) AND module_settings lo enciende
+  ///   (usuario > sitio > centro > default-por-tipo) AND availableFor(tipo).
+  /// El derecho es la capa de licencia (Fase 1 §4): sin él, el módulo no se
+  /// muestra aunque module_settings lo tenga encendido.
   bool isModuleEnabled(
     ModuleKey module, {
     required String? organizationId,
     String? siteId,
     String? profileId,
   }) {
-    if (organizationId == null) {
-      return module.defaultFor(CenterType.clinicaHeridas);
-    }
+    // Sin centro no hay derechos que consultar: fallback seguro a apagado.
+    if (organizationId == null) return false;
     final centerType = centerTypeFor(organizationId);
     // Módulo no disponible para este tipo de centro: apagado siempre, sin
     // importar ajustes previos (p.ej. eKare en hospital).
     if (!module.availableFor(centerType)) return false;
+    // Capa de licencia: sin el derecho del módulo, apagado (AND de §4).
+    if (!hasModuleEntitlement(organizationId, module.entitlementKey)) {
+      return false;
+    }
     final settings = listModuleSettings(organizationId: organizationId)
         .where((m) => m.moduleKey == module.dbValue)
         .toList();

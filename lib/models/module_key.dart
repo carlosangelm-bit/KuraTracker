@@ -122,6 +122,26 @@ extension ModuleKeyX on ModuleKey {
     return true;
   }
 
+  /// Derecho (`org_entitlements.key`, con `kind='module'`) que este módulo
+  /// requiere para poder encenderse (modelo de licencia, Fase 1 §4). insumos y
+  /// comercial tienen su propio derecho; el resto —incluido eKare, que entra con
+  /// el clínico SIN costo— dependen de `module:clinico`.
+  String get entitlementKey {
+    switch (this) {
+      case ModuleKey.insumos:
+        return 'insumos';
+      case ModuleKey.comercial:
+        return 'comercial';
+      case ModuleKey.patients:
+      case ModuleKey.agenda:
+      case ModuleKey.prevention:
+      case ModuleKey.reports:
+      case ModuleKey.ekare:
+      case ModuleKey.vac:
+        return 'clinico';
+    }
+  }
+
   static ModuleKey? fromDb(String? s) {
     for (final m in ModuleKey.values) {
       if (m.dbValue == s) return m;
