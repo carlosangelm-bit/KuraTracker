@@ -102,11 +102,20 @@ class PreventiveAction {
 class ActionCadence {
   final int everyHours;
   final String title;
-  const ActionCadence({required this.everyHours, required this.title});
+
+  /// Cadencia RELATIVA AL TURNO: N veces por turno. Cuando está presente, la
+  /// cadencia efectiva se resuelve al materializar leyendo la duración del turno
+  /// del centro (shift_config; 8 h por defecto). `everyHours` es el respaldo si no
+  /// se resuelve. Interino por investigación (8-sep-2026), pendiente de María.
+  final int? perShift;
+
+  const ActionCadence(
+      {required this.everyHours, required this.title, this.perShift});
 
   factory ActionCadence.fromJson(Map<String, dynamic> j) => ActionCadence(
         everyHours: (j['everyHours'] as num).toInt(),
         title: (j['title'] as String?) ?? 'Actividad preventiva',
+        perShift: (j['perShift'] as num?)?.toInt(),
       );
 }
 
@@ -133,6 +142,11 @@ class ScheduledActionSpec {
   /// aquí van las demás. Vacío = una sola fuente.
   final List<String> alsoFromRuleIds;
 
+  /// Si la acción es "N veces por turno": la cadencia efectiva se resuelve al
+  /// materializar desde la duración del turno del centro. null = cadencia fija
+  /// (usa [everyHours]).
+  final int? perShift;
+
   const ScheduledActionSpec({
     required this.ruleId,
     required this.actionId,
@@ -140,6 +154,7 @@ class ScheduledActionSpec {
     required this.title,
     required this.everyHours,
     this.alsoFromRuleIds = const [],
+    this.perShift,
   });
 
   ScheduledActionSpec withAlsoFrom(List<String> also) => ScheduledActionSpec(
@@ -149,6 +164,7 @@ class ScheduledActionSpec {
         title: title,
         everyHours: everyHours,
         alsoFromRuleIds: also,
+        perShift: perShift,
       );
 }
 
@@ -348,6 +364,7 @@ class PreventionRulesCatalog {
             actionLabel: a.label,
             title: cad.title,
             everyHours: cad.everyHours,
+            perShift: cad.perShift,
           );
         }
       }

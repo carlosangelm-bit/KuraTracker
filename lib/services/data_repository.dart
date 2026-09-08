@@ -878,6 +878,19 @@ class DataRepository {
   /// Turnos configurados del centro (para la ventana de cumplimiento del módulo
   /// de prevención hospitalaria). Lista de {name, startHour, endHour}; vacía =
   /// sin turnos (ventana de 24 h por defecto).
+  /// Duración (horas) de un turno del centro, para resolver cadencias "por turno"
+  /// (perShift). Toma el primer turno configurado (endHour−startHour, con vuelta
+  /// de medianoche); 8 h por defecto cuando el centro no tiene turnos
+  /// (shiftConfigFor vacío) — decisión 8-sep-2026: el default sólo aplica sin
+  /// configuración, si hay turnos manda shift_config.
+  int shiftDurationHoursFor(String? organizationId) {
+    final shifts = shiftConfigFor(organizationId);
+    if (shifts.isEmpty) return 8;
+    final s = shifts.first;
+    final dur = ((s['endHour'] as int) - (s['startHour'] as int) + 24) % 24;
+    return dur == 0 ? 8 : dur;
+  }
+
   List<Map<String, dynamic>> shiftConfigFor(String? organizationId) {
     final org = _store
         .getAll(Collections.organizations)
@@ -4793,6 +4806,7 @@ class DataRepository {
         actionLabel: title,
         title: title,
         everyHours: c?.everyHours ?? 8,
+        perShift: c?.perShift,
       ));
     }
     if (infeccion) {
@@ -4958,12 +4972,20 @@ class DataRepository {
       await _store.deleteRow(Collections.preventiveTasks, t.id);
     }
 
+    // Cadencia RELATIVA AL TURNO (perShift): se resuelve aquí porque depende del
+    // centro (shift_config). N veces por turno → cada (duración_turno / N) horas.
+    final shiftHours = shiftDurationHoursFor(organizationId);
+    int everyHoursOf(ScheduledActionSpec s) => s.perShift == null
+        ? s.everyHours
+        : (shiftHours / s.perShift!).floor().clamp(1, shiftHours);
+
     var created = 0;
     for (final s in specs) {
+      final everyHours = everyHoursOf(s);
       // Nº de ocurrencias en el horizonte (cap defensivo a 24 por acción).
-      final count = (horizonHours / s.everyHours).floor().clamp(1, 24);
+      final count = (horizonHours / everyHours).floor().clamp(1, 24);
       for (var i = 1; i <= count; i++) {
-        final at = clock.add(Duration(hours: s.everyHours * i));
+        final at = clock.add(Duration(hours: everyHours * i));
         if (skipNight && isNight(at)) continue; // se omite el cuidado nocturno
         await createPreventiveTask(
           patientId: patientId,

@@ -8,7 +8,7 @@
     "cambios_2_3h": { "everyHours": 3, "title": "Cambio postural" },
     "cambios_4h": { "everyHours": 4, "title": "Cambio postural" },
     "agho": { "everyHours": 12, "title": "Aplicar AGHO en zonas de riesgo" },
-    "control_humedad": { "everyHours": 8, "title": "Control de humedad / cambio de barrera" },
+    "control_humedad": { "everyHours": 8, "perShift": 1, "title": "Control de humedad / cambio de barrera" },
     "exam_piel_diario": { "everyHours": 24, "title": "Examen de piel" },
     "valoracion_piel_completa_diaria": { "everyHours": 24, "title": "Valoración de piel completa" },
     "aposito_preventivo": { "everyHours": 24, "title": "Revisar apósitos preventivos (sacro/talones)" }
@@ -122,6 +122,7 @@
         { "id": "agho", "label": "Hidratación con ácidos grasos hiperoxigenados (AGHO) en sacro/talones" },
         { "id": "aposito_preventivo", "label": "Apósitos preventivos en sacro y talones" },
         { "id": "exam_piel_diario", "label": "Examen diario de la piel" },
+        { "id": "control_humedad", "label": "Control de humedad (una vez por turno; escalar a c/4-6 h con incontinencia/sudoración/dispositivos) — INTERINO por investigación 8-sep-2026, pendiente de validación de María" },
         { "id": "educacion_prevencion", "label": "Educación a paciente/cuidador" }
       ],
       "escalation": {
