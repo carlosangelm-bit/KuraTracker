@@ -277,6 +277,12 @@ class PreventionRulesCatalog {
   /// posibles con su frecuencia.
   Map<String, ActionCadence> get cadences => Map.unmodifiable(_cadences);
 
+  /// Ids de TODAS las reglas del catálogo. La generación de tareas por reglas
+  /// (LPP) usa este conjunto para limpiar SOLO lo que ella genera —incluidas las
+  /// bandas que ya no disparan— sin arrasar las tareas de otras fuentes (escalas
+  /// con su propio ruleId). Ver generatePreventiveTasksFromSpecs.
+  Set<String> get ruleIds => _rules.map((r) => r.id).toSet();
+
   /// Especificaciones de tareas recurrentes para un resultado de riesgo: por
   /// cada acción con cadencia (dedup por id de acción, conservando la de mayor
   /// frecuencia), su regla de origen, título y cada-cuántas-horas.

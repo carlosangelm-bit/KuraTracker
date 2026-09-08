@@ -4827,6 +4827,10 @@ class DataRepository {
       specs,
       horizonHours: catalog.cadenceHorizonHours,
       organizationId: organizationId,
+      // Limpieza consciente (Bug 1): sólo las reglas del catálogo (todas las
+      // bandas), para barrer la banda anterior cuando el Braden cambia —incluso
+      // si ahora no dispara ninguna— sin tocar las tareas de escala.
+      ownedRuleIds: catalog.ruleIds,
       assigneeProfileId: assigneeProfileId,
       assigneeKind: assigneeKind,
       createdBy: createdBy,
@@ -4843,6 +4847,7 @@ class DataRepository {
     List<ScheduledActionSpec> specs, {
     int horizonHours = 24,
     required String? organizationId,
+    Set<String>? ownedRuleIds,
     String? assigneeProfileId,
     String assigneeKind = 'staff',
     String? createdBy,
@@ -4854,7 +4859,14 @@ class DataRepository {
     // de noche para no interrumpir el descanso): 22:00–06:00 hora local.
     bool isNight(DateTime d) => d.hour >= 22 || d.hour < 6;
 
-    // Limpia tareas AUTO futuras pendientes (para reflejar la evaluación actual).
+    // Limpieza CONSCIENTE del ruleId (Bug 1): este generador limpia SOLO los
+    // ruleIds que le pertenecen, no todo lo 'auto'. Antes barría cualquier tarea
+    // auto futura pendiente, así que re-guardar el Braden borraba en silencio las
+    // tareas derivadas de escalas (GLOBIAD, etc.), que usan su propio ruleId y se
+    // limpian a sí mismas. `ownedRuleIds` = conjunto explícito (el path LPP pasa
+    // catalog.ruleIds para barrer también las bandas que ya no disparan, incluso
+    // con specs vacíos); si es null, se derivan de los specs (paths de ruleId fijo).
+    final owned = ownedRuleIds ?? specs.map((s) => s.ruleId).toSet();
     // IMPORTANTE: materializar con .toList() ANTES de borrar — deleteRow muta
     // la lista subyacente del store; iterar el where perezoso mientras se borra
     // lanzaría ConcurrentModificationError.
@@ -4865,7 +4877,8 @@ class DataRepository {
             t.patientId == patientId &&
             t.source == 'auto' &&
             t.isPending &&
-            !t.scheduledAt.isBefore(now))
+            !t.scheduledAt.isBefore(now) &&
+            owned.contains(t.ruleId))
         .toList();
     for (final t in existing) {
       await _store.deleteRow(Collections.preventiveTasks, t.id);
