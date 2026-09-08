@@ -56,16 +56,19 @@ void main() {
   });
 
   test('NADA lee horizon todavía: ningún acceso .horizon en lib/', () {
-    // `.horizon` con frontera de palabra: excluye `.horizontal` (Axis.horizontal).
-    final memberAccess = RegExp(r'\.horizon\b');
+    // Se excluye el PATRÓN, no el archivo (lección del guard de avatarInitial):
+    // `this.horizon` es la DECLARACIÓN del campo (constructor del modelo) y se
+    // permite; cualquier OTRO acceso de miembro `.horizon` es lectura y falla —
+    // INCLUIDO el archivo del motor, que es justo donde vive schedulableActionsFor
+    // y donde ocurriría el cableado. `\b` excluye `.horizontal`/`.horizonHours`;
+    // el lookbehind `(?<!this)` excluye la declaración `this.horizon`.
+    final read = RegExp(r'(?<!this)\.horizon\b');
     final offenders = <String>[];
     for (final f in Directory('lib')
         .listSync(recursive: true)
         .whereType<File>()
         .where((f) => f.path.endsWith('.dart'))) {
-      // El archivo del modelo declara el campo (`this.horizon`); no cuenta.
-      if (f.path.endsWith('prevention_risk_engine.dart')) continue;
-      if (memberAccess.hasMatch(f.readAsStringSync())) {
+      if (read.hasMatch(f.readAsStringSync())) {
         offenders.add(f.path);
       }
     }
