@@ -781,6 +781,13 @@ class _PatientRiskScreenState extends ConsumerState<PatientRiskScreen> {
     // Solo clínico/admin pueden DEFINIR el plan de cuidados. Enfermería (y
     // cuidador) solo lo consultan y ejecutan las tareas en las rondas.
     final canDefinePlan = ref.watch(sessionProvider).user?.canDiagnose == true;
+    // Un admin SIN rol clínico cae en el botón de solo-lectura (como enfermería/
+    // cuidador), pero para él es un PERMISO QUE LE FALTA, no el diseño de su rol.
+    // Se le explica junto al botón (hueco #1, 8-sep): la decisión de ocultar
+    // "Definir plan" es correcta, pero el sistema no la comunicaba. A enfermería/
+    // cuidador NO se les muestra (consultar rondas sí es su flujo).
+    final adminSinRolClinico =
+        ref.watch(sessionProvider).user?.isAdmin == true && !canDefinePlan;
     // Escalas de riesgo: se separa PROPONER de VALIDAR. Proponer (agregar una
     // escala a la propuesta de trabajo) también lo puede hacer enfermería;
     // VALIDAR el resultado clínico y QUITAR escalas de la propuesta es del
@@ -872,12 +879,35 @@ class _PatientRiskScreenState extends ConsumerState<PatientRiskScreen> {
                       setState(() {});
                     },
                   )
-                else
+                else ...[
                   OutlinedButton.icon(
                     icon: const Icon(Icons.checklist_rtl),
                     label: const Text('Ver plan de cuidados (rondas)'),
                     onPressed: () => context.push('/prevention-agenda'),
                   ),
+                  if (adminSinRolClinico) ...[
+                    const SizedBox(height: 6),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(Icons.info_outline,
+                            size: 15,
+                            color: KuraColors.darkText.withValues(alpha: 0.6)),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            'Definir planes de cuidado requiere el rol de personal '
+                            'sanitario. Pídele a otro administrador del centro que '
+                            'te lo asigne.',
+                            style: TextStyle(
+                                fontSize: 12,
+                                color: KuraColors.darkText.withValues(alpha: 0.6)),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ],
                 const SizedBox(height: 16),
                 // Escalas a realizar: derivadas del triage + expediente.
                 _scalesToDoCard(repo, applicable, hasTriage, applicabilityCat,
