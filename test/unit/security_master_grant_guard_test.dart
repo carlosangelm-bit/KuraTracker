@@ -135,8 +135,9 @@ void main() {
     final repo = File('lib/services/data_repository.dart').readAsStringSync();
     final idx = repo.indexOf('Future<void> setUserRoles(');
     expect(idx, greaterThan(0));
-    // Ventana del método (suficiente para cubrir ambas ramas del upsert).
-    final chunk = repo.substring(idx, idx + 2200);
+    // Ventana del método (suficiente para cubrir ambas ramas del upsert; se
+    // amplió al agregar la guardia "último clínico del centro" antes del upsert).
+    final chunk = repo.substring(idx, idx + 3400);
     expect(chunk, contains('updateRow(Collections.userCenterMemberships'),
         reason: 'rama: la membresía ya existe');
     expect(chunk, contains('insertRow(Collections.userCenterMemberships'),

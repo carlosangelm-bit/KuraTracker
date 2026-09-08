@@ -431,6 +431,28 @@ class DataRepository {
         prof.isEmpty ? null : prof.first['organization_id'] as String?;
     final targetOrg = organizationId ?? activeOrg;
 
+    // Guardia "último clínico del centro" (hueco #2, 8-sep — decisión de Carlos:
+    // BLOQUEAR). Si este cambio le quita 'clinico' a un usuario que HOY sí lo
+    // tiene en este centro, y no queda ninguna otra membresía ACTIVA con
+    // 'clinico', el centro se quedaría sin nadie que pueda definir planes de
+    // cuidado — se rechaza. Solo aplica al quitar (no bloquea altas admin en
+    // centros que nunca tuvieron clínico). La misma regla vive en un trigger de
+    // Postgres (server-side) para el acceso directo por PostgREST.
+    if (targetOrg != null && !roles.contains(AppRole.clinico)) {
+      final memsOrg = listMembershipsForOrg(targetOrg);
+      final userEraClinico = memsOrg.any((m) =>
+          m.profileId == userId && m.roles.contains(AppRole.clinico));
+      final quedaOtroClinico = memsOrg.any((m) =>
+          m.profileId != userId &&
+          m.isActive &&
+          m.roles.contains(AppRole.clinico));
+      if (userEraClinico && !quedaOtroClinico) {
+        throw Exception(
+            'No puedes quitar el rol de personal sanitario: este centro se '
+            'quedaría sin nadie que pueda definir planes de cuidado.');
+      }
+    }
+
     // La autoridad de los roles POR CENTRO es la MEMBRESÍA (0106): editar solo el
     // perfil no dura (el próximo set_active_center lo sobreescribe desde la
     // membresía) y, con el guard estricto del 0106 §4, actualizar el perfil sin
@@ -451,6 +473,10 @@ class DataRepository {
           'roles': rolesDb,
           'role': primary,
           'is_active': true,
+          // Explícito para LocalStore (no rellena defaults); en Supabase coincide
+          // con el default de la columna. Sin esto, releer la membresía recién
+          // creada revienta el parse (created_at NOT NULL en el modelo).
+          'created_at': DateTime.now().toIso8601String(),
         });
       }
     }
