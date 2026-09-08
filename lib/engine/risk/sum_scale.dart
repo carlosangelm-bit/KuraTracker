@@ -202,7 +202,9 @@ class ScaleInterpretation {
       final improving = !stable && (lowerBetter ? delta < 0 : delta > 0);
       final label =
           stable ? stableLabel : (improving ? improvingLabel : worseningLabel);
-      final sev = stable ? 'watch' : (improving ? 'ok' : 'danger');
+      // "Estable" (sin cambio relevante) es OK, no precaución: no hay deterioro
+      // que vigilar (D2). Antes era 'watch', que lo leía como señal de alarma.
+      final sev = stable ? 'ok' : (improving ? 'ok' : 'danger');
       return (bandId: null, label: label, severity: sev, delta: delta);
     }
     // Bandas por referencia: FUENTE ÚNICA en ClinicalParams (bordes abiertos/

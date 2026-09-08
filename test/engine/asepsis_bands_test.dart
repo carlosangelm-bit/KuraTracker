@@ -37,7 +37,9 @@ void main() {
     (30, 'asepsis_infeccion_menor', 'Infección menor', 'warn', true),
     (31, 'asepsis_infeccion_moderada', 'Infección moderada', 'danger', true),
     (40, 'asepsis_infeccion_moderada', 'Infección moderada', 'danger', true),
-    (41, 'asepsis_infeccion_severa', 'Infección severa', 'danger', true),
+    // D3 (María): la banda severa lee como SEÑAL DE RIESGO (warn), no alerta
+    // automática (danger). El ISQ sigue disparando (warn ⇒ se agenda).
+    (41, 'asepsis_infeccion_severa', 'Infección severa', 'warn', true),
   ];
 
   for (final c in cases) {

@@ -185,6 +185,30 @@
       }
     },
     {
+      "id": "lpp_imc_bajo",
+      "dimension": "lpp",
+      "when": { "bmiMax": 18.5 },
+      "severity": "medio",
+      "message": "IMC bajo (< 18.5): mayor riesgo de LPP",
+      "actions": [
+        { "id": "valoracion_mna", "label": "Valoración nutricional" },
+        { "id": "acolchado_prominencias", "label": "Acolchado de prominencias óseas" },
+        { "id": "exam_piel_diario", "label": "Vigilancia estrecha de la piel" }
+      ]
+    },
+    {
+      "id": "lpp_fragilidad",
+      "dimension": "lpp",
+      "when": { "fragile": true },
+      "severity": "medio",
+      "message": "Fragilidad: vulnerabilidad cutánea",
+      "actions": [
+        { "id": "exam_piel_diario", "label": "Intensificar cuidados de piel" },
+        { "id": "movilizacion", "label": "Intensificar movilización" },
+        { "id": "educacion_prevencion", "label": "Involucrar al cuidador" }
+      ]
+    },
+    {
       "id": "complic_infeccion_iwii",
       "dimension": "complicacion",
       "when": { "hasActiveWound": true },
