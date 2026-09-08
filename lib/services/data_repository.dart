@@ -4582,11 +4582,8 @@ class DataRepository {
           actionId = 'seguimiento_venosa';
         }
         break;
-      case 'MDRPI':
-        title = 'Inspección del sitio del dispositivo (por turno)';
-        actionId = 'inspeccion_dispositivo';
-        hours = 8;
-        break;
+      // MDRPI ya NO es puntual: es PERMANENTE (inspección c/4 h mientras el
+      // dispositivo esté puesto) y la materializa el regenerador vía _mdrpiSpecs.
     }
     if (title == null) return;
     await createPreventiveTask(
@@ -4839,6 +4836,39 @@ class DataRepository {
     return specs;
   }
 
+  /// Specs PERMANENTES de MDRPI (LPP por dispositivo médico) desde la última
+  /// valoración: inspección del sitio del dispositivo CADA 4 H mientras el
+  /// dispositivo esté puesto (interino 8-sep-2026; antes era una tarea única a
+  /// +8 h con título "por turno"). Es permanente por naturaleza; entra al plan
+  /// regenerable. Vencida (> validityHours) → revalorar. Sin valoración → vacío.
+  List<ScheduledActionSpec> _mdrpiSpecs(
+      String patientId, PreventionRulesCatalog catalog, DateTime now) {
+    final a = latestScaleAssessment(patientId, 'MDRPI');
+    if (a == null) return const [];
+    final validity = catalog.scaleValidityHours('MDRPI');
+    if (validity != null && now.difference(a.assessedAt).inHours >= validity) {
+      return [
+        ScheduledActionSpec(
+          ruleId: 'mdrpi',
+          actionId: 'revalorar_mdrpi',
+          actionLabel: 'Revalorar MDRPI (resultado vencido)',
+          title: 'Revalorar MDRPI (resultado vencido)',
+          everyHours: catalog.cadenceHorizonHours,
+        ),
+      ];
+    }
+    const title = 'Inspección del sitio del dispositivo (cada 4 h)';
+    return const [
+      ScheduledActionSpec(
+        ruleId: 'mdrpi',
+        actionId: 'inspeccion_dispositivo',
+        actionLabel: title,
+        title: title,
+        everyHours: 4,
+      ),
+    ];
+  }
+
   /// Dedup CRUZADO por actionId (Bug 2): cuando dos fuentes PERMANENTES piden la
   /// misma acción, gana la de MAYOR frecuencia (menor everyHours) y las demás
   /// reglas se conservan en alsoFromRuleIds — nunca se pierde la justificación.
@@ -4875,9 +4905,11 @@ class DataRepository {
   /// piden lpp_* y globiad). Vacío si la acción no está en el plan permanente.
   Set<String> contributingRuleIdsFor(
       String patientId, String actionId, PreventionRulesCatalog catalog) {
+    final now = DateTime.now();
     final all = [
       ...catalog.schedulableActionsFor(computeRisk(patientId, catalog)),
-      ..._globiadSpecs(patientId, catalog, DateTime.now()),
+      ..._globiadSpecs(patientId, catalog, now),
+      ..._mdrpiSpecs(patientId, catalog, now),
     ];
     for (final s in _dedupByAction(all)) {
       if (s.actionId == actionId) return {s.ruleId, ...s.alsoFromRuleIds};
@@ -4892,17 +4924,22 @@ class DataRepository {
     String? createdBy,
     DateTime? now,
   }) async {
+    final clock = now ?? DateTime.now();
     final rules = catalog.schedulableActionsFor(computeRisk(patientId, catalog));
-    final permanentScale = _globiadSpecs(patientId, catalog, now ?? DateTime.now());
-    final merged = _dedupByAction([...rules, ...permanentScale]);
+    final merged = _dedupByAction([
+      ...rules,
+      ..._globiadSpecs(patientId, catalog, clock),
+      ..._mdrpiSpecs(patientId, catalog, clock),
+    ]);
     return generatePreventiveTasksFromSpecs(
       patientId,
       merged,
       horizonHours: catalog.cadenceHorizonHours,
       organizationId: organizationId,
-      // Fuentes permanentes: reglas del catálogo + GLOBIAD. Lo puntual NO se
-      // limpia aquí (lo protege la limpieza consciente del ruleId, Bug 1).
-      ownedRuleIds: {...catalog.ruleIds, 'globiad'},
+      // Fuentes permanentes: reglas del catálogo + escalas permanentes (GLOBIAD,
+      // MDRPI). Lo PUNTUAL no se limpia aquí (lo protege la limpieza consciente
+      // del ruleId, Bug 1).
+      ownedRuleIds: {...catalog.ruleIds, 'globiad', 'mdrpi'},
       createdBy: createdBy,
       now: now,
     );

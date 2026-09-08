@@ -276,7 +276,15 @@ class _PatientRiskScreenState extends ConsumerState<PatientRiskScreen> {
         await repo.applyExtravasacionTreatment(widget.patientId, res.category,
             organizationId: orgId, catalog: catalog, createdBy: by);
       }
-    } else if (const {'NPIAP', 'WAGNER', 'CEAP', 'MDRPI'}.contains(scaleId)) {
+    } else if (scaleId == 'MDRPI') {
+      // MDRPI es PERMANENTE (inspección c/4 h): la valoración ya está guardada,
+      // el regenerador la materializa con dedup, como GLOBIAD.
+      final catalog = ref.read(preventionRulesProvider).valueOrNull;
+      if (catalog != null) {
+        await repo.regeneratePreventivePlan(widget.patientId, catalog,
+            organizationId: orgId, createdBy: by);
+      }
+    } else if (const {'NPIAP', 'WAGNER', 'CEAP'}.contains(scaleId)) {
       await repo.applyCategoricalScaleTreatment(
           widget.patientId, scaleId, res.category,
           organizationId: orgId, createdBy: by);
