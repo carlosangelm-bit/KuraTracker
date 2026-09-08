@@ -20,7 +20,7 @@ const _uuid = Uuid();
 ///     internamiento (piso/área/cama) → valoración de Braden → tablero de riesgo
 ///     → rondas (tareas SIN dueño, las marca quien está de turno) → dashboard del
 ///     centro (distribución por banda, cumplimiento por turno). 5 pacientes que
-///     cubren las 4 bandas de Braden (muy alto / alto / medio / bajo).
+///     cubren las bandas de Braden (5 bandas tras Fase C).
 ///
 ///  3. Cuidadores (paleta rosa) — recorrido del CUIDADOR: monitoreo de sus
 ///     pacientes asignados, tareas con estados variados (hecha / vencida /

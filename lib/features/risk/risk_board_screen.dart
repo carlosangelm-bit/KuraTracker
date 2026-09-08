@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/theme/kura_theme.dart';
 import '../../core/providers/session_provider.dart';
 import '../../core/router/app_shell.dart' show UserMenuButton;
+import '../../engine/risk/braden_scale.dart';
 import '../../engine/risk/prevention_risk_engine.dart';
 import '../../models/app_user.dart';
 import '../../models/center_type.dart';
@@ -33,13 +34,27 @@ class _RiskEntry {
   });
 }
 
-/// Nivel (color) derivado de la banda de Braden: ≤12 alto (rojo), 13–17 medio
-/// (ámbar), 18–23 bajo (verde). null = sin valoración (gris).
+/// Nivel (color) del tablero derivado de la banda de Braden — FUENTE ÚNICA
+/// (braden_scale.json vía BradenScale.bandFor), no cortes hardcodeados: así el
+/// re-bandeo de Fase C (5 bandas) lo mueve solo. Mapea las 5 bandas a los 3
+/// colores del tablero: muy_alto/alto → rojo, moderado → ámbar, bajo → verde,
+/// sin_riesgo → sinRiesgo (gris "sin"). null = sin valoración o escala aún sin
+/// cargar (la pantalla observa bradenScaleProvider para poblar la caché).
 RiskLevel? bradenBandLevel(int? braden) {
   if (braden == null) return null;
-  if (braden <= 12) return RiskLevel.alto;
-  if (braden <= 17) return RiskLevel.medio;
-  return RiskLevel.bajo;
+  switch (BradenScale.cached?.bandFor(braden)?.id) {
+    case 'muy_alto':
+    case 'alto':
+      return RiskLevel.alto;
+    case 'moderado':
+      return RiskLevel.medio;
+    case 'bajo':
+      return RiskLevel.bajo;
+    case 'sin_riesgo':
+      return RiskLevel.sinRiesgo;
+    default:
+      return null;
+  }
 }
 
 /// Nivel EFECTIVO de una entrada del tablero: la banda de Braden si existe
@@ -74,6 +89,9 @@ class _RiskBoardScreenState extends ConsumerState<RiskBoardScreen> {
   Widget build(BuildContext context) {
     final repoAsync = ref.watch(dataRepositoryProvider);
     final rulesAsync = ref.watch(preventionRulesProvider);
+    // Asegura que la escala de Braden (fuente única de las bandas) esté cargada
+    // en caché para bradenBandLevel; al resolver, reconstruye el tablero.
+    ref.watch(bradenScaleProvider);
     final user = ref.watch(sessionProvider).user;
     final isHospital = repoAsync.valueOrNull?.centerTypeFor(user?.organizationId) ==
         CenterType.hospital;

@@ -81,7 +81,7 @@
     {
       "id": "lpp_moderado",
       "dimension": "lpp",
-      "when": { "bradenMin": 13, "bradenMax": 17 },
+      "when": { "bradenMin": 13, "bradenMax": 14 },
       "severity": "medio",
       "message": "LPP · Riesgo MEDIO (Braden 13–17) — 1.er mes a cargo de la clínica; evaluar tunelizaciones/socavamientos",
       "questions": [
@@ -110,7 +110,7 @@
     {
       "id": "lpp_bajo",
       "dimension": "lpp",
-      "when": { "bradenMin": 18, "bradenMax": 23 },
+      "when": { "bradenMin": 15, "bradenMax": 18 },
       "severity": "bajo",
       "message": "LPP · Riesgo BAJO (Braden 18–23) — candidato a tratamiento compartido",
       "questions": [

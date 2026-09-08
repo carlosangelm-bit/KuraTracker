@@ -11,11 +11,13 @@ void main() {
   test('posturalActionForBraden coincide con las bandas de prevention_rules.json', () async {
     final catalog = await PreventionRulesCatalog.load();
 
+    // Post re-bandeo Fase C (5 bandas): moderado 13–14, bajo 15–18, sin_riesgo 19–23.
     expect(catalog.posturalActionForBraden(8), 'cambios_2h_registro'); // muy_alto 6–9
     expect(catalog.posturalActionForBraden(11), 'cambios_2h_registro'); // alto 10–12
-    expect(catalog.posturalActionForBraden(15), 'cambios_2_3h'); // moderado 13–17
-    expect(catalog.posturalActionForBraden(19), 'cambios_4h'); // bajo 18–23
-    // Fuera del rango de las bandas de Braden (6–23): sin acción postural.
-    expect(catalog.posturalActionForBraden(24), isNull);
+    expect(catalog.posturalActionForBraden(13), 'cambios_2_3h'); // moderado 13–14
+    expect(catalog.posturalActionForBraden(15), 'cambios_4h'); // bajo 15–18
+    expect(catalog.posturalActionForBraden(19), isNull); // sin_riesgo 19–23: sin regla
+    expect(catalog.posturalActionForBraden(24), isNull); // fuera de rango
+
   });
 }
