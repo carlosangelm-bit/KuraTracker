@@ -163,24 +163,23 @@ class _LicensePanelState extends State<LicensePanel> {
       );
 
   Widget _freePlanCard(LicenseSummary s) {
-    final remaining = (kFreePlanPatientCap - s.patientsUsed).clamp(0, kFreePlanPatientCap);
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
+    // SIN contador de pacientes: el tope del plan gratuito es un trigger en el
+    // servidor que aún no existe (fase 2). Publicar "N de 5" como constante del
+    // cliente contradice el principio de la rama —el servidor impone el derecho,
+    // no la UI— y repetiría el defecto de la auditoría del 1-sep (prometer en la
+    // UI algo que el producto no respalda). Vuelve el contador cuando el trigger
+    // exista, respaldado por el servidor.
+    return const Card(
+      margin: EdgeInsets.only(bottom: 12),
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Plan gratuito',
+            Text('Plan gratuito',
                 style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
-            const SizedBox(height: 6),
-            Text('$remaining de $kFreePlanPatientCap pacientes disponibles',
-                style: TextStyle(
-                    color: remaining == 0 ? KuraColors.warning : KuraColors.darkText,
-                    fontWeight: FontWeight.w700)),
-            const SizedBox(height: 4),
-            const Text(
-                'Suscríbete para crear más pacientes y sumar asientos y módulos.',
+            SizedBox(height: 6),
+            Text('Suscríbete para crecer: más pacientes, asientos y módulos.',
                 style: TextStyle(fontSize: 12)),
           ],
         ),

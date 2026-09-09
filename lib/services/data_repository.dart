@@ -838,6 +838,25 @@ class DataRepository {
     });
   }
 
+  /// Solicitudes de licencia (para la consola de plataforma; el master ve todas
+  /// por RLS). Más recientes primero.
+  List<Map<String, dynamic>> listLicenseRequests({String? status}) => _store
+      .getAll(Collections.licenseRequests)
+      .where((r) => status == null || r['status'] == status)
+      .toList()
+    ..sort((a, b) => ((b['created_at'] as String?) ?? '')
+        .compareTo((a['created_at'] as String?) ?? ''));
+
+  /// Marca una solicitud como atendida (solo master, RLS). No otorga el derecho:
+  /// eso se hace aparte (master en org_entitlements o el webhook).
+  Future<void> markLicenseRequestHandled(String id, {String? byProfileId}) async {
+    await _store.updateRow(Collections.licenseRequests, id, {
+      'status': 'handled',
+      'handled_at': DateTime.now().toIso8601String(),
+      'handled_by': byProfileId,
+    });
+  }
+
   /// Estado EFECTIVO de un módulo para (centro, sitio, usuario):
   ///   tiene DERECHO (org_entitlements) AND module_settings lo enciende
   ///   (usuario > sitio > centro > default-por-tipo) AND availableFor(tipo).

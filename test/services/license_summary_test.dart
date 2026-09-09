@@ -76,5 +76,12 @@ void main() {
     expect(reqs, isNotEmpty);
     expect(reqs.first['status'], 'open');
     expect(reqs.first['requested_quantity'], 3);
+
+    // El embudo se cierra: la plataforma lista las abiertas y las atiende.
+    expect(repo.listLicenseRequests(status: 'open'), isNotEmpty);
+    await repo.markLicenseRequestHandled(reqs.first['id'] as String,
+        byProfileId: admin.id);
+    expect(repo.listLicenseRequests(status: 'open'), isEmpty);
+    expect(repo.listLicenseRequests(status: 'handled'), isNotEmpty);
   });
 }
