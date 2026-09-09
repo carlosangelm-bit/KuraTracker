@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:kuratracker/models/app_user.dart';
 import 'package:kuratracker/models/license_summary.dart';
 import 'package:kuratracker/services/data_repository.dart';
 import 'package:kuratracker/services/local_db/local_store.dart';
@@ -83,5 +84,29 @@ void main() {
         byProfileId: admin.id);
     expect(repo.listLicenseRequests(status: 'open'), isEmpty);
     expect(repo.listLicenseRequests(status: 'handled'), isNotEmpty);
+  });
+
+  test('enfermería consume asiento CLÍNICO, no cupo admin (consumesClinicalSeat)',
+      () {
+    // Definir planes ≠ consumir asiento: enfermería no diagnostica pero usa el
+    // módulo clínico. El getter espejo del servidor debe contarla como asiento.
+    AppUser u(Set<AppRole> roles) => AppUser(
+        id: 'x',
+        role: primaryRoleOf(roles),
+        fullName: 't',
+        email: 't@t.mx',
+        roles: roles);
+
+    // Enfermería sola: consume asiento, NO define planes.
+    expect(u({AppRole.enfermeria}).consumesClinicalSeat, isTrue);
+    expect(u({AppRole.enfermeria}).canDiagnose, isFalse);
+    // {admin, enfermeria}: asiento clínico (enfermería manda), no cupo admin gratis.
+    expect(u({AppRole.admin, AppRole.enfermeria}).consumesClinicalSeat, isTrue);
+    // Clínico y multi-rol clínico: consumen asiento.
+    expect(u({AppRole.clinico}).consumesClinicalSeat, isTrue);
+    expect(u({AppRole.admin, AppRole.clinico}).consumesClinicalSeat, isTrue);
+    // Admin puro y cuidador: NO consumen asiento clínico.
+    expect(u({AppRole.admin}).consumesClinicalSeat, isFalse);
+    expect(u({AppRole.cuidador}).consumesClinicalSeat, isFalse);
   });
 }

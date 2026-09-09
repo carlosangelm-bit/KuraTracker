@@ -15,6 +15,8 @@
 --   §9.8     el cuidador no consume nada.
 --   §9.11    capacidad clínica por PERFIL: un admin con membresía vacía pero
 --            perfil clínico-capaz suma asiento CLÍNICO, 0 admin (por profile_can_define_plans).
+--   §9.12    enfermería {enfermeria}: consume asiento CLÍNICO (usa el módulo), 0 admin.
+--   §9.13    {admin,enfermeria}: asiento CLÍNICO (no cupo admin gratis) — enfermería manda.
 --   §9.9     webhook idempotente: reinsertar el mismo event_id rebota (PK).
 -- =============================================================================
 
@@ -28,15 +30,16 @@ declare
   r text := E'=== Aceptación Fase 1 (sandbox) ===\n';
 begin
   -- Perfiles reales del seed. Los contadores miden por CAPACIDAD DE PERFIL
-  -- (profile_can_define_plans(p.roles, p.role)), así que el escenario se fija en
-  -- los PERFILES, no en la membresía. Necesitamos 6 activos no-master (5 + §9.11).
+  -- (consumes_clinical_seat(p.roles, p.role)), así que el escenario se fija en los
+  -- PERFILES, no en la membresía. Necesitamos 8 activos no-master
+  -- (5 base + §9.11 admin-capaz + §9.12 enfermería + §9.13 admin+enfermería).
   select array_agg(id) into v_p from (
     select id from public.profiles
     where is_active and not ('master'::public.user_role = any(roles))
-    order by id limit 6
+    order by id limit 8
   ) t;
-  if v_p is null or array_length(v_p, 1) < 6 then
-    raise exception 'Seed insuficiente: hacen falta 6 perfiles activos no-master.';
+  if v_p is null or array_length(v_p, 1) < 8 then
+    raise exception 'Seed insuficiente: hacen falta 8 perfiles activos no-master.';
   end if;
 
   -- Centro de prueba con derechos controlados: module:clinico + module:admin +
@@ -109,6 +112,29 @@ begin
     r := r || case when v_adm_before = 2
       then E'PASS 9.11b · …y NO ocupa cupo administrativo (sigue en 2).\n'
       else format('FAIL 9.11b · cupos admin = %s (esperado 2).%s', v_adm_before, E'\n') end;
+  end;
+
+  -- §9.12/§9.13 — enfermería CONSUME asiento clínico (usa el módulo clínico), aunque
+  -- NO defina planes. Es la diferencia entre consumes_clinical_seat y
+  -- profile_can_define_plans: sustituir el predicado (y no componerlo) dejaba a
+  -- enfermería sin contar → altas sin tope. p7 {enfermeria}; p8 {admin,enfermeria}.
+  update public.profiles set roles = array['enfermeria']::public.user_role[],         role = 'enfermeria' where id = v_p[7];
+  update public.profiles set roles = array['admin','enfermeria']::public.user_role[], role = 'enfermeria' where id = v_p[8];
+  insert into public.user_center_memberships (profile_id, organization_id, roles, is_active) values
+    (v_p[7], v_org, array['enfermeria']::public.user_role[], true),
+    (v_p[8], v_org, array['admin','enfermeria']::public.user_role[], true);
+  declare
+    v_cli int := public.consumed_clinical_seats(v_org);
+    v_adm int := public.consumed_admin_slots(v_org);
+  begin
+    -- base p1-p5 (2 clínicos) + p6 admin-capaz (+1) + p7 y p8 enfermería (+2) = 5.
+    r := r || case when v_cli = 5
+      then E'PASS 9.12/9.13 · enfermería (p7 sola, p8 con admin) consume asiento CLÍNICO (3+2=5).\n'
+      else format('FAIL 9.12/9.13 · asientos clínicos = %s (esperado 5).%s', v_cli, E'\n') end;
+    -- p8 {admin,enfermeria} NO cae en cupo admin (enfermería manda): sigue en 2.
+    r := r || case when v_adm = 2
+      then E'PASS 9.13b · {admin,enfermeria} NO ocupa cupo admin gratis (sigue en 2).\n'
+      else format('FAIL 9.13b · cupos admin = %s (esperado 2).%s', v_adm, E'\n') end;
   end;
 
   -- §9.3/§5 — candado module_settings (como postgres: is_master()=false → se aplica).

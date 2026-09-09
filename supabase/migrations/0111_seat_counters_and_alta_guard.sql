@@ -18,12 +18,14 @@
 -- =============================================================================
 
 -- -----------------------------------------------------------------------------
--- 0. Capacidad clínica POR PERFIL (una sola definición de "quién es clínico").
+-- 0. AUTORIDAD clínica POR PERFIL (una sola definición de "quién define planes").
 --    Réplica de AppUser.canDiagnose: 'clinico' en el conjunto efectivo, con el
 --    relleno admin→{admin,clinico} cuando roles viene vacío. Los contadores de
---    asiento miden por ESTO (perfil), no por la membresía, para que la gerencia
---    clínica de hospital consuma su asiento clínico y no un cupo administrativo
---    gratis (falla SILENCIOSA: nadie la ve).
+--    asiento miden por PERFIL (no por la membresía), para que la gerencia clínica
+--    de hospital consuma su asiento clínico y no un cupo administrativo gratis
+--    (falla SILENCIOSA: nadie la ve). OJO: los contadores NO usan esta función
+--    directamente, sino consumes_clinical_seat (0b), que la COMPONE con enfermería
+--    — definir planes y consumir asiento son preguntas distintas.
 --
 --    IMPORTANTE: este cuerpo es IDÉNTICO al de fix/prevent-org-without-clinico-0108
 --    (0112_capable_clinico_by_profile) y ambos usan create-or-replace, así que el
@@ -45,6 +47,32 @@ as $$
 $$;
 
 -- -----------------------------------------------------------------------------
+-- 0b. Consumir ASIENTO CLÍNICO es OTRA pregunta que definir planes.
+--    profile_can_define_plans responde "¿tiene autoridad clínica?" — y por diseño
+--    (0045) enfermería NO diagnostica ni cambia protocolo, así que queda fuera.
+--    Pero enfermería SÍ usa el módulo clínico: consume asiento clínico y no un
+--    cupo admin gratis. Se COMPONEN, no se sustituyen: clínico-capaz (con el
+--    relleno admin de arriba) O enfermería (con el mismo relleno por el escalar
+--    cuando roles viene vacío). Encapsulado aparte para que nadie vuelva a
+--    confundir "definir planes" (autoridad) con "consumir asiento" (uso).
+--    assert_seat_available ya cobraba asiento a enfermería (su v_has_clinical la
+--    incluye); sin esto, el contador NO la contaba → altas de enfermería SIN tope
+--    (fuga silenciosa, y en una clínica de heridas enfermería es la mayoría).
+create or replace function public.consumes_clinical_seat(
+  p_roles public.user_role[], p_role public.user_role
+) returns boolean
+language sql
+immutable
+as $$
+  select public.profile_can_define_plans(p_roles, p_role)
+    or case
+         when coalesce(cardinality(p_roles), 0) > 0
+           then 'enfermeria' = any(p_roles::text[])
+         else p_role::text = 'enfermeria'
+       end;
+$$;
+
+-- -----------------------------------------------------------------------------
 -- 1. Contadores (miden por capacidad de PERFIL, no por membresía).
 -- -----------------------------------------------------------------------------
 create or replace function public.consumed_clinical_seats(p_org uuid)
@@ -56,7 +84,7 @@ as $$
   join public.profiles p on p.id = m.profile_id
   where m.organization_id = p_org
     and m.is_active and p.is_active and not m.seat_exempt
-    and public.profile_can_define_plans(p.roles, p.role);
+    and public.consumes_clinical_seat(p.roles, p.role);
 $$;
 
 comment on function public.consumed_clinical_seats(uuid) is
@@ -72,7 +100,7 @@ as $$
   join public.profiles p on p.id = m.profile_id
   where m.organization_id = p_org
     and m.is_active and p.is_active and not m.seat_exempt
-    and not public.profile_can_define_plans(p.roles, p.role)
+    and not public.consumes_clinical_seat(p.roles, p.role)
     and ('admin'::public.user_role = any(p.roles));
 $$;
 

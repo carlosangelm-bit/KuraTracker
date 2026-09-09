@@ -767,10 +767,11 @@ class DataRepository {
       if (!m.isActive || m.seatExempt) continue;
       final u = usersById[m.profileId];
       if (u == null || !u.isActive) continue;
-      // Capacidad clínica por PERFIL (AppUser.canDiagnose ≡ profile_can_define_plans:
-      // 'clinico' en el conjunto, con relleno admin→{admin,clinico}). Debe coincidir
-      // con las funciones del servidor, que son el tope real.
-      if (u.canDiagnose) {
+      // Consume asiento clínico := clínico-capaz (canDiagnose, con relleno admin)
+      // O enfermería. Es DISTINTO a "puede definir planes": enfermería usa el
+      // módulo clínico sin diagnosticar, así que ocupa asiento clínico y NO cupo
+      // admin. Espejo de public.consumes_clinical_seat (el tope real del servidor).
+      if (u.consumesClinicalSeat) {
         clinicalUsed++;
       } else if (u.isAdmin) {
         adminUsed++;
