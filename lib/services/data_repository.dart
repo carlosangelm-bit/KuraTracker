@@ -761,19 +761,20 @@ class DataRepository {
   /// (assert_seat_available / consumed_*), misma lógica.
   LicenseSummary licenseSummaryFor(String? organizationId) {
     final usersById = {for (final u in listUsers()) u.id: u};
-    bool active(String pid) => usersById[pid]?.isActive ?? false;
 
     var clinicalUsed = 0, adminUsed = 0, caregivers = 0;
     for (final m in listMembershipsForOrg(organizationId ?? '')) {
-      if (!m.isActive || !active(m.profileId) || m.seatExempt) continue;
-      final hasClinical =
-          m.roles.contains(AppRole.clinico) || m.roles.contains(AppRole.enfermeria);
-      final hasAdmin = m.roles.contains(AppRole.admin);
-      if (hasClinical) {
+      if (!m.isActive || m.seatExempt) continue;
+      final u = usersById[m.profileId];
+      if (u == null || !u.isActive) continue;
+      // Capacidad clínica por PERFIL (AppUser.canDiagnose ≡ profile_can_define_plans:
+      // 'clinico' en el conjunto, con relleno admin→{admin,clinico}). Debe coincidir
+      // con las funciones del servidor, que son el tope real.
+      if (u.canDiagnose) {
         clinicalUsed++;
-      } else if (hasAdmin) {
+      } else if (u.isAdmin) {
         adminUsed++;
-      } else if (m.roles.contains(AppRole.cuidador)) {
+      } else if (u.hasRole(AppRole.cuidador)) {
         caregivers++;
       }
     }

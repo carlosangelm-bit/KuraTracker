@@ -13,6 +13,8 @@
 --   §9.6     administrativo puro NO consume asiento clínico (hasta el 4º).
 --   §9.7     multi-rol {admin,clinico} cuenta 1 clínico y 0 admin.
 --   §9.8     el cuidador no consume nada.
+--   §9.11    capacidad clínica por PERFIL: un admin con membresía vacía pero
+--            perfil clínico-capaz suma asiento CLÍNICO, 0 admin (por profile_can_define_plans).
 --   §9.9     webhook idempotente: reinsertar el mismo event_id rebota (PK).
 -- =============================================================================
 
@@ -25,15 +27,16 @@ declare
   v_n int;
   r text := E'=== Aceptación Fase 1 (sandbox) ===\n';
 begin
-  -- Perfiles reales del seed para poblar membresías (sus roles en el CENTRO los
-  -- fija la membresía, no el perfil). Necesitamos 5 activos no-master.
+  -- Perfiles reales del seed. Los contadores miden por CAPACIDAD DE PERFIL
+  -- (profile_can_define_plans(p.roles, p.role)), así que el escenario se fija en
+  -- los PERFILES, no en la membresía. Necesitamos 6 activos no-master (5 + §9.11).
   select array_agg(id) into v_p from (
     select id from public.profiles
     where is_active and not ('master'::public.user_role = any(roles))
-    order by id limit 5
+    order by id limit 6
   ) t;
-  if v_p is null or array_length(v_p, 1) < 5 then
-    raise exception 'Seed insuficiente: hacen falta 5 perfiles activos no-master.';
+  if v_p is null or array_length(v_p, 1) < 6 then
+    raise exception 'Seed insuficiente: hacen falta 6 perfiles activos no-master.';
   end if;
 
   -- Centro de prueba con derechos controlados: module:clinico + module:admin +
@@ -45,7 +48,17 @@ begin
     (v_org, 'module', 'admin',   null, 'active', 'master'),
     (v_org, 'seat',   'clinico', 2,    'active', 'master');
 
-  -- Membresías: p1 clinico | p2 {admin,clinico} | p3 admin | p4 admin | p5 cuidador.
+  -- Roles POR PERFIL (lo que miden los contadores): p1 clinico | p2 {admin,clinico}
+  -- | p3 admin | p4 admin | p5 cuidador. (Como postgres/auth.uid null, el guard de
+  -- escalada de profiles no dispara.)
+  update public.profiles set roles = array['clinico']::public.user_role[],        role = 'clinico'  where id = v_p[1];
+  update public.profiles set roles = array['admin','clinico']::public.user_role[], role = 'clinico'  where id = v_p[2];
+  update public.profiles set roles = array['admin']::public.user_role[],           role = 'admin'    where id = v_p[3];
+  update public.profiles set roles = array['admin']::public.user_role[],           role = 'admin'    where id = v_p[4];
+  update public.profiles set roles = array['cuidador']::public.user_role[],        role = 'cuidador' where id = v_p[5];
+
+  -- Membresías en el centro (5 primeros). Los roles de membresía ya no clasifican
+  -- el asiento; lo hace la capacidad de perfil.
   insert into public.user_center_memberships (profile_id, organization_id, roles, is_active) values
     (v_p[1], v_org, array['clinico']::public.user_role[], true),
     (v_p[2], v_org, array['admin','clinico']::public.user_role[], true),
@@ -75,6 +88,27 @@ begin
     else
       r := r || format('PASS? 9.5 · rebotó con otro error: %s%s', sqlerrm, E'\n');
     end if;
+  end;
+
+  -- §9.11 — capacidad de PERFIL, no membresía: un admin con roles de MEMBRESÍA
+  -- vacíos pero capacidad clínica por perfil (roles vacíos + role='admin' →
+  -- profile_can_define_plans = true) suma 1 a asientos clínicos y 0 a cupos admin.
+  -- Es el caso que con la definición vieja (por membresía) se contaba mal.
+  update public.profiles set roles = '{}'::public.user_role[], role = 'admin' where id = v_p[6];
+  insert into public.user_center_memberships (profile_id, organization_id, roles, is_active)
+    values (v_p[6], v_org, '{}'::public.user_role[], true);
+  declare
+    v_cli_before int := public.consumed_clinical_seats(v_org);
+    v_adm_before int := public.consumed_admin_slots(v_org);
+  begin
+    -- (los valores "antes" ya incluyen a p6 recién insertado; comparamos contra
+    --  el escenario base p1-p5: clínicos 2, admin 2)
+    r := r || case when v_cli_before = 3
+      then E'PASS 9.11 · admin con membresía vacía + capacidad clínica por perfil → asiento CLÍNICO (2+1).\n'
+      else format('FAIL 9.11 · asientos clínicos = %s (esperado 3 con p6).%s', v_cli_before, E'\n') end;
+    r := r || case when v_adm_before = 2
+      then E'PASS 9.11b · …y NO ocupa cupo administrativo (sigue en 2).\n'
+      else format('FAIL 9.11b · cupos admin = %s (esperado 2).%s', v_adm_before, E'\n') end;
   end;
 
   -- §9.3/§5 — candado module_settings (como postgres: is_master()=false → se aplica).

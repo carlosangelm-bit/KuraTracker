@@ -18,7 +18,34 @@
 -- =============================================================================
 
 -- -----------------------------------------------------------------------------
--- 1. Contadores.
+-- 0. Capacidad clínica POR PERFIL (una sola definición de "quién es clínico").
+--    Réplica de AppUser.canDiagnose: 'clinico' en el conjunto efectivo, con el
+--    relleno admin→{admin,clinico} cuando roles viene vacío. Los contadores de
+--    asiento miden por ESTO (perfil), no por la membresía, para que la gerencia
+--    clínica de hospital consuma su asiento clínico y no un cupo administrativo
+--    gratis (falla SILENCIOSA: nadie la ve).
+--
+--    IMPORTANTE: este cuerpo es IDÉNTICO al de fix/prevent-org-without-clinico-0108
+--    (0112_capable_clinico_by_profile) y ambos usan create-or-replace, así que el
+--    ORDEN de aplicación no importa: la que corra al final escribe el mismo cuerpo.
+--    Si se cambia una, cambiar la otra igual. (Decisión 9-sep: la función de 10
+--    líneas viaja con licencia sin merge a main; la guardia server-side —triggers,
+--    falla VISIBLE que el master arregla en 30 s— sale de la ruta crítica.)
+create or replace function public.profile_can_define_plans(
+  p_roles public.user_role[], p_role public.user_role
+) returns boolean
+language sql
+immutable
+as $$
+  select case
+    when coalesce(cardinality(p_roles), 0) > 0
+      then 'clinico' = any(p_roles::text[])
+    else p_role::text in ('admin', 'clinico')
+  end;
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 1. Contadores (miden por capacidad de PERFIL, no por membresía).
 -- -----------------------------------------------------------------------------
 create or replace function public.consumed_clinical_seats(p_org uuid)
 returns integer language sql stable security definer
@@ -29,8 +56,7 @@ as $$
   join public.profiles p on p.id = m.profile_id
   where m.organization_id = p_org
     and m.is_active and p.is_active and not m.seat_exempt
-    and exists (select 1 from unnest(m.roles) r
-                where r in ('clinico'::public.user_role, 'enfermeria'::public.user_role));
+    and public.profile_can_define_plans(p.roles, p.role);
 $$;
 
 comment on function public.consumed_clinical_seats(uuid) is
@@ -46,9 +72,8 @@ as $$
   join public.profiles p on p.id = m.profile_id
   where m.organization_id = p_org
     and m.is_active and p.is_active and not m.seat_exempt
-    and ('admin'::public.user_role = any(m.roles))
-    and not exists (select 1 from unnest(m.roles) r
-                    where r in ('clinico'::public.user_role, 'enfermeria'::public.user_role));
+    and not public.profile_can_define_plans(p.roles, p.role)
+    and ('admin'::public.user_role = any(p.roles));
 $$;
 
 comment on function public.consumed_admin_slots(uuid) is
