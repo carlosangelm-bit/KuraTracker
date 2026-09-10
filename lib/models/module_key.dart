@@ -126,12 +126,18 @@ extension ModuleKeyX on ModuleKey {
   /// requiere para poder encenderse (modelo de licencia, Fase 1 §4). insumos y
   /// comercial tienen su propio derecho; el resto —incluido eKare, que entra con
   /// el clínico SIN costo— dependen de `module:clinico`.
+  /// Derecho que gobierna la VISIBILIDAD del módulo en el nav (AND de Fase 1 §4,
+  /// isModuleEnabled). OJO: para Insumos y Comercial es 'clinico', NO su clave
+  /// homónima — su visibilidad monta sobre el módulo clínico (que todo centro
+  /// tiene), igual que eKare. module:insumos / module:comercial NO gobiernan la
+  /// visibilidad: son SOLO el candado de PAGO (premiumInsumosFor/premiumComercialFor).
+  /// Esto separa "se ve" (clinico + module_settings/default) de "se pagó"
+  /// (module:insumos), que Fase 1 había colapsado en la misma clave. Un centro
+  /// clínica de heridas ve Insumos y adentro topa con el paywall hasta contratarlo.
   String get entitlementKey {
     switch (this) {
       case ModuleKey.insumos:
-        return 'insumos';
       case ModuleKey.comercial:
-        return 'comercial';
       case ModuleKey.patients:
       case ModuleKey.agenda:
       case ModuleKey.prevention:
