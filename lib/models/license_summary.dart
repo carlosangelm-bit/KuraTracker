@@ -74,7 +74,13 @@ class LicenseSummary {
   });
 
   bool get isFreePlan => plan == 'gratuito';
-  bool get hasProtocoloAddon => !protocolo.unlimited && protocolo.contracted >= 0;
+  // El add-on Protocolo Kura+ se tiene solo si se contrató cantidad ≥ 1.
+  // `protocolo.contracted` = cantidad comprada, con `?? -1` para "sin derecho"
+  // (ver data_repository), así que -1 (sin derecho) y 0 (derecho con 0 asientos)
+  // significan NO tener el add-on. El `>= 0` anterior era una tautología (siempre
+  // verdadero para un conteo finito): la rama "Add-on no contratado" era código
+  // muerto y un centro con seat:protocolo=0 se veía como si lo tuviera.
+  bool get hasProtocoloAddon => protocolo.contracted > 0;
 
   /// Estado del panel. Precedencia: impago manda sobre todo (se cobra primero);
   /// luego el plan gratuito es su propia etapa. Con holgura → holgado. LLENO (0
