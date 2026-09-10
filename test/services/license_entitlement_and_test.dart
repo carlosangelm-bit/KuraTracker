@@ -14,12 +14,16 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUp(() => SharedPreferences.setMockInitialValues({}));
 
-  test('mapeo módulo → derecho (§4)', () {
-    expect(ModuleKey.insumos.entitlementKey, 'insumos');
-    expect(ModuleKey.comercial.entitlementKey, 'comercial');
-    // El resto —incluido eKare, que entra con el clínico sin costo— depende de
-    // module:clinico.
+  test('mapeo módulo → derecho de VISIBILIDAD (§4 + desacople 0121)', () {
+    // TODOS los módulos gobiernan su VISIBILIDAD con module:clinico. Insumos y
+    // Comercial se movieron de su clave homónima a 'clinico' al desacoplar
+    // visibilidad de pago (0121): su nav monta sobre el clínico, y module:insumos /
+    // module:comercial pasaron a ser SOLO el candado de pago (premiumInsumosFor /
+    // premiumComercialFor), no la visibilidad. eKare ya era 'clinico' (entra con el
+    // clínico sin costo).
     for (final m in [
+      ModuleKey.insumos,
+      ModuleKey.comercial,
       ModuleKey.patients,
       ModuleKey.agenda,
       ModuleKey.prevention,
@@ -37,8 +41,8 @@ void main() {
         .listOrganizations()
         .firstWhere((o) => repo.centerTypeFor(o.id) == CenterType.clinicaHeridas);
 
-    // La clínica demo tiene module:clinico e module:insumos, y ambos van
-    // encendidos por default en clínica de heridas.
+    // La clínica demo tiene module:clinico (la clave de visibilidad de insumos tras
+    // el desacople 0121), e insumos va encendido por default en clínica de heridas.
     expect(repo.hasModuleEntitlement(clinica.id, 'clinico'), isTrue);
     expect(repo.isModuleEnabled(ModuleKey.patients, organizationId: clinica.id), isTrue);
     expect(repo.isModuleEnabled(ModuleKey.insumos, organizationId: clinica.id), isTrue);
@@ -50,9 +54,11 @@ void main() {
         .listOrganizations()
         .firstWhere((o) => repo.centerTypeFor(o.id) == CenterType.hospital);
 
-    // El hospital demo SÍ tiene el derecho de insumos (se siembra a todos), pero
-    // insumos está APAGADO por default en hospital → el AND lo deja apagado.
-    expect(repo.hasModuleEntitlement(hospital.id, 'insumos'), isTrue);
+    // El hospital demo SÍ tiene el derecho de VISIBILIDAD de insumos (module:clinico,
+    // que se siembra a todos), pero insumos está APAGADO por default en hospital → el
+    // AND lo deja apagado. (Tras el desacople 0121, la visibilidad de insumos monta
+    // sobre clinico, no sobre module:insumos.)
+    expect(repo.hasModuleEntitlement(hospital.id, 'clinico'), isTrue);
     expect(repo.isModuleEnabled(ModuleKey.insumos, organizationId: hospital.id), isFalse);
   });
 
