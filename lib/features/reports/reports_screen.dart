@@ -462,11 +462,8 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
       );
       // Registro de divulgación (mismo motivo que el reporte clínico): el PDF de
       // prevención sale del centro y debe quedar en la bitácora de Divulgaciones.
-      final actor = ref.read(sessionProvider).user;
       await repo.recordDataDisclosure(
         organizationId: orgId,
-        actorId: actor?.id,
-        actorEmail: actor?.email,
         kind: 'reporte_prevencion_pdf',
         scope: {'patient_ids': selected.map((p) => p.id).toList()},
         patientCount: selected.length,
@@ -912,11 +909,8 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
       // hacia afuera. Sin esto, la pantalla de Divulgaciones mostraba una lista
       // incompleta con apariencia de completa (peor que no tenerla). scope = los
       // pacientes efectivamente incluidos.
-      final actor = ref.read(sessionProvider).user;
       await repo.recordDataDisclosure(
         organizationId: userOrgId,
-        actorId: actor?.id,
-        actorEmail: actor?.email,
         kind: 'reporte_pdf',
         scope: {'patient_ids': includedPatientIds},
         patientCount: includedPatientIds.length,

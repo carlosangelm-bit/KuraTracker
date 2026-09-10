@@ -5184,8 +5184,6 @@ class DataRepository {
   /// romper una entrega ya realizada, así que un fallo se ignora.
   Future<void> recordDataDisclosure({
     required String? organizationId,
-    required String? actorId,
-    required String? actorEmail,
     required String kind,
     Map<String, dynamic>? scope,
     int? recordCount,
@@ -5195,22 +5193,39 @@ class DataRepository {
     String? fileName,
   }) async {
     if (organizationId == null) return;
+    // actor_id / actor_email NO se envían: el trigger de 0102 los IMPONE con
+    // auth.uid() y el correo del perfil, para que nadie pueda falsificar la
+    // atribución. Mandarlos sería inerte (los sobrescribe).
+    final row = {
+      'organization_id': organizationId,
+      'kind': kind,
+      'scope': scope,
+      'record_count': recordCount,
+      'patient_count': patientCount,
+      'photo_count': photoCount,
+      'missing_count': missingCount,
+      'file_name': fileName,
+      'occurred_at': DateTime.now().toUtc().toIso8601String(),
+    };
     try {
-      await _store.insertRow(Collections.dataDisclosures, {
-        'organization_id': organizationId,
-        'actor_id': actorId,
-        'actor_email': actorEmail,
-        'kind': kind,
-        'scope': scope,
-        'record_count': recordCount,
-        'patient_count': patientCount,
-        'photo_count': photoCount,
-        'missing_count': missingCount,
-        'file_name': fileName,
-        'occurred_at': DateTime.now().toUtc().toIso8601String(),
-      });
+      await _store.insertRow(Collections.dataDisclosures, row);
     } catch (_) {
-      // La entrega ya ocurrió; no romper la UX por el registro.
+      // La ENTREGA ya ocurrió; NUNCA la bloqueamos por el registro. Pero tampoco
+      // lo perdemos: los fallos de RED ya los encoló el store (insertRow devuelve
+      // optimista sin lanzar), así que aquí solo llegan rechazos NO-red
+      // (RLS/validación). Se encolan para reintentar y, si persisten, caen en
+      // `failed` (requiere atención) — así la bitácora no miente en silencio.
+      final store = _store;
+      if (store is SupabaseDataStore && store.outbox != null) {
+        await store.outbox!.enqueue(OutboxOp(
+          opId: _uuid.v4(),
+          collection: Collections.dataDisclosures,
+          type: 'insert',
+          rowId: null,
+          payload: row,
+          createdAt: DateTime.now().toUtc().toIso8601String(),
+        ));
+      }
     }
   }
 
