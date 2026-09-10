@@ -217,7 +217,11 @@ class AppShell extends ConsumerWidget {
       // NavigationRail. Esto elimina la doble barra en movil.
       appBar: null,
       body: _SyncBanner(
-        child: isWide
+        // NavigationRail (como NavigationBar) exige ≥2 destinos. Con el AND por
+        // licencia (Fase 1 §4) el conjunto de módulos puede ser vacío o de uno
+        // solo por un instante mientras cargan los derechos; en ese caso NO se
+        // monta el rail (mostrar solo el contenido) en vez de reventar el assert.
+        child: isWide && destinationsRail.length >= 2
           ? Row(
               children: [
                 NavigationRail(
@@ -248,7 +252,10 @@ class AppShell extends ConsumerWidget {
       // Barra de navegacion FLOTANTE estilo "liquid glass": no pegada a los
       // bordes (margen + esquinas casi pildora), acabado de vidrio consistente
       // con KuraGlassCard y sombra en capas para verse despegada del fondo.
-      bottomNavigationBar: (isWide || !isTopLevel)
+      // Se oculta también cuando hay <2 destinos: NavigationBar exige ≥2, y el
+      // conjunto de módulos puede quedar vacío/de uno por un instante bajo el AND
+      // por licencia (Fase 1 §4). Mejor sin barra que un crash de assert.
+      bottomNavigationBar: (isWide || !isTopLevel || mobileDestinations.length < 2)
           ? null
           : SafeArea(
               top: false,

@@ -18,6 +18,7 @@ import '../../core/providers/session_provider.dart';
 import '../../core/utils/caregiver_login.dart';
 import '../../core/router/app_shell.dart' show UserMenuButton;
 import '../../core/widgets/kura_primary_fab.dart';
+import 'license_panel.dart';
 import '../../models/app_user.dart';
 import '../../models/note_option_catalog.dart';
 import '../../models/site.dart';
@@ -58,7 +59,7 @@ class _AdminHomeScreenState extends ConsumerState<AdminHomeScreen>
   // luego "Null check operator used on a null value" dentro del propio framework
   // de Flutter (_TabBarState), no en código de esta pantalla. Ocurría siempre,
   // con datos vacíos o no: no dependía de que el admin tuviera o no fila en `staff`.
-  late final TabController _tabController = TabController(length: 5, vsync: this)
+  late final TabController _tabController = TabController(length: 6, vsync: this)
     ..addListener(() {
       if (_tabController.indexIsChanging) return;
       if (_tabController.index != _tab) {
@@ -112,6 +113,7 @@ class _AdminHomeScreenState extends ConsumerState<AdminHomeScreen>
                   Tab(text: 'Sitios'),
                   Tab(text: 'Configuración'),
                   Tab(text: 'Marca'),
+                  Tab(text: 'Licencias'),
                 ],
                 // Mueve el controller además del estado de contenido; si solo
                 // se cambia `_tab`, el indicador del TabBar queda un paso atrás
@@ -131,6 +133,11 @@ class _AdminHomeScreenState extends ConsumerState<AdminHomeScreen>
             2 => SitesTab(repo: repo, organizationId: organizationId),
             3 => NoteCatalogTab(repo: repo, organizationId: organizationId),
             4 => BrandingTab(repo: repo, organizationId: organizationId),
+            5 => LicensePanel(
+                repo: repo,
+                organizationId: organizationId,
+                user: sessionUser,
+              ),
             _ => UsersTab(
                 repo: repo,
                 organizationId: organizationId,
@@ -153,6 +160,7 @@ class _AdminHomeScreenState extends ConsumerState<AdminHomeScreen>
                   (Icons.location_on_outlined, 'Sitios'),
                   (Icons.settings_outlined, 'Config.'),
                   (Icons.palette_outlined, 'Marca'),
+                  (Icons.card_membership_outlined, 'Licencias'),
                 ],
               ),
               const VerticalDivider(width: 1),

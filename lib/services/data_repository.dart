@@ -9,6 +9,7 @@ import '../core/config/app_config.dart';
 import '../models/adverse_event.dart';
 import '../models/antecedentes.dart';
 import '../models/app_user.dart';
+import '../models/license_summary.dart';
 import '../models/caregiver_patient_assignment.dart';
 import '../models/center_type.dart';
 import '../models/clinical_amendment.dart';
@@ -725,21 +726,160 @@ class DataRepository {
     }
   }
 
-  /// Estado EFECTIVO de un módulo para (centro, sitio, usuario), resolviendo
-  /// usuario > sitio > centro > default-por-tipo.
+  /// ¿El centro tiene un derecho de MÓDULO activo con esta `key`? (Fase 1 §4).
+  /// Fuente: org_entitlements (kind='module', status='active'). Fallback SEGURO:
+  /// sin derecho cargado → false (mejor un nav vacío un instante que un módulo
+  /// encendido sin derecho). El webhook/master es quien crea estos derechos.
+  bool hasModuleEntitlement(String? organizationId, String key) {
+    if (organizationId == null) return false;
+    for (final e in _store.getAll(Collections.orgEntitlements)) {
+      if (e['organization_id'] == organizationId &&
+          e['kind'] == 'module' &&
+          e['key'] == key &&
+          e['status'] == 'active') {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /// Un derecho de org_entitlements por (kind, key), o null. Interno del panel
+  /// de licencias (para leer cantidad/estado, no solo presencia).
+  Map<String, dynamic>? _entitlement(String? orgId, String kind, String key) {
+    if (orgId == null) return null;
+    for (final e in _store.getAll(Collections.orgEntitlements)) {
+      if (e['organization_id'] == orgId && e['kind'] == kind && e['key'] == key) {
+        return e;
+      }
+    }
+    return null;
+  }
+
+  /// Resumen de licencias del centro para el panel del admin (Fase 2). Se calcula
+  /// aquí (desde org_entitlements + membresías + perfiles + pacientes) para
+  /// MOSTRAR; el TOPE real lo imponen las funciones del servidor
+  /// (assert_seat_available / consumed_*), misma lógica.
+  LicenseSummary licenseSummaryFor(String? organizationId) {
+    final usersById = {for (final u in listUsers()) u.id: u};
+
+    var clinicalUsed = 0, adminUsed = 0, caregivers = 0;
+    for (final m in listMembershipsForOrg(organizationId ?? '')) {
+      if (!m.isActive || m.seatExempt) continue;
+      final u = usersById[m.profileId];
+      if (u == null || !u.isActive) continue;
+      // Consume asiento clínico := clínico-capaz (canDiagnose, con relleno admin)
+      // O enfermería. Es DISTINTO a "puede definir planes": enfermería usa el
+      // módulo clínico sin diagnosticar, así que ocupa asiento clínico y NO cupo
+      // admin. Espejo de public.consumes_clinical_seat (el tope real del servidor).
+      if (u.consumesClinicalSeat) {
+        clinicalUsed++;
+      } else if (u.isAdmin) {
+        adminUsed++;
+      } else if (u.hasRole(AppRole.cuidador)) {
+        caregivers++;
+      }
+    }
+
+    int? qty(String kind, String key) =>
+        (_entitlement(organizationId, kind, key)?['quantity'] as num?)?.toInt();
+    final clinicalContracted = qty('seat', 'clinico') ?? 0;
+    final adminContracted = hasModuleEntitlement(organizationId, 'admin') ? 3 : 0;
+
+    // Protocolo Kura+: asignadas = perfiles activos del centro con premium; compradas
+    // = seat:protocolo. Sin add-on del centro → contracted -1 (no aplica).
+    final assigned = usersById.values
+        .where((u) =>
+            u.organizationId == organizationId && u.isActive && u.premiumEnabled)
+        .length;
+    final protocoloPurchased = qty('seat', 'protocolo');
+
+    // Plan y estado de pago.
+    final planEnt = _entitlement(organizationId, 'plan', 'gratuito') ??
+        _entitlement(organizationId, 'plan', 'basico');
+    final plan = planEnt?['key'] as String? ?? 'basico';
+    final pastDue = _store.getAll(Collections.orgEntitlements).any((e) =>
+        e['organization_id'] == organizationId && e['status'] == 'past_due');
+
+    final patients = listAllPatients()
+        .where((p) => p.organizationId == organizationId)
+        .length;
+
+    return LicenseSummary(
+      clinicalSeats:
+          LicenseCounter(used: clinicalUsed, contracted: clinicalContracted),
+      adminSlots: LicenseCounter(used: adminUsed, contracted: adminContracted),
+      caregivers: caregivers,
+      protocolo: LicenseCounter(
+          used: assigned, contracted: protocoloPurchased ?? -1),
+      plan: plan,
+      pastDue: pastDue,
+      patientsUsed: patients,
+    );
+  }
+
+  /// Registra una solicitud de más licencias (compra por solicitud, interino).
+  /// Es una SOLICITUD, no un derecho: la plataforma la atiende. El derecho lo
+  /// sigue escribiendo el webhook/master en org_entitlements.
+  Future<void> requestLicenses({
+    required String organizationId,
+    required String kind, // seat_clinico | protocolo | module | otro
+    int? requestedQuantity,
+    String? detail,
+    String? note,
+    required AppUser by,
+  }) async {
+    await _store.insertRow(Collections.licenseRequests, {
+      'organization_id': organizationId,
+      'kind': kind,
+      if (requestedQuantity != null) 'requested_quantity': requestedQuantity,
+      if (detail != null) 'detail': detail,
+      if (note != null) 'note': note,
+      'status': 'open',
+      'created_by': by.id,
+      'created_by_role': by.role.name,
+    });
+  }
+
+  /// Solicitudes de licencia (para la consola de plataforma; el master ve todas
+  /// por RLS). Más recientes primero.
+  List<Map<String, dynamic>> listLicenseRequests({String? status}) => _store
+      .getAll(Collections.licenseRequests)
+      .where((r) => status == null || r['status'] == status)
+      .toList()
+    ..sort((a, b) => ((b['created_at'] as String?) ?? '')
+        .compareTo((a['created_at'] as String?) ?? ''));
+
+  /// Marca una solicitud como atendida (solo master, RLS). No otorga el derecho:
+  /// eso se hace aparte (master en org_entitlements o el webhook).
+  Future<void> markLicenseRequestHandled(String id, {String? byProfileId}) async {
+    await _store.updateRow(Collections.licenseRequests, id, {
+      'status': 'handled',
+      'handled_at': DateTime.now().toIso8601String(),
+      'handled_by': byProfileId,
+    });
+  }
+
+  /// Estado EFECTIVO de un módulo para (centro, sitio, usuario):
+  ///   tiene DERECHO (org_entitlements) AND module_settings lo enciende
+  ///   (usuario > sitio > centro > default-por-tipo) AND availableFor(tipo).
+  /// El derecho es la capa de licencia (Fase 1 §4): sin él, el módulo no se
+  /// muestra aunque module_settings lo tenga encendido.
   bool isModuleEnabled(
     ModuleKey module, {
     required String? organizationId,
     String? siteId,
     String? profileId,
   }) {
-    if (organizationId == null) {
-      return module.defaultFor(CenterType.clinicaHeridas);
-    }
+    // Sin centro no hay derechos que consultar: fallback seguro a apagado.
+    if (organizationId == null) return false;
     final centerType = centerTypeFor(organizationId);
     // Módulo no disponible para este tipo de centro: apagado siempre, sin
     // importar ajustes previos (p.ej. eKare en hospital).
     if (!module.availableFor(centerType)) return false;
+    // Capa de licencia: sin el derecho del módulo, apagado (AND de §4).
+    if (!hasModuleEntitlement(organizationId, module.entitlementKey)) {
+      return false;
+    }
     final settings = listModuleSettings(organizationId: organizationId)
         .where((m) => m.moduleKey == module.dbValue)
         .toList();
@@ -3982,6 +4122,30 @@ class DataRepository {
       'status': AdmissionStatus.egresado.dbValue,
       'discharged_at': DateTime.now().toIso8601String(),
     });
+    // Al egresar, CANCELAR (no borrar) las tareas AUTO pendientes con fecha
+    // FUTURA de esta admisión: ya no hay ronda que las ejecute, y sin esto
+    // seguirían apareciendo en la agenda de rondas sin ubicación. Las HECHAS y
+    // las SALTADAS no se tocan — son historia clínica. Se materializa con
+    // .toList() antes de actualizar para no iterar el `where` perezoso del store
+    // mientras se muta. Motivo: egreso.
+    final now = DateTime.now();
+    final toCancel = _store
+        .getAll(Collections.preventiveTasks)
+        .map(PreventiveTask.fromJson)
+        .where((t) =>
+            t.admissionId == admissionId &&
+            t.source == 'auto' &&
+            t.isPending &&
+            t.scheduledAt.isAfter(now))
+        .toList();
+    for (final t in toCancel) {
+      await _store.updateRow(Collections.preventiveTasks, t.id, {
+        'status': PreventiveTaskStatus.canceled.dbValue,
+        'notes': (t.notes == null || t.notes!.trim().isEmpty)
+            ? 'Cancelada al egresar'
+            : '${t.notes} · Cancelada al egresar',
+      });
+    }
   }
 
   // -- Valoración de riesgo (Braden) --

@@ -20,6 +20,7 @@ import 'package:kuratracker/core/router/app_shell.dart';
 import 'package:kuratracker/features/tour/tour_controller.dart';
 import 'package:kuratracker/features/tour/tour_scope.dart';
 import 'package:kuratracker/models/app_user.dart';
+import 'package:kuratracker/models/module_key.dart';
 
 class _FakeSessionController extends SessionController {
   _FakeSessionController(AppUser user) {
@@ -74,6 +75,15 @@ void main() {
     final container = ProviderContainer(overrides: [
       sessionProvider.overrideWith((ref) => _FakeSessionController(_clin)),
       routerProvider.overrideWithValue(router),
+      // Test de LAYOUT (no de licencia): con el AND por licencia (Fase 1 §4), la
+      // sesión falsa sobre 'org-demo' —sin derechos sembrados— daría un nav vacío
+      // y el rail no se montaría. Se fija un conjunto no vacío para restaurar la
+      // precondición (un rail con destinos) que este test necesita.
+      enabledModulesProvider.overrideWithValue(const {
+        ModuleKey.patients,
+        ModuleKey.agenda,
+        ModuleKey.reports,
+      }),
     ]);
     addTearDown(container.dispose);
 

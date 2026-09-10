@@ -53,7 +53,7 @@ class _PlatformHomeScreenState extends ConsumerState<PlatformHomeScreen>
   // DefaultTabController: TabBar en AppBar.bottom queda como hermano,
   // no ancestro/descendiente, de un DefaultTabController que solo
   // envuelve el body).
-  late final TabController _tabController = TabController(length: 7, vsync: this)
+  late final TabController _tabController = TabController(length: 8, vsync: this)
     ..addListener(() {
       if (_tabController.indexIsChanging) return;
       if (_tabController.index != _tab) {
@@ -262,6 +262,7 @@ class _PlatformHomeScreenState extends ConsumerState<PlatformHomeScreen>
                   Tab(text: 'Catálogo'),
                   Tab(text: 'Marca'),
                   Tab(text: 'Módulos'),
+                  Tab(text: 'Solicitudes'),
                 ],
                 onTap: (i) => setState(() => _tab = i),
               ),
@@ -293,6 +294,13 @@ class _PlatformHomeScreenState extends ConsumerState<PlatformHomeScreen>
               selectedOrgId: _selectedOrgId,
               onSelect: (id) => setState(() => _selectedOrgId = id),
               onCreate: () => _openCreateOrganizationDialog(repo),
+              onChanged: () => setState(() {}),
+            );
+          } else if (_tab == 7) {
+            // Solicitudes de licencia: GLOBAL (todas las orgs), sin selector.
+            body = _LicenseRequestsTab(
+              repo: repo,
+              currentUserId: ref.watch(sessionProvider).user?.id,
               onChanged: () => setState(() {}),
             );
           } else if (organizations.isEmpty) {
@@ -344,6 +352,7 @@ class _PlatformHomeScreenState extends ConsumerState<PlatformHomeScreen>
                   (Icons.list_alt_outlined, 'Catálogo'),
                   (Icons.palette_outlined, 'Marca'),
                   (Icons.tune_outlined, 'Módulos'),
+                  (Icons.request_page_outlined, 'Solicitudes'),
                 ],
               ),
               const VerticalDivider(width: 1),
@@ -352,6 +361,74 @@ class _PlatformHomeScreenState extends ConsumerState<PlatformHomeScreen>
           );
         },
       ),
+    );
+  }
+}
+
+/// Solicitudes de licencia pendientes (compra por solicitud, interino). Cierra
+/// el embudo: sin esto, el «Solicitar más» del admin escribía una fila que nadie
+/// veía. Atender NO otorga el derecho (eso es en Módulos/org_entitlements o el
+/// webhook): solo marca la solicitud como vista.
+class _LicenseRequestsTab extends StatelessWidget {
+  final DataRepository repo;
+  final String? currentUserId;
+  final VoidCallback onChanged;
+  const _LicenseRequestsTab({
+    required this.repo,
+    required this.currentUserId,
+    required this.onChanged,
+  });
+
+  String _kindLabel(String k) => switch (k) {
+        'seat_clinico' => 'Asientos clínicos',
+        'protocolo' => 'Licencias Protocolo Kura+',
+        'module' => 'Módulo',
+        _ => 'Otro',
+      };
+
+  @override
+  Widget build(BuildContext context) {
+    final open = repo.listLicenseRequests(status: 'open');
+    if (open.isEmpty) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(24),
+          child: Text('Sin solicitudes de licencia pendientes.'),
+        ),
+      );
+    }
+    return ListView.separated(
+      padding: const EdgeInsets.all(16),
+      itemCount: open.length,
+      separatorBuilder: (_, __) => const SizedBox(height: 8),
+      itemBuilder: (context, i) {
+        final r = open[i];
+        final org = repo.organizationById(r['organization_id'] as String?);
+        final qty = r['requested_quantity'];
+        final detail = [
+          if ((r['note'] as String?)?.trim().isNotEmpty ?? false) r['note'],
+          if ((r['detail'] as String?)?.trim().isNotEmpty ?? false) r['detail'],
+        ].whereType<String>().join(' · ');
+        return Card(
+          child: ListTile(
+            leading: const Icon(Icons.request_page_outlined),
+            title: Text(
+              '${org?.name ?? 'Centro'} · ${_kindLabel(r['kind'] as String)}'
+              '${qty != null ? ' ×$qty' : ''}',
+              style: const TextStyle(fontWeight: FontWeight.w700),
+            ),
+            subtitle: detail.isEmpty ? null : Text(detail),
+            trailing: FilledButton(
+              onPressed: () async {
+                await repo.markLicenseRequestHandled(r['id'] as String,
+                    byProfileId: currentUserId);
+                onChanged();
+              },
+              child: const Text('Atender'),
+            ),
+          ),
+        );
+      },
     );
   }
 }

@@ -36,7 +36,18 @@ class _PreventionAgendaScreenState
         error: (e, st) => Center(child: Text('Error: $e')),
         data: (repo) {
           final orgId = user?.organizationId;
-          final tasks = repo.listPreventiveTasks(organizationId: orgId);
+          // La ronda muestra SOLO tareas de la admisión ACTIVA del paciente: un
+          // egresado no debe seguir apareciendo (sus tareas AUTO futuras se
+          // cancelan al egresar, pero las vencidas pendientes de la admisión
+          // pasada también se ocultan aquí). Un readmitido muestra solo las de su
+          // admisión actual. Tareas sin admisión (manuales antiguas) se conservan.
+          final tasks = repo
+              .listPreventiveTasks(organizationId: orgId)
+              .where((t) {
+            if (t.admissionId == null) return true;
+            final active = repo.activeAdmission(t.patientId);
+            return active != null && active.id == t.admissionId;
+          }).toList();
           return PreventiveTasksView(
             repo: repo,
             tasks: tasks,
