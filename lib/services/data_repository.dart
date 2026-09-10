@@ -910,6 +910,22 @@ class DataRepository {
     });
   }
 
+  /// Anomalías de facturación (billing_anomalies) para la consola de plataforma.
+  /// Solo el master las ve (RLS); otras sesiones reciben lista vacía. Más
+  /// recientemente vistas primero.
+  List<Map<String, dynamic>> listBillingAnomalies({String? status}) => _store
+      .getAll(Collections.billingAnomalies)
+      .where((a) => status == null || a['status'] == status)
+      .toList()
+    ..sort((a, b) => ((b['last_seen_at'] as String?) ?? '')
+        .compareTo((a['last_seen_at'] as String?) ?? ''));
+
+  /// Cuántas anomalías de facturación siguen ABIERTAS (para el badge de la consola).
+  int openBillingAnomaliesCount() => _store
+      .getAll(Collections.billingAnomalies)
+      .where((a) => a['status'] == 'open')
+      .length;
+
   /// Estado EFECTIVO de un módulo para (centro, sitio, usuario):
   ///   tiene DERECHO (org_entitlements) AND module_settings lo enciende
   ///   (usuario > sitio > centro > default-por-tipo) AND availableFor(tipo).
