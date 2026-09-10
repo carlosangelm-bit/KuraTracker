@@ -1,0 +1,83 @@
+name: Sandbox · sembrar usuario Prueba Fase 2
+
+# Crea UN usuario en el centro "Prueba Fase 2" del SANDBOX (admin+clinico en el
+# conjunto, role escalar clinico) para poder verificar tres cosas desde la app:
+# la mitad bloqueada de Insumos, la pestaña Administración (app_shell.dart:97) y el
+# defecto de cancelar. Corre supabase/seed/seed_prueba_fase2_user.sql, idempotente.
+#
+# Solo contra el environment "staging" (guarda anti-prod). Mismo patrón y secretos
+# que sandbox-seed.yml — no pide nada nuevo. NO aplica migraciones.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Escribe SANDBOX para confirmar que quieres sembrar el usuario en el sandbox'
+        required: true
+        type: string
+
+concurrency:
+  group: sandbox-seed-user
+  cancel-in-progress: false
+
+env:
+  PROD_PROJECT_REF: mhnhgnzajdjhllypdutr
+  POOLER_HOST: aws-0-us-west-2.pooler.supabase.com
+
+jobs:
+  seed-user:
+    runs-on: ubuntu-latest
+    environment: staging
+    env:
+      SANDBOX_USER_PASSWORD: ${{ secrets.SANDBOX_USER_PASSWORD }}
+    steps:
+      - name: Confirmación
+        run: |
+          [ "${{ inputs.confirm }}" = "SANDBOX" ] || { echo "::error::Escribe SANDBOX en el campo de confirmación."; exit 1; }
+
+      - uses: actions/checkout@v4
+
+      - name: Armar cadena de conexión
+        env:
+          KT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+          KT_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: |
+          test -n "$KT_REF"                || { echo "::error::Falta SUPABASE_PROJECT_REF"; exit 1; }
+          test -n "$KT_DB_PASSWORD"        || { echo "::error::Falta SUPABASE_DB_PASSWORD"; exit 1; }
+          test -n "$SANDBOX_USER_PASSWORD" || { echo "::error::Falta SANDBOX_USER_PASSWORD"; exit 1; }
+          [ "${#SANDBOX_USER_PASSWORD}" -ge 8 ] || { echo "::error::SANDBOX_USER_PASSWORD debe tener ≥ 8 caracteres"; exit 1; }
+          case "$KT_DB_PASSWORD" in
+            *://*|postgresql:*|postgres:*)
+              echo "::error::SUPABASE_DB_PASSWORD contiene una cadena de conexión, no una contraseña."; exit 1;;
+          esac
+          [ "$KT_REF" != "$PROD_PROJECT_REF" ] || { echo "::error::SUPABASE_PROJECT_REF apunta a PRODUCCIÓN. Abortado."; exit 1; }
+          enc=$(python3 -c 'import os,urllib.parse; print(urllib.parse.quote(os.environ["KT_DB_PASSWORD"], safe=""))')
+          url="postgresql://postgres.${KT_REF}:${enc}@${POOLER_HOST}:5432/postgres"
+          echo "::add-mask::$url"
+          echo "SUPABASE_DB_URL=$url" >> "$GITHUB_ENV"
+          echo "OK · cadena armada contra $POOLER_HOST"
+
+      - name: Instalar psql
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client >/dev/null
+
+      - name: Probar conexión
+        run: |
+          if ! out=$(psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -At \
+                       -c "select 'conexion ok - db=' || current_database() || ' - user=' || current_user" 2>&1); then
+            echo "::group::Salida de psql"; echo "$out"; echo "::endgroup::"
+            echo "::error::No se pudo conectar (¿Session pooler? ¿contraseña?)."; exit 1
+          fi
+          echo "$out"
+
+      - name: Sembrar usuario
+        run: |
+          set -o pipefail
+          # La contraseña entra como variable de psql (:'pwd'), nunca a un archivo
+          # ni al log. Se vuelca la salida completa (GitHub enmascara secretos).
+          if ! psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -q -v pwd="$SANDBOX_USER_PASSWORD" \
+                 -f supabase/seed/seed_prueba_fase2_user.sql > /tmp/seed_user.log 2>&1; then
+            echo "::group::Salida completa"; tail -n 60 /tmp/seed_user.log; echo "::endgroup::"
+            echo "::error::La siembra del usuario falló."; exit 1
+          fi
+          cat /tmp/seed_user.log
+          echo "Usuario sembrado. Entra con admin.fase2@sandbox.kuratracker.mx (contraseña de las cuentas de prueba)."
