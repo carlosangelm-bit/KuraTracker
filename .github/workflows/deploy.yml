@@ -182,6 +182,13 @@ jobs:
         run: supabase functions deploy stripe-create-checkout --use-api --project-ref "$SUPABASE_PROJECT_REF"
       - name: Deploy stripe-webhook (--use-api, --no-verify-jwt)
         run: supabase functions deploy stripe-webhook --use-api --no-verify-jwt --project-ref "$SUPABASE_PROJECT_REF"
+      # Licencia (suscripciones): checkout con verify_jwt; el webhook de suscripción
+      # es endpoint abierto (Stripe no manda JWT) → --no-verify-jwt, y valida su
+      # PROPIA firma (STRIPE_SUBSCRIPTION_WEBHOOK_SECRET). Separado de stripe-webhook.
+      - name: Deploy license-checkout (--use-api)
+        run: supabase functions deploy license-checkout --use-api --project-ref "$SUPABASE_PROJECT_REF"
+      - name: Deploy stripe-subscription-webhook (--use-api, --no-verify-jwt)
+        run: supabase functions deploy stripe-subscription-webhook --use-api --no-verify-jwt --project-ref "$SUPABASE_PROJECT_REF"
       - name: Deploy vac-bot (--use-api)
         run: supabase functions deploy vac-bot --use-api --project-ref "$SUPABASE_PROJECT_REF"
       - name: Deploy support-bot (--use-api)

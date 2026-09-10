@@ -78,6 +78,21 @@ serve(async (req) => {
     const paymentStatus = session["payment_status"] as string | undefined;
     if (paymentStatus !== "paid") return ok200("not paid yet");
 
+    // Idempotencia (Fase 1 §7): registrar el evento ANTES de cualquier efecto. El
+    // reenvío de Stripe es rutina; sin esto, un evento repetido re-ejecuta los
+    // efectos. Si el insert choca contra la PK (event_id), ya se procesó → 200 sin
+    // repetir. Otros errores no bloquean el pago (se registran y se sigue).
+    const eventId = event["id"] as string | undefined;
+    if (eventId) {
+      const { error: dedupeErr } = await supabase
+        .from("stripe_events")
+        .insert({ event_id: eventId, type: type ?? "unknown" });
+      if (dedupeErr) {
+        if (dedupeErr.code === "23505") return ok200("already processed");
+        console.error("stripe-webhook: dedupe insert falló:", dedupeErr);
+      }
+    }
+
     const meta = (session["metadata"] as Record<string, unknown> | undefined) ?? {};
     const chargeId = (meta["charge_id"] as string | undefined) ??
       (session["client_reference_id"] as string | undefined) ?? null;

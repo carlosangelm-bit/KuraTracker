@@ -188,6 +188,8 @@ class Collections {
   static const clinicalAmendments = 'clinical_amendments';
   static const userCenterMemberships = 'user_center_memberships';
   static const moduleSettings = 'module_settings';
+  static const orgEntitlements = 'org_entitlements';
+  static const licenseRequests = 'license_requests';
   static const preventiveTasks = 'preventive_tasks';
   static const caregiverPatientAssignments = 'caregiver_patient_assignments';
   static const caregiverInstructions = 'caregiver_instructions';
@@ -249,6 +251,8 @@ class Collections {
     clinicalAmendments,
     userCenterMemberships,
     moduleSettings,
+    orgEntitlements,
+    licenseRequests,
     preventiveTasks,
     caregiverPatientAssignments,
     caregiverInstructions,
