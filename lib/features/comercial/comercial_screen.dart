@@ -65,7 +65,7 @@ class _ComercialScreenState extends ConsumerState<ComercialScreen>
       error: (e, st) => Scaffold(body: Center(child: Text('Error: $e'))),
       data: (repo) {
         final orgId = user?.organizationId;
-        if (!repo.premiumInsumosFor(orgId)) {
+        if (!repo.premiumComercialFor(orgId)) {
           return Scaffold(
             appBar: AppBar(
                 title: const Text('Comercial'),

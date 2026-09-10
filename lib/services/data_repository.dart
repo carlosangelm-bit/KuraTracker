@@ -743,6 +743,22 @@ class DataRepository {
     return false;
   }
 
+  /// ¿El centro tiene un derecho de ASIENTO (kind='seat') activo con cantidad ≥ 1?
+  /// Se usa para los add-on por asiento (p. ej. Protocolo Kura+ = seat:protocolo).
+  bool hasSeatEntitlement(String? organizationId, String key) {
+    if (organizationId == null) return false;
+    for (final e in _store.getAll(Collections.orgEntitlements)) {
+      if (e['organization_id'] == organizationId &&
+          e['kind'] == 'seat' &&
+          e['key'] == key &&
+          e['status'] == 'active' &&
+          ((e['quantity'] as num?)?.toInt() ?? 0) >= 1) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   /// Un derecho de org_entitlements por (kind, key), o null. Interno del panel
   /// de licencias (para leer cantidad/estado, no solo presencia).
   Map<String, dynamic>? _entitlement(String? orgId, String kind, String key) {
@@ -1112,13 +1128,24 @@ class DataRepository {
     }
   }
 
-  /// ¿El centro tiene la licencia premium del módulo de Insumos? (0047)
+  /// ¿El centro PAGÓ el módulo de Insumos? Es el candado de PAGO (las pantallas de
+  /// inventario/mapeo/consumo/reabasto), NO la visibilidad del nav (eso monta sobre
+  /// clinico, ver ModuleKey.entitlementKey). Lee el derecho module:insumos, que
+  /// escribe el webhook de Stripe al comprar (o el master). Antes leía la bandera
+  /// legada organizations.premium_insumos (0047), que la ruta de Stripe no escribe.
   bool premiumInsumosFor(String? organizationId) =>
-      organizationById(organizationId)?.premiumInsumos ?? false;
+      hasModuleEntitlement(organizationId, 'insumos');
 
-  /// ¿El centro tiene el add-on premium "Protocolo Kura+"? (0049)
+  /// ¿El centro PAGÓ el módulo Comercial? Candado propio (antes leía, por error, el
+  /// de Insumos → un centro con Insumos tenía Comercial gratis). Lee module:comercial.
+  bool premiumComercialFor(String? organizationId) =>
+      hasModuleEntitlement(organizationId, 'comercial');
+
+  /// ¿El centro tiene el add-on "Protocolo Kura+"? Se vende por asiento
+  /// (seat:protocolo); el centro lo tiene si contrató ≥ 1. Antes leía la bandera
+  /// legada organizations.premium_protocolo_kura (0049), que Stripe no escribe.
   bool premiumProtocoloKuraFor(String? organizationId) =>
-      organizationById(organizationId)?.premiumProtocoloKura ?? false;
+      hasSeatEntitlement(organizationId, 'protocolo');
 
   /// Activa/desactiva el add-on premium "Protocolo Kura+" del centro (RPC
   /// set_org_premium_protocolo_kura, 0049, solo master).

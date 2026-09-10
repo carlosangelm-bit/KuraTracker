@@ -32,7 +32,7 @@ class DemoSeed {
   // una sola vez en instalaciones demo previas (wipeAll + _seed), evitando
   // duplicados y datos viejos. Cada rediseño del roster sube este número.
   // v12: roster curado por escenario (clínica 7 / hospital 5 / cuidadores 3).
-  static const String _seedFlag = 'seeded_v32';
+  static const String _seedFlag = 'seeded_v33';
 
   static Future<void> ensureSeeded(LocalStore store) async {
     if (store.getBool(_seedFlag)) return;
@@ -365,6 +365,8 @@ class DemoSeed {
     // así que otorgar un derecho NO enciende un módulo que el default tenga
     // apagado (hospital/cuidadores siguen sin insumos ni comercial).
     await store.saveAll(Collections.orgEntitlements, [
+      // VISIBILIDAD + base: module:clinico (sobre él montan Insumos/Comercial en el
+      // nav) y module:admin (cupos) para todos los centros; seat:clinico holgado.
       for (final orgId in [
         organizationId,
         organizationId2,
@@ -372,7 +374,7 @@ class DemoSeed {
         organizationIdCuidadores,
         organizationIdIndependiente,
       ]) ...[
-        for (final k in ['clinico', 'insumos', 'comercial', 'admin'])
+        for (final k in ['clinico', 'admin'])
           {
             'id': _uuid.v4(),
             'organization_id': orgId,
@@ -394,7 +396,23 @@ class DemoSeed {
           'created_at': iso(now),
         },
       ],
-      // Protocolo Kura+: solo los centros que lo tienen (principal e independiente).
+      // PAGO: module:insumos y module:comercial son ahora el candado premium (no la
+      // visibilidad). Solo los centros que los tienen (principal e independiente,
+      // los que traían premium_insumos=true). Los demás ven el módulo y topan con
+      // el paywall, que es el comportamiento correcto.
+      for (final orgId in [organizationId, organizationIdIndependiente])
+        for (final k in ['insumos', 'comercial'])
+          {
+            'id': _uuid.v4(),
+            'organization_id': orgId,
+            'kind': 'module',
+            'key': k,
+            'quantity': null,
+            'status': 'active',
+            'source': 'master',
+            'created_at': iso(now),
+          },
+      // Protocolo Kura+ (por asiento): solo principal e independiente.
       for (final orgId in [organizationId, organizationIdIndependiente])
         {
           'id': _uuid.v4(),
