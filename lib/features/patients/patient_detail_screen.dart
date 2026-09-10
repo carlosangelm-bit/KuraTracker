@@ -157,7 +157,13 @@ class _PatientDetailScreenState extends ConsumerState<PatientDetailScreen> {
           // botones de escritura clínica (editar expediente, nueva consulta,
           // registrar herida/seguimiento, comorbilidades/diagnósticos). Puede
           // leer todo + reportar (riesgo/eventos adversos) + prevención.
-          final canWrite = ref.watch(sessionProvider).user?.canDiagnose ?? true;
+          // Escritura clínica = rol clínico (0045) Y el centro puede escribir (su
+          // derecho clínico está vigente; con pago vencido/prueba terminada, el
+          // expediente se LEE pero no se edita). La banda del shell explica el motivo.
+          final canWrite =
+              (ref.watch(sessionProvider).user?.canDiagnose ?? true) &&
+                  repo.centerCanWriteClinical(
+                      ref.watch(sessionProvider).user?.organizationId);
           // Exportar el expediente (paquete de salida / divulgación): admin/master.
           // Permisos por los getters del conjunto de roles, nunca por role == x.
           final exportUser = ref.watch(sessionProvider).user;
@@ -887,7 +893,7 @@ class _AssignSpecialistCardState extends ConsumerState<_AssignSpecialistCard> {
   @override
   Widget build(BuildContext context) {
     final session = ref.watch(sessionProvider);
-    final isAdmin = session.user?.role == AppRole.admin;
+    final isAdmin = session.user?.isAdmin ?? false;
     final isMaster = session.user?.isMaster ?? false;
     if (!isAdmin && !isMaster) return const SizedBox.shrink();
     final repo = ref.watch(dataRepositoryProvider).valueOrNull;
