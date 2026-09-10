@@ -39,6 +39,15 @@ comment on column public.organizations.stripe_customer_id is
   'Customer de Stripe del centro (suscripción de licencia). Uno por centro; lo '
   'escribe license-checkout (service_role). null hasta la primera compra.';
 
+-- La suscripción VIVA del centro (una sola). license-checkout la lee: si existe,
+-- la SEGUNDA compra ACTUALIZA esa suscripción (prorrateo) en vez de crear otra;
+-- si es null, crea una. apply_stripe_subscription_event la fija al activarse y la
+-- pone en null al cancelarse (atómico con los derechos).
+alter table public.organizations add column if not exists stripe_subscription_id text;
+comment on column public.organizations.stripe_subscription_id is
+  'Suscripción de licencia viva del centro (o null). La mantiene el webhook vía '
+  'apply_stripe_subscription_event. license-checkout enruta a actualizar vs crear.';
+
 -- -----------------------------------------------------------------------------
 -- 3. Tope de pacientes del plan gratuito (§6) — hasta ahora solo existía en el
 --    cliente (kFreePlanPatientCap=5 en license_summary.dart) y nada en el servidor
@@ -46,6 +55,10 @@ comment on column public.organizations.stripe_customer_id is
 --    API. Este trigger lo impone en la base. Solo muerde si el centro tiene
 --    plan:gratuito ACTIVO; los planes de pago no tienen tope de pacientes aquí.
 --    Cuenta pacientes ACTIVOS (los archivados no ocupan lugar).
+--    Dispara en INSERT y en la REACTIVACIÓN (is_active false→true): sin lo segundo,
+--    la receta para saltarlo es archivar uno, dar de alta otro (vuelve a 5) y
+--    reactivar el archivado → 6 activos, porque reactivar es un UPDATE que el
+--    trigger de solo-insert no veía.
 --    Excepción con prefijo estable (FREE_PLAN_PATIENT_CAP:) para que la app la
 --    traduzca a la invitación a contratar. trg_zz_* para correr al final.
 -- -----------------------------------------------------------------------------
@@ -58,8 +71,14 @@ as $$
 declare
   v_count int;
 begin
+  -- Solo interesa cuando el paciente QUEDA activo y antes no lo estaba: alta nueva
+  -- activa, o reactivación. Un alta archivada, o un UPDATE que no lo activa desde
+  -- inactivo (ya estaba contado), no topan.
   if new.is_active is not true then
-    return new;  -- alta archivada (raro): no cuenta ni topa.
+    return new;
+  end if;
+  if tg_op = 'UPDATE' and old.is_active is true then
+    return new;
   end if;
 
   if not exists (
@@ -70,9 +89,11 @@ begin
     return new;  -- no es plan gratuito → sin tope aquí.
   end if;
 
+  -- Cuenta los OTROS activos (en reactivación, este aún está inactivo en la tabla;
+  -- el id <> new.id lo deja explícito y es inocuo en el INSERT).
   select count(*) into v_count
   from public.patients p
-  where p.organization_id = new.organization_id and p.is_active;
+  where p.organization_id = new.organization_id and p.is_active and p.id <> new.id;
 
   if v_count >= 5 then
     raise exception
@@ -85,5 +106,5 @@ $$;
 
 drop trigger if exists trg_zz_free_plan_patient_cap on public.patients;
 create trigger trg_zz_free_plan_patient_cap
-  before insert on public.patients
+  before insert or update on public.patients
   for each row execute function public.assert_free_plan_patient_cap();

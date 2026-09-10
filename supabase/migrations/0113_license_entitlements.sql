@@ -44,8 +44,11 @@ create table if not exists public.org_entitlements (
   current_period_end timestamptz,
 
   -- Enlace a Stripe cuando el derecho vino de una suscripción; null cuando lo
-  -- otorgó el master a mano.
+  -- otorgó el master a mano. El *_item_id identifica la línea; el *_id la
+  -- suscripción, para que el barrido de cancelación se acote a UNA suscripción y
+  -- un evento de la suscripción A no cancele los derechos escritos por la B.
   stripe_subscription_item_id text,
+  stripe_subscription_id text,
   -- Quién escribió el derecho. 'stripe' = webhook (service_role); 'master' = a
   -- mano desde Plataforma o el backfill.
   source text not null check (source in ('stripe', 'master')),

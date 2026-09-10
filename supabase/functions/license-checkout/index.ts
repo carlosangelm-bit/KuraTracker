@@ -48,6 +48,14 @@ async function stripe(path: string, form: URLSearchParams) {
   return { ok: res.ok, status: res.status, body };
 }
 
+async function getSubscription(subId: string): Promise<Record<string, unknown> | null> {
+  const res = await fetch(`https://api.stripe.com/v1/subscriptions/${subId}`, {
+    headers: { Authorization: `Bearer ${STRIPE_SECRET_KEY}` },
+  });
+  if (!res.ok) return null;
+  return await res.json().catch(() => null);
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
 
@@ -161,9 +169,67 @@ serve(async (req) => {
     return json({ error: `Stripe no tiene precio activo para: ${missing.join(", ")}.` }, 502);
   }
 
-  // --- Customer del centro: reutilizar o crear (§3.10) -----------------------
   const { data: org } = await admin
-    .from("organizations").select("id, name, stripe_customer_id").eq("id", orgId).maybeSingle();
+    .from("organizations")
+    .select("id, name, stripe_customer_id, stripe_subscription_id")
+    .eq("id", orgId).maybeSingle();
+
+  // --- ¿Ya hay una suscripción viva? → ACTUALIZAR en vez de crear otra (§3.1) --
+  // Checkout en modo suscripción SIEMPRE crea una nueva; sin esto, la 2ª compra
+  // deja al centro con dos suscripciones (doble cobro, y sus eventos peleándose).
+  // El prorrateo real (§3.8) vive AQUÍ, en el update, no en la creación.
+  const existingSubId = (org?.["stripe_subscription_id"] as string | null) ?? null;
+  if (existingSubId) {
+    const sub = await getSubscription(existingSubId);
+    const st = sub?.["status"] as string | undefined;
+    if (sub && (st === "active" || st === "trialing" || st === "past_due")) {
+      const curItems = ((sub["items"] as Record<string, unknown> | undefined)?.["data"] as
+        Array<Record<string, unknown>> | undefined) ?? [];
+      const uForm = new URLSearchParams();
+      uForm.set("proration_behavior", "create_prorations");   // §3.8 — aquí SÍ prorratea.
+      uForm.set("automatic_tax[enabled]", "true");
+      let ui = 0;
+      const kept = new Set<string>();
+      // Ajustar/añadir los items pedidos.
+      for (const [lk, qty] of Object.entries(wanted)) {
+        const priceId = priceByLookup[lk];
+        const cur = curItems.find((it) => {
+          const price = (it["price"] as Record<string, unknown> | undefined) ?? {};
+          return price["id"] === priceId || price["lookup_key"] === lk;
+        });
+        if (cur) {
+          uForm.set(`items[${ui}][id]`, cur["id"] as string);
+          uForm.set(`items[${ui}][quantity]`, String(qty));
+          kept.add(cur["id"] as string);
+        } else {
+          uForm.set(`items[${ui}][price]`, priceId);
+          uForm.set(`items[${ui}][quantity]`, String(qty));
+        }
+        ui++;
+      }
+      // Quitar los que ya no están en el carrito.
+      for (const it of curItems) {
+        const id = it["id"] as string;
+        if (!kept.has(id)) {
+          uForm.set(`items[${ui}][id]`, id);
+          uForm.set(`items[${ui}][deleted]`, "true");
+          ui++;
+        }
+      }
+      const upd = await stripe(`subscriptions/${existingSubId}`, uForm);
+      if (!upd.ok) {
+        console.error("license-checkout: update de suscripción falló", upd.status, JSON.stringify(upd.body));
+        const msg = (upd.body as Record<string, Record<string, unknown>>)?.["error"]?.["message"] ?? `HTTP ${upd.status}`;
+        return json({ error: `Stripe rechazó la actualización: ${msg}` }, 502);
+      }
+      // El webhook (customer.subscription.updated) escribe los derechos nuevos; no
+      // hay redirección — el método de pago ya está en archivo. Sin url.
+      return json({ updated: true });
+    }
+    // Suscripción cancelada/expirada: cae a crear una nueva.
+  }
+
+  // --- Customer del centro: reutilizar o crear (§3.10) -----------------------
   let customerId = (org?.["stripe_customer_id"] as string | null) ?? null;
   if (!customerId) {
     const cForm = new URLSearchParams();
@@ -186,7 +252,8 @@ serve(async (req) => {
   form.set("automatic_tax[enabled]", "true");          // §3.6 — IVA incluido → desglose.
   form.set("customer_update[address]", "auto");        // requisito de automatic_tax.
   form.set("subscription_data[metadata][organization_id]", orgId);   // §3.7.
-  form.set("subscription_data[proration_behavior]", "create_prorations");   // §3.8.
+  // (Sin proration_behavior aquí: en una suscripción NUEVA no hay qué prorratear;
+  //  el prorrateo del §3.8 vive en la ruta de actualización de arriba.)
 
   let i = 0;
   for (const [lk, qty] of Object.entries(wanted)) {

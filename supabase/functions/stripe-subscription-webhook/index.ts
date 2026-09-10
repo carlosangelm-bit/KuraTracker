@@ -112,22 +112,27 @@ serve(async (req) => {
   const object = ((event["data"] as Record<string, unknown> | undefined)?.["object"] as
     Record<string, unknown> | undefined) ?? {};
 
-  // Obtener SIEMPRE un objeto subscription (fuente de verdad, con items y estado).
-  // checkout.session.completed NO se usa: no trae items ni cubre renovaciones.
-  let sub: Record<string, unknown> | null = null;
+  // Id de la suscripción del evento: en subscription.* es el objeto mismo; en
+  // invoice.payment_failed es invoice.subscription.
+  let subId: string | undefined;
   if (type.startsWith("customer.subscription.")) {
-    sub = object;
+    subId = object["id"] as string | undefined;
   } else if (type === "invoice.payment_failed") {
-    const subId = object["subscription"] as string | undefined;
-    if (!subId) return new Response("no subscription on invoice", { status: 200 });
-    sub = await fetchSubscription(subId);
-    if (!sub) {
-      // No se pudo resolver: que Stripe reintente (puede ser transitorio).
-      console.error("stripe-subscription-webhook: no se pudo traer la suscripción", subId);
-      return new Response("could not fetch subscription", { status: 502 });
-    }
+    subId = object["subscription"] as string | undefined;
   }
-  if (!sub) return new Response("ignored", { status: 200 });
+  if (!subId) return new Response("no subscription on event", { status: 200 });
+
+  // RE-FETCH SIEMPRE (no se confía en el objeto del payload, que es una foto del
+  // pasado): Stripe no garantiza el orden de entrega, así que dos eventos
+  // desordenados (3→4→5, o cancelar A / crear B) escribirían estados viejos. El
+  // re-fetch devuelve el estado ACTUAL, con lo que convergen. checkout.session.*
+  // NO se usa: no trae items ni cubre renovaciones.
+  const sub = await fetchSubscription(subId);
+  if (!sub) {
+    // No se pudo resolver: que Stripe reintente (puede ser transitorio).
+    console.error("stripe-subscription-webhook: no se pudo traer la suscripción", subId);
+    return new Response("could not fetch subscription", { status: 502 });
+  }
 
   const { orgId, status, cpeIso, items } = extractFromSubscription(sub);
   if (!orgId) {
@@ -141,6 +146,7 @@ serve(async (req) => {
     p_event_id: eventId,
     p_type: type,
     p_organization_id: orgId,
+    p_stripe_subscription_id: (sub["id"] as string | undefined) ?? subId,
     p_subscription_status: status,
     p_current_period_end: cpeIso,
     p_items: items,

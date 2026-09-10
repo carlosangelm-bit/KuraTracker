@@ -128,9 +128,12 @@ declare
   -- Misma regla que los contadores: "consume asiento clínico" = clínico-capaz O
   -- enfermería. Se llama a consumes_clinical_seat (0b) en vez de repetir el unnest,
   -- para no tener dos definiciones de la misma regla (§6). p_roles aquí es el
-  -- conjunto que se está asignando; el escalar del fallback no aplica (no-vacío),
-  -- por eso null.
-  v_has_clinical boolean := public.consumes_clinical_seat(p_roles, null::public.user_role);
+  -- conjunto que se está asignando; el escalar del fallback no aplica (no-vacío).
+  -- coalesce a false: con p_roles vacío/nulo la función devuelve NULL (el case cae
+  -- al escalar null) y sin el coalesce el retorno temprano del cuidador no se
+  -- tomaría. Hoy el único llamante rechaza roles vacío antes; la fase 3 (alta
+  -- pública) agrega uno que no, así que se blinda aquí.
+  v_has_clinical boolean := coalesce(public.consumes_clinical_seat(p_roles, null::public.user_role), false);
   v_has_admin boolean := ('admin'::public.user_role = any(p_roles));
   v_member_count int;
   v_has_admin_module boolean;

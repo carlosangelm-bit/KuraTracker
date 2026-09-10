@@ -12,6 +12,12 @@
 --   · si algún paso falla → raise; TODO se revierte, incluido el registro del
 --     evento; la función Deno devuelve 5xx y Stripe reintenta.
 --
+-- El barrido de cancelación se ACOTA a la suscripción (p_stripe_subscription_id):
+-- un centro puede tener transitoriamente dos suscripciones (recontratación:
+-- cancelar A, crear B), y sin acotar, un evento de A cancelaría los derechos de B.
+-- Además mantiene organizations.stripe_subscription_id (viva o null) para que
+-- license-checkout enrute la 2ª compra a ACTUALIZAR en vez de crear otra.
+--
 -- SECURITY DEFINER: escribe org_entitlements saltando la RLS (que es master-only);
 -- la llama SOLO el webhook con service_role. p_items = items de la suscripción:
 --   [{lookup_key, quantity, subscription_item_id}, ...]
@@ -21,6 +27,7 @@ create or replace function public.apply_stripe_subscription_event(
   p_event_id text,
   p_type text,
   p_organization_id uuid,
+  p_stripe_subscription_id text,
   p_subscription_status text,
   p_current_period_end timestamptz,
   p_items jsonb
@@ -66,27 +73,35 @@ begin
     v_qty := coalesce((v_item->>'quantity')::int, 0);
     v_sub_item_id := v_item->>'subscription_item_id';
 
+    -- lookup_key AUSENTE (price sin clave): reintentar no lo arregla → se omite el
+    -- item (se registra). Distinto de una clave PRESENTE pero no sembrada, que sí
+    -- rompe la tx a propósito (abajo) para que se siembre y el reintento entre.
+    if v_lookup is null then
+      raise notice 'apply_stripe_subscription_event: item sin lookup_key, se omite (sub %).',
+        p_stripe_subscription_id;
+      continue;
+    end if;
+
     select kind, key into v_kind, v_key
     from public.billing_catalog where lookup_key = v_lookup;
     if v_kind is null then
-      -- Clave desconocida: un price creado en Stripe sin sembrarlo aquí. No se
-      -- ignora en silencio — se rompe la transacción para que se vea y se siembre.
       raise exception
         'BILLING_UNKNOWN_LOOKUP_KEY: % no está en billing_catalog.', v_lookup;
     end if;
 
     insert into public.org_entitlements
       (organization_id, kind, key, quantity, status, current_period_end,
-       stripe_subscription_item_id, source, updated_at)
+       stripe_subscription_item_id, stripe_subscription_id, source, updated_at)
     values
       (p_organization_id, v_kind, v_key,
        case when v_kind = 'seat' then greatest(v_qty, 0) else null end,
-       v_status, p_current_period_end, v_sub_item_id, 'stripe', now())
+       v_status, p_current_period_end, v_sub_item_id, p_stripe_subscription_id, 'stripe', now())
     on conflict (organization_id, kind, key) do update set
       quantity = excluded.quantity,
       status = excluded.status,
       current_period_end = excluded.current_period_end,
       stripe_subscription_item_id = excluded.stripe_subscription_item_id,
+      stripe_subscription_id = excluded.stripe_subscription_id,
       source = 'stripe',
       updated_at = now();
 
@@ -102,36 +117,57 @@ begin
   -- periodo); sin asientos clínicos NO se escribe → el barrido de abajo lo cancela.
   if v_clinico_qty >= 1 then
     insert into public.org_entitlements
-      (organization_id, kind, key, quantity, status, current_period_end, source, updated_at)
+      (organization_id, kind, key, quantity, status, current_period_end,
+       stripe_subscription_id, source, updated_at)
     values
-      (p_organization_id, 'module', 'clinico', null, v_status, p_current_period_end, 'stripe', now())
+      (p_organization_id, 'module', 'clinico', null, v_status, p_current_period_end,
+       p_stripe_subscription_id, 'stripe', now())
     on conflict (organization_id, kind, key) do update set
       status = excluded.status,
       current_period_end = excluded.current_period_end,
+      stripe_subscription_id = excluded.stripe_subscription_id,
       source = 'stripe',
       updated_at = now();
     v_applied := v_applied || to_jsonb('module:clinico'::text);
   end if;
 
-  -- Los derechos de Stripe que YA NO aparecen (ni derivados) pasan a canceled. No
-  -- se borran (el rastro importa). source='master' NUNCA se toca desde aquí: es lo
-  -- que deja al master regalar/reparar una licencia sin que la renovación la borre.
+  -- Los derechos de ESTA suscripción que YA NO aparecen (ni derivados) pasan a
+  -- canceled. Acotado a p_stripe_subscription_id: un evento de otra suscripción del
+  -- mismo centro no toca éstos. No se borran (el rastro importa). source='master'
+  -- NUNCA se toca: es lo que deja al master regalar/reparar sin que la renovación
+  -- lo borre.
   update public.org_entitlements e
     set status = 'canceled', updated_at = now()
   where e.organization_id = p_organization_id
     and e.source = 'stripe'
+    and e.stripe_subscription_id is not distinct from p_stripe_subscription_id
     and e.status <> 'canceled'
     and not (v_applied ? (e.kind || ':' || e.key));
+
+  -- La suscripción viva del centro (para enrutar la 2ª compra). Se fija al estar
+  -- activa/impaga; se limpia al cancelarse SI es la que estaba registrada (no pisa
+  -- una suscripción B más nueva con el 'deleted' tardío de A).
+  if v_status = 'canceled' then
+    update public.organizations
+      set stripe_subscription_id = null
+      where id = p_organization_id
+        and stripe_subscription_id = p_stripe_subscription_id;
+  else
+    update public.organizations
+      set stripe_subscription_id = p_stripe_subscription_id
+      where id = p_organization_id;
+  end if;
 
   return 'applied';
 end;
 $$;
 
-comment on function public.apply_stripe_subscription_event(text, text, uuid, text, timestamptz, jsonb) is
+comment on function public.apply_stripe_subscription_event(text, text, uuid, text, text, timestamptz, jsonb) is
   'Aplica un evento de suscripción de Stripe (idempotente y atómico): registra el '
-  'event_id y hace upsert de org_entitlements en la misma transacción. Deriva '
-  'module:clinico de los asientos clínicos (§2). source=master intacto. La llama '
-  'el webhook stripe-subscription-webhook con service_role.';
+  'event_id y hace upsert de org_entitlements en la misma transacción, acotando el '
+  'barrido de cancelación a la suscripción. Deriva module:clinico de los asientos '
+  'clínicos (§2). Mantiene organizations.stripe_subscription_id. source=master '
+  'intacto. La llama el webhook stripe-subscription-webhook con service_role.';
 
 grant execute on function public.apply_stripe_subscription_event(
-  text, text, uuid, text, timestamptz, jsonb) to service_role;
+  text, text, uuid, text, text, timestamptz, jsonb) to service_role;
