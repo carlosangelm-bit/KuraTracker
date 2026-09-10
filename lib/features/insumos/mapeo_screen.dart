@@ -23,7 +23,29 @@ const _mappableMethods = [
   'Antisépticos',
   'Tratamiento para la infección',
   'Terapia compresiva',
+  // El desbridamiento autolítico y enzimático SÍ se hace con producto (Prontosan
+  // Wound Gel, Intrasite…). Se ofrece el ligado solo para esos genéricos; los
+  // procedimentales (cortante/mecánico) no llevan insumo — se filtran en
+  // [_mappableGenericsFor].
+  'Desbridamiento',
 ];
+
+/// Genéricos de Desbridamiento que se hacen CON PRODUCTO (los demás son
+/// procedimiento puro y no se ligan). Deben coincidir carácter por carácter con
+/// [TreatmentCatalog.methodToProducts]['Desbridamiento'].
+const _desbridamientoConProducto = {
+  'Autolítico',
+  'Enzimático',
+  'Autolítico / enzimático / mecánico',
+};
+
+/// Genéricos ligables de un método: todos, salvo en Desbridamiento, donde solo
+/// los que se aplican con producto (no los procedimentales cortante/mecánico).
+List<String> _mappableGenericsFor(String method) {
+  final all = TreatmentCatalog.methodToProducts[method] ?? const [];
+  if (method != 'Desbridamiento') return all;
+  return all.where(_desbridamientoConProducto.contains).toList();
+}
 
 /// "Método" sintético para los insumos que el CENTRO agrega en su catálogo
 /// (Configuración → Material utilizado). Definido en data_repository como
@@ -110,8 +132,7 @@ class _MapeoScreenState extends ConsumerState<MapeoScreen> {
               if (centerMaterials.isNotEmpty)
                 groupFor(_centerMaterialsMethod, centerMaterials),
               for (final method in _mappableMethods)
-                groupFor(method,
-                    TreatmentCatalog.methodToProducts[method] ?? const []),
+                groupFor(method, _mappableGenericsFor(method)),
             ],
           );
         },
