@@ -121,11 +121,27 @@ class PatientsListScreenState extends ConsumerState<PatientsListScreen> {
     return result;
   }
 
+  /// Modo lectura (pago vencido/prueba terminada): bloquea crear valoración/
+  /// seguimiento desde las tarjetas de la lista. La banda del shell explica el motivo.
+  bool _blockedWrite() {
+    final repo = ref.read(dataRepositoryProvider).valueOrNull;
+    final org = ref.read(sessionProvider).user?.organizationId;
+    if (repo != null && !repo.centerCanWriteClinical(org)) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content:
+              Text('Modo lectura: crea o edita solo con la suscripción vigente.')));
+      return true;
+    }
+    return false;
+  }
+
   Future<void> _goToValoracion(String patientId) async {
+    if (_blockedWrite()) return;
     context.go('/patients/$patientId/consultation/new?visitType=valoracion');
   }
 
   Future<void> _goToSeguimiento(DataRepository repo, String patientId) async {
+    if (_blockedWrite()) return;
     final summary = PatientWoundSummary.compute(repo, patientId);
     if (!summary.hasActiveWounds) return;
     if (summary.activeCount == 1) {
