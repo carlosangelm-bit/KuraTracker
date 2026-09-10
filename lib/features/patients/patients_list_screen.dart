@@ -328,11 +328,17 @@ class PatientsListScreenState extends ConsumerState<PatientsListScreen> {
                 );
               },
             ),
-      floatingActionButton: KuraPrimaryFab(
-        onPressed: () => context.go('/patients/new'),
-        icon: Icons.person_add,
-        label: 'Nuevo paciente',
-      ),
+      // Alta de paciente = escritura clínica: se oculta si el centro está en modo
+      // lectura (pago vencido/prueba terminada). La banda del shell explica el motivo.
+      floatingActionButton: (repoAsync.valueOrNull
+                  ?.centerCanWriteClinical(session.user?.organizationId) ??
+              true)
+          ? KuraPrimaryFab(
+              onPressed: () => context.go('/patients/new'),
+              icon: Icons.person_add,
+              label: 'Nuevo paciente',
+            )
+          : null,
     );
   }
 }

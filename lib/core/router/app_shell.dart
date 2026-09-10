@@ -94,7 +94,7 @@ class AppShell extends ConsumerWidget {
       items.add(const _NavItem(
           '/comercial', Icons.point_of_sale_outlined, Icons.point_of_sale, 'Comercial'));
     }
-    if (user?.role == AppRole.admin) {
+    if (user?.isAdmin ?? false) {
       items.add(const _NavItem(
           '/admin', Icons.admin_panel_settings_outlined, Icons.admin_panel_settings, 'Administración'));
     }
@@ -487,8 +487,13 @@ class _SyncBanner extends ConsumerWidget {
         photosFailed == null) {
       return child;
     }
+    final orgId = ref.watch(sessionProvider).user?.organizationId;
+    final readOnlyReason = repo.clinicalReadOnlyReason(orgId);
+    final isAdmin = ref.watch(sessionProvider).user?.isAdmin ?? false;
     return Column(
       children: [
+        if (readOnlyReason != null)
+          _ReadOnlyBand(reason: readOnlyReason, showCta: isAdmin),
         AnimatedBuilder(
           animation: Listenable.merge(
               [writesPending, photosPending, writesFailed, photosFailed]),
@@ -646,6 +651,47 @@ class _SyncBanner extends ConsumerWidget {
             ],
             const SizedBox(height: 8),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Banda de MODO LECTURA: el centro puede leer su expediente pero no escribir
+/// (pago vencido, prueba terminada, suscripción no vigente). Explica el motivo —un
+/// expediente que se lee pero no se escribe sin explicación se reporta como app
+/// rota— y, para el admin, ofrece el atajo a Licencias.
+class _ReadOnlyBand extends StatelessWidget {
+  final String reason;
+  final bool showCta;
+  const _ReadOnlyBand({required this.reason, required this.showCta});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.orange.shade100,
+      child: SafeArea(
+        bottom: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 6, 8, 6),
+          child: Row(
+            children: [
+              Icon(Icons.lock_outline, size: 16, color: Colors.orange.shade800),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(reason,
+                    style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.orange.shade900)),
+              ),
+              if (showCta)
+                TextButton(
+                  onPressed: () => context.go('/admin'),
+                  child: const Text('Licencias'),
+                ),
+            ],
+          ),
         ),
       ),
     );

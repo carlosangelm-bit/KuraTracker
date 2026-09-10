@@ -759,6 +759,77 @@ class DataRepository {
     return false;
   }
 
+  /// ¿El centro puede LEER el módulo? El derecho existe en CUALQUIER estado
+  /// (active/past_due/canceled). Así un centro que dejó de pagar SIGUE abriendo su
+  /// expediente —la promesa que el panel ya hace por escrito—; solo pierde la
+  /// escritura. Lo usan el nav y el router (isModuleEnabled).
+  bool canReadModule(String? organizationId, String key) {
+    if (organizationId == null) return false;
+    for (final e in _store.getAll(Collections.orgEntitlements)) {
+      if (e['organization_id'] == organizationId &&
+          e['kind'] == 'module' &&
+          e['key'] == key) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /// ¿El centro puede ESCRIBIR en el módulo? Solo con el derecho VIGENTE, y la
+  /// autoridad de vigencia es distinta por origen (asimetría, diseñada ya para la
+  /// prueba de 30 días aunque aún no exista):
+  ///  - source='stripe': basta status='active'. Stripe manda la transición; NUNCA
+  ///    se gatea por current_period_end, o una renovación que llega tarde deja fuera
+  ///    por minutos a quien SÍ pagó.
+  ///  - source='master' (prueba/otorgado a mano): status='active' Y no vencido por
+  ///    TIEMPO (current_period_end), porque ningún sistema externo avisa del
+  ///    vencimiento — el tiempo es la única verdad, y se lee aquí (hoy esa columna
+  ///    se escribe y nunca se leía como vencimiento).
+  bool canWriteModule(String? organizationId, String key) {
+    if (organizationId == null) return false;
+    for (final e in _store.getAll(Collections.orgEntitlements)) {
+      if (e['organization_id'] == organizationId &&
+          e['kind'] == 'module' &&
+          e['key'] == key) {
+        if (e['status'] != 'active') return false;
+        if (e['source'] == 'master') {
+          final cpe = e['current_period_end'] as String?;
+          final end = cpe == null ? null : DateTime.tryParse(cpe);
+          if (end != null && !end.isAfter(DateTime.now())) return false;
+        }
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /// Atajo a nivel centro: ¿puede escribir en el expediente clínico? (module:clinico,
+  /// que respalda pacientes/agenda/prevención/reportes/VAC/eKare). Los botones de
+  /// crear/guardar/editar clínicos se gatean con esto; el nav/lectura NO.
+  bool centerCanWriteClinical(String? organizationId) =>
+      canWriteModule(organizationId, 'clinico');
+
+  /// Motivo por el que el centro está en modo LECTURA (para la banda del shell), o
+  /// null si puede escribir con normalidad. Deriva del estado del derecho clínico.
+  String? clinicalReadOnlyReason(String? organizationId) {
+    if (organizationId == null) return null;
+    final e = _entitlement(organizationId, 'module', 'clinico');
+    if (e == null) return null; // sin derecho: es otro problema (centro sin sembrar).
+    if (centerCanWriteClinical(organizationId)) return null; // puede escribir: sin banda.
+    final status = e['status'] as String?;
+    final source = e['source'] as String?;
+    if (status == 'past_due') {
+      return 'Pago vencido. El expediente sigue accesible para lectura; para volver '
+          'a crear y editar, regulariza el pago.';
+    }
+    if (source == 'master') {
+      return 'Tu periodo de prueba terminó. El expediente sigue accesible para '
+          'lectura; suscríbete para volver a crear y editar.';
+    }
+    return 'Suscripción no vigente. El expediente sigue accesible para lectura; '
+        'suscríbete para volver a crear y editar.';
+  }
+
   /// Un derecho de org_entitlements por (kind, key), o null. Interno del panel
   /// de licencias (para leer cantidad/estado, no solo presencia).
   Map<String, dynamic>? _entitlement(String? orgId, String kind, String key) {
@@ -943,8 +1014,12 @@ class DataRepository {
     // Módulo no disponible para este tipo de centro: apagado siempre, sin
     // importar ajustes previos (p.ej. eKare en hospital).
     if (!module.availableFor(centerType)) return false;
-    // Capa de licencia: sin el derecho del módulo, apagado (AND de §4).
-    if (!hasModuleEntitlement(organizationId, module.entitlementKey)) {
+    // Capa de licencia (VISIBILIDAD/LECTURA): basta que el derecho EXISTA, en
+    // cualquier estado. Un centro past_due/canceled sigue viendo el nav y abriendo
+    // su expediente; lo que pierde es la ESCRITURA (canWriteModule, gateada en los
+    // botones de crear/guardar/editar). Sin esto, a un centro con la tarjeta vencida
+    // se le escondía el expediente, contradiciendo la banda del panel.
+    if (!canReadModule(organizationId, module.entitlementKey)) {
       return false;
     }
     final settings = listModuleSettings(organizationId: organizationId)
