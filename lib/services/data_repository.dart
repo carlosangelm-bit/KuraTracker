@@ -6143,6 +6143,34 @@ class DataRepository {
           .where((r) => r.category == category.dbValue)
           .toList();
 
+  /// Reglas de protocolo HUÉRFANAS: sin insumo asignado (`inventory_item_id`
+  /// null), o apuntando a un insumo que no existe en el centro (o en el sitio, si
+  /// se pasa [siteId]). `resolveProtocolProducts` las salta EN SILENCIO —una
+  /// siembra a medias se ve idéntica a una que no corrió—; esto las hace visibles
+  /// (§2) para poder verificar la siembra y cazar errores de clasificación.
+  List<({ProtocolProductRule rule, String reason})> orphanProtocolRules({
+    required String organizationId,
+    String? siteId,
+  }) {
+    final inv = {
+      for (final it in listInventoryItems(
+          organizationId: organizationId, siteId: siteId, activeOnly: false))
+        it.id
+    };
+    final out = <({ProtocolProductRule rule, String reason})>[];
+    for (final r in listProtocolProductRules(organizationId)) {
+      if (r.inventoryItemId == null) {
+        out.add((rule: r, reason: 'sin insumo asignado'));
+      } else if (!inv.contains(r.inventoryItemId)) {
+        out.add((
+          rule: r,
+          reason: 'el insumo no está en este ${siteId == null ? 'centro' : 'sitio'}'
+        ));
+      }
+    }
+    return out;
+  }
+
   Future<void> saveProtocolProductRule(ProtocolProductRule rule) async {
     await _store.upsertRow(Collections.protocolProductRules, {
       ...rule.toJson(),

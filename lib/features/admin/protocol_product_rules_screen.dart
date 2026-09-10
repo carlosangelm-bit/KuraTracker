@@ -97,6 +97,12 @@ class _ProtocolProductRulesScreenState
     for (final r in allRules) {
       byCat.putIfAbsent(r.category, () => []).add(r);
     }
+    // Reglas huérfanas (§2): sin insumo, o apuntando a uno que no está en el
+    // centro. La consulta las salta en silencio; aquí se avisan para que una
+    // siembra a medias o un error de clasificación no pase inadvertido.
+    final orphans = orgId == null
+        ? const <({ProtocolProductRule rule, String reason})>[]
+        : repo.orphanProtocolRules(organizationId: orgId!);
 
     return Scaffold(
       appBar: AppBar(title: const Text('Productos del protocolo')),
@@ -112,6 +118,49 @@ class _ProtocolProductRulesScreenState
             style: TextStyle(
                 fontSize: 12, color: KuraColors.darkText.withValues(alpha: 0.6)),
           ),
+          if (orphans.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: KuraColors.warning.withValues(alpha: 0.10),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                    color: KuraColors.warning.withValues(alpha: 0.4)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(children: [
+                    const Icon(Icons.warning_amber_rounded,
+                        size: 18, color: KuraColors.warning),
+                    const SizedBox(width: 6),
+                    Text(
+                        '${orphans.length} regla(s) del protocolo sin producto '
+                        'utilizable',
+                        style: const TextStyle(
+                            fontWeight: FontWeight.w700,
+                            color: KuraColors.warning)),
+                  ]),
+                  const SizedBox(height: 6),
+                  Text(
+                    'La consulta las omite en silencio (no sugiere producto para '
+                    'ese paso). Asigna un insumo del inventario de este centro, o '
+                    'revisa que el insumo exista aquí.',
+                    style: TextStyle(
+                        fontSize: 12,
+                        color: KuraColors.darkText.withValues(alpha: 0.7)),
+                  ),
+                  for (final o in orphans.take(8))
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Text('• ${o.rule.category} — ${o.reason}',
+                          style: const TextStyle(fontSize: 12)),
+                    ),
+                ],
+              ),
+            ),
+          ],
           const SizedBox(height: 16),
           for (final cat in _categories)
             _categoryCard(cat, byCat[cat.dbValue] ?? const []),
