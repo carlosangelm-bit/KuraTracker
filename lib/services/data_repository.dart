@@ -830,6 +830,48 @@ class DataRepository {
         'suscríbete para volver a crear y editar.';
   }
 
+  /// CANDADO DE ESCRITURA CLÍNICA (§4): vive en el repositorio, no en los botones,
+  /// para cubrir TODOS los llamantes —pacientes, riesgo, escalas, agenda, VAC,
+  /// tratamiento, planes— presentes y futuros, no solo los que alguien se acuerde de
+  /// esconder. Esconder botones en la UI queda como cosmético.
+  ///
+  /// Solo bloquea si HAY derecho clínico y NO es escribible (past_due / canceled /
+  /// prueba vencida por tiempo). Sin derecho clínico (centro sin sembrar, fixture de
+  /// prueba) NO bloquea: ese caso lo maneja el AND de visibilidad, y bloquear aquí
+  /// rompería escrituras legítimas y la suite. Prefijo estable CLINICAL_READ_ONLY:
+  /// (como SEAT_* / FREE_PLAN_PATIENT_CAP) para que la UI lo traduzca al aviso de modo
+  /// lectura con su CTA, no a un error crudo.
+  void _assertCanWriteClinical(String? organizationId) {
+    if (_entitlement(organizationId, 'module', 'clinico') == null) return;
+    if (centerCanWriteClinical(organizationId)) return;
+    throw Exception(
+        'CLINICAL_READ_ONLY: el centro está en modo lectura (pago vencido, prueba '
+        'terminada o suscripción no vigente); no se pueden crear ni editar registros '
+        'clínicos hasta regularizar.');
+  }
+
+  /// Traduce una excepción del candado de escritura clínica al mensaje de modo
+  /// lectura (o null si no es esa excepción), para que un screen lo muestre en su
+  /// catch como aviso en vez de un error crudo. Pública y estática para usarse desde
+  /// cualquier pantalla sin instancia.
+  static String? readOnlyMessageFor(Object error) {
+    const prefix = 'CLINICAL_READ_ONLY:';
+    final s = error.toString();
+    final i = s.indexOf(prefix);
+    return i < 0 ? null : s.substring(i + prefix.length).trim();
+  }
+
+  String? _orgOfPatient(String? patientId) =>
+      patientId == null ? null : getPatient(patientId)?.organizationId;
+
+  String? _orgOfWound(String? woundId) {
+    if (woundId == null) return null;
+    for (final w in _store.getAll(Collections.wounds)) {
+      if (w['id'] == woundId) return _orgOfPatient(w['patient_id'] as String?);
+    }
+    return null;
+  }
+
   /// Un derecho de org_entitlements por (kind, key), o null. Interno del panel
   /// de licencias (para leer cantidad/estado, no solo presencia).
   Map<String, dynamic>? _entitlement(String? orgId, String kind, String key) {
@@ -3529,6 +3571,7 @@ class DataRepository {
     String? apnpNotes,
     String folioPrefix = 'EXP',
   }) async {
+    _assertCanWriteClinical(organizationId);
     final year = DateTime.now().year;
     final id = _uuid.v4();
 
@@ -4322,6 +4365,7 @@ class DataRepository {
     String? notes,
     required String? staffId,
   }) async {
+    _assertCanWriteClinical(organizationId);
     final data = {
       'id': _uuid.v4(),
       'organization_id': organizationId,
@@ -4599,6 +4643,7 @@ class DataRepository {
     String? notes,
     required String? staffId,
   }) async {
+    _assertCanWriteClinical(organizationId);
     final now = DateTime.now().toIso8601String();
     final data = {
       'id': _uuid.v4(),
@@ -4631,6 +4676,7 @@ class DataRepository {
     required PreventionRulesCatalog catalog,
     String? createdBy,
   }) async {
+    _assertCanWriteClinical(organizationId);
     if (centerTypeFor(organizationId) != CenterType.hospital) return 0;
     final now = DateTime.now();
     // Limpia tareas GLOBIAD futuras pendientes (refleja la valoración actual).
@@ -4692,6 +4738,7 @@ class DataRepository {
     required String? organizationId,
     String? createdBy,
   }) async {
+    _assertCanWriteClinical(organizationId);
     if (centerTypeFor(organizationId) != CenterType.hospital) return;
     final now = DateTime.now();
     final existing = _store
@@ -4731,6 +4778,7 @@ class DataRepository {
     required String? organizationId,
     String? createdBy,
   }) async {
+    _assertCanWriteClinical(organizationId);
     if (centerTypeFor(organizationId) != CenterType.hospital) return;
     final now = DateTime.now();
     final existing = _store
@@ -4791,6 +4839,7 @@ class DataRepository {
     required String? organizationId,
     String? createdBy,
   }) async {
+    _assertCanWriteClinical(organizationId);
     if (centerTypeFor(organizationId) != CenterType.hospital) return;
     await _clearFutureRuleTasks(patientId, 'asepsis');
     if (severity != 'warn' && severity != 'danger') return;
@@ -4816,6 +4865,7 @@ class DataRepository {
     required String? organizationId,
     String? createdBy,
   }) async {
+    _assertCanWriteClinical(organizationId);
     if (centerTypeFor(organizationId) != CenterType.hospital) return;
     await _clearFutureRuleTasks(patientId, 'extravasacion');
     final g = int.tryParse(grado) ?? 0;
@@ -4860,6 +4910,7 @@ class DataRepository {
     required String? organizationId,
     String? createdBy,
   }) async {
+    _assertCanWriteClinical(organizationId);
     if (centerTypeFor(organizationId) != CenterType.hospital) return;
     final ruleId = scaleId.toLowerCase();
     await _clearFutureRuleTasks(patientId, ruleId);
@@ -4966,6 +5017,7 @@ class DataRepository {
     String? notes,
     required String? staffId,
   }) async {
+    _assertCanWriteClinical(organizationId);
     final data = {
       'id': _uuid.v4(),
       'organization_id': organizationId,
@@ -5191,6 +5243,7 @@ class DataRepository {
     required String? organizationId,
     String? createdBy,
   }) async {
+    _assertCanWriteClinical(organizationId);
     if (centerTypeFor(organizationId) != CenterType.hospital) return;
     await generatePreventiveTasksFor(
       patientId,
@@ -5532,6 +5585,7 @@ class DataRepository {
     String? visitSummary,
     String? transcript,
   }) async {
+    _assertCanWriteClinical(_orgOfPatient(patientId));
     final data = {
       'id': _uuid.v4(),
       'patient_id': patientId,
@@ -5819,6 +5873,8 @@ class DataRepository {
   }
 
   Future<Wound> createWound(Map<String, dynamic> data) async {
+    _assertCanWriteClinical((data['organization_id'] as String?) ??
+        _orgOfPatient(data['patient_id'] as String?));
     final row = Map<String, dynamic>.from(data);
     row['id'] = row['id'] ?? _uuid.v4();
     row['created_at'] = row['created_at'] ?? DateTime.now().toIso8601String();
@@ -5858,6 +5914,7 @@ class DataRepository {
       .toList();
 
   Future<WoundAssessment> createAssessment(Map<String, dynamic> data) async {
+    _assertCanWriteClinical(_orgOfWound(data['wound_id'] as String?));
     final row = Map<String, dynamic>.from(data);
     row['id'] = row['id'] ?? _uuid.v4();
     final saved = await _store.insertRow(Collections.woundAssessments, row);
@@ -5896,6 +5953,7 @@ class DataRepository {
   }
 
   Future<WoundMeasurement> createMeasurement(Map<String, dynamic> data) async {
+    _assertCanWriteClinical(_orgOfWound(data['wound_id'] as String?));
     final row = Map<String, dynamic>.from(data);
     row['id'] = row['id'] ?? _uuid.v4();
     final saved = await _store.insertRow(Collections.woundMeasurements, row);
@@ -5914,6 +5972,8 @@ class DataRepository {
   }
 
   Future<PerfusionNutritionData> upsertPerfusion(Map<String, dynamic> data) async {
+    _assertCanWriteClinical((data['organization_id'] as String?) ??
+        _orgOfPatient(data['patient_id'] as String?));
     final row = Map<String, dynamic>.from(data);
     row['id'] = row['id'] ?? _uuid.v4();
     final saved = await _store.upsertRow(Collections.perfusionNutrition, row);
@@ -5959,6 +6019,7 @@ class DataRepository {
     String? finalDescription,
     required List<TreatmentComponentRecord> components,
   }) async {
+    _assertCanWriteClinical(_orgOfWound(woundId));
     final existing = _store
         .getAll(Collections.treatmentPlans)
         .where((p) => p['consultation_id'] == consultationId && p['wound_id'] == woundId);
