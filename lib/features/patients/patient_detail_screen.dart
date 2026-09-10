@@ -64,8 +64,6 @@ class _PatientDetailScreenState extends ConsumerState<PatientDetailScreen> {
       final user = ref.read(sessionProvider).user;
       await repo.recordDataDisclosure(
         organizationId: patient.organizationId ?? user?.organizationId,
-        actorId: user?.id,
-        actorEmail: user?.email,
         kind: 'expediente_paciente',
         scope: {'patient_id': patient.id, 'folio': patient.folio},
         recordCount: files.length,
