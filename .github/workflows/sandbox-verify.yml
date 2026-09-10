@@ -1,0 +1,89 @@
+name: Sandbox · verificar 0112 (guardia último capaz)
+
+# Corre supabase/verify/verify_0112_last_capable.sql contra la BD del SANDBOX en
+# una transacción que TERMINA EN ROLLBACK: no aplica migraciones, no deja datos,
+# no altera el esquema ni el historial. Sirve para producir la EVIDENCIA de los 7
+# casos (ver el brief) antes de promover 0111→0112 a main.
+#
+# Se conecta como `postgres` del Session pooler (superusuario → RLS APAGADA), y
+# SOLO contra el environment "staging"; se niega si el ref es el de producción.
+# Mismo patrón y mismos secretos que sandbox-seed.yml (no pide nada nuevo).
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Escribe SANDBOX para confirmar que quieres correr la verificación (rollback) en el sandbox'
+        required: true
+        type: string
+
+concurrency:
+  group: sandbox-verify
+  cancel-in-progress: false
+
+env:
+  PROD_PROJECT_REF: mhnhgnzajdjhllypdutr
+  # Host del Session pooler del sandbox (IPv4). Igual que sandbox-seed.yml.
+  POOLER_HOST: aws-0-us-west-2.pooler.supabase.com
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - name: Confirmación
+        run: |
+          [ "${{ inputs.confirm }}" = "SANDBOX" ] || { echo "::error::Escribe SANDBOX en el campo de confirmación."; exit 1; }
+
+      - uses: actions/checkout@v4
+
+      - name: Armar cadena de conexión
+        env:
+          KT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+          KT_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: |
+          test -n "$KT_REF"          || { echo "::error::Falta SUPABASE_PROJECT_REF en el environment staging"; exit 1; }
+          test -n "$KT_DB_PASSWORD"  || { echo "::error::Falta SUPABASE_DB_PASSWORD en el environment staging"; exit 1; }
+          case "$KT_DB_PASSWORD" in
+            *://*|postgresql:*|postgres:*)
+              echo "::error::SUPABASE_DB_PASSWORD contiene una cadena de conexión, no una contraseña."; exit 1;;
+          esac
+          [ "$KT_REF" != "$PROD_PROJECT_REF" ] || { echo "::error::SUPABASE_PROJECT_REF apunta a PRODUCCIÓN. Abortado."; exit 1; }
+          enc=$(python3 -c 'import os,urllib.parse; print(urllib.parse.quote(os.environ["KT_DB_PASSWORD"], safe=""))')
+          url="postgresql://postgres.${KT_REF}:${enc}@${POOLER_HOST}:5432/postgres"
+          echo "::add-mask::$url"
+          echo "SUPABASE_DB_URL=$url" >> "$GITHUB_ENV"
+          echo "OK · cadena armada contra $POOLER_HOST"
+
+      - name: Instalar psql
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client >/dev/null
+
+      - name: Probar conexión
+        run: |
+          if ! out=$(psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -At \
+                       -c "select 'conexion ok - db=' || current_database() || ' - user=' || current_user" 2>&1); then
+            echo "::group::Salida de psql"; echo "$out"; echo "::endgroup::"
+            echo "::error::No se pudo conectar (¿Session pooler? ¿contraseña?)."; exit 1
+          fi
+          echo "$out"
+
+      # Se corre SIN ON_ERROR_STOP a propósito: los casos que RECHAZAN imprimen su
+      # excepción y el script continúa (savepoints por caso). El output COMPLETO es
+      # la evidencia; se vuelca entero (GitHub enmascara secretos). El job no
+      # depende de que no haya "ERROR" (los rechazos SON errores esperados); su
+      # criterio de éxito es que la transacción se revirtió (limpieza=0).
+      - name: Correr verificación (rollback)
+        run: |
+          set -o pipefail
+          psql "$SUPABASE_DB_URL" -f supabase/verify/verify_0112_last_capable.sql \
+            2>&1 | tee /tmp/verify.log || true
+          echo "::group::Salida completa"
+          cat /tmp/verify.log
+          echo "::endgroup::"
+
+      - name: Comprobar que se revirtió (no quedó rastro)
+        run: |
+          grep -q 'org_de_prueba_restante=0' /tmp/verify.log \
+            || { echo "::error::La transacción NO terminó limpia (o la conexión falló antes del ROLLBACK). Revisa la salida."; exit 1; }
+          echo "ROLLBACK confirmado: la organización de prueba no quedó en la BD."
+          echo "Lee arriba los 7 casos y compáralos con el brief. PERMITE=UPDATE/DELETE 1; RECHAZA='No autorizado'."

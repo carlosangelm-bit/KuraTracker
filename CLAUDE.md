@@ -101,6 +101,16 @@ Lo que **no** viaja con el clone y hay que tener en la máquina nueva:
   chequeos de rol/pertenencia. Gotcha Postgres: un valor de enum nuevo (`alter type add
   value`) va **solo** en su propia migración/transacción y no puede usarse como literal en
   la misma tx → comparar por `::text`.
+  - **Numeración con `staging` divergente.** El número es un **id único**, no una garantía
+    de orden de aplicación entre entornos: `supabase db push` aplica comparando contra la
+    lista de aplicadas, no exige orden. Cuando una feature vive en `staging` con migraciones
+    propias (p. ej. visión, 0108-0110), una nueva se numera **por encima** del máximo de
+    staging para no chocar (así 0111 en vez de 0108), y al promover a `main` queda un hueco
+    (0107 → 0111). PREFERIR (a) promover juntas/antes las dependencias para que la numeración
+    sea monótona en ambos entornos, mientras el repo sea chico; si no se puede, es seguro
+    siempre que la nueva no dependa de las del hueco (verificarlo). **`staging` ya NO es
+    espejo de `main`** (tiene migraciones de más): verificar ahí sigue valiendo para la
+    migración en cuestión, no como equivalencia general.
 - **Capa de datos**: abstracción `DataStore` con dos implementaciones —
   `LocalStore` (demo, SharedPreferences, con flag `seeded_vN` en el seed) y
   `SupabaseDataStore` (prod, Postgrest + RLS). `insertRow` hace `.select().single()` →
