@@ -128,4 +128,44 @@ void main() {
     expect(repo.canWriteModule(await org('active', 'master', cpe: future), 'clinico'), isTrue);
     expect(repo.canWriteModule(await org('active', 'master'), 'clinico'), isTrue);
   });
+
+  test('candado de escritura en el REPOSITORIO: modo lectura lanza, activo pasa, '
+      'sin derecho no bloquea', () async {
+    final store = await LocalStore.instance();
+    final repo = await DataRepository.instance();
+    var n = 0;
+    Future<String> orgWith(String? status) async {
+      final id = 'wg-${n++}';
+      if (status != null) {
+        await store.upsert(Collections.orgEntitlements, {
+          'id': '$id-e',
+          'organization_id': id,
+          'kind': 'module',
+          'key': 'clinico',
+          'status': status,
+          'source': 'stripe',
+        });
+      }
+      return id;
+    }
+
+    // past_due: el candado del repositorio lanza CLINICAL_READ_ONLY (no depende de
+    // que la UI escondiera el botón).
+    final ro = await orgWith('past_due');
+    await expectLater(
+      repo.createPatient(fullName: 'RO', organizationId: ro),
+      throwsA(predicate(
+          (e) => DataRepository.readOnlyMessageFor(e as Object) != null)),
+    );
+
+    // active: pasa.
+    final ok = await orgWith('active');
+    final p = await repo.createPatient(fullName: 'OK', organizationId: ok);
+    expect(p.organizationId, ok);
+
+    // sin derecho clínico (centro sin sembrar / fixture): NO bloquea.
+    final none = await orgWith(null);
+    final p2 = await repo.createPatient(fullName: 'None', organizationId: none);
+    expect(p2.organizationId, none);
+  });
 }
