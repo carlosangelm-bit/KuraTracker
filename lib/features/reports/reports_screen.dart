@@ -454,10 +454,22 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     try {
       final selected =
           patients.where((p) => _selectedPatientIds.contains(p.id)).toList();
+      final orgId = ref.read(sessionProvider).user?.organizationId;
       await generatePreventionReportPdf(
         repo: repo,
         patients: selected,
-        organizationId: ref.read(sessionProvider).user?.organizationId,
+        organizationId: orgId,
+      );
+      // Registro de divulgación (mismo motivo que el reporte clínico): el PDF de
+      // prevención sale del centro y debe quedar en la bitácora de Divulgaciones.
+      final actor = ref.read(sessionProvider).user;
+      await repo.recordDataDisclosure(
+        organizationId: orgId,
+        actorId: actor?.id,
+        actorEmail: actor?.email,
+        kind: 'reporte_prevencion_pdf',
+        scope: {'patient_ids': selected.map((p) => p.id).toList()},
+        patientCount: selected.length,
       );
     } finally {
       if (mounted) setState(() => _generating = false);
@@ -480,9 +492,11 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
       final brandLogo = await _loadLogo(org?.brandLogoPath);
       final centerName = org?.name ?? 'KuraTracker';
 
+      final includedPatientIds = <String>[];
       for (final patientId in _selectedPatientIds) {
         final patient = repo.getPatient(patientId);
         if (patient == null) continue;
+        includedPatientIds.add(patientId);
         final wounds = repo.listWoundsForPatient(patientId);
         final consultations = repo.listConsultationsForPatient(patientId);
 
@@ -891,7 +905,23 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
       // descarga" (KT-4).
       final bytes = await doc.save();
       final stamp = DateFormat('yyyyMMdd').format(DateTime.now());
-      await Printing.sharePdf(bytes: bytes, filename: 'reporte-kura-$stamp.pdf');
+      final fileName = 'reporte-kura-$stamp.pdf';
+      await Printing.sharePdf(bytes: bytes, filename: fileName);
+
+      // Registro de divulgación: el PDF lleva narrativa clínica y fotos del centro
+      // hacia afuera. Sin esto, la pantalla de Divulgaciones mostraba una lista
+      // incompleta con apariencia de completa (peor que no tenerla). scope = los
+      // pacientes efectivamente incluidos.
+      final actor = ref.read(sessionProvider).user;
+      await repo.recordDataDisclosure(
+        organizationId: userOrgId,
+        actorId: actor?.id,
+        actorEmail: actor?.email,
+        kind: 'reporte_pdf',
+        scope: {'patient_ids': includedPatientIds},
+        patientCount: includedPatientIds.length,
+        fileName: fileName,
+      );
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context)
