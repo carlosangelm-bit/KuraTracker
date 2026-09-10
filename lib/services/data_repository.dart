@@ -856,6 +856,41 @@ class DataRepository {
     });
   }
 
+  /// ¿Se puede comprar en la app (hay backend de Stripe)? En demo (LocalStore) no,
+  /// así que el panel cae al formulario de solicitud.
+  bool get supportsLicenseCheckout => _store is SupabaseDataStore;
+
+  /// Inicia el checkout de licencia (Fase 2). Llama a license-checkout, que toma el
+  /// centro del PERFIL del llamante (nunca del body). Devuelve un mapa normalizado:
+  ///   {'url': ...}     → suscripción NUEVA; redirigir al checkout de Stripe.
+  ///   {'updated': true}→ suscripción existente ACTUALIZADA (prorrateo); sin url.
+  ///   {'error': msg, 'status': n} → falló; status 409 = techo del autoservicio (la
+  ///                     función ya dejó la fila en license_requests).
+  Future<Map<String, dynamic>> startLicenseCheckout({
+    required String interval, // 'month' | 'year'
+    Map<String, int>? seats, // {'clinico': n, 'protocolo': n}
+    List<String>? modules, // ['admin','insumos','comercial']
+  }) async {
+    final store = _store;
+    if (store is! SupabaseDataStore) {
+      return {'error': 'La compra en línea no está disponible en la demo.'};
+    }
+    try {
+      final data = await store.invokeFunction('license-checkout', {
+        'interval': interval,
+        if (seats != null && seats.isNotEmpty) 'seats': seats,
+        if (modules != null && modules.isNotEmpty) 'modules': modules,
+      });
+      return data;
+    } on FunctionException catch (e) {
+      final details = e.details;
+      final msg = (details is Map && details['error'] is String)
+          ? details['error'] as String
+          : 'No se pudo iniciar la compra (código ${e.status}).';
+      return {'error': msg, 'status': e.status};
+    }
+  }
+
   /// Solicitudes de licencia (para la consola de plataforma; el master ve todas
   /// por RLS). Más recientes primero.
   List<Map<String, dynamic>> listLicenseRequests({String? status}) => _store
