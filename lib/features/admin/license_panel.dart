@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/theme/kura_theme.dart';
 import '../../models/app_user.dart';
@@ -8,10 +9,12 @@ import '../../services/data_repository.dart';
 /// Panel de licencias del administrador del centro (Fase 2). Muestra cuántas
 /// licencias quedan (los 4 contadores) y, según el estado, el camino para crecer.
 ///
-/// INTERINO: no hay pila de suscripciones de Stripe todavía, así que TODO aumento
-/// de licencias entra por el formulario de "Solicitar" (license_requests), que la
-/// plataforma atiende. Ningún botón cobra ni escribe un derecho aquí; el derecho
-/// lo escribe el webhook/master.
+/// Compra: con backend de Stripe (prod/sandbox) los botones de crecer abren el
+/// checkout de suscripción (license-checkout → redirige a Stripe, o actualiza la
+/// suscripción existente con prorrateo). En la demo (LocalStore) no hay pila de
+/// pagos, así que caen al formulario de "Solicitar" (license_requests). En ambos
+/// casos NINGÚN botón escribe un derecho aquí: lo escribe el webhook/master. El
+/// techo del autoservicio (>5 clínicos) sigue siendo solicitud asistida.
 class LicensePanel extends StatefulWidget {
   final DataRepository repo;
   final String? organizationId;
@@ -193,7 +196,7 @@ class _LicensePanelState extends State<LicensePanel> {
         return const SizedBox.shrink(); // la banda ya trae su acción
       case LicenseState.gratuito:
         return FilledButton.icon(
-          onPressed: () => _openRequest(
+          onPressed: _grow(
               kind: 'otro',
               title: 'Suscribirse',
               presetNote: 'Quiero suscribirme (salir del plan gratuito).'),
@@ -220,19 +223,151 @@ class _LicensePanelState extends State<LicensePanel> {
         );
       case LicenseState.lleno:
         return FilledButton.icon(
-          onPressed: () =>
-              _openRequest(kind: 'seat_clinico', title: 'Agregar licencias'),
+          onPressed: _grow(kind: 'seat_clinico', title: 'Agregar licencias'),
           icon: const Icon(Icons.add),
-          label: const Text('Agregar licencias'),
+          label: Text(_buyLabel('Agregar licencias')),
         );
       case LicenseState.holgado:
         return OutlinedButton.icon(
-          onPressed: () =>
-              _openRequest(kind: 'seat_clinico', title: 'Agregar licencias'),
+          onPressed: _grow(kind: 'seat_clinico', title: 'Agregar licencias'),
           icon: const Icon(Icons.add),
-          label: const Text('Agregar licencias'),
+          label: Text(_buyLabel('Agregar licencias')),
         );
     }
+  }
+
+  /// Con backend de pagos, crecer = comprar; en demo, crecer = solicitar.
+  VoidCallback _grow({required String kind, required String title, String? presetNote}) =>
+      widget.repo.supportsLicenseCheckout
+          ? _openPurchase
+          : () => _openRequest(kind: kind, title: title, presetNote: presetNote);
+
+  String _buyLabel(String requestLabel) =>
+      widget.repo.supportsLicenseCheckout ? 'Comprar licencias' : requestLabel;
+
+  // ---------------- Compra (checkout de suscripción) ----------------
+
+  Future<void> _openPurchase() async {
+    var interval = 'month';
+    final clinicoCtrl = TextEditingController();
+    final protocoloCtrl = TextEditingController();
+    var admin = false, insumos = false, comercial = false;
+
+    final cart = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setLocal) => AlertDialog(
+          title: const Text('Contratar licencias'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SegmentedButton<String>(
+                  segments: const [
+                    ButtonSegment(value: 'month', label: Text('Mensual')),
+                    ButtonSegment(value: 'year', label: Text('Anual')),
+                  ],
+                  selected: {interval},
+                  onSelectionChanged: (s) => setLocal(() => interval = s.first),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: clinicoCtrl,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                      labelText: 'Asientos clínicos', hintText: '0'),
+                ),
+                TextField(
+                  controller: protocoloCtrl,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                      labelText: 'Asientos Protocolo Kura+', hintText: '0'),
+                ),
+                const SizedBox(height: 4),
+                CheckboxListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  value: admin,
+                  onChanged: (v) => setLocal(() => admin = v ?? false),
+                  title: const Text('Módulo Administración'),
+                ),
+                CheckboxListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  value: insumos,
+                  onChanged: (v) => setLocal(() => insumos = v ?? false),
+                  title: const Text('Módulo Insumos'),
+                ),
+                CheckboxListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  value: comercial,
+                  onChanged: (v) => setLocal(() => comercial = v ?? false),
+                  title: const Text('Módulo Comercial'),
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  'Te lleva al pago de Stripe. Si ya tienes suscripción, ajusta la '
+                  'existente y el prorrateo aparece en tu próxima factura.',
+                  style: TextStyle(fontSize: 11, color: KuraColors.darkText),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cancelar')),
+            FilledButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Continuar')),
+          ],
+        ),
+      ),
+    );
+    if (cart != true || !mounted) return;
+
+    final seats = <String, int>{};
+    final cl = int.tryParse(clinicoCtrl.text.trim()) ?? 0;
+    final pr = int.tryParse(protocoloCtrl.text.trim()) ?? 0;
+    if (cl > 0) seats['clinico'] = cl;
+    if (pr > 0) seats['protocolo'] = pr;
+    final modules = <String>[
+      if (admin) 'admin',
+      if (insumos) 'insumos',
+      if (comercial) 'comercial',
+    ];
+    if (seats.isEmpty && modules.isEmpty) {
+      _snack('Elige al menos un asiento o módulo.');
+      return;
+    }
+
+    final res = await widget.repo
+        .startLicenseCheckout(interval: interval, seats: seats, modules: modules);
+    if (!mounted) return;
+
+    final url = res['url'] as String?;
+    if (url != null) {
+      await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+      return;
+    }
+    if (res['updated'] == true) {
+      _snack('Suscripción actualizada. El prorrateo aparece en tu próxima factura.');
+      setState(() {});
+      return;
+    }
+    final err = res['error'] as String? ?? 'No se pudo iniciar la compra.';
+    if (res['status'] == 409) {
+      // Techo del autoservicio: la función ya dejó la solicitud.
+      setState(() {});
+    }
+    _snack(err);
+  }
+
+  void _snack(String msg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
   // ---------------- Formulario de solicitud ----------------
