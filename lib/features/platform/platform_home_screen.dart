@@ -227,6 +227,42 @@ class _PlatformHomeScreenState extends ConsumerState<PlatformHomeScreen>
     }
   }
 
+  void _showBillingAnomalies(DataRepository? repo) {
+    if (repo == null) return;
+    final open = repo.listBillingAnomalies(status: 'open');
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Anomalías de facturación'),
+        content: SizedBox(
+          width: 440,
+          child: open.isEmpty
+              ? const Text('Sin anomalías abiertas.')
+              : Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    for (final a in open)
+                      ListTile(
+                        dense: true,
+                        leading: const Icon(Icons.warning_amber_rounded),
+                        title: Text((a['kind'] as String?) ?? 'anomalía'),
+                        subtitle: Text(
+                          '${a['detail'] ?? ''}\n'
+                          'vista ${a['seen_count'] ?? 1}×, últ. ${a['last_seen_at'] ?? ''}',
+                        ),
+                      ),
+                  ],
+                ),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx), child: const Text('Cerrar')),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final repoAsync = ref.watch(dataRepositoryProvider);
@@ -248,6 +284,22 @@ class _PlatformHomeScreenState extends ConsumerState<PlatformHomeScreen>
             tooltip: 'Cargar parámetros clínicos (CSV)',
             onPressed: _uploadClinicalParams,
           ),
+          // Anomalías de facturación ABIERTAS: señal que llega (no un log). Solo el
+          // master las ve (RLS). El badge muestra el conteo; al tocar, el detalle.
+          Builder(builder: (_) {
+            final count = repoAsync.valueOrNull?.openBillingAnomaliesCount() ?? 0;
+            return Badge(
+              isLabelVisible: count > 0,
+              label: Text('$count'),
+              child: IconButton(
+                icon: const Icon(Icons.report_gmailerrorred_outlined),
+                tooltip: count > 0
+                    ? '$count anomalía(s) de facturación abierta(s)'
+                    : 'Anomalías de facturación',
+                onPressed: () => _showBillingAnomalies(repoAsync.valueOrNull),
+              ),
+            );
+          }),
           const UserMenuButton(),
         ],
         bottom: wide
