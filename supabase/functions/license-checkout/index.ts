@@ -185,12 +185,14 @@ serve(async (req) => {
     if (sub && (st === "active" || st === "trialing" || st === "past_due")) {
       const curItems = ((sub["items"] as Record<string, unknown> | undefined)?.["data"] as
         Array<Record<string, unknown>> | undefined) ?? [];
+      // Semántica de COMPRA (upsert), NO de reemplazo: lo pedido se ajusta/añade;
+      // lo que NO viene en el carrito se DEJA COMO ESTÁ. Un carrito parcial (p. ej.
+      // "contratar Insumos") no debe borrar los asientos ni el Protocolo vigentes.
+      // Dar de baja un concepto es una acción explícita y aparte, no una omisión.
       const uForm = new URLSearchParams();
       uForm.set("proration_behavior", "create_prorations");   // §3.8 — aquí SÍ prorratea.
       uForm.set("automatic_tax[enabled]", "true");
       let ui = 0;
-      const kept = new Set<string>();
-      // Ajustar/añadir los items pedidos.
       for (const [lk, qty] of Object.entries(wanted)) {
         const priceId = priceByLookup[lk];
         const cur = curItems.find((it) => {
@@ -200,21 +202,11 @@ serve(async (req) => {
         if (cur) {
           uForm.set(`items[${ui}][id]`, cur["id"] as string);
           uForm.set(`items[${ui}][quantity]`, String(qty));
-          kept.add(cur["id"] as string);
         } else {
           uForm.set(`items[${ui}][price]`, priceId);
           uForm.set(`items[${ui}][quantity]`, String(qty));
         }
         ui++;
-      }
-      // Quitar los que ya no están en el carrito.
-      for (const it of curItems) {
-        const id = it["id"] as string;
-        if (!kept.has(id)) {
-          uForm.set(`items[${ui}][id]`, id);
-          uForm.set(`items[${ui}][deleted]`, "true");
-          ui++;
-        }
       }
       const upd = await stripe(`subscriptions/${existingSubId}`, uForm);
       if (!upd.ok) {

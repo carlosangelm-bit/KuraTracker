@@ -46,6 +46,7 @@ declare
   v_key text;
   v_clinico_qty int := 0;
   v_applied jsonb := '[]'::jsonb;   -- array de "kind:key" ya aplicados (incl. derivados)
+  v_current_sub text;
 begin
   -- Idempotencia atómica: el registro y los efectos van juntos.
   insert into public.stripe_events (event_id, type)
@@ -65,6 +66,30 @@ begin
                 when 'incomplete_expired' then 'canceled'
                 else 'past_due'   -- desconocido/incompleto: no se concede acceso.
               end;
+
+  -- SUPERSEDIDA: el upsert es por (org, kind, key) —una fila por concepto, SIN la
+  -- suscripción—, así que un evento tardío de una suscripción VIEJA pisaría las
+  -- filas ya escritas por la nueva antes de que el barrido acotado pudiera actuar.
+  -- Caso: se cancela A, se crea B, y el 'deleted' de A (o cualquier evento suyo,
+  -- que el re-fetch trae ya 'canceled') llega DESPUÉS de que B quedó registrada.
+  -- El evento ya quedó en stripe_events (arriba) → no se reintenta; pero NO se
+  -- tocan derechos. La columna de organizations ya apunta a B y no se toca.
+  select stripe_subscription_id into v_current_sub
+  from public.organizations where id = p_organization_id;
+
+  if v_status = 'canceled'
+     and v_current_sub is not null
+     and v_current_sub <> p_stripe_subscription_id then
+    return 'superseded';
+  end if;
+  if v_status <> 'canceled'
+     and v_current_sub is not null
+     and v_current_sub <> p_stripe_subscription_id then
+    -- Anomalía: dos suscripciones vivas a la vez para el mismo centro. No se
+    -- bloquea (se aplica la de este evento), pero queda en el log para revisar.
+    raise notice 'apply_stripe_subscription_event: dos suscripciones vivas para el centro % (registrada %, evento %).',
+      p_organization_id, v_current_sub, p_stripe_subscription_id;
+  end if;
 
   -- Aplicar cada item de la suscripción, traducido por billing_catalog.
   for v_item in select * from jsonb_array_elements(coalesce(p_items, '[]'::jsonb))
