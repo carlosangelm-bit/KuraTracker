@@ -204,6 +204,15 @@ class _UsersTabState extends State<UsersTab> {
   AppRole? _roleFilter;
   _UserStatus _status = _UserStatus.todos;
 
+  /// Muestra el mensaje de un rechazo del repositorio (candado de rol/premium/
+  /// asientos). Estos mensajes están redactados a propósito y abren un camino de
+  /// acción; morían silenciosos en los interruptores.
+  void _showRepoError(Object e) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(e.toString().replaceFirst('Exception: ', ''))));
+  }
+
   @override
   void dispose() {
     _searchCtrl.dispose();
@@ -534,8 +543,12 @@ class _UsersTabState extends State<UsersTab> {
               isSelf
                   ? null
                   : (v) async {
-                      await widget.repo.setUserActive(u.id, v);
-                      setState(() {});
+                      try {
+                        await widget.repo.setUserActive(u.id, v);
+                        if (mounted) setState(() {});
+                      } catch (e) {
+                        _showRepoError(e);
+                      }
                     },
             ),
             _switchCol(
@@ -543,8 +556,16 @@ class _UsersTabState extends State<UsersTab> {
               u.premiumEnabled,
               KuraColors.success,
               (v) async {
-                await widget.repo.setUserPremium(u.id, v);
-                setState(() {});
+                // El repositorio rechaza si el centro no tiene el add-on
+                // Protocolo Kura+ (candado). Antes moría silencioso: el interruptor
+                // se quedaba apagado sin decir por qué, indistinguible de un botón
+                // roto, y se perdía el camino de venta que el mensaje abre.
+                try {
+                  await widget.repo.setUserPremium(u.id, v);
+                  if (mounted) setState(() {});
+                } catch (e) {
+                  _showRepoError(e);
+                }
               },
             ),
             if (canEmail || canRole)
