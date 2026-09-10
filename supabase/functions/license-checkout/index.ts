@@ -19,6 +19,16 @@ const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const STRIPE_SECRET_KEY = Deno.env.get("STRIPE_SECRET_KEY") ?? "";
 const APP_URL = Deno.env.get("APP_PUBLIC_URL") ?? "";   // SIN default a propósito (§3.9).
 
+// Se PINNEA la versión en cada llamada, no se depende de la de la cuenta (que es de
+// 2018: ahí los items de suscripción traen `plan`, no `price`, y el mapeo por
+// lookup_key se rompería en silencio). Pinnear por función deja explícito el
+// contrato y no arrastra a stripe-create-checkout/stripe-webhook (API vieja, en prod).
+const STRIPE_VERSION = "2026-08-26.dahlia";
+const STRIPE_HEADERS = {
+  Authorization: `Bearer ${STRIPE_SECRET_KEY}`,
+  "Stripe-Version": STRIPE_VERSION,
+};
+
 const SEAT_CEILING = 5;   // techo del autoservicio (kSelfServiceSeatCeiling).
 const VALID_MODULES = ["admin", "insumos", "comercial"];
 const VALID_SEATS = ["clinico", "protocolo"];
@@ -39,7 +49,7 @@ async function stripe(path: string, form: URLSearchParams) {
   const res = await fetch(`https://api.stripe.com/v1/${path}`, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${STRIPE_SECRET_KEY}`,
+      ...STRIPE_HEADERS,
       "content-type": "application/x-www-form-urlencoded",
     },
     body: form.toString(),
@@ -50,7 +60,7 @@ async function stripe(path: string, form: URLSearchParams) {
 
 async function getSubscription(subId: string): Promise<Record<string, unknown> | null> {
   const res = await fetch(`https://api.stripe.com/v1/subscriptions/${subId}`, {
-    headers: { Authorization: `Bearer ${STRIPE_SECRET_KEY}` },
+    headers: STRIPE_HEADERS,
   });
   if (!res.ok) return null;
   return await res.json().catch(() => null);
@@ -153,7 +163,7 @@ serve(async (req) => {
   q.set("limit", "100");
   for (const lk of Object.keys(wanted)) q.append("lookup_keys[]", lk);
   const pricesRes = await fetch(`https://api.stripe.com/v1/prices?${q.toString()}`, {
-    headers: { Authorization: `Bearer ${STRIPE_SECRET_KEY}` },
+    headers: STRIPE_HEADERS,
   });
   const pricesBody = await pricesRes.json().catch(() => ({}));
   if (!pricesRes.ok) {

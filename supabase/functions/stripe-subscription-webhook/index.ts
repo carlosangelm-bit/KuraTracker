@@ -22,6 +22,11 @@ const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const WEBHOOK_SECRET = Deno.env.get("STRIPE_SUBSCRIPTION_WEBHOOK_SECRET") ?? "";
 const STRIPE_SECRET_KEY = Deno.env.get("STRIPE_SECRET_KEY") ?? "";
 
+// Se PINNEA la versión en el re-fetch, no se depende de la de la cuenta (2018: ahí
+// los items traen `plan`, no `price`, y el mapeo por lookup_key se rompería en
+// silencio). Debe coincidir con la de license-checkout y con la del endpoint.
+const STRIPE_VERSION = "2026-08-26.dahlia";
+
 const supabase = createClient(SUPABASE_URL, SERVICE_ROLE, {
   auth: { autoRefreshToken: false, persistSession: false },
 });
@@ -63,7 +68,10 @@ async function validSignature(rawBody: string, sigHeader: string): Promise<boole
 async function fetchSubscription(subId: string): Promise<Record<string, unknown> | null> {
   if (!STRIPE_SECRET_KEY) return null;
   const res = await fetch(`https://api.stripe.com/v1/subscriptions/${subId}`, {
-    headers: { Authorization: `Bearer ${STRIPE_SECRET_KEY}` },
+    headers: {
+      Authorization: `Bearer ${STRIPE_SECRET_KEY}`,
+      "Stripe-Version": STRIPE_VERSION,
+    },
   });
   if (!res.ok) return null;
   return await res.json().catch(() => null);
@@ -118,7 +126,12 @@ serve(async (req) => {
   if (type.startsWith("customer.subscription.")) {
     subId = object["id"] as string | undefined;
   } else if (type === "invoice.payment_failed") {
-    subId = object["subscription"] as string | undefined;
+    // La suscripción de la factura vive en `subscription` (API vieja) o en
+    // `parent.subscription_details.subscription` (dahlia). Se lee de ambos sitios.
+    const parent = (object["parent"] as Record<string, unknown> | undefined);
+    const subDetails = (parent?.["subscription_details"] as Record<string, unknown> | undefined);
+    subId = (object["subscription"] as string | undefined) ??
+      (subDetails?.["subscription"] as string | undefined);
   }
   if (!subId) return new Response("no subscription on event", { status: 200 });
 
