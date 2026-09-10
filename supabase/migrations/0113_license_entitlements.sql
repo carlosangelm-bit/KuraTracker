@@ -93,18 +93,26 @@ create policy org_entitlements_delete on public.org_entitlements
 -- 3.2 billing_catalog — traducción de un price de Stripe a un concepto. Así el
 --     webhook traduce sin IDs a mano y el sitio lee precios de una sola fuente.
 -- -----------------------------------------------------------------------------
+-- Identidad = lookup_key de Stripe (idéntica en prueba y producción; se puede
+-- MOVER a un price nuevo con transfer_lookup_key sin tocar la base — una
+-- suscripción vieja apuntando al price viejo sigue mapeando al mismo concepto,
+-- que es lo que se quiere: el derecho es el mismo, solo cambió el monto). El
+-- price_id, en cambio, difiere por entorno; queda como columna informativa.
 create table if not exists public.billing_catalog (
-  stripe_price_id text primary key,
+  lookup_key text primary key,
   kind text not null check (kind in ('plan', 'module', 'seat')),
   key text not null,
   interval text not null check (interval in ('month', 'year')),
+  unit text not null check (unit in ('seat', 'center')),
+  stripe_price_id text,          -- informativo, por entorno; puede ser null
   created_at timestamptz not null default now()
 );
 
 comment on table public.billing_catalog is
-  'Traducción price de Stripe → (kind, key, interval). Fuente única para que el '
-  'webhook mapee sin IDs a mano y el sitio lea precios. SELECT abierto a '
-  'authenticated; escritura solo master.';
+  'Traducción lookup_key de Stripe → (kind, key, interval, unit). Fuente única '
+  'para que el webhook mapee sin IDs a mano y el checkout resuelva precios por '
+  'clave. La clave es idéntica en prueba/prod; stripe_price_id es informativo por '
+  'entorno. SELECT abierto a authenticated; escritura solo master.';
 
 alter table public.billing_catalog enable row level security;
 

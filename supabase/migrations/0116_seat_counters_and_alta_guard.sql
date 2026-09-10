@@ -125,8 +125,12 @@ returns void language plpgsql stable security definer
 set search_path = public, pg_temp
 as $$
 declare
-  v_has_clinical boolean := exists (select 1 from unnest(p_roles) r
-                              where r in ('clinico'::public.user_role, 'enfermeria'::public.user_role));
+  -- Misma regla que los contadores: "consume asiento clínico" = clínico-capaz O
+  -- enfermería. Se llama a consumes_clinical_seat (0b) en vez de repetir el unnest,
+  -- para no tener dos definiciones de la misma regla (§6). p_roles aquí es el
+  -- conjunto que se está asignando; el escalar del fallback no aplica (no-vacío),
+  -- por eso null.
+  v_has_clinical boolean := public.consumes_clinical_seat(p_roles, null::public.user_role);
   v_has_admin boolean := ('admin'::public.user_role = any(p_roles));
   v_member_count int;
   v_has_admin_module boolean;
@@ -225,11 +229,16 @@ begin
 
   -- Derechos base del centro nuevo (ver NOTA arriba). Antes de la membresía, para
   -- que el guard de asientos (si se invocara) ya encuentre el asiento del fundador.
+  -- Plan gratuito (§2): sin suscripción en Stripe, los derechos se escriben a mano.
+  -- module:clinico es OBLIGATORIO — sin él el candado de 0115 dejaría el plan
+  -- gratuito inservible (no se podría encender el expediente). seat:protocolo=1
+  -- queda inerte hasta que el centro compre el add-on Kura+ (AND de 0100).
   insert into public.org_entitlements (organization_id, kind, key, quantity, status, source)
   values
-    (v_org_id, 'plan',   'gratuito', null, 'active', 'master'),
-    (v_org_id, 'module', 'clinico',  null, 'active', 'master'),
-    (v_org_id, 'seat',   'clinico',  1,    'active', 'master');
+    (v_org_id, 'plan',   'gratuito',  null, 'active', 'master'),
+    (v_org_id, 'module', 'clinico',   null, 'active', 'master'),
+    (v_org_id, 'seat',   'clinico',   1,    'active', 'master'),
+    (v_org_id, 'seat',   'protocolo', 1,    'active', 'master');
 
   -- Membresía PRIMERO (el guard de profiles exige una coincidente para el cambio
   -- de organization_id/roles, que ahora aplica también a admins).
