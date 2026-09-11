@@ -191,9 +191,9 @@
       "severity": "medio",
       "message": "IMC bajo (< 18.5): mayor riesgo de LPP",
       "actions": [
-        { "id": "valoracion_mna", "label": "Valoración nutricional" },
-        { "id": "acolchado_prominencias", "label": "Acolchado de prominencias óseas" },
-        { "id": "exam_piel_diario", "label": "Vigilancia estrecha de la piel" }
+        { "id": "valoracion_mna", "label": "Valoración nutricional", "horizon": "puntual" },
+        { "id": "acolchado_prominencias", "label": "Acolchado de prominencias óseas", "horizon": "puntual" },
+        { "id": "exam_piel_diario", "label": "Vigilancia estrecha de la piel", "horizon": "ronda" }
       ]
     },
     {
@@ -203,9 +203,9 @@
       "severity": "medio",
       "message": "Fragilidad: vulnerabilidad cutánea",
       "actions": [
-        { "id": "exam_piel_diario", "label": "Intensificar cuidados de piel" },
-        { "id": "movilizacion", "label": "Intensificar movilización" },
-        { "id": "educacion_prevencion", "label": "Involucrar al cuidador" }
+        { "id": "exam_piel_diario", "label": "Intensificar cuidados de piel", "horizon": "ronda" },
+        { "id": "movilizacion", "label": "Intensificar movilización", "horizon": "puntual" },
+        { "id": "educacion_prevencion", "label": "Involucrar al cuidador", "horizon": "puntual" }
       ]
     },
     {
