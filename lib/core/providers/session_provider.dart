@@ -33,8 +33,13 @@ class SessionState {
   });
 
   bool get isAuthenticated => user != null;
-  bool get isAdmin => user?.role == AppRole.admin;
-  bool get isMaster => user?.role == AppRole.master;
+  // Delegan al getter de CONJUNTO de AppUser (effectiveRoles), NO al rol escalar:
+  // comparar `user?.role == AppRole.x` es el acoplamiento al modelo viejo que se
+  // rompe con roles combinados (un admin+clinico cuyo `role` escalar no es admin).
+  // Hoy nadie los llamaba, pero `session.isAdmin` se lee como lo natural de
+  // escribir; así, quien lo use mañana no reintroduce el bug.
+  bool get isAdmin => user?.isAdmin ?? false;
+  bool get isMaster => user?.isMaster ?? false;
 
   /// El usuario puede alternar de centro si tiene ≥2 membresías activas.
   bool get canSwitchCenter => memberships.length >= 2;

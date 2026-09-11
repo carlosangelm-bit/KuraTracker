@@ -15,10 +15,10 @@ void main() {
 
     final antes = repo.listDataDisclosures(organizationId: orgId).length;
 
+    // actor_id/actor_email NO se pasan: el trigger 0102 los impone con auth.uid()
+    // y el correo del perfil (aquí, en LocalStore, no hay trigger → quedan null).
     await repo.recordDataDisclosure(
       organizationId: orgId,
-      actorId: 'user-1',
-      actorEmail: 'admin@centro.mx',
       kind: 'expediente_paciente',
       scope: {'folio': 'EXP2025-0001'},
       recordCount: 7,
@@ -35,7 +35,6 @@ void main() {
     expect(d.recordCount, 7);
     expect(d.photoCount, 3);
     expect(d.missingCount, 1);
-    expect(d.actorEmail, 'admin@centro.mx');
     expect(d.kindLabel, 'Expediente de un paciente');
 
     // Filtro por otra organización no lo incluye.
@@ -44,12 +43,11 @@ void main() {
 
   test('sin organización no registra', () async {
     final repo = await DataRepository.instance();
+    final antes = repo.listDataDisclosures().length;
     await repo.recordDataDisclosure(
       organizationId: null,
-      actorId: 'x',
-      actorEmail: 'x',
       kind: 'csv_mediciones',
     );
-    expect(repo.listDataDisclosures().where((d) => d.actorId == 'x'), isEmpty);
+    expect(repo.listDataDisclosures().length, antes); // nada nuevo
   });
 }

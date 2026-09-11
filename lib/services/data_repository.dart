@@ -397,7 +397,75 @@ class DataRepository {
     return match.isEmpty ? null : match.first;
   }
 
+  // ---- Invariante "el centro nunca se queda sin quien defina planes" ----
+  // La CAPACIDAD de definir planes la decide el PERFIL (canDiagnose sobre
+  // effectiveRoles), NO la membresía: un gerente clínico es un `admin` cuyo
+  // rellenado admin→{admin,clinico} le da la capacidad, pero su membresía por
+  // omisión no trae 'clinico'. Medir membership.roles dejaba fuera justo ese caso
+  // (8-sep). Aquí se evalúa lo MISMO que el botón "Definir plan de cuidados".
+  // Una sola definición para los tres caminos: setUserRoles, setUserActive y los
+  // triggers server-side (0111).
+
+  /// Réplica de AppUser.canDiagnose desde una fila de perfil: 'clinico' en el
+  /// conjunto efectivo, con el rellenado de gerencia clínica (roles vacío +
+  /// role=admin ⇒ {admin,clinico}). No usa AppUser.fromJson para no exigir
+  /// full_name/email de la fila.
+  bool _profileCanDefinePlans(Map<String, dynamic> p) {
+    final rolesList =
+        ((p['roles'] as List?) ?? const []).map((e) => e.toString()).toList();
+    if (rolesList.isNotEmpty) return rolesList.contains('clinico');
+    final role = p['role'] as String?;
+    return role == 'admin' || role == 'clinico';
+  }
+
+  bool _userCanDefinePlans(String userId) {
+    final profs =
+        _store.getAll(Collections.profiles).where((p) => p['id'] == userId);
+    if (profs.isEmpty) return false;
+    final p = profs.first;
+    return (p['is_active'] as bool? ?? true) && _profileCanDefinePlans(p);
+  }
+
+  /// True si algún usuario DISTINTO de [excludeUserId], con membresía ACTIVA en
+  /// [org] y perfil ACTIVO, PUEDE definir planes (capacidad de perfil).
+  bool _orgHasOtherCapable(String org, String excludeUserId) {
+    final capableActiveProfiles = <String>{
+      for (final p in _store.getAll(Collections.profiles))
+        if ((p['is_active'] as bool? ?? true) && _profileCanDefinePlans(p))
+          p['id'] as String,
+    };
+    return listMembershipsForOrg(org).any((m) =>
+        m.profileId != excludeUserId &&
+        m.isActive &&
+        capableActiveProfiles.contains(m.profileId));
+  }
+
+  /// True si [userId] PUEDE definir planes HOY y tiene membresía activa en [org].
+  bool _isCapableInOrg(String org, String userId) {
+    if (!_userCanDefinePlans(userId)) return false;
+    return listMembershipsForOrg(org)
+        .any((m) => m.profileId == userId && m.isActive);
+  }
+
   Future<void> setUserActive(String userId, bool active) async {
+    // Guardia "último con capacidad de definir planes", segunda puerta (hueco
+    // #3, 8-sep): desactivar el perfil lo saca de TODOS sus centros (no puede
+    // iniciar sesión). Si en algún centro es el único que puede definir planes,
+    // se rechaza. Es la puerta MÁS probable (dar de baja a quien se va).
+    if (!active && _userCanDefinePlans(userId)) {
+      final orgs = listMembershipsFor(userId)
+          .where((m) => m.isActive)
+          .map((m) => m.organizationId)
+          .toSet();
+      for (final org in orgs) {
+        if (!_orgHasOtherCapable(org, userId)) {
+          throw Exception(
+              'No puedes desactivar a este usuario: es el único personal '
+              'sanitario del centro y nadie más podría definir planes de '
+              'cuidado.');
+        }
+      }
+    }
     await _store.updateRow(Collections.profiles, userId, {'is_active': active});
   }
 
@@ -443,6 +511,22 @@ class DataRepository {
         prof.isEmpty ? null : prof.first['organization_id'] as String?;
     final targetOrg = organizationId ?? activeOrg;
 
+    // Guardia "último con capacidad de definir planes" (hueco #2, 8-sep —
+    // decisión de Carlos: BLOQUEAR). El conjunto NUEVO es explícito (no-vacío,
+    // validado) así que su capacidad = incluye 'clinico' (sin rellenado admin).
+    // Si el cambio le QUITA la capacidad a un usuario que HOY sí la tiene en este
+    // centro, y no queda nadie más con capacidad, se rechaza. Solo aplica al
+    // quitar (no bloquea altas admin en centros que nunca tuvieron clínico). La
+    // misma regla vive en un trigger de Postgres (server-side).
+    if (targetOrg != null &&
+        !roles.contains(AppRole.clinico) &&
+        _isCapableInOrg(targetOrg, userId) &&
+        !_orgHasOtherCapable(targetOrg, userId)) {
+      throw Exception(
+          'No puedes quitar el rol de personal sanitario: este centro se '
+          'quedaría sin nadie que pueda definir planes de cuidado.');
+    }
+
     // La autoridad de los roles POR CENTRO es la MEMBRESÍA (0106): editar solo el
     // perfil no dura (el próximo set_active_center lo sobreescribe desde la
     // membresía) y, con el guard estricto del 0106 §4, actualizar el perfil sin
@@ -463,6 +547,10 @@ class DataRepository {
           'roles': rolesDb,
           'role': primary,
           'is_active': true,
+          // Explícito para LocalStore (no rellena defaults); en Supabase coincide
+          // con el default de la columna. Sin esto, releer la membresía recién
+          // creada revienta el parse (created_at NOT NULL en el modelo).
+          'created_at': DateTime.now().toIso8601String(),
         });
       }
     }
@@ -570,6 +658,9 @@ class DataRepository {
       'role': primaryRoleOf(roles).dbValue,
       'roles': roles.map((r) => r.dbValue).toList(),
       'is_active': true,
+      // Explícito para LocalStore (no rellena defaults); en Supabase coincide con
+      // el default de la columna. Sin esto, releer la fila revienta el parse.
+      'created_at': DateTime.now().toIso8601String(),
     });
     if (hasClinico || hasEnfermeria) {
       await createStaff(
@@ -677,6 +768,8 @@ class DataRepository {
       'role': role.dbValue,
       'roles': [role.dbValue], // 0106: conjunto (en prod lo deriva el trigger)
       'is_active': true,
+      // Explícito para LocalStore (no rellena defaults); releerla si no revienta.
+      'created_at': DateTime.now().toIso8601String(),
     });
   }
 
@@ -5284,8 +5377,6 @@ class DataRepository {
   /// romper una entrega ya realizada, así que un fallo se ignora.
   Future<void> recordDataDisclosure({
     required String? organizationId,
-    required String? actorId,
-    required String? actorEmail,
     required String kind,
     Map<String, dynamic>? scope,
     int? recordCount,
@@ -5295,22 +5386,39 @@ class DataRepository {
     String? fileName,
   }) async {
     if (organizationId == null) return;
+    // actor_id / actor_email NO se envían: el trigger de 0102 los IMPONE con
+    // auth.uid() y el correo del perfil, para que nadie pueda falsificar la
+    // atribución. Mandarlos sería inerte (los sobrescribe).
+    final row = {
+      'organization_id': organizationId,
+      'kind': kind,
+      'scope': scope,
+      'record_count': recordCount,
+      'patient_count': patientCount,
+      'photo_count': photoCount,
+      'missing_count': missingCount,
+      'file_name': fileName,
+      'occurred_at': DateTime.now().toUtc().toIso8601String(),
+    };
     try {
-      await _store.insertRow(Collections.dataDisclosures, {
-        'organization_id': organizationId,
-        'actor_id': actorId,
-        'actor_email': actorEmail,
-        'kind': kind,
-        'scope': scope,
-        'record_count': recordCount,
-        'patient_count': patientCount,
-        'photo_count': photoCount,
-        'missing_count': missingCount,
-        'file_name': fileName,
-        'occurred_at': DateTime.now().toUtc().toIso8601String(),
-      });
+      await _store.insertRow(Collections.dataDisclosures, row);
     } catch (_) {
-      // La entrega ya ocurrió; no romper la UX por el registro.
+      // La ENTREGA ya ocurrió; NUNCA la bloqueamos por el registro. Pero tampoco
+      // lo perdemos: los fallos de RED ya los encoló el store (insertRow devuelve
+      // optimista sin lanzar), así que aquí solo llegan rechazos NO-red
+      // (RLS/validación). Se encolan para reintentar y, si persisten, caen en
+      // `failed` (requiere atención) — así la bitácora no miente en silencio.
+      final store = _store;
+      if (store is SupabaseDataStore && store.outbox != null) {
+        await store.outbox!.enqueue(OutboxOp(
+          opId: _uuid.v4(),
+          collection: Collections.dataDisclosures,
+          type: 'insert',
+          rowId: null,
+          payload: row,
+          createdAt: DateTime.now().toUtc().toIso8601String(),
+        ));
+      }
     }
   }
 
@@ -6227,6 +6335,34 @@ class DataRepository {
       listProtocolProductRules(organizationId)
           .where((r) => r.category == category.dbValue)
           .toList();
+
+  /// Reglas de protocolo HUÉRFANAS: sin insumo asignado (`inventory_item_id`
+  /// null), o apuntando a un insumo que no existe en el centro (o en el sitio, si
+  /// se pasa [siteId]). `resolveProtocolProducts` las salta EN SILENCIO —una
+  /// siembra a medias se ve idéntica a una que no corrió—; esto las hace visibles
+  /// (§2) para poder verificar la siembra y cazar errores de clasificación.
+  List<({ProtocolProductRule rule, String reason})> orphanProtocolRules({
+    required String organizationId,
+    String? siteId,
+  }) {
+    final inv = {
+      for (final it in listInventoryItems(
+          organizationId: organizationId, siteId: siteId, activeOnly: false))
+        it.id
+    };
+    final out = <({ProtocolProductRule rule, String reason})>[];
+    for (final r in listProtocolProductRules(organizationId)) {
+      if (r.inventoryItemId == null) {
+        out.add((rule: r, reason: 'sin insumo asignado'));
+      } else if (!inv.contains(r.inventoryItemId)) {
+        out.add((
+          rule: r,
+          reason: 'el insumo no está en este ${siteId == null ? 'centro' : 'sitio'}'
+        ));
+      }
+    }
+    return out;
+  }
 
   Future<void> saveProtocolProductRule(ProtocolProductRule rule) async {
     await _store.upsertRow(Collections.protocolProductRules, {

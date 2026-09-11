@@ -88,11 +88,29 @@ class PreventionQuestion {
 class PreventiveAction {
   final String id;
   final String label;
-  const PreventiveAction({required this.id, required this.label});
+
+  /// Horizonte de cuidado (Fase 1): 'ronda' (agendable con cadencia), 'puntual'
+  /// (indicación sin cadencia) o 'seguimiento' (recomendación/cita en el
+  /// expediente). PLACEHOLDER al 8-sep-2026: 'ronda' = tiene cadencia; el resto =
+  /// **'puntual'** A PROPÓSITO, porque puntual describe el comportamiento de HOY
+  /// (sin cadencia, no se agenda) sin afirmar nada clínico. 'seguimiento' sí
+  /// afirmaría que la acción pertenece a una cita futura — que María lo decida
+  /// promoviendo las que de verdad lo sean, no un placeholder. **NADA lo lee
+  /// todavía** para agendar/mostrar (el comportamiento sigue derivándose de la
+  /// cadencia, ver schedulableActionsFor); lo garantiza
+  /// prevention_horizon_dormant_test. Se cablea cuando los valores sean clínicos.
+  final String horizon;
+
+  const PreventiveAction({
+    required this.id,
+    required this.label,
+    this.horizon = 'puntual',
+  });
 
   factory PreventiveAction.fromJson(Map<String, dynamic> j) => PreventiveAction(
         id: j['id'] as String,
         label: j['label'] as String,
+        horizon: (j['horizon'] as String?) ?? 'puntual',
       );
 }
 

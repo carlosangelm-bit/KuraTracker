@@ -122,8 +122,6 @@ class _ImportExportScreenState extends ConsumerState<ImportExportScreen> {
               final user = ref.read(sessionProvider).user;
               await repo.recordDataDisclosure(
                 organizationId: user?.organizationId,
-                actorId: user?.id,
-                actorEmail: user?.email,
                 kind: kind,
                 recordCount: dataRows,
                 patientCount: repo.listAllPatients().length,
