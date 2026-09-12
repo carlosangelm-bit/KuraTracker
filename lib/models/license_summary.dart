@@ -57,6 +57,14 @@ class LicenseSummary {
   /// Pacientes creados (contador informativo; ya no hay tope de plan gratuito).
   final int patientsUsed;
 
+  /// Administrativos puros que NO caben en los cupos incluidos (3 con module:admin,
+  /// 0 sin él) y por eso consumen un asiento CLÍNICO. Es el desbordamiento que el
+  /// invariante de demanda (§6) exige contar: [clinicalSeats.used] YA lo incluye
+  /// (demanda = clínicos + max(0, admin − cupos_incluidos)). Se expone aparte solo
+  /// para que el panel lo explique con texto; `adminSlots` sigue mostrando el conteo
+  /// crudo de administrativos por separado.
+  final int adminSeatOverflow;
+
   const LicenseSummary({
     required this.clinicalSeats,
     required this.adminSlots,
@@ -65,6 +73,7 @@ class LicenseSummary {
     required this.plan,
     required this.pastDue,
     required this.patientsUsed,
+    this.adminSeatOverflow = 0,
   });
 
   // El add-on Protocolo Kura+ se tiene solo si se contrató cantidad ≥ 1.

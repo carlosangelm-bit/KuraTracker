@@ -1022,7 +1022,15 @@ class DataRepository {
     int? qty(String kind, String key) =>
         (_entitlement(organizationId, kind, key)?['quantity'] as num?)?.toInt();
     final clinicalContracted = qty('seat', 'clinico') ?? 0;
-    final adminContracted = hasModuleEntitlement(organizationId, 'admin') ? 3 : 0;
+    final adminIncluded = hasModuleEntitlement(organizationId, 'admin') ? 3 : 0;
+
+    // Invariante de demanda (§6, espejo de consumed_seat_demand del servidor): un
+    // administrativo PURO que no cabe en los cupos incluidos consume un asiento
+    // CLÍNICO. Sin esto, el contador clínico no veía a esos administrativos y el
+    // asiento que el portero les cobra quedaba libre otra vez (regresión ff201e7).
+    final adminOverflow =
+        adminUsed - adminIncluded > 0 ? adminUsed - adminIncluded : 0;
+    final clinicalDemand = clinicalUsed + adminOverflow;
 
     // Protocolo Kura+: asignadas = perfiles activos del centro con premium; compradas
     // = seat:protocolo. Sin add-on del centro → contracted -1 (no aplica).
@@ -1045,9 +1053,13 @@ class DataRepository {
         .length;
 
     return LicenseSummary(
+      // used = DEMANDA clínica: clínicos + administrativos desbordados.
       clinicalSeats:
-          LicenseCounter(used: clinicalUsed, contracted: clinicalContracted),
-      adminSlots: LicenseCounter(used: adminUsed, contracted: adminContracted),
+          LicenseCounter(used: clinicalDemand, contracted: clinicalContracted),
+      // Contador crudo de administrativos, mostrado aparte (cupos incluidos: 3 con
+      // el módulo, 0 sin él). El desbordamiento va en adminSeatOverflow.
+      adminSlots: LicenseCounter(used: adminUsed, contracted: adminIncluded),
+      adminSeatOverflow: adminOverflow,
       caregivers: caregivers,
       protocolo: LicenseCounter(
           used: assigned, contracted: protocoloPurchased ?? -1),

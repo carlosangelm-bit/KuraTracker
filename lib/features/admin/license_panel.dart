@@ -47,15 +47,13 @@ class _LicensePanelState extends State<LicensePanel> {
           'Asientos clínicos',
           s.clinicalSeats,
           highlight: state == LicenseState.lleno,
-          subtitle: 'Se cobran por persona con rol clínico.',
+          subtitle: s.adminSeatOverflow > 0
+              ? 'Se cobran por persona con rol clínico. Incluye '
+                  '${s.adminSeatOverflow} administrativo${s.adminSeatOverflow == 1 ? '' : 's'} '
+                  'sin cupo (consumen asiento clínico).'
+              : 'Se cobran por persona con rol clínico.',
         ),
-        _counter(
-          'Cupos administrativos',
-          s.adminSlots,
-          subtitle: s.adminSlots.contracted == 0
-              ? 'Incluidos con el módulo Administración (no contratado).'
-              : 'Incluidos en Administración; del 4.º paga como clínico.',
-        ),
+        _adminCounter(s),
         _caregiverCard(s.caregivers),
         _protocoloCard(s),
         const SizedBox(height: 12),
@@ -90,6 +88,54 @@ class _LicensePanelState extends State<LicensePanel> {
           ],
         ),
         trailing: highlight
+            ? const Icon(Icons.error_outline, color: KuraColors.warning)
+            : null,
+      ),
+    );
+  }
+
+  /// Contador de cupos administrativos. A diferencia de _counter, NO muestra
+  /// "X de 0" cuando no hay módulo (Administración básica va incluida con la clínica):
+  /// dice el conteo crudo y, si hay desbordamiento, que esos administrativos consumen
+  /// asiento clínico (el invariante de demanda; el contador clínico ya los suma).
+  Widget _adminCounter(LicenseSummary s) {
+    final c = s.adminSlots;
+    final hasModule = c.contracted > 0;
+    final overflow = s.adminSeatOverflow;
+    final warn = overflow > 0;
+    final color = warn ? KuraColors.warning : KuraColors.darkText;
+    final valueText = hasModule
+        ? '${c.used} de ${c.contracted} en uso'
+            '${c.available > 0 ? ' · ${c.available} disponible${c.available == 1 ? '' : 's'}' : ''}'
+        : '${c.used} administrativo${c.used == 1 ? '' : 's'} · sin cupos dedicados';
+    final subtitle = hasModule
+        ? 'Incluidos en el módulo Administración; del 4.º consume asiento clínico.'
+        : 'Administración básica incluida con la licencia clínica. El módulo avanzado '
+            'añade 3 cupos dedicados.';
+    return Card(
+      margin: const EdgeInsets.only(bottom: 10),
+      child: ListTile(
+        leading: Icon(Icons.badge_outlined, color: color),
+        title: const Text('Cupos administrativos',
+            style: TextStyle(fontWeight: FontWeight.w700)),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(valueText,
+                style: TextStyle(
+                    color: color, fontWeight: FontWeight.w700, fontSize: 13)),
+            if (warn)
+              Text(
+                  '$overflow ${overflow == 1 ? 'consume' : 'consumen'} asiento '
+                  'clínico (sin cupo). Contrata el módulo Administración para '
+                  'liberarlo${overflow == 1 ? '' : 's'}.',
+                  style: const TextStyle(
+                      fontSize: 11, color: KuraColors.warning)),
+            Text(subtitle,
+                style: const TextStyle(fontSize: 11, color: KuraColors.darkText)),
+          ],
+        ),
+        trailing: warn
             ? const Icon(Icons.error_outline, color: KuraColors.warning)
             : null,
       ),
