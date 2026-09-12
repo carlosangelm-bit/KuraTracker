@@ -1061,12 +1061,22 @@ class _OrganizationFormDialogState extends State<_OrganizationFormDialog> {
   // define la superficie de permisos (módulos + RLS hospitalaria).
   CenterType? _centerType;
   bool _isTest = false;
+  // Fundador OPCIONAL: si se llena, se crea el admin del centro en el mismo paso
+  // (si no, el centro de prueba nace sin nadie adentro y hay que agregarlo a mano).
+  final _founderNameCtrl = TextEditingController();
+  final _founderEmailCtrl = TextEditingController();
+  bool _founderClinical = false;
+  // Días de la prueba (30 por defecto; 0 = ya vencida, para verificar el read-only).
+  final _trialDaysCtrl = TextEditingController(text: '30');
   bool _saving = false;
   String? _error;
 
   @override
   void dispose() {
     _nameCtrl.dispose();
+    _founderNameCtrl.dispose();
+    _founderEmailCtrl.dispose();
+    _trialDaysCtrl.dispose();
     super.dispose();
   }
 
@@ -1081,13 +1091,63 @@ class _OrganizationFormDialogState extends State<_OrganizationFormDialog> {
       _error = null;
     });
     try {
-      // Un centro nuevo nace como PRUEBA (30 días de todo, luego solo lectura). La
+      // Un centro nuevo nace como PRUEBA (N días de todo, luego solo lectura). La
       // consola del master es el primer llamante de create_trial_organization, no su
       // dueño: el alta pública lo llamará igual. createOrganization (INSERT pelón,
       // sin derechos → centro inservible) queda superado.
+      final trialDays = int.tryParse(_trialDaysCtrl.text.trim()) ?? 30;
       final created = await widget.repo.createTrialOrganization(
           _nameCtrl.text.trim(), _centerType!,
-          isTest: _isTest);
+          isTest: _isTest, trialDays: trialDays);
+
+      // Fundador opcional: si se dio correo, se crea el ADMIN del centro en el mismo
+      // paso — sin esto, el centro de prueba nace sin nadie adentro. El primer
+      // usuario debe ser admin (createUserWithLogin lo exige).
+      CreatedUser? founder;
+      final founderEmail = _founderEmailCtrl.text.trim();
+      if (founderEmail.isNotEmpty) {
+        founder = await widget.repo.createUserWithLogin(
+          email: founderEmail,
+          fullName: _founderNameCtrl.text.trim().isEmpty
+              ? founderEmail
+              : _founderNameCtrl.text.trim(),
+          roles: {
+            AppRole.admin,
+            if (_founderClinical) AppRole.clinico,
+          },
+          organizationId: created.id,
+        );
+      }
+
+      if (!mounted) return;
+      // Si se creó fundador con contraseña temporal (SMTP no configurado), mostrarla
+      // al master antes de cerrar — es la única forma de entregársela al prospecto.
+      if (founder?.tempPassword != null) {
+        await showDialog<void>(
+          context: context,
+          builder: (dctx) => AlertDialog(
+            title: const Text('Centro de prueba creado'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Admin: ${founder!.email}'),
+                const SizedBox(height: 4),
+                SelectableText('Contraseña temporal: ${founder.tempPassword}'),
+                const SizedBox(height: 8),
+                Text('Prueba de $trialDays días. Entrégale estas credenciales al '
+                    'prospecto (no hay correo de invitación configurado).',
+                    style: const TextStyle(fontSize: 11)),
+              ],
+            ),
+            actions: [
+              TextButton(
+                  onPressed: () => Navigator.pop(dctx),
+                  child: const Text('Entendido')),
+            ],
+          ),
+        );
+      }
       // dialogCtx propio (ver convencion documentada en la pantalla):
       // nunca el context externo del ShellRoute anidado.
       if (mounted) Navigator.pop(context, created.id);
@@ -1152,6 +1212,50 @@ class _OrganizationFormDialogState extends State<_OrganizationFormDialog> {
                 title: const Text('Centro de pruebas'),
                 subtitle: const Text('No productivo; se excluye de KPIs/listados.',
                     style: TextStyle(fontSize: 11)),
+              ),
+              const SizedBox(height: 8),
+              TextFormField(
+                controller: _trialDaysCtrl,
+                keyboardType: TextInputType.number,
+                enabled: !_saving,
+                decoration: const InputDecoration(
+                  labelText: 'Días de prueba',
+                  helperText: '30 por defecto · 0 = ya vencida (queda en solo lectura)',
+                ),
+              ),
+              const SizedBox(height: 12),
+              const Align(
+                alignment: Alignment.centerLeft,
+                child: Text('Administrador fundador (opcional)',
+                    style: TextStyle(fontWeight: FontWeight.w600)),
+              ),
+              const Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                    'Si lo dejas vacío, el centro nace sin nadie adentro y tendrás que '
+                    'agregar el usuario después.',
+                    style: TextStyle(fontSize: 11)),
+              ),
+              TextFormField(
+                controller: _founderNameCtrl,
+                enabled: !_saving,
+                decoration: const InputDecoration(labelText: 'Nombre del admin'),
+              ),
+              TextFormField(
+                controller: _founderEmailCtrl,
+                enabled: !_saving,
+                keyboardType: TextInputType.emailAddress,
+                decoration: const InputDecoration(labelText: 'Correo del admin'),
+              ),
+              CheckboxListTile(
+                value: _founderClinical,
+                onChanged: _saving
+                    ? null
+                    : (v) => setState(() => _founderClinical = v ?? false),
+                contentPadding: EdgeInsets.zero,
+                dense: true,
+                controlAffinity: ListTileControlAffinity.leading,
+                title: const Text('El admin también es clínico'),
               ),
               if (_error != null) ...[
                 const SizedBox(height: 12),
