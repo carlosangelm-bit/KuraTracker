@@ -198,11 +198,18 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
           ),
         ],
       ),
-      floatingActionButton: KuraPrimaryFab(
-        onPressed: () => context.go('/patients/new'),
-        icon: Icons.person_add,
-        label: 'Nuevo paciente',
-      ),
+      // Alta de paciente = escritura clínica: se oculta en modo lectura (prueba
+      // vencida/impago), igual que en la lista. La ruta además está gateada en el
+      // router, así que ni por URL se llega al formulario.
+      floatingActionButton: (repoAsync.valueOrNull
+                  ?.centerCanWriteClinical(user?.organizationId) ??
+              true)
+          ? KuraPrimaryFab(
+              onPressed: () => context.go('/patients/new'),
+              icon: Icons.person_add,
+              label: 'Nuevo paciente',
+            )
+          : null,
     );
   }
 

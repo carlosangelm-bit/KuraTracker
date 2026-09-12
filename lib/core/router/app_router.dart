@@ -181,24 +181,40 @@ final routerProvider = Provider<GoRouter>((ref) {
         return '/';
       }
 
-      if (loggedIn && isNurse) {
-        final blocked = location == '/patients/new' ||
-            location.endsWith('/edit') ||
-            location.contains('/consultation/new') ||
-            (location.contains('/wound/') && location.endsWith('/capture')) ||
-            (location.contains('/wound/') && location.contains('/plan/')) ||
-            location.endsWith('/follow-up/new') ||
-            location.contains('/follow-up/draft/') ||
-            location.endsWith('/comorbidities') ||
-            location.endsWith('/diagnoses') ||
-            location.endsWith('/referrals/new');
-        if (blocked) {
-          // Regresar al detalle del paciente si se puede inferir, si no al inicio.
-          final segs = location.split('/').where((s) => s.isNotEmpty).toList();
-          if (segs.length >= 2 && segs[0] == 'patients') {
-            return '/patients/${segs[1]}';
-          }
-          return '/';
+      // Rutas de ESCRITURA clínica (crear/editar). Se GATEA LA RUTA, no solo el
+      // guardado: un centro en modo lectura (prueba vencida/impago) o enfermería
+      // restringida no debe poder abrir el formulario, trabajar y enterarse al final.
+      final isClinicalWriteRoute = location == '/patients/new' ||
+          location.endsWith('/edit') ||
+          location.contains('/consultation/new') ||
+          (location.contains('/wound/') && location.endsWith('/capture')) ||
+          (location.contains('/wound/') && location.contains('/plan/')) ||
+          location.endsWith('/follow-up/new') ||
+          location.contains('/follow-up/draft/') ||
+          location.endsWith('/comorbidities') ||
+          location.endsWith('/diagnoses') ||
+          location.endsWith('/referrals/new');
+      // Rebota al detalle del paciente si se puede inferir, si no al inicio; ahí la
+      // banda del shell explica el motivo (y ofrece Licencias al admin).
+      String bounceFromWrite() {
+        final segs = location.split('/').where((s) => s.isNotEmpty).toList();
+        if (segs.length >= 2 && segs[0] == 'patients') return '/patients/${segs[1]}';
+        return '/';
+      }
+
+      if (loggedIn && isNurse && isClinicalWriteRoute) {
+        return bounceFromWrite();
+      }
+
+      // Centro en modo LECTURA (prueba terminada / pago vencido / cancelado): lee su
+      // expediente, no escribe. Mismo criterio que el candado del repositorio
+      // (clinicalReadOnlyReason ≠ null solo cuando HAY derecho clínico y no es
+      // escribible; sin derecho no rebota, para no romper fixtures/edge).
+      if (loggedIn && !isMaster && isClinicalWriteRoute) {
+        final repo = ref.read(dataRepositoryProvider).valueOrNull;
+        if (repo != null &&
+            repo.clinicalReadOnlyReason(session.user?.organizationId) != null) {
+          return bounceFromWrite();
         }
       }
 
