@@ -104,7 +104,7 @@ void main() {
     test('seedDefaultNoteOptions() persiste el kura_tag de cada concepto '
         'sembrado (roundtrip completo Parte B->C)', () async {
       final repo = await DataRepository.instance();
-      final org = await repo.createOrganization('Centro Prueba KuraTag', CenterType.clinicaHeridas);
+      final org = await repo.createTrialOrganization('Centro Prueba KuraTag', CenterType.clinicaHeridas);
 
       await repo.seedDefaultNoteOptions(organizationId: org.id);
 

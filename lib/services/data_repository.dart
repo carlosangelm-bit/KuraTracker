@@ -1032,8 +1032,9 @@ class DataRepository {
         .length;
     final protocoloPurchased = qty('seat', 'protocolo');
 
-    // Plan y estado de pago.
-    final planEnt = _entitlement(organizationId, 'plan', 'gratuito') ??
+    // Plan y estado de pago. El plan gratuito con tope se retiró; un centro nuevo
+    // nace como 'prueba' (create_trial_organization).
+    final planEnt = _entitlement(organizationId, 'plan', 'prueba') ??
         _entitlement(organizationId, 'plan', 'basico');
     final plan = planEnt?['key'] as String? ?? 'basico';
     final pastDue = _store.getAll(Collections.orgEntitlements).any((e) =>
@@ -1219,27 +1220,9 @@ class DataRepository {
         .toSet();
   }
 
-  /// Crea una organizacion (centro) nueva. Uso exclusivo del area
-  /// "Plataforma" (solo master, ver PlatformHomeScreen): a diferencia del
-  /// RPC create_organization_with_admin (que ademas promueve al llamador
-  /// a admin de la organizacion nueva), esto es un INSERT directo -- el
-  /// master sigue siendo master, no se vincula automaticamente como admin
-  /// de la organizacion creada.
-  Future<Organization> createOrganization(String name, CenterType centerType,
-      {bool isTest = false}) async {
-    final data = {
-      'id': _uuid.v4(),
-      'name': name,
-      // EXPLÍCITO, no el default 'clinica_heridas' del 0040: un hospital creado
-      // como clínica no muestra sus módulos, no los deja encender, y enfermería
-      // no puede escribir (has_hospital_org_access exige center_type=hospital).
-      'center_type': centerType.dbValue,
-      'is_test': isTest,
-      'is_active': true,
-    };
-    final saved = await _store.insertRow(Collections.organizations, data);
-    return Organization.fromJson(saved);
-  }
+  // createOrganization (INSERT directo, sin derechos → centro inservible bajo el AND)
+  // se retiró: un centro nuevo nace SIEMPRE por createTrialOrganization. Así no hay
+  // dos formas de crear un centro (era el fork que create_trial_organization cerró).
 
   /// ÚNICO nacimiento de un centro de PRUEBA (plan:prueba, 30 días con todo incluido;
   /// después, solo lectura por tiempo vía canWriteModule). Espejo del RPC
