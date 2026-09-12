@@ -997,22 +997,17 @@ class DataRepository {
   /// Precio unitario en CENTAVOS (IVA incl.) de un concepto en un intervalo, leído
   /// de billing_catalog (0129) — NUNCA a mano en el Dart. `interval` = 'month' |
   /// 'year' (el anual es el monto completo, ya = ×10; no se multiplica aquí).
-  /// Devuelve 0 si el catálogo no trae la fila (fallback seguro para no romper la
-  /// suma; en prod/demo las diez filas están sembradas con monto).
-  int unitAmountCents(String kind, String key, String interval) {
+  /// Devuelve `null` cuando falta la fila O la fila no trae monto: el fallo es POR
+  /// FILA, no todo-o-nada. Un precio ausente NUNCA es 0 — quien lo consume pinta
+  /// "—" y marca el total como incompleto (un ausente no debe parecerse a un cero).
+  int? unitAmountCents(String kind, String key, String interval) {
     for (final c in _store.getAll(Collections.billingCatalog)) {
       if (c['kind'] == kind && c['key'] == key && c['interval'] == interval) {
-        return (c['unit_amount'] as num?)?.toInt() ?? 0;
+        return (c['unit_amount'] as num?)?.toInt();
       }
     }
-    return 0;
+    return null;
   }
-
-  /// ¿El catálogo de precios está cargado (al menos una fila con monto)? El panel
-  /// lo usa para no mostrar $0 cuando en realidad no hay datos (demo sin sembrar).
-  bool get hasBillingCatalog => _store
-      .getAll(Collections.billingCatalog)
-      .any((c) => (c['unit_amount'] as num?) != null);
 
   /// Resumen de licencias del centro para el panel del admin (Fase 2). Se calcula
   /// aquí (desde org_entitlements + membresías + perfiles + pacientes) para
@@ -1525,7 +1520,7 @@ class DataRepository {
   bool premiumComercialFor(String? organizationId) =>
       hasModuleEntitlement(organizationId, 'comercial');
 
-  /// ¿El centro PAGÓ el módulo Administración (avanzado)? Las funciones
+  /// ¿El centro PAGÓ el módulo Administración avanzada? Las funciones
   /// administrativas BÁSICAS van incluidas con la licencia clínica; solo el módulo
   /// avanzado se cobra ($1,200, incluye 3 cupos administrativos + config del
   /// protocolo, sitios extra y marca). Lee module:admin (mismo patrón que

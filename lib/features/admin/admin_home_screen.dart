@@ -185,7 +185,7 @@ class _AdminHomeScreenState extends ConsumerState<AdminHomeScreen>
 void _showAdminModuleUpsell(BuildContext context) {
   ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
       content: Text(
-          'Esta función es parte del módulo Administración (avanzado). Solicítalo '
+          'Esta función es parte del módulo Administración avanzada. Solicítalo '
           'a tu administrador de plataforma para habilitarla.')));
 }
 
@@ -205,7 +205,7 @@ class _AdminModuleLocked extends StatelessWidget {
                   color: KuraColors.warning),
               const SizedBox(height: 8),
               Text(
-                '$feature es parte del módulo Administración (avanzado).\n'
+                '$feature es parte del módulo Administración avanzada.\n'
                 'Solicítalo a tu administrador de plataforma para habilitarlo.',
                 textAlign: TextAlign.center,
               ),
@@ -745,7 +745,8 @@ class _UserFormDialogState extends State<_UserFormDialog> {
             .full) {
       setState(() => _error =
           'Este usuario es solo administrativo. Sin el módulo Administración '
-          '(que incluye 3 cupos admin dedicados) consume un asiento clínico, y no '
+          'avanzada (que incluye 3 cupos admin dedicados) consume un asiento '
+          'clínico, y no '
           'hay asientos clínicos disponibles. Contrata el módulo o libera un asiento.');
       return;
     }
