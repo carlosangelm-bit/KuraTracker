@@ -13,8 +13,15 @@
 -- (INSERT pelón, centro inservible) vs create_organization_with_admin (acoplado a
 -- auth.uid()). create_organization_with_admin (plan:gratuito) queda superado.
 --
--- Autorización: master (cualquier fundador, o ninguno) O el propio usuario que se
--- da de alta a sí mismo (p_founder_profile_id = auth.uid()).
+-- Autorización: SOLO master. La FORMA es caller-agnóstica (fundador por parámetro),
+-- pero la PUERTA se mantiene cerrada hasta que exista su guardia. El alta pública
+-- correrá en una Edge Function con service_role (que NO pasa por este predicado),
+-- con su propio anti-abuso y FIJANDO p_trial_days/asientos del lado servidor en vez
+-- de confiárselos al cliente. La rama "self" (p_founder_profile_id = auth.uid()) se
+-- agrega ENTONCES, con el control que la hace segura — no antes: con grant a
+-- authenticated + security definer, esa rama dejaría a CUALQUIER usuario con sesión
+-- fabricarse un centro (100 años, 999 asientos) por PostgREST, sin canal visible que
+-- la revisión manual de duplicados (el ancla) pueda ver.
 --
 -- La prueba da TODO: module clinico/admin/insumos/comercial + asientos, todos con
 -- current_period_end = ahora + p_trial_days y source='master'. El read-only al
@@ -43,10 +50,10 @@ declare
   v_end timestamptz := now() + make_interval(days => p_trial_days);
   v_roles public.user_role[];
 begin
-  -- Solo el master crea para cualquiera (o sin fundador); un usuario puede darse
-  -- de alta a SÍ mismo (el alta pública). Nadie más.
-  if not public.is_master()
-     and (p_founder_profile_id is null or p_founder_profile_id <> auth.uid()) then
+  -- SOLO el master (ver nota de autorización arriba). La rama "self" NO va aquí: con
+  -- grant a authenticated abriría producto gratis a voluntad por PostgREST. El alta
+  -- pública entra por service_role (salta este predicado) con su propia guardia.
+  if not public.is_master() then
     raise exception 'No autorizado para crear un centro de prueba.';
   end if;
 
