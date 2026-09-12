@@ -33,7 +33,7 @@
 
 create or replace function public.create_trial_organization(
   p_organization_name text,
-  p_center_type public.center_type default 'clinica_heridas',
+  p_center_type text default 'clinica_heridas',  -- organizations.center_type es TEXT + check (0040), no un enum
   p_founder_profile_id uuid default null,
   p_admin_full_name text default null,
   p_admin_is_clinical boolean default false,
@@ -106,7 +106,7 @@ end;
 $$;
 
 grant execute on function public.create_trial_organization(
-  text, public.center_type, uuid, text, boolean, int, int, int, boolean) to authenticated;
+  text, text, uuid, text, boolean, int, int, int, boolean) to authenticated;
 
 comment on function public.create_trial_organization is
   'ÚNICO nacimiento de un centro de PRUEBA (plan:prueba, 30 días de todo, luego solo '
