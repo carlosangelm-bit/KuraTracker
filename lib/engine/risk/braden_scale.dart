@@ -96,11 +96,21 @@ class BradenScale {
     return scale;
   }
 
-  /// Etiqueta de la banda de riesgo para un puntaje total (o null).
-  String? riskLabelFor(int total) {
+  /// Banda de riesgo (id + etiqueta + rango) para un puntaje total, o null si no
+  /// cae en ninguna. FUENTE ÚNICA de las bandas de Braden: los tres lugares que
+  /// antes reimplementaban los cortes (reporte PDF, applicability, preventive
+  /// assessment) leen de aquí para no desincronizarse con el JSON.
+  BradenRiskBand? bandFor(int total) {
     for (final b in riskLevels) {
-      if (total >= b.minScore && total <= b.maxScore) return b.label;
+      if (total >= b.minScore && total <= b.maxScore) return b;
     }
     return null;
   }
+
+  /// Etiqueta de la banda de riesgo para un puntaje total (o null).
+  String? riskLabelFor(int total) => bandFor(total)?.label;
+
+  /// La escala Braden en caché tras el primer [load] (o null si aún no cargó).
+  /// Uso interno de helpers síncronos que corren después del arranque.
+  static BradenScale? get cached => _cached;
 }

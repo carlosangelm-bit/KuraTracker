@@ -133,6 +133,9 @@ class _HospitalDashboardScreenState
         case RiskLevel.medio:
           medio++;
         case RiskLevel.bajo:
+        case RiskLevel.sinRiesgo:
+          // sin_riesgo (Braden 19–23) = valorado en zona verde: se agrupa con
+          // "bajo", NUNCA con "sin valoración" (band == null = sin Braden).
           bajo++;
         default:
           sinVal++;

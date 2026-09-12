@@ -8,7 +8,7 @@
     "draft": true,
     "direction": "lower_is_better",
     "min_delta": 1,
-    "labels": { "improving": "Cicatrizando", "stable": "Sin cambio", "worsening": "Deterioro" }
+    "labels": { "improving": "Cicatrizando", "stable": "Estable", "worsening": "Deterioro" }
   },
   "items": [
     {

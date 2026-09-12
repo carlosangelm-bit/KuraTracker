@@ -3,7 +3,8 @@
   "title": "ASEPSIS · Infección de sitio quirúrgico",
   "total_min": 0,
   "total_max": 55,
-  "draft": true,
+  "reviewed_by": "María",
+  "reviewed_date": "2026-09-08",
   "interpretation": { "mode": "bands", "bands_ref": "ASEPSIS" },
   "items": [
     {

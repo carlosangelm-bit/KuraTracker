@@ -1,3 +1,4 @@
+import 'braden_scale.dart';
 import 'prevention_risk_engine.dart' show PreventionRulesCatalog, ScheduledActionSpec;
 
 /// Nivel de movilidad (pregunta 1 del cuestionario unificado). Determina la
@@ -60,6 +61,7 @@ PreventivePlan buildPreventivePlan(
   PreventiveAnswers a, {
   int? braden,
   required PreventionRulesCatalog catalog,
+  required BradenScale bradenScale,
 }) {
   final activities = <ScheduledActionSpec>[];
   final watch = <String>[];
@@ -80,15 +82,14 @@ PreventivePlan buildPreventivePlan(
   String? posturalId;
   var veryHigh = false;
   if (braden != null) {
-    // La banda de Braden manda si hay valoración vigente.
-    if (braden <= 12) {
-      posturalId = 'cambios_2h_registro';
-      veryHigh = braden <= 9;
-    } else if (braden <= 17) {
-      posturalId = 'cambios_2_3h';
-    } else {
-      posturalId = null; // 18–23: sin cambios programados (solo observación)
-    }
+    // Hueco 2: la acción postural sale del MAPEO banda→acción de las reglas
+    // (fuente única), no de una escalera de cortes propia que divergía de
+    // prevention_rules.json (p. ej. en 18–23: la escalera daba null, la regla
+    // lpp_bajo da cambios_4h). Así los dos caminos coinciden y el re-bandeo de
+    // Fase C los mueve a la vez. La banda muy_alto (que agrega la valoración de
+    // piel completa) sigue saliendo de braden_scale.json (fuente única).
+    posturalId = catalog.posturalActionForBraden(braden);
+    veryHigh = bradenScale.bandFor(braden)?.id == 'muy_alto';
   } else {
     switch (a.mobility) {
       case Movilidad.encamado:

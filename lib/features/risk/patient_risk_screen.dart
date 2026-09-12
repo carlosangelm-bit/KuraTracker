@@ -271,9 +271,20 @@ class _PatientRiskScreenState extends ConsumerState<PatientRiskScreen> {
       await repo.applyStarTreatment(widget.patientId, res.category,
           organizationId: orgId, createdBy: by);
     } else if (scaleId == 'EXTRAVASACION') {
-      await repo.applyExtravasacionTreatment(widget.patientId, res.category,
-          organizationId: orgId, createdBy: by);
-    } else if (const {'NPIAP', 'WAGNER', 'CEAP', 'MDRPI'}.contains(scaleId)) {
+      final catalog = ref.read(preventionRulesProvider).valueOrNull;
+      if (catalog != null) {
+        await repo.applyExtravasacionTreatment(widget.patientId, res.category,
+            organizationId: orgId, catalog: catalog, createdBy: by);
+      }
+    } else if (scaleId == 'MDRPI') {
+      // MDRPI es PERMANENTE (inspección c/4 h): la valoración ya está guardada,
+      // el regenerador la materializa con dedup, como GLOBIAD.
+      final catalog = ref.read(preventionRulesProvider).valueOrNull;
+      if (catalog != null) {
+        await repo.regeneratePreventivePlan(widget.patientId, catalog,
+            organizationId: orgId, createdBy: by);
+      }
+    } else if (const {'NPIAP', 'WAGNER', 'CEAP'}.contains(scaleId)) {
       await repo.applyCategoricalScaleTreatment(
           widget.patientId, scaleId, res.category,
           organizationId: orgId, createdBy: by);
@@ -966,6 +977,20 @@ class _PatientRiskScreenState extends ConsumerState<PatientRiskScreen> {
                               repo, patient.organizationId),
                           child: const Text('Editar'),
                         ),
+                      ),
+                    // Estado vacío HONESTO (C3): un paciente valorado en la banda
+                    // "sin riesgo" y sin alertas de LPP no tiene plan que mostrar.
+                    // Se dice explícito, no una lista vacía que se lea como "el
+                    // módulo no hace nada". El título sale de la escala (fuente
+                    // única), no de un literal.
+                    if (isHospital &&
+                        braden?.bradenScore != null &&
+                        scale?.bandFor(braden!.bradenScore!)?.id == 'sin_riesgo' &&
+                        result.lpp.isEmpty)
+                      _InfoTile(
+                        icon: Icons.verified_outlined,
+                        title: scale!.bandFor(braden!.bradenScore!)!.label,
+                        body: 'No requiere plan de prevención programado.',
                       ),
                     _CompliancePanel(repo: repo, patient: patient),
                     _PatientAuditLog(repo: repo, patientId: widget.patientId),
