@@ -132,7 +132,9 @@ class _AdminHomeScreenState extends ConsumerState<AdminHomeScreen>
             1 => StaffTab(repo: repo, organizationId: organizationId),
             2 => SitesTab(repo: repo, organizationId: organizationId),
             3 => NoteCatalogTab(repo: repo, organizationId: organizationId),
-            4 => BrandingTab(repo: repo, organizationId: organizationId),
+            4 => repo.premiumAdminFor(organizationId)
+                ? BrandingTab(repo: repo, organizationId: organizationId)
+                : const _AdminModuleLocked('La personalización de marca'),
             5 => LicensePanel(
                 repo: repo,
                 organizationId: organizationId,
@@ -171,6 +173,46 @@ class _AdminHomeScreenState extends ConsumerState<AdminHomeScreen>
       ),
     );
   }
+}
+
+/// Candado del módulo Administración (AVANZADO). Las funciones administrativas
+/// BÁSICAS van incluidas con la licencia clínica; solo lo avanzado (config del
+/// protocolo, sitios extra, marca, 3 cupos admin dedicados) se cobra. Mismo criterio
+/// que _PremiumLocked de Insumos: el mensaje dice qué falta y abre el camino de compra.
+/// NO se gatean, a propósito: la pestaña Licencias (la compra vive ahí), el catálogo
+/// base / escalas / fuente de recomendaciones, el Registro de divulgaciones ni la
+/// exportación del expediente (custodia NOM-004/LFPDPPP no depende del pago).
+void _showAdminModuleUpsell(BuildContext context) {
+  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+      content: Text(
+          'Esta función es parte del módulo Administración (avanzado). Solicítalo '
+          'a tu administrador de plataforma para habilitarla.')));
+}
+
+/// Pantalla completa detrás del módulo Administración (avanzado): reemplaza el
+/// contenido de una pestaña cuando el centro no lo tiene (p. ej. Marca).
+class _AdminModuleLocked extends StatelessWidget {
+  final String feature;
+  const _AdminModuleLocked(this.feature);
+  @override
+  Widget build(BuildContext context) => Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.workspace_premium_outlined,
+                  color: KuraColors.warning),
+              const SizedBox(height: 8),
+              Text(
+                '$feature es parte del módulo Administración (avanzado).\n'
+                'Solicítalo a tu administrador de plataforma para habilitarlo.',
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        ),
+      );
 }
 
 /// Pestaña de gestión de usuarios y roles. Se reutiliza en dos contextos:
@@ -683,6 +725,28 @@ class _UserFormDialogState extends State<_UserFormDialog> {
     final roleErr = validateRoleSet(_roles);
     if (roleErr != null) {
       setState(() => _error = roleErr);
+      return;
+    }
+    // Gate del módulo Administración (avanzado): un usuario SOLO-administrativo (sin
+    // rol clínico ni enfermería ni cuidador) consume un asiento CLÍNICO cuando el
+    // centro no tiene el módulo (que trae 3 cupos admin dedicados). Se bloquea SOLO
+    // "más allá de lo que permita el conteo": si aún hay asiento clínico libre, el
+    // alta pasa y la base lo absorbe. assert_seat_available sigue siendo la autoridad;
+    // esto evita el viaje y nombra el módulo en vez de un genérico "sin asientos".
+    final adminOnly = _roles.contains(AppRole.admin) &&
+        !_roles.contains(AppRole.clinico) &&
+        !_roles.contains(AppRole.enfermeria) &&
+        !_roles.contains(AppRole.cuidador);
+    if (adminOnly &&
+        !widget.repo.premiumAdminFor(widget.organizationId) &&
+        widget.repo
+            .licenseSummaryFor(widget.organizationId)
+            .clinicalSeats
+            .full) {
+      setState(() => _error =
+          'Este usuario es solo administrativo. Sin el módulo Administración '
+          '(que incluye 3 cupos admin dedicados) consume un asiento clínico, y no '
+          'hay asientos clínicos disponibles. Contrata el módulo o libera un asiento.');
       return;
     }
     setState(() {
@@ -1233,6 +1297,10 @@ class _SitesTabState extends State<SitesTab> {
   @override
   Widget build(BuildContext context) {
     final sites = widget.repo.listSites(organizationId: widget.organizationId);
+    // El PRIMER sitio va incluido; del segundo en adelante requiere el módulo
+    // Administración (avanzado). Editar/activar los existentes no se gatea.
+    final canAddSite =
+        sites.isEmpty || widget.repo.premiumAdminFor(widget.organizationId);
     return Scaffold(
       body: sites.isEmpty
           ? const _EmptyState(
@@ -1281,8 +1349,10 @@ class _SitesTabState extends State<SitesTab> {
               },
             ),
       floatingActionButton: KuraPrimaryFab(
-        onPressed: () => _openSiteForm(),
-        icon: Icons.add_location_alt_outlined,
+        onPressed: canAddSite
+            ? () => _openSiteForm()
+            : () => _showAdminModuleUpsell(context),
+        icon: canAddSite ? Icons.add_location_alt_outlined : Icons.lock_outline,
         label: 'Nuevo',
       ),
     );
@@ -1692,6 +1762,10 @@ class _NoteCatalogTabState extends State<NoteCatalogTab> {
   @override
   Widget build(BuildContext context) {
     final options = widget.repo.listAllNoteOptions(_selectedField, organizationId: widget.organizationId);
+    // Módulo Administración (avanzado): gatea la config del protocolo, Acuity, CSV y
+    // depuración. NO gatea "Cargar catálogo base", "Escalas del protocolo", "Fuente de
+    // recomendaciones" ni el "Registro de divulgaciones" (ver _showAdminModuleUpsell).
+    final adminLocked = !widget.repo.premiumAdminFor(widget.organizationId);
     return Scaffold(
       // ListView (no Column): toda la pantalla desplaza como una sola lista.
       // En movil el encabezado fijo era mas alto que el body disponible (dos
@@ -1740,68 +1814,93 @@ class _NoteCatalogTabState extends State<NoteCatalogTab> {
                       label: const Text('Descargar plantilla CSV'),
                     ),
                     OutlinedButton.icon(
-                      onPressed: _importing ? null : _uploadCsv,
-                      icon: _importing
-                          ? const SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.upload_outlined, size: 18),
+                      onPressed: adminLocked
+                          ? () => _showAdminModuleUpsell(context)
+                          : (_importing ? null : _uploadCsv),
+                      icon: adminLocked
+                          ? const Icon(Icons.lock_outline, size: 18)
+                          : (_importing
+                              ? const SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                )
+                              : const Icon(Icons.upload_outlined, size: 18)),
                       label: Text(_importing ? 'Importando…' : 'Cargar CSV'),
                     ),
                     // Configuración del Protocolo Kura+ vista por categoría:
                     // asigna, por paso del protocolo, los conceptos del catálogo.
                     FilledButton.tonalIcon(
-                      onPressed: () => Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => ProtocolKuraScreen(
-                            repo: widget.repo,
-                            organizationId: widget.organizationId,
-                          ),
-                        ),
-                      ),
-                      icon: const Icon(Icons.auto_awesome, size: 18),
+                      onPressed: adminLocked
+                          ? () => _showAdminModuleUpsell(context)
+                          : () => Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (_) => ProtocolKuraScreen(
+                                    repo: widget.repo,
+                                    organizationId: widget.organizationId,
+                                  ),
+                                ),
+                              ),
+                      icon: Icon(
+                          adminLocked ? Icons.lock_outline : Icons.auto_awesome,
+                          size: 18),
                       label: const Text('Protocolo Kura+'),
                     ),
                     // Vínculo protocolo → producto por medida (0076): por
                     // categoría, qué producto del inventario y en qué cantidad.
                     FilledButton.tonalIcon(
-                      onPressed: () => Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => ProtocolProductRulesScreen(
-                            repo: widget.repo,
-                            organizationId: widget.organizationId,
-                          ),
-                        ),
-                      ),
-                      icon: const Icon(Icons.inventory_2_outlined, size: 18),
+                      onPressed: adminLocked
+                          ? () => _showAdminModuleUpsell(context)
+                          : () => Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (_) => ProtocolProductRulesScreen(
+                                    repo: widget.repo,
+                                    organizationId: widget.organizationId,
+                                  ),
+                                ),
+                              ),
+                      icon: Icon(
+                          adminLocked
+                              ? Icons.lock_outline
+                              : Icons.inventory_2_outlined,
+                          size: 18),
                       label: const Text('Productos del protocolo'),
                     ),
                     // Tipo de cita de Acuity para las sesiones del plan (0080).
                     FilledButton.tonalIcon(
-                      onPressed: () => Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => AcuitySessionTypeScreen(
-                            repo: widget.repo,
-                            organizationId: widget.organizationId,
-                          ),
-                        ),
-                      ),
-                      icon: const Icon(Icons.event_repeat_outlined, size: 18),
+                      onPressed: adminLocked
+                          ? () => _showAdminModuleUpsell(context)
+                          : () => Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (_) => AcuitySessionTypeScreen(
+                                    repo: widget.repo,
+                                    organizationId: widget.organizationId,
+                                  ),
+                                ),
+                              ),
+                      icon: Icon(
+                          adminLocked
+                              ? Icons.lock_outline
+                              : Icons.event_repeat_outlined,
+                          size: 18),
                       label: const Text('Tipo de cita (sesiones)'),
                     ),
                     // Mapeo tipo de cita de Acuity → valoración/seguimiento (0083).
                     FilledButton.tonalIcon(
-                      onPressed: () => Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => AcuityVisitTypeMapScreen(
-                            repo: widget.repo,
-                            organizationId: widget.organizationId,
-                          ),
-                        ),
-                      ),
-                      icon: const Icon(Icons.medical_information_outlined,
+                      onPressed: adminLocked
+                          ? () => _showAdminModuleUpsell(context)
+                          : () => Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (_) => AcuityVisitTypeMapScreen(
+                                    repo: widget.repo,
+                                    organizationId: widget.organizationId,
+                                  ),
+                                ),
+                              ),
+                      icon: Icon(
+                          adminLocked
+                              ? Icons.lock_outline
+                              : Icons.medical_information_outlined,
                           size: 18),
                       label: const Text('Tipos de consulta (Acuity)'),
                     ),
@@ -1831,15 +1930,20 @@ class _NoteCatalogTabState extends State<NoteCatalogTab> {
                     // Depuración de expedientes (0086): archiva pacientes que ya
                     // no se atienden (p. ej. import histórico de Acuity).
                     FilledButton.tonalIcon(
-                      onPressed: () => Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => PatientCleanupScreen(
-                            repo: widget.repo,
-                            organizationId: widget.organizationId,
-                          ),
-                        ),
-                      ),
-                      icon: const Icon(Icons.cleaning_services_outlined,
+                      onPressed: adminLocked
+                          ? () => _showAdminModuleUpsell(context)
+                          : () => Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (_) => PatientCleanupScreen(
+                                    repo: widget.repo,
+                                    organizationId: widget.organizationId,
+                                  ),
+                                ),
+                              ),
+                      icon: Icon(
+                          adminLocked
+                              ? Icons.lock_outline
+                              : Icons.cleaning_services_outlined,
                           size: 18),
                       label: const Text('Depurar expedientes'),
                     ),

@@ -8,10 +8,13 @@
 --       enfermeria), no exentas. Multi-rol = un asiento.
 --   · consumed_admin_slots(org): personas cuyo conjunto de roles es SOLO
 --       administrativo (admin, sin ningún rol clínico), no exentas.
--- Reglas (Carlos, ya decididas): quien tiene rol clínico consume asiento CLÍNICO
--- y NO ocupa cupo admin aunque además sea admin; los cuidadores no consumen;
--- module:admin incluye 3 cupos admin, del 4º en adelante consume asiento clínico;
--- profesional único (clínico+admin) = 1 asiento clínico y NO requiere module:admin.
+-- Reglas (Carlos): quien tiene rol clínico consume asiento CLÍNICO y NO ocupa cupo
+-- admin aunque además sea admin; los cuidadores no consumen. Administración BÁSICA
+-- va INCLUIDA con la licencia clínica: SIN module:admin, un usuario solo-administrativo
+-- consume un asiento clínico (ya NO se exige el módulo para agregar un 2º usuario —
+-- regla vieja retirada 12-sep). El módulo Administración (avanzado) añade 3 cupos
+-- admin DEDICADOS; del 4º en adelante consume asiento clínico. Profesional único
+-- (clínico+admin) = 1 asiento clínico.
 --
 -- consumed_seats() (0106) se CONSERVA: lo usó el backfill 0114 (seat:clinico) y no
 -- se reescribe una función vigente.
@@ -135,7 +138,6 @@ declare
   -- pública) agrega uno que no, así que se blinda aquí.
   v_has_clinical boolean := coalesce(public.consumes_clinical_seat(p_roles, null::public.user_role), false);
   v_has_admin boolean := ('admin'::public.user_role = any(p_roles));
-  v_member_count int;
   v_has_admin_module boolean;
   v_clinical_cap int;
   v_clinical_used int;
@@ -146,21 +148,17 @@ begin
     return;
   end if;
 
-  select count(*) into v_member_count
-  from public.user_center_memberships m
-  join public.profiles p on p.id = m.profile_id
-  where m.organization_id = p_org and m.is_active and p.is_active;
-
   v_has_admin_module := exists (
     select 1 from public.org_entitlements e
     where e.organization_id = p_org and e.kind = 'module' and e.key = 'admin'
       and e.status = 'active');
 
-  -- module:admin obligatorio a partir del SEGUNDO usuario (el profesional único no
-  -- lo necesita). Si ya hay al menos un miembro y no hay module:admin, se rechaza.
-  if v_member_count >= 1 and not v_has_admin_module then
-    raise exception 'SEAT_REQUIRES_ADMIN_MODULE: el centro necesita el módulo Administración para agregar un segundo usuario.';
-  end if;
+  -- Empaquetado nuevo (12-sep): Administración BÁSICA va incluida con la licencia
+  -- clínica. Ya NO se exige module:admin para agregar un 2º usuario — se retiró el
+  -- bloque SEAT_REQUIRES_ADMIN_MODULE. Sin el módulo, un usuario solo-administrativo
+  -- consume un asiento CLÍNICO (rama de abajo); con el módulo, entra en uno de los 3
+  -- cupos admin DEDICADOS. (Por eso también desaparece el conteo de miembros: solo
+  -- servía a la regla retirada.)
 
   select coalesce(max(quantity), 0) into v_clinical_cap
   from public.org_entitlements e
@@ -198,9 +196,11 @@ grant execute on function public.assert_seat_available(uuid, public.user_role[])
 --    sin asientos). Base = plan gratuito + module:clinico + seat:clinico(1).
 --
 --    NOTA / SUPUESTO DE FASE 1: qué derechos recibe un centro NUEVO es materia de
---    plan/registro (fases 2-5). Aquí se otorga el mínimo para no romper el alta de
---    autoservicio (1 asiento clínico, sin module:admin: agregar un 2º usuario exige
---    comprarlo). Ajustable cuando se defina el plan gratuito. (Marcado para Carlos.)
+--    plan/registro. Aquí se otorga el mínimo para no romper el alta de autoservicio
+--    (1 asiento clínico). Con el empaquetado nuevo, un 2º usuario solo-administrativo
+--    consume ese asiento clínico SIN exigir module:admin (Administración básica va
+--    incluida). NOTA: esta función la RETIRA 0126 (puerta cerrada → create_trial_organization);
+--    este cuerpo solo aplica en un apply desde cero previo a 0126.
 --
 --    Reproduce el resto de 0106 sin cambios; solo agrega el bloque de derechos.
 -- -----------------------------------------------------------------------------
