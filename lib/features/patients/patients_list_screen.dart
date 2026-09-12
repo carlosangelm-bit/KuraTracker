@@ -140,6 +140,9 @@ class PatientsListScreenState extends ConsumerState<PatientsListScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Puebla BradenScale.cached y reconstruye al resolver, para bradenBandLevel
+    // (si no, la lista muestra a todos como "sin valoración").
+    ref.watch(bradenScaleProvider);
     final session = ref.watch(sessionProvider);
     final repoAsync = ref.watch(dataRepositoryProvider);
     final user = session.user;
