@@ -354,7 +354,9 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
       ),
       const SizedBox(height: 28),
       if (triage.isEmpty)
-        const _EmptyDashboard(isAdmin: false)
+        _EmptyDashboard(
+            isAdmin: false,
+            canCreate: repo.centerCanWriteClinical(user?.organizationId))
       else ...[
         // Resumen de mi panel: donut de estatus + tipos de lesión (en
         // escritorio lado a lado; en móvil apilados).
@@ -683,7 +685,9 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
       ]),
       const SizedBox(height: 28),
       if (triage.isEmpty)
-        const _EmptyDashboard(isAdmin: true)
+        _EmptyDashboard(
+            isAdmin: true,
+            canCreate: repo.centerCanWriteClinical(user?.organizationId))
       else
         // En escritorio los bloques se reparten en varias columnas (no ocupan
         // todo el ancho); en móvil quedan en una sola.
@@ -1147,7 +1151,10 @@ class _AttentionEmpty extends StatelessWidget {
 /// Estado vacio cuando el usuario no tiene ningun paciente todavia.
 class _EmptyDashboard extends StatelessWidget {
   final bool isAdmin;
-  const _EmptyDashboard({required this.isAdmin});
+  // Si el centro NO puede escribir (prueba vencida/impago), el botón "Nuevo
+  // paciente" no existe: no hay que decirle al usuario que lo use.
+  final bool canCreate;
+  const _EmptyDashboard({required this.isAdmin, this.canCreate = true});
 
   @override
   Widget build(BuildContext context) {
@@ -1173,7 +1180,10 @@ class _EmptyDashboard extends StatelessWidget {
           ),
           const SizedBox(height: AppSpacing.xs),
           Text(
-            'Usa "Nuevo paciente" para registrar el primero.',
+            canCreate
+                ? 'Usa "Nuevo paciente" para registrar el primero.'
+                : 'El centro está en modo lectura; suscríbete para volver a crear '
+                    'pacientes (ver Licencias, arriba).',
             textAlign: TextAlign.center,
             style: TextStyle(fontSize: AppType.label, color: t.textDisabled),
           ),
