@@ -58,6 +58,7 @@ void main() {
     final repo = await DataRepository.instance();
     // Fila del catálogo SIN unit_amount (concepto inventado para la prueba).
     await store.upsert(Collections.billingCatalog, {
+      'id': 'qa_sin_monto_mensual',
       'lookup_key': 'qa_sin_monto_mensual',
       'kind': 'module',
       'key': 'qa_sin_monto',
@@ -75,5 +76,43 @@ void main() {
     expect(moneyOrDash(null), '—');
     expect(moneyOrDash(0), pesosFromCents(0)); // "$0" solo para un cero de verdad
     expect(moneyOrDash(0), isNot('—'));
+  });
+
+  test('tabla + tarjetas de módulo = hero (\$4,700): 3 asientos + admin + insumos '
+      '+ comercial; el cupo admin se cobra UNA vez', () async {
+    final store = await LocalStore.instance();
+    final repo = await DataRepository.instance();
+    const org = 'price-4700';
+    await store.upsert(Collections.orgEntitlements, {
+      'id': '$org-seat-clinico',
+      'organization_id': org,
+      'kind': 'seat',
+      'key': 'clinico',
+      'quantity': 3,
+      'status': 'active',
+      'source': 'master',
+    });
+    for (final k in const ['admin', 'insumos', 'comercial']) {
+      await store.upsert(Collections.orgEntitlements, {
+        'id': '$org-module-$k',
+        'organization_id': org,
+        'kind': 'module',
+        'key': k,
+        'status': 'active',
+        'source': 'master',
+      });
+    }
+
+    final tbl = repo.licenseTableTotalFor(org);
+    final mod = repo.licenseModuleTotalFor(org);
+    final hero = repo.licenseHeroTotalFor(org);
+    // El cupo administrativo NO se cobra en la tabla (va en su tarjeta): la tabla es
+    // solo los 3 asientos clínicos.
+    expect(tbl.cents, 120000, reason: '3 × \$400, sin el módulo admin');
+    // admin + insumos + comercial, una vez cada uno.
+    expect(mod.cents, 350000, reason: '\$1,200 + \$1,400 + \$900');
+    expect(hero.cents, 470000, reason: '\$4,700');
+    // La regla: lo visible (tabla + tarjetas) suma EXACTO el hero.
+    expect(tbl.cents + mod.cents, hero.cents);
   });
 }

@@ -1009,6 +1009,61 @@ class DataRepository {
     return null;
   }
 
+  ({int cents, bool complete}) _sumCents(List<int?> parts) {
+    var total = 0;
+    var complete = true;
+    for (final p in parts) {
+      if (p == null) {
+        complete = false;
+      } else {
+        total += p;
+      }
+    }
+    return (cents: total, complete: complete);
+  }
+
+  /// Suma VISIBLE de la TABLA de la pantalla de Licencias (mensual): asientos
+  /// clínicos contratados × precio + Kura+ contratado × precio. El CUPO
+  /// ADMINISTRATIVO no tiene subtotal en la tabla (viene incluido con el módulo, que
+  /// se cobra UNA vez en su tarjeta); los cuidadores no consumen. Es la mitad de la
+  /// regla "tabla + tarjetas de módulo = hero": aquí para que el panel y el test
+  /// usen la MISMA definición y no puedan contradecirse. null-aware por fila.
+  ({int cents, bool complete}) licenseTableTotalFor(String? organizationId) {
+    final s = licenseSummaryFor(organizationId);
+    final proto = s.protocolo.contracted < 0 ? 0 : s.protocolo.contracted;
+    final clin = unitAmountCents('seat', 'clinico', 'month');
+    final pr = unitAmountCents('seat', 'protocolo', 'month');
+    return _sumCents([
+      clin == null ? null : s.clinicalSeats.contracted * clin,
+      pr == null ? null : proto * pr,
+    ]);
+  }
+
+  /// Suma VISIBLE de las TARJETAS DE MÓDULO (mensual): las tarifas de los módulos
+  /// ACTIVOS (Administración avanzada, Insumos, Comercial). El cargo de cada módulo
+  /// se muestra UNA sola vez, aquí. Otra mitad de "tabla + tarjetas = hero".
+  ({int cents, bool complete}) licenseModuleTotalFor(String? organizationId) {
+    final parts = <int?>[];
+    if (premiumAdminFor(organizationId)) {
+      parts.add(unitAmountCents('module', 'admin', 'month'));
+    }
+    if (premiumInsumosFor(organizationId)) {
+      parts.add(unitAmountCents('module', 'insumos', 'month'));
+    }
+    if (premiumComercialFor(organizationId)) {
+      parts.add(unitAmountCents('module', 'comercial', 'month'));
+    }
+    return _sumCents(parts);
+  }
+
+  /// Total mensual del hero = tabla + tarjetas de módulo, por DEFINICIÓN. Así lo
+  /// visible en pantalla suma exactamente el hero (si no, se contradice sola).
+  ({int cents, bool complete}) licenseHeroTotalFor(String? organizationId) {
+    final t = licenseTableTotalFor(organizationId);
+    final m = licenseModuleTotalFor(organizationId);
+    return (cents: t.cents + m.cents, complete: t.complete && m.complete);
+  }
+
   /// Resumen de licencias del centro para el panel del admin (Fase 2). Se calcula
   /// aquí (desde org_entitlements + membresías + perfiles + pacientes) para
   /// MOSTRAR; el TOPE real lo imponen las funciones del servidor

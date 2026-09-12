@@ -37,7 +37,7 @@ class DemoSeed {
   // v34: merge main→staging — combina la siembra de licencia (v33: entitlements
   // insumos/comercial solo en centros premium) con los arreglos de la semilla del
   // rebandeo Braden (v32 en main). Sube por encima de AMBOS para re-sembrar limpio.
-  static const String _seedFlag = 'seeded_v35';
+  static const String _seedFlag = 'seeded_v36';
 
   static Future<void> ensureSeeded(LocalStore store) async {
     if (store.getBool(_seedFlag)) return;
@@ -448,6 +448,9 @@ class DemoSeed {
         ['comercial_anual', 'module', 'comercial', 'year', 900000],
       ])
         {
+          // id estable (= lookup_key) para que un upsert por id no pise otra fila
+          // (LocalStore.upsert deduplica por 'id'; sin él, null==null colisiona).
+          'id': r[0],
           'lookup_key': r[0],
           'kind': r[1],
           'key': r[2],
