@@ -1,20 +1,22 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:kuratracker/features/admin/license_plan_builder_screen.dart'
+    show moneyOrDash, pesosFromCents;
 import 'package:kuratracker/services/data_repository.dart';
+import 'package:kuratracker/services/local_db/local_store.dart';
 
 /// Precios SIEMPRE desde billing_catalog (0129 / demo_seed), nunca a mano en el Dart.
 /// La prueba pública que hay que defender: 5 asientos + 5 Kura+ + los tres módulos
-/// (mensual) = $7,000, el techo del autoservicio. Si la siembra no da exactamente
-/// eso, algo quedó mal.
+/// (mensual) = $7,000, el techo del autoservicio. Y el invariante del punto 2: un
+/// precio ausente es null, se pinta "—", NUNCA "$0".
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUp(() => SharedPreferences.setMockInitialValues({}));
 
   test('montos mensuales del catálogo (centavos, IVA incl.)', () async {
     final repo = await DataRepository.instance();
-    int m(String kind, String key) => repo.unitAmountCents(kind, key, 'month');
-    expect(repo.hasBillingCatalog, isTrue);
+    int m(String kind, String key) => repo.unitAmountCents(kind, key, 'month')!;
     expect(m('seat', 'clinico'), 40000); // $400
     expect(m('seat', 'protocolo'), 30000); // $300
     expect(m('module', 'admin'), 120000); // $1,200
@@ -25,7 +27,7 @@ void main() {
   test('techo del autoservicio = \$7,000/mes (5 asientos + 5 Kura+ + 3 módulos)',
       () async {
     final repo = await DataRepository.instance();
-    int m(String kind, String key) => repo.unitAmountCents(kind, key, 'month');
+    int m(String kind, String key) => repo.unitAmountCents(kind, key, 'month')!;
     final ceiling = 5 * m('seat', 'clinico') +
         5 * m('seat', 'protocolo') +
         m('module', 'admin') +
@@ -45,8 +47,33 @@ void main() {
       ['module', 'comercial'],
     ]) {
       expect(repo.unitAmountCents(e[0], e[1], 'year'),
-          repo.unitAmountCents(e[0], e[1], 'month') * 10,
+          repo.unitAmountCents(e[0], e[1], 'month')! * 10,
           reason: '${e[1]} anual = ×10 mensual');
     }
+  });
+
+  test('precio ausente → null y "—", NUNCA "\$0" (fallo por fila, no todo-o-nada)',
+      () async {
+    final store = await LocalStore.instance();
+    final repo = await DataRepository.instance();
+    // Fila del catálogo SIN unit_amount (concepto inventado para la prueba).
+    await store.upsert(Collections.billingCatalog, {
+      'lookup_key': 'qa_sin_monto_mensual',
+      'kind': 'module',
+      'key': 'qa_sin_monto',
+      'interval': 'month',
+      'unit': 'center',
+      // sin unit_amount a propósito
+    });
+    // Fila totalmente ausente y fila presente-pero-sin-monto → ambas null.
+    expect(repo.unitAmountCents('module', 'no_existe', 'month'), isNull);
+    expect(repo.unitAmountCents('module', 'qa_sin_monto', 'month'), isNull);
+
+    // La capa de despliegue: null → "—"; un cero REAL sí es "$0".
+    expect(moneyOrDash(repo.unitAmountCents('module', 'qa_sin_monto', 'month')),
+        '—');
+    expect(moneyOrDash(null), '—');
+    expect(moneyOrDash(0), pesosFromCents(0)); // "$0" solo para un cero de verdad
+    expect(moneyOrDash(0), isNot('—'));
   });
 }

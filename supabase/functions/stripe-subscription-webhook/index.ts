@@ -95,6 +95,10 @@ function extractFromSubscription(sub: Record<string, unknown>) {
       lookup_key: (price["lookup_key"] as string | undefined) ?? null,
       quantity: Number(it["quantity"] ?? 1),
       subscription_item_id: (it["id"] as string | undefined) ?? null,
+      // Monto COBRADO por Stripe (centavos). apply_stripe_subscription_event lo compara
+      // contra billing_catalog.unit_amount y abre catalog_price_drift si difieren
+      // (guardar el precio en la base solo es seguro si se vigila que no se desincronice).
+      unit_amount: (price["unit_amount"] as number | undefined) ?? null,
     };
   });
   return { orgId, status, cpeIso, items };

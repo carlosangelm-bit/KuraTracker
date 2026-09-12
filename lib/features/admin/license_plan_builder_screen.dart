@@ -22,6 +22,10 @@ String pesosFromCents(int cents) {
   return frac == 0 ? '\$$s' : '\$$s.${frac.toString().padLeft(2, '0')}';
 }
 
+/// Un precio ausente (null) se pinta "—", nunca "$0": un ausente no debe parecerse
+/// a un cero.
+String moneyOrDash(int? cents) => cents == null ? '—' : pesosFromCents(cents);
+
 /// "Arma tu plan" — el configurador (uno de los cuatro estados del canvas). Steppers
 /// de asientos clínicos y Protocolo Kura+ (Kura+ nunca > asientos), interruptores de
 /// los tres módulos (Administración YA NO es obligatoria), conmutador mensual/anual
@@ -67,44 +71,67 @@ class _LicensePlanBuilderScreenState extends State<LicensePlanBuilderScreen> {
   String _interval = 'month';
   bool _busy = false;
 
-  int _unit(String kind, String key) =>
+  int? _unit(String kind, String key) =>
       widget.repo.unitAmountCents(kind, key, _interval);
-  int _unitMonthly(String kind, String key) =>
+  int? _unitMonthly(String kind, String key) =>
       widget.repo.unitAmountCents(kind, key, 'month');
 
   bool get _overCeiling => _clinico > _seatCeiling;
 
-  int get _selectedTotalCents =>
-      _clinico * _unit('seat', 'clinico') +
-      _protocolo * _unit('seat', 'protocolo') +
-      (_admin ? _unit('module', 'admin') : 0) +
-      (_insumos ? _unit('module', 'insumos') : 0) +
-      (_comercial ? _unit('module', 'comercial') : 0);
+  /// Suma de una selección a un precio dado, con completitud POR FILA: si a un
+  /// concepto activo le falta el precio, el total queda `complete=false` y no se
+  /// suma como 0 (un ausente no es un cero).
+  ({int cents, bool complete}) _sum(int? Function(String, String) price,
+      {required int clinico,
+      required int protocolo,
+      required bool admin,
+      required bool insumos,
+      required bool comercial}) {
+    var total = 0;
+    var complete = true;
+    void add(int? unit, int qty) {
+      if (qty == 0) return;
+      if (unit == null) {
+        complete = false;
+      } else {
+        total += unit * qty;
+      }
+    }
+
+    add(price('seat', 'clinico'), clinico);
+    add(price('seat', 'protocolo'), protocolo);
+    if (admin) add(price('module', 'admin'), 1);
+    if (insumos) add(price('module', 'insumos'), 1);
+    if (comercial) add(price('module', 'comercial'), 1);
+    return (cents: total, complete: complete);
+  }
+
+  ({int cents, bool complete}) get _selectedTotal => _sum(_unit,
+      clinico: _clinico,
+      protocolo: _protocolo,
+      admin: _admin,
+      insumos: _insumos,
+      comercial: _comercial);
 
   /// Costo MENSUAL de la selección (base fija para el delta, sin importar el toggle).
-  int get _selectedMonthlyCents =>
-      _clinico * _unitMonthly('seat', 'clinico') +
-      _protocolo * _unitMonthly('seat', 'protocolo') +
-      (_admin ? _unitMonthly('module', 'admin') : 0) +
-      (_insumos ? _unitMonthly('module', 'insumos') : 0) +
-      (_comercial ? _unitMonthly('module', 'comercial') : 0);
+  ({int cents, bool complete}) get _selectedMonthly => _sum(_unitMonthly,
+      clinico: _clinico,
+      protocolo: _protocolo,
+      admin: _admin,
+      insumos: _insumos,
+      comercial: _comercial);
 
   /// Costo MENSUAL del plan actual del centro (para el delta).
-  int get _currentMonthlyCents {
+  ({int cents, bool complete}) get _currentMonthly {
     final s = widget.repo.licenseSummaryFor(widget.organizationId);
     final protoContracted =
         s.protocolo.contracted < 0 ? 0 : s.protocolo.contracted;
-    return s.clinicalSeats.contracted * _unitMonthly('seat', 'clinico') +
-        protoContracted * _unitMonthly('seat', 'protocolo') +
-        (widget.repo.premiumAdminFor(widget.organizationId)
-            ? _unitMonthly('module', 'admin')
-            : 0) +
-        (widget.repo.premiumInsumosFor(widget.organizationId)
-            ? _unitMonthly('module', 'insumos')
-            : 0) +
-        (widget.repo.premiumComercialFor(widget.organizationId)
-            ? _unitMonthly('module', 'comercial')
-            : 0);
+    return _sum(_unitMonthly,
+        clinico: s.clinicalSeats.contracted,
+        protocolo: protoContracted,
+        admin: widget.repo.premiumAdminFor(widget.organizationId),
+        insumos: widget.repo.premiumInsumosFor(widget.organizationId),
+        comercial: widget.repo.premiumComercialFor(widget.organizationId));
   }
 
   void _setClinico(int v) => setState(() {
@@ -252,7 +279,7 @@ class _LicensePlanBuilderScreenState extends State<LicensePlanBuilderScreen> {
                   fontWeight: FontWeight.w700, color: t.textPrimary)),
           _moduleSwitch(
             t,
-            title: 'Administración (avanzada)',
+            title: 'Administración avanzada',
             subtitle: 'Config del protocolo, sitios extra, marca y 3 cupos '
                 'admin dedicados. Lo básico ya viene incluido.',
             value: _admin,
@@ -298,7 +325,7 @@ class _LicensePlanBuilderScreenState extends State<LicensePlanBuilderScreen> {
     required String title,
     required String subtitle,
     required int value,
-    required int unitCents,
+    required int? unitCents,
     int? max,
     required ValueChanged<int> onChanged,
   }) {
@@ -322,7 +349,7 @@ class _LicensePlanBuilderScreenState extends State<LicensePlanBuilderScreen> {
                       style:
                           TextStyle(fontSize: 11, color: t.textSecondary)),
                   const SizedBox(height: 2),
-                  Text('${pesosFromCents(unitCents)} c/u',
+                  Text('${moneyOrDash(unitCents)} c/u',
                       style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w600,
@@ -358,7 +385,7 @@ class _LicensePlanBuilderScreenState extends State<LicensePlanBuilderScreen> {
     required String title,
     required String subtitle,
     required bool value,
-    required int unitCents,
+    required int? unitCents,
     required ValueChanged<bool> onChanged,
   }) =>
       Card(
@@ -377,7 +404,7 @@ class _LicensePlanBuilderScreenState extends State<LicensePlanBuilderScreen> {
               Text(subtitle,
                   style: TextStyle(fontSize: 11, color: t.textSecondary)),
               Text(
-                  '${pesosFromCents(unitCents)} / ${_interval == 'year' ? 'año' : 'mes'}',
+                  '${moneyOrDash(unitCents)} / ${_interval == 'year' ? 'año' : 'mes'}',
                   style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
@@ -390,8 +417,13 @@ class _LicensePlanBuilderScreenState extends State<LicensePlanBuilderScreen> {
   // ---------------- Resumen vivo (total + delta + CTA) ----------------------
 
   Widget _summaryColumn(BrandTokens t) {
-    final deltaMonthly = _selectedMonthlyCents - _currentMonthlyCents;
     final annual = _interval == 'year';
+    final total = _selectedTotal;
+    final sel = _selectedMonthly;
+    final cur = _currentMonthly;
+    // El delta solo es fiable si AMBOS lados tienen todos sus precios.
+    final deltaOk = sel.complete && cur.complete;
+    final deltaMonthly = sel.cents - cur.cents;
     return Card(
       color: t.surface,
       child: Padding(
@@ -408,15 +440,15 @@ class _LicensePlanBuilderScreenState extends State<LicensePlanBuilderScreen> {
             const SizedBox(height: 10),
             if (_clinico > 0)
               _line(t, 'Asientos clínicos ×$_clinico',
-                  _clinico * _unit('seat', 'clinico')),
+                  _unit('seat', 'clinico'), _clinico),
             if (_protocolo > 0)
               _line(t, 'Protocolo Kura+ ×$_protocolo',
-                  _protocolo * _unit('seat', 'protocolo')),
+                  _unit('seat', 'protocolo'), _protocolo),
             if (_admin)
-              _line(t, 'Administración', _unit('module', 'admin')),
-            if (_insumos) _line(t, 'Insumos', _unit('module', 'insumos')),
+              _line(t, 'Administración avanzada', _unit('module', 'admin'), 1),
+            if (_insumos) _line(t, 'Insumos', _unit('module', 'insumos'), 1),
             if (_comercial)
-              _line(t, 'Comercial', _unit('module', 'comercial')),
+              _line(t, 'Comercial', _unit('module', 'comercial'), 1),
             const Divider(),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -425,19 +457,31 @@ class _LicensePlanBuilderScreenState extends State<LicensePlanBuilderScreen> {
                     style: TextStyle(
                         fontWeight: FontWeight.w800, color: t.textPrimary)),
                 Text(
-                    '${pesosFromCents(_selectedTotalCents)}${annual ? ' /año' : ' /mes'}',
+                    '${pesosFromCents(total.cents)}${annual ? ' /año' : ' /mes'}',
                     style: TextStyle(
                         fontWeight: FontWeight.w800,
                         fontSize: 18,
                         color: t.brandPrimary)),
               ],
             ),
+            if (!total.complete)
+              Text(
+                  'Total incompleto: falta un precio en el catálogo. No se muestra '
+                  'como \$0.',
+                  style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: t.statusWarning)),
             if (annual)
               Text('Equivale a 10 meses: pagas dos menos que mensual.',
                   style:
                       TextStyle(fontSize: 11, color: t.statusSuccess)),
             const SizedBox(height: 6),
-            _deltaLine(t, deltaMonthly),
+            if (deltaOk)
+              _deltaLine(t, deltaMonthly)
+            else
+              Text('Cambio vs plan actual: no disponible (falta un precio).',
+                  style: TextStyle(fontSize: 12, color: t.textSecondary)),
             const SizedBox(height: 14),
             if (_overCeiling) ...[
               Container(
@@ -487,7 +531,7 @@ class _LicensePlanBuilderScreenState extends State<LicensePlanBuilderScreen> {
     );
   }
 
-  Widget _line(BrandTokens t, String label, int cents) => Padding(
+  Widget _line(BrandTokens t, String label, int? unitCents, int qty) => Padding(
         padding: const EdgeInsets.symmetric(vertical: 3),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -495,7 +539,7 @@ class _LicensePlanBuilderScreenState extends State<LicensePlanBuilderScreen> {
             Flexible(
                 child: Text(label,
                     style: TextStyle(fontSize: 13, color: t.textPrimary))),
-            Text(pesosFromCents(cents),
+            Text(moneyOrDash(unitCents == null ? null : unitCents * qty),
                 style: TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w600,

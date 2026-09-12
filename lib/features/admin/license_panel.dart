@@ -32,19 +32,33 @@ class _LicensePanelState extends State<LicensePanel> {
   DataRepository get repo => widget.repo;
   String get _org => widget.organizationId!;
 
-  int _u(String kind, String key) => repo.unitAmountCents(kind, key, 'month');
+  int? _u(String kind, String key) => repo.unitAmountCents(kind, key, 'month');
 
   bool get _admin => repo.premiumAdminFor(_org);
   bool get _insumos => repo.premiumInsumosFor(_org);
   bool get _comercial => repo.premiumComercialFor(_org);
 
-  int _monthlyTotalCents(LicenseSummary s) {
+  /// Total mensual con completitud POR FILA: un concepto activo sin precio deja el
+  /// total incompleto (no se suma como 0). Un ausente nunca se pinta como "$0".
+  ({int cents, bool complete}) _monthlyTotal(LicenseSummary s) {
     final proto = s.protocolo.contracted < 0 ? 0 : s.protocolo.contracted;
-    return s.clinicalSeats.contracted * _u('seat', 'clinico') +
-        proto * _u('seat', 'protocolo') +
-        (_admin ? _u('module', 'admin') : 0) +
-        (_insumos ? _u('module', 'insumos') : 0) +
-        (_comercial ? _u('module', 'comercial') : 0);
+    var total = 0;
+    var complete = true;
+    void add(int? unit, int qty) {
+      if (qty == 0) return;
+      if (unit == null) {
+        complete = false;
+      } else {
+        total += unit * qty;
+      }
+    }
+
+    add(_u('seat', 'clinico'), s.clinicalSeats.contracted);
+    add(_u('seat', 'protocolo'), proto);
+    if (_admin) add(_u('module', 'admin'), 1);
+    if (_insumos) add(_u('module', 'insumos'), 1);
+    if (_comercial) add(_u('module', 'comercial'), 1);
+    return (cents: total, complete: complete);
   }
 
   List<AppUser> _kuraAssigned() => repo
@@ -80,7 +94,7 @@ class _LicensePanelState extends State<LicensePanel> {
         const SizedBox(height: 14),
         _sectionTitle(t, 'Módulos'),
         _moduleCard(t,
-            title: 'Administración (avanzada)',
+            title: 'Administración avanzada',
             active: _admin,
             monthlyCents: _u('module', 'admin'),
             unlocks: 'Config del protocolo, sitios extra, marca y 3 cupos '
@@ -104,12 +118,12 @@ class _LicensePanelState extends State<LicensePanel> {
   // ---------------- Hero ----------------
 
   Widget _hero(BrandTokens t, LicenseSummary s, {required bool ceiling}) {
-    final total = _monthlyTotalCents(s);
+    final total = _monthlyTotal(s);
     final concepts = <String>[
       if (s.clinicalSeats.contracted > 0)
         '${s.clinicalSeats.contracted} asiento${s.clinicalSeats.contracted == 1 ? '' : 's'} clínico${s.clinicalSeats.contracted == 1 ? '' : 's'}',
       if ((s.protocolo.contracted) > 0) '${s.protocolo.contracted} Kura+',
-      if (_admin) 'Administración',
+      if (_admin) 'Administración avanzada',
       if (_insumos) 'Insumos',
       if (_comercial) 'Comercial',
     ];
@@ -137,7 +151,7 @@ class _LicensePanelState extends State<LicensePanel> {
             crossAxisAlignment: CrossAxisAlignment.baseline,
             textBaseline: TextBaseline.alphabetic,
             children: [
-              Text(pesosFromCents(total),
+              Text(pesosFromCents(total.cents),
                   style: TextStyle(
                       color: t.onBrand,
                       fontSize: 34,
@@ -150,6 +164,17 @@ class _LicensePanelState extends State<LicensePanel> {
                       fontWeight: FontWeight.w600)),
             ],
           ),
+          if (!total.complete)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(
+                'Total incompleto: falta un precio en el catálogo (no se muestra como \$0).',
+                style: TextStyle(
+                    color: t.onBrand.withValues(alpha: 0.9),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600),
+              ),
+            ),
           const SizedBox(height: 8),
           Text(
             concepts.isEmpty ? 'Aún sin conceptos activos.' : concepts.join('  ·  '),
@@ -190,10 +215,10 @@ class _LicensePanelState extends State<LicensePanel> {
 
   Widget _includedCard(BrandTokens t) {
     const items = [
-      'Dar de alta usuarios (dentro de tus asientos clínicos)',
-      'Registrar tu primer sitio',
-      'Cargar el catálogo base y las escalas del protocolo',
-      'Ver licencias, registro de divulgaciones y exportar el expediente',
+      'Dar de alta a tu equipo clínico, con sus roles y su cédula.',
+      'Datos fiscales, método de pago, facturas y esta misma pantalla.',
+      'Encender el Protocolo Kura+ y las escalas curadas, y cargar el catálogo base.',
+      'Exportar el expediente y el registro de divulgaciones. Tu sede.',
     ];
     return Container(
       decoration: BoxDecoration(
@@ -286,23 +311,26 @@ class _LicensePanelState extends State<LicensePanel> {
               'Asiento clínico',
               '${s.clinicalSeats.used}',
               '${s.clinicalSeats.contracted}',
-              '${pesosFromCents(clinicoUnit)} c/u',
-              pesosFromCents(s.clinicalSeats.contracted * clinicoUnit),
+              '${moneyOrDash(clinicoUnit)} c/u',
+              moneyOrDash(clinicoUnit == null
+                  ? null
+                  : s.clinicalSeats.contracted * clinicoUnit),
               warn: s.clinicalSeats.full,
             ),
             row(
               'Protocolo Kura+',
               '${s.protocolo.used}',
               '$protoContracted',
-              '${pesosFromCents(protoUnit)} c/u',
-              pesosFromCents(protoContracted * protoUnit),
+              '${moneyOrDash(protoUnit)} c/u',
+              moneyOrDash(protoUnit == null ? null : protoContracted * protoUnit),
             ),
             row(
               'Cupo administrativo',
               '${s.adminSlots.used}',
               _admin ? '3 incluidos' : '0',
-              '${pesosFromCents(adminUnit)} módulo',
-              pesosFromCents(_admin ? adminUnit : 0),
+              '${moneyOrDash(adminUnit)} módulo',
+              // Sin el módulo el subtotal es 0 real (no ausente): $0 correcto.
+              _admin ? moneyOrDash(adminUnit) : pesosFromCents(0),
               warn: s.adminSeatOverflow > 0,
             ),
             row(
@@ -323,7 +351,7 @@ class _LicensePanelState extends State<LicensePanel> {
   Widget _moduleCard(BrandTokens t,
       {required String title,
       required bool active,
-      required int monthlyCents,
+      required int? monthlyCents,
       required String unlocks}) {
     return Card(
       color: t.surface,
@@ -346,7 +374,7 @@ class _LicensePanelState extends State<LicensePanel> {
                     fontSize: 11,
                     fontWeight: FontWeight.w700,
                     color: active ? t.statusSuccess : t.textSecondary)),
-            Text('${pesosFromCents(monthlyCents)}/mes',
+            Text('${moneyOrDash(monthlyCents)}/mes',
                 style: TextStyle(fontSize: 12, color: t.textSecondary)),
           ],
         ),
@@ -423,11 +451,22 @@ class _LicensePanelState extends State<LicensePanel> {
     final suggestClinico =
         s.clinicalSeats.used > 0 ? s.clinicalSeats.used : 1;
     final suggestProtocolo = _kuraAssigned().length;
-    final suggestCents = suggestClinico * _u('seat', 'clinico') +
-        suggestProtocolo * _u('seat', 'protocolo') +
-        (_admin ? _u('module', 'admin') : 0) +
-        (_insumos ? _u('module', 'insumos') : 0) +
-        (_comercial ? _u('module', 'comercial') : 0);
+    var suggestCents = 0;
+    var suggestComplete = true;
+    void addSuggest(int? unit, int qty) {
+      if (qty == 0) return;
+      if (unit == null) {
+        suggestComplete = false;
+      } else {
+        suggestCents += unit * qty;
+      }
+    }
+
+    addSuggest(_u('seat', 'clinico'), suggestClinico);
+    addSuggest(_u('seat', 'protocolo'), suggestProtocolo);
+    if (_admin) addSuggest(_u('module', 'admin'), 1);
+    if (_insumos) addSuggest(_u('module', 'insumos'), 1);
+    if (_comercial) addSuggest(_u('module', 'comercial'), 1);
 
     return ListView(
       padding: const EdgeInsets.all(16),
@@ -511,7 +550,7 @@ class _LicensePanelState extends State<LicensePanel> {
                 '$suggestClinico asiento${suggestClinico == 1 ? '' : 's'} clínico'
                 '${suggestClinico == 1 ? '' : 's'}'
                 '${suggestProtocolo > 0 ? ' · $suggestProtocolo Kura+' : ''}'
-                '${_admin ? ' · Administración' : ''}'
+                '${_admin ? ' · Administración avanzada' : ''}'
                 '${_insumos ? ' · Insumos' : ''}'
                 '${_comercial ? ' · Comercial' : ''}',
                 style: TextStyle(fontSize: 13, color: t.textPrimary),
@@ -522,6 +561,13 @@ class _LicensePanelState extends State<LicensePanel> {
                       fontWeight: FontWeight.w900,
                       fontSize: 22,
                       color: t.brandPrimary)),
+              if (!suggestComplete)
+                Text(
+                    'Total incompleto: falta un precio en el catálogo (no es \$0).',
+                    style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: t.statusWarning)),
               const SizedBox(height: 12),
               FilledButton.icon(
                 onPressed: () => _openBuilder(
