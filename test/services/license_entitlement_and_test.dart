@@ -129,6 +129,38 @@ void main() {
     expect(repo.canWriteModule(await org('active', 'master'), 'clinico'), isTrue);
   });
 
+  test('create_trial_organization: nace plan:prueba con TODO y escribible ahora', () async {
+    final store = await LocalStore.instance();
+    final repo = await DataRepository.instance();
+    final org = await repo.createTrialOrganization(
+        'Centro Prueba QA', CenterType.clinicaHeridas);
+
+    final ents = store
+        .getAll(Collections.orgEntitlements)
+        .where((e) => e['organization_id'] == org.id)
+        .toList();
+    // plan:prueba + los cuatro módulos + asientos, todos con vencimiento y master.
+    expect(ents.any((e) => e['kind'] == 'plan' && e['key'] == 'prueba'), isTrue);
+    for (final k in ['clinico', 'admin', 'insumos', 'comercial']) {
+      expect(ents.any((e) => e['kind'] == 'module' && e['key'] == k), isTrue,
+          reason: 'falta module:$k en la prueba');
+    }
+    expect(ents.every((e) => e['source'] == 'master'), isTrue);
+    expect(ents.every((e) => e['current_period_end'] != null), isTrue);
+
+    // Vigente hoy: lee Y escribe; y los tres candados premium encendidos (TODO).
+    expect(repo.canReadModule(org.id, 'clinico'), isTrue);
+    expect(repo.canWriteModule(org.id, 'clinico'), isTrue);
+    expect(repo.premiumInsumosFor(org.id), isTrue);
+    expect(repo.premiumComercialFor(org.id), isTrue);
+    expect(repo.premiumProtocoloKuraFor(org.id), isTrue);
+
+    // El vencimiento cae ~30 días adelante (parámetro por defecto).
+    final plan = ents.firstWhere((e) => e['key'] == 'prueba');
+    final end = DateTime.parse(plan['current_period_end'] as String);
+    expect(end.isAfter(DateTime.now().add(const Duration(days: 29))), isTrue);
+  });
+
   test('candado de escritura en el REPOSITORIO: modo lectura lanza, activo pasa, '
       'sin derecho no bloquea', () async {
     final store = await LocalStore.instance();

@@ -1236,6 +1236,79 @@ class DataRepository {
     return Organization.fromJson(saved);
   }
 
+  /// ÚNICO nacimiento de un centro de PRUEBA (plan:prueba, 30 días con todo incluido;
+  /// después, solo lectura por tiempo vía canWriteModule). Espejo del RPC
+  /// create_trial_organization (0125): en Supabase lo llama (caller-agnóstico,
+  /// fundador por parámetro), en demo (LocalStore) siembra los derechos directo. La
+  /// consola del master no se vincula como fundador (founder null); el master crea
+  /// usuarios después con admin-create-user. El conjunto de derechos debe quedar
+  /// IGUAL que el RPC (si cambia uno, cambiar el otro).
+  Future<Organization> createTrialOrganization(
+    String name,
+    CenterType centerType, {
+    bool isTest = false,
+    int trialDays = 30,
+    int clinicalSeats = 5,
+    int protocoloSeats = 5,
+  }) async {
+    final store = _store;
+    if (store is SupabaseDataStore) {
+      final orgId = await store.callRpcResult('create_trial_organization', {
+        'p_organization_name': name,
+        'p_center_type': centerType.dbValue,
+        'p_trial_days': trialDays,
+        'p_clinical_seats': clinicalSeats,
+        'p_protocolo_seats': protocoloSeats,
+        'p_is_test': isTest,
+      });
+      await store.refreshCollection(Collections.organizations);
+      await store.refreshCollection(Collections.orgEntitlements);
+      return organizationById(orgId as String) ??
+          Organization.fromJson({
+            'id': orgId,
+            'name': name,
+            'center_type': centerType.dbValue,
+            'is_active': true,
+            'is_test': isTest,
+          });
+    }
+    // Demo/LocalStore: crea el centro + siembra los derechos de la prueba (mismo
+    // conjunto que el RPC), con vencimiento por tiempo.
+    final id = _uuid.v4();
+    final now = DateTime.now();
+    final endIso = now.add(Duration(days: trialDays)).toIso8601String();
+    final orgRow = await store.insertRow(Collections.organizations, {
+      'id': id,
+      'name': name,
+      'center_type': centerType.dbValue,
+      'is_test': isTest,
+      'is_active': true,
+    });
+    Map<String, dynamic> ent(String kind, String key, int? qty) => {
+          'id': _uuid.v4(),
+          'organization_id': id,
+          'kind': kind,
+          'key': key,
+          'quantity': qty,
+          'status': 'active',
+          'current_period_end': endIso,
+          'source': 'master',
+          'created_at': now.toIso8601String(),
+        };
+    for (final e in [
+      ent('plan', 'prueba', null),
+      ent('module', 'clinico', null),
+      ent('module', 'admin', null),
+      ent('module', 'insumos', null),
+      ent('module', 'comercial', null),
+      ent('seat', 'clinico', clinicalSeats < 1 ? 1 : clinicalSeats),
+      ent('seat', 'protocolo', protocoloSeats < 0 ? 0 : protocoloSeats),
+    ]) {
+      await store.insertRow(Collections.orgEntitlements, e);
+    }
+    return Organization.fromJson(orgRow);
+  }
+
   Future<void> setOrganizationActive(String organizationId, bool active) async {
     await _store.updateRow(Collections.organizations, organizationId, {'is_active': active});
   }
