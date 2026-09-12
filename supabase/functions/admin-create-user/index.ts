@@ -141,12 +141,9 @@ serve(async (req) => {
     });
     if (seatErr) {
       const msg = seatErr.message ?? "";
-      if (msg.includes("SEAT_REQUIRES_ADMIN_MODULE")) {
-        return json({
-          error: "El centro necesita el módulo Administración para agregar un segundo usuario.",
-          code: "seat_requires_admin_module",
-        }, 402);
-      }
+      // SEAT_REQUIRES_ADMIN_MODULE se retiró (Administración básica va incluida con la
+      // licencia clínica): un administrativo sin cupo consume asiento clínico, así que
+      // el único rechazo por tope es SEAT_NO_CLINICAL (la demanda supera los asientos).
       if (msg.includes("SEAT_NO_CLINICAL")) {
         return json({
           error: "No hay asientos disponibles en la licencia del centro. Compra más asientos para dar de alta a esta persona.",
