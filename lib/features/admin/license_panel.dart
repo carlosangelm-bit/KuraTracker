@@ -43,25 +43,21 @@ class _LicensePanelState extends State<LicensePanel> {
       padding: const EdgeInsets.all(16),
       children: [
         if (state == LicenseState.impago) _impagoBand(),
-        if (state == LicenseState.gratuito)
-          _freePlanCard(s)
-        else ...[
-          _counter(
-            'Asientos clínicos',
-            s.clinicalSeats,
-            highlight: state == LicenseState.lleno,
-            subtitle: 'Se cobran por persona con rol clínico.',
-          ),
-          _counter(
-            'Cupos administrativos',
-            s.adminSlots,
-            subtitle: s.adminSlots.contracted == 0
-                ? 'Incluidos con el módulo Administración (no contratado).'
-                : 'Incluidos en Administración; del 4.º paga como clínico.',
-          ),
-          _caregiverCard(s.caregivers),
-          _protocoloCard(s),
-        ],
+        _counter(
+          'Asientos clínicos',
+          s.clinicalSeats,
+          highlight: state == LicenseState.lleno,
+          subtitle: 'Se cobran por persona con rol clínico.',
+        ),
+        _counter(
+          'Cupos administrativos',
+          s.adminSlots,
+          subtitle: s.adminSlots.contracted == 0
+              ? 'Incluidos con el módulo Administración (no contratado).'
+              : 'Incluidos en Administración; del 4.º paga como clínico.',
+        ),
+        _caregiverCard(s.caregivers),
+        _protocoloCard(s),
         const SizedBox(height: 12),
         _cta(state, s),
       ],
@@ -165,44 +161,10 @@ class _LicensePanelState extends State<LicensePanel> {
         ),
       );
 
-  Widget _freePlanCard(LicenseSummary s) {
-    // SIN contador de pacientes: el tope del plan gratuito es un trigger en el
-    // servidor que aún no existe (fase 2). Publicar "N de 5" como constante del
-    // cliente contradice el principio de la rama —el servidor impone el derecho,
-    // no la UI— y repetiría el defecto de la auditoría del 1-sep (prometer en la
-    // UI algo que el producto no respalda). Vuelve el contador cuando el trigger
-    // exista, respaldado por el servidor.
-    return const Card(
-      margin: EdgeInsets.only(bottom: 12),
-      child: Padding(
-        padding: EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Plan gratuito',
-                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
-            SizedBox(height: 6),
-            Text('Suscríbete para crecer: más pacientes, asientos y módulos.',
-                style: TextStyle(fontSize: 12)),
-          ],
-        ),
-      ),
-    );
-  }
-
   Widget _cta(LicenseState state, LicenseSummary s) {
     switch (state) {
       case LicenseState.impago:
         return const SizedBox.shrink(); // la banda ya trae su acción
-      case LicenseState.gratuito:
-        return FilledButton.icon(
-          onPressed: _grow(
-              kind: 'otro',
-              title: 'Suscribirse',
-              presetNote: 'Quiero suscribirme (salir del plan gratuito).'),
-          icon: const Icon(Icons.rocket_launch_outlined),
-          label: const Text('Suscribirse'),
-        );
       case LicenseState.techoAutoservicio:
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,

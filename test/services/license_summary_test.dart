@@ -32,19 +32,17 @@ LicenseSummary _summary({
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  test('los cinco estados del panel', () {
+  test('los cuatro estados del panel', () {
     // Holgado: "4 de 5", 1 disponible.
     expect(_summary(cUsed: 4, cContracted: 5).state, LicenseState.holgado);
     // Lleno pero por debajo del techo (contratado < 5): aún cabe autoservicio.
     expect(_summary(cUsed: 3, cContracted: 3).state, LicenseState.lleno);
     // Techo del autoservicio: 5 de 5, ya no se compra solo.
     expect(_summary(cUsed: 5, cContracted: 5).state, LicenseState.techoAutoservicio);
-    // Impago manda sobre todo.
+    // Impago manda sobre todo. (El plan gratuito se retiró: lo reemplaza la prueba,
+    // que al vencer cae en solo lectura por tiempo, no en un estado de panel.)
     expect(_summary(cUsed: 4, cContracted: 5, pastDue: true).state,
         LicenseState.impago);
-    // Plan gratuito es su propia etapa.
-    expect(_summary(cUsed: 0, cContracted: 0, plan: 'gratuito').state,
-        LicenseState.gratuito);
   });
 
   test('resumen calculado desde la semilla + solicitud auditada', () async {

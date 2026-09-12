@@ -58,7 +58,7 @@ void main() {
         'un paciente sin heridas activas devuelve activeCount=0, '
         'hasActiveWounds=false y etiologies vacio', () async {
       final repo = await DataRepository.instance();
-      final created = await repo.createOrganization('Org sin heridas (prueba)', CenterType.clinicaHeridas);
+      final created = await repo.createTrialOrganization('Org sin heridas (prueba)', CenterType.clinicaHeridas);
       // Paciente nuevo sin ninguna herida creada.
       final patient = await repo.createPatient(
         fullName: 'Paciente Sin Heridas',
@@ -74,7 +74,7 @@ void main() {
 
     test('una herida cerrada (is_active=false) no cuenta ni aparece como chip', () async {
       final repo = await DataRepository.instance();
-      final created = await repo.createOrganization('Org herida cerrada (prueba)', CenterType.clinicaHeridas);
+      final created = await repo.createTrialOrganization('Org herida cerrada (prueba)', CenterType.clinicaHeridas);
       final patient = await repo.createPatient(
         fullName: 'Paciente Herida Cerrada',
         organizationId: created.id,

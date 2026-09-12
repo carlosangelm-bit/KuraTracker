@@ -8,9 +8,6 @@ library;
 /// "Solicitar más licencias" (formulario a la plataforma).
 const int kSelfServiceSeatCeiling = 5;
 
-/// Tope de pacientes del plan gratuito (para el contador de esa etapa).
-const int kFreePlanPatientCap = 5;
-
 enum LicenseState {
   /// Contadores con holgura.
   holgado,
@@ -23,9 +20,6 @@ enum LicenseState {
 
   /// Suscripción vencida (past_due): banda de gracia; se cierra el alta, no la consulta.
   impago,
-
-  /// Plan gratuito: contador de pacientes restantes en vez de licencias.
-  gratuito,
 }
 
 /// Un contador "usado de contratado". [contracted] < 0 = sin límite / no aplica.
@@ -73,17 +67,14 @@ class LicenseSummary {
     required this.patientsUsed,
   });
 
-  bool get isFreePlan => plan == 'gratuito';
   bool get hasProtocoloAddon => !protocolo.unlimited && protocolo.contracted >= 0;
 
-  /// Estado del panel. Precedencia: impago manda sobre todo (se cobra primero);
-  /// luego el plan gratuito es su propia etapa. Con holgura → holgado. LLENO (0
-  /// disponibles): si está en el techo del autoservicio (≥5 asientos contratados)
-  /// ya no se compra solo → techoAutoservicio; si no, lleno (aún cabe autoservicio).
-  /// "4 de 5" es holgado; "5 de 5" es el techo.
+  /// Estado del panel. Precedencia: impago manda sobre todo (se cobra primero).
+  /// Con holgura → holgado. LLENO (0 disponibles): si está en el techo del
+  /// autoservicio (≥5 asientos contratados) ya no se compra solo → techoAutoservicio;
+  /// si no, lleno (aún cabe autoservicio). "4 de 5" es holgado; "5 de 5" es el techo.
   LicenseState get state {
     if (pastDue) return LicenseState.impago;
-    if (isFreePlan) return LicenseState.gratuito;
     if (!clinicalSeats.full) return LicenseState.holgado;
     if (clinicalSeats.contracted >= kSelfServiceSeatCeiling) {
       return LicenseState.techoAutoservicio;
