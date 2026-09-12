@@ -38,28 +38,11 @@ class _LicensePanelState extends State<LicensePanel> {
   bool get _insumos => repo.premiumInsumosFor(_org);
   bool get _comercial => repo.premiumComercialFor(_org);
 
-  /// Total mensual con completitud POR FILA: un concepto activo sin precio deja el
-  /// total incompleto (no se suma como 0). Un ausente nunca se pinta como "$0".
-  ({int cents, bool complete}) _monthlyTotal(LicenseSummary s) {
-    final proto = s.protocolo.contracted < 0 ? 0 : s.protocolo.contracted;
-    var total = 0;
-    var complete = true;
-    void add(int? unit, int qty) {
-      if (qty == 0) return;
-      if (unit == null) {
-        complete = false;
-      } else {
-        total += unit * qty;
-      }
-    }
-
-    add(_u('seat', 'clinico'), s.clinicalSeats.contracted);
-    add(_u('seat', 'protocolo'), proto);
-    if (_admin) add(_u('module', 'admin'), 1);
-    if (_insumos) add(_u('module', 'insumos'), 1);
-    if (_comercial) add(_u('module', 'comercial'), 1);
-    return (cents: total, complete: complete);
-  }
+  /// Total mensual del hero = tabla + tarjetas de módulo (repo.licenseHeroTotalFor),
+  /// la MISMA definición que rinde la tabla y las tarjetas → lo visible suma exacto
+  /// el hero. El cupo administrativo se cobra UNA vez, en su tarjeta, no en la tabla.
+  ({int cents, bool complete}) _monthlyTotal() =>
+      repo.licenseHeroTotalFor(_org);
 
   List<AppUser> _kuraAssigned() => repo
       .listUsers()
@@ -118,7 +101,11 @@ class _LicensePanelState extends State<LicensePanel> {
   // ---------------- Hero ----------------
 
   Widget _hero(BrandTokens t, LicenseSummary s, {required bool ceiling}) {
-    final total = _monthlyTotal(s);
+    final total = _monthlyTotal();
+    // Arriba del techo (≥6 asientos) el asiento se cotiza por VOLUMEN: el precio de
+    // lista no se va a honrar → no se muestra como cifra, se marca cotización.
+    final overSelfServe =
+        s.clinicalSeats.contracted > kSelfServiceSeatCeiling;
     final concepts = <String>[
       if (s.clinicalSeats.contracted > 0)
         '${s.clinicalSeats.contracted} asiento${s.clinicalSeats.contracted == 1 ? '' : 's'} clínico${s.clinicalSeats.contracted == 1 ? '' : 's'}',
@@ -147,24 +134,41 @@ class _LicensePanelState extends State<LicensePanel> {
                 fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 6),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.baseline,
-            textBaseline: TextBaseline.alphabetic,
-            children: [
-              Text(pesosFromCents(total.cents),
-                  style: TextStyle(
-                      color: t.onBrand,
-                      fontSize: 34,
-                      fontWeight: FontWeight.w900)),
-              const SizedBox(width: 6),
-              Text('/mes',
-                  style: TextStyle(
-                      color: t.onBrand.withValues(alpha: 0.85),
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600)),
-            ],
-          ),
-          if (!total.complete)
+          if (overSelfServe)
+            Text('Cotización a la medida',
+                style: TextStyle(
+                    color: t.onBrand,
+                    fontSize: 28,
+                    fontWeight: FontWeight.w900))
+          else
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.baseline,
+              textBaseline: TextBaseline.alphabetic,
+              children: [
+                Text(pesosFromCents(total.cents),
+                    style: TextStyle(
+                        color: t.onBrand,
+                        fontSize: 34,
+                        fontWeight: FontWeight.w900)),
+                const SizedBox(width: 6),
+                Text('/mes',
+                    style: TextStyle(
+                        color: t.onBrand.withValues(alpha: 0.85),
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600)),
+              ],
+            ),
+          if (overSelfServe)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(
+                'Arriba de $kSelfServiceSeatCeiling asientos el precio es por volumen; '
+                'no hay precio de lista.',
+                style: TextStyle(
+                    color: t.onBrand.withValues(alpha: 0.9), fontSize: 11),
+              ),
+            )
+          else if (!total.complete)
             Padding(
               padding: const EdgeInsets.only(top: 4),
               child: Text(
@@ -268,7 +272,6 @@ class _LicensePanelState extends State<LicensePanel> {
         s.protocolo.contracted < 0 ? 0 : s.protocolo.contracted;
     final clinicoUnit = _u('seat', 'clinico');
     final protoUnit = _u('seat', 'protocolo');
-    final adminUnit = _u('module', 'admin');
 
     DataRow row(String concepto, String uso, String contratado,
             String precio, String subtotal,
@@ -324,13 +327,15 @@ class _LicensePanelState extends State<LicensePanel> {
               '${moneyOrDash(protoUnit)} c/u',
               moneyOrDash(protoUnit == null ? null : protoContracted * protoUnit),
             ),
+            // El cargo del módulo se muestra UNA vez, en su tarjeta abajo — NO aquí:
+            // precio unitario "incluidos" y subtotal "—", para que tabla + tarjetas
+            // sumen exacto el hero (antes el $1,200 salía en ambos → contradicción).
             row(
               'Cupo administrativo',
               '${s.adminSlots.used}',
               _admin ? '3 incluidos' : '0',
-              '${moneyOrDash(adminUnit)} módulo',
-              // Sin el módulo el subtotal es 0 real (no ausente): $0 correcto.
-              _admin ? moneyOrDash(adminUnit) : pesosFromCents(0),
+              'incluidos',
+              '—',
               warn: s.adminSeatOverflow > 0,
             ),
             row(

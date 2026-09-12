@@ -450,21 +450,41 @@ class _LicensePlanBuilderScreenState extends State<LicensePlanBuilderScreen> {
             if (_comercial)
               _line(t, 'Comercial', _unit('module', 'comercial'), 1),
             const Divider(),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(annual ? 'Total al año' : 'Total al mes',
-                    style: TextStyle(
-                        fontWeight: FontWeight.w800, color: t.textPrimary)),
-                Text(
-                    '${pesosFromCents(total.cents)}${annual ? ' /año' : ' /mes'}',
-                    style: TextStyle(
-                        fontWeight: FontWeight.w800,
-                        fontSize: 18,
-                        color: t.brandPrimary)),
-              ],
-            ),
-            if (!total.complete)
+            // Arriba del techo (≥6 asientos) el precio es por volumen: no se muestra
+            // cifra de lista (no se va a honrar), va cotización a la medida.
+            if (_overCeiling)
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text('Total',
+                      style: TextStyle(
+                          fontWeight: FontWeight.w800, color: t.textPrimary)),
+                  Flexible(
+                    child: Text('Cotización a la medida',
+                        textAlign: TextAlign.end,
+                        style: TextStyle(
+                            fontWeight: FontWeight.w800,
+                            fontSize: 16,
+                            color: t.brandPrimary)),
+                  ),
+                ],
+              )
+            else
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(annual ? 'Total al año' : 'Total al mes',
+                      style: TextStyle(
+                          fontWeight: FontWeight.w800, color: t.textPrimary)),
+                  Text(
+                      '${pesosFromCents(total.cents)}${annual ? ' /año' : ' /mes'}',
+                      style: TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 18,
+                          color: t.brandPrimary)),
+                ],
+              ),
+            if (!_overCeiling && !total.complete)
               Text(
                   'Total incompleto: falta un precio en el catálogo. No se muestra '
                   'como \$0.',
@@ -472,12 +492,16 @@ class _LicensePlanBuilderScreenState extends State<LicensePlanBuilderScreen> {
                       fontSize: 11,
                       fontWeight: FontWeight.w600,
                       color: t.statusWarning)),
-            if (annual)
+            if (!_overCeiling && annual)
               Text('Equivale a 10 meses: pagas dos menos que mensual.',
                   style:
                       TextStyle(fontSize: 11, color: t.statusSuccess)),
             const SizedBox(height: 6),
-            if (deltaOk)
+            // El delta contra el plan actual solo tiene sentido con precio de lista;
+            // arriba del techo no hay, así que no se muestra.
+            if (_overCeiling)
+              const SizedBox.shrink()
+            else if (deltaOk)
               _deltaLine(t, deltaMonthly)
             else
               Text('Cambio vs plan actual: no disponible (falta un precio).',
