@@ -50,7 +50,10 @@ extension RiskLevelX on RiskLevel {
         RiskLevel.alto => 'Riesgo alto',
         RiskLevel.medio => 'Riesgo medio',
         RiskLevel.bajo => 'Riesgo bajo',
-        RiskLevel.sinRiesgo => 'Sin riesgo detectado',
+        // 'Sin riesgo' (no 'detectado'): la etiqueta la usa tanto la agregación
+        // de alertas como la BANDA de Braden (bradenBandLevel), y 'detectado'
+        // afirmaba «ninguna regla disparó», falso cuando viene de la banda.
+        RiskLevel.sinRiesgo => 'Sin riesgo',
       };
 }
 
@@ -117,16 +120,33 @@ class PreventiveAction {
 class ActionCadence {
   final int everyHours;
   final String title;
-  const ActionCadence({required this.everyHours, required this.title});
+
+  /// Cadencia RELATIVA AL TURNO: N veces por turno. Cuando está presente, la
+  /// cadencia efectiva se resuelve al materializar leyendo la duración del turno
+  /// del centro (shift_config; 8 h por defecto). `everyHours` es el respaldo si no
+  /// se resuelve. Interino por investigación (8-sep-2026), pendiente de María.
+  final int? perShift;
+
+  const ActionCadence(
+      {required this.everyHours, required this.title, this.perShift});
 
   factory ActionCadence.fromJson(Map<String, dynamic> j) => ActionCadence(
         everyHours: (j['everyHours'] as num).toInt(),
         title: (j['title'] as String?) ?? 'Actividad preventiva',
+        perShift: (j['perShift'] as num?)?.toInt(),
       );
 }
 
 /// Especificación de una tarea recurrente a materializar en la agenda de
 /// prevención (Fase 3): de qué regla/acción sale, su título y cadencia.
+///
+/// EJE «una sola vez vs permanente» (naturaleza de la tarea): sólo las tareas
+/// PERMANENTES (órdenes vigentes que se recomputan desde la última valoración)
+/// entran a un plan REGENERABLE. Las PUNTUALES (un evento que se cumple o no)
+/// no se regeneran: regenerarlas es falsearlas. Un ScheduledActionSpec es, por
+/// construcción, permanente (recurrente sobre un horizonte). Es el mismo eje que
+/// «indicación puntual vs tarea de ronda» y «ronda vs cita de seguimiento» que
+/// gobierna la carga de la investigación de escalas — mismo nombre a propósito.
 class ScheduledActionSpec {
   final String ruleId;
   final String actionId;
@@ -134,13 +154,36 @@ class ScheduledActionSpec {
   final String title;
   final int everyHours;
 
+  /// Reglas que ADEMÁS piden esta misma acción (dedup cruzado por actionId): al
+  /// fusionar dos fuentes en una tarea, la justificación de la perdedora no debe
+  /// desaparecer del expediente. `ruleId` es la fuente ganadora (mayor frecuencia);
+  /// aquí van las demás. Vacío = una sola fuente.
+  final List<String> alsoFromRuleIds;
+
+  /// Si la acción es "N veces por turno": la cadencia efectiva se resuelve al
+  /// materializar desde la duración del turno del centro. null = cadencia fija
+  /// (usa [everyHours]).
+  final int? perShift;
+
   const ScheduledActionSpec({
     required this.ruleId,
     required this.actionId,
     required this.actionLabel,
     required this.title,
     required this.everyHours,
+    this.alsoFromRuleIds = const [],
+    this.perShift,
   });
+
+  ScheduledActionSpec withAlsoFrom(List<String> also) => ScheduledActionSpec(
+        ruleId: ruleId,
+        actionId: actionId,
+        actionLabel: actionLabel,
+        title: title,
+        everyHours: everyHours,
+        alsoFromRuleIds: also,
+        perShift: perShift,
+      );
 }
 
 /// Conducta de ESCALAMIENTO: se muestra cuando el profesional responde con un
@@ -257,8 +300,16 @@ class PreventionRulesCatalog {
   /// generar la agenda de prevención.
   final int cadenceHorizonHours;
 
-  const PreventionRulesCatalog._(
-      this.version, this._rules, this._cadences, this.cadenceHorizonHours);
+  /// Horas que un resultado de escala PERMANENTE sigue vigente para regenerar su
+  /// cuidado (por scaleId, p.ej. GLOBIAD 24, MDRPI 4). Al vencer, el plan pide
+  /// REVALORAR. Interino por investigación, pendiente de María.
+  final Map<String, int> _scaleValidity;
+
+  const PreventionRulesCatalog._(this.version, this._rules, this._cadences,
+      this.cadenceHorizonHours, this._scaleValidity);
+
+  /// Vigencia (horas) de un resultado de escala, o null si no está configurada.
+  int? scaleValidityHours(String scaleId) => _scaleValidity[scaleId];
 
   static PreventionRulesCatalog? _cached;
 
@@ -276,11 +327,18 @@ class PreventionRulesCatalog {
     rawCadences.forEach((k, v) {
       cadences[k] = ActionCadence.fromJson((v as Map).cast<String, dynamic>());
     });
+    final scaleValidity = <String, int>{};
+    ((json['scaleValidity'] as Map?)?.cast<String, dynamic>() ?? const {})
+        .forEach((k, v) {
+      final h = (v as num?)?.toInt();
+      if (h != null) scaleValidity[k] = h;
+    });
     final catalog = PreventionRulesCatalog._(
       (json['version'] as String?) ?? '',
       rules,
       cadences,
       (json['cadenceHorizonHours'] as num?)?.toInt() ?? 24,
+      scaleValidity,
     );
     _cached = catalog;
     return catalog;
@@ -294,6 +352,31 @@ class PreventionRulesCatalog {
   /// selector de cuidados del profesional para listar todas las indicaciones
   /// posibles con su frecuencia.
   Map<String, ActionCadence> get cadences => Map.unmodifiable(_cadences);
+
+  /// Ids de TODAS las reglas del catálogo. La generación de tareas por reglas
+  /// (LPP) usa este conjunto para limpiar SOLO lo que ella genera —incluidas las
+  /// bandas que ya no disparan— sin arrasar las tareas de otras fuentes (escalas
+  /// con su propio ruleId). Ver generatePreventiveTasksFromSpecs.
+  Set<String> get ruleIds => _rules.map((r) => r.id).toSet();
+
+  /// La acción POSTURAL (cambio de posición) que la regla de la banda de Braden
+  /// asigna a este puntaje, o null si la banda no programa cambios (sin_riesgo).
+  /// FUENTE ÚNICA del mapeo banda→acción postural: buildPreventivePlan la usa en
+  /// vez de su propia escalera de cortes, que divergía de las reglas (Hueco 2).
+  /// Postural = acción cuyo id empieza con 'cambios_'.
+  String? posturalActionForBraden(int braden) {
+    for (final r in _rules) {
+      if (r.dimension != RiskDimension.lpp) continue;
+      final min = (r.when['bradenMin'] as num?)?.toInt();
+      final max = (r.when['bradenMax'] as num?)?.toInt();
+      if (min == null || max == null) continue;
+      if (braden < min || braden > max) continue;
+      for (final a in r.actions) {
+        if (a.id.startsWith('cambios_')) return a.id;
+      }
+    }
+    return null;
+  }
 
   /// Especificaciones de tareas recurrentes para un resultado de riesgo: por
   /// cada acción con cadencia (dedup por id de acción, conservando la de mayor
@@ -314,6 +397,7 @@ class PreventionRulesCatalog {
             actionLabel: a.label,
             title: cad.title,
             everyHours: cad.everyHours,
+            perShift: cad.perShift,
           );
         }
       }

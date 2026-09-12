@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/theme/kura_theme.dart';
 import '../../core/providers/session_provider.dart';
 import '../../core/router/app_shell.dart' show UserMenuButton;
+import '../../engine/risk/braden_scale.dart';
 import '../../engine/risk/prevention_risk_engine.dart';
 import '../../models/app_user.dart';
 import '../../models/center_type.dart';
@@ -33,26 +34,63 @@ class _RiskEntry {
   });
 }
 
-/// Nivel (color) derivado de la banda de Braden: ≤12 alto (rojo), 13–17 medio
-/// (ámbar), 18–23 bajo (verde). null = sin valoración (gris).
+/// Nivel (color) del tablero derivado de la banda de Braden — FUENTE ÚNICA
+/// (braden_scale.json vía BradenScale.bandFor), no cortes hardcodeados: así el
+/// re-bandeo de Fase C (5 bandas) lo mueve solo. Mapea las 5 bandas a los 3
+/// colores del tablero: muy_alto/alto → rojo, moderado → ámbar, bajo → verde,
+/// sin_riesgo → sinRiesgo (gris "sin"). null = sin valoración o escala aún sin
+/// cargar (la pantalla observa bradenScaleProvider para poblar la caché).
 RiskLevel? bradenBandLevel(int? braden) {
   if (braden == null) return null;
-  if (braden <= 12) return RiskLevel.alto;
-  if (braden <= 17) return RiskLevel.medio;
-  return RiskLevel.bajo;
+  switch (BradenScale.cached?.bandFor(braden)?.id) {
+    case 'muy_alto':
+    case 'alto':
+      return RiskLevel.alto;
+    case 'moderado':
+      return RiskLevel.medio;
+    case 'bajo':
+      return RiskLevel.bajo;
+    case 'sin_riesgo':
+      return RiskLevel.sinRiesgo;
+    default:
+      return null;
+  }
 }
 
-/// Nivel EFECTIVO de una entrada del tablero: la banda de Braden si existe
-/// (color del panel), si no el nivel de las reglas; null = sin valoración.
-RiskLevel? _effectiveLevel(_RiskEntry e) =>
-    bradenBandLevel(e.bradenScore) ?? (e.risk.hasAlerts ? e.risk.level : null);
+/// Rango de severidad (mayor = más grave). null = ausente (no participa).
+int _severityRank(RiskLevel l) => switch (l) {
+      RiskLevel.alto => 3,
+      RiskLevel.medio => 2,
+      RiskLevel.bajo => 1,
+      RiskLevel.sinRiesgo => 0,
+    };
 
-/// Clave estable del nivel para el filtro ('alto'/'medio'/'bajo'/'sin').
+/// Composición de nivel efectivo: la MAYOR severidad entre la banda de Braden y
+/// el nivel de alertas. La banda NUNCA enmascara una alerta más grave (nada de
+/// `??`): un Braden 20 (sin_riesgo) con una alerta ALTA (p.ej. EAP isquémica)
+/// sale ALTO, no "sin riesgo". null = ninguna de las dos (sin valoración).
+///
+/// PÚBLICA y PURA a propósito: fue un bug de clase merge-blocker (la banda
+/// enmascaraba la alerta), así que la composición tiene reja de test.
+RiskLevel? effectiveRiskLevel(RiskLevel? band, RiskLevel? alerts) {
+  if (band == null) return alerts;
+  if (alerts == null) return band;
+  return _severityRank(band) >= _severityRank(alerts) ? band : alerts;
+}
+
+/// Nivel EFECTIVO de una entrada del tablero.
+RiskLevel? _effectiveLevel(_RiskEntry e) => effectiveRiskLevel(
+    bradenBandLevel(e.bradenScore), e.risk.hasAlerts ? e.risk.level : null);
+
+/// Clave estable del nivel para el filtro. 'sin_riesgo' (valorado, sin riesgo) y
+/// 'sin' (sin valoración) son estados OPUESTOS: nunca al mismo bucket — en un
+/// tablero de triage, "nunca valorado" es justo el que exige acción.
 String _levelKey(RiskLevel? l) => switch (l) {
       RiskLevel.alto => 'alto',
       RiskLevel.medio => 'medio',
       RiskLevel.bajo => 'bajo',
-      _ => 'sin',
+      RiskLevel.sinRiesgo => 'sin_riesgo',
+      null => 'sin',
     };
 
 /// Tablero de riesgo (módulo de Prevención): lista de pacientes con alertas
@@ -74,6 +112,9 @@ class _RiskBoardScreenState extends ConsumerState<RiskBoardScreen> {
   Widget build(BuildContext context) {
     final repoAsync = ref.watch(dataRepositoryProvider);
     final rulesAsync = ref.watch(preventionRulesProvider);
+    // Asegura que la escala de Braden (fuente única de las bandas) esté cargada
+    // en caché para bradenBandLevel; al resolver, reconstruye el tablero.
+    ref.watch(bradenScaleProvider);
     final user = ref.watch(sessionProvider).user;
     final isHospital = repoAsync.valueOrNull?.centerTypeFor(user?.organizationId) ==
         CenterType.hospital;
@@ -155,7 +196,8 @@ class _RiskBoardScreenState extends ConsumerState<RiskBoardScreen> {
         RiskLevel.alto => 0,
         RiskLevel.medio => 1,
         RiskLevel.bajo => 2,
-        _ => 3, // sin valoración / sin riesgo
+        RiskLevel.sinRiesgo => 3, // valorado, sin riesgo
+        null => 4, // sin valoración (al final)
       };
     }
     entries.sort((a, b) {
@@ -488,6 +530,11 @@ class _CountsHeader extends StatelessWidget {
           chip('Alto', count(RiskLevel.alto), KuraColors.danger, 'alto'),
           chip('Medio', count(RiskLevel.medio), KuraColors.warning, 'medio'),
           chip('Bajo', count(RiskLevel.bajo), KuraColors.success, 'bajo'),
+          // "Sin riesgo" (valorado) y "Sin valoración" son estados OPUESTOS y
+          // van en cubetas distintas: el segundo exige acción (nunca valorado).
+          if (count(RiskLevel.sinRiesgo) > 0 || selected == 'sin_riesgo')
+            chip(RiskLevel.sinRiesgo.label, count(RiskLevel.sinRiesgo), Colors.teal,
+                'sin_riesgo'),
           if (sinVal > 0 || selected == 'sin')
             chip('Sin valoración', sinVal, Colors.grey, 'sin'),
         ],

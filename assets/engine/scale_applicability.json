@@ -167,14 +167,10 @@
       "scale_id": "CEAP",
       "label": "CEAP · Enfermedad venosa crónica",
       "implemented": true,
-      "gate_any": [],
+      "gate_any": ["etio_vascular", "ivc"],
       "trigger": ["etio_vascular", "ivc"],
-      "factors": [
-        { "factor": "obesidad", "weight": 1 },
-        { "factor": "edad_avanzada", "weight": 1 },
-        { "factor": "malnutricion", "weight": 1 }
-      ],
-      "thresholds": { "sugerida": 3, "obligatoria": 5 }
+      "factors": [],
+      "thresholds": { "sugerida": 1, "obligatoria": 1 }
     },
     {
       "scale_id": "ASEPSIS",

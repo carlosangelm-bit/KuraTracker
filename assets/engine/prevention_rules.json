@@ -3,12 +3,14 @@
   "note": "Algoritmo preventivo de LPP y complicaciones de heridas quirúrgicas (entorno hospitalario), basado en el reporte clínico aportado (GNEAUPP/EPUAP/NPIAP, IMSS, OMS/WHO SSI) y en el Continuo de Infección de la Herida IWII 2022 (contaminación -> colonización -> infección local [encubierta/sutil + clásica/manifiesta] -> infección en propagación -> infección sistémica). LPP: determinístico por banda de Braden -> paquete de intervenciones ESCALONADO (prevención). Cada regla tiene 'questions' de VIGILANCIA con respuesta; si el profesional responde con la respuesta de 'alarm', se muestra la conducta de 'escalation' (prevención -> manejo/notificar/referir). La regla 'complic_infeccion_iwii' es la guía general del continuo IWII 2022 para personal no especializado (qué buscar, en qué orden de gravedad y cuándo escalar). BORRADOR pendiente de validación de María. Capa DOCUMENTAL: no altera el motor de tratamiento. 'when': bradenMin/bradenMax, comorbilidad, hasActiveWound, mobilityIn, fragile, bmiMax, woundEtiology, deterioration. severity: alto|medio|bajo. dimension: lpp|complicacion.",
   "note_cadences": "Fase 3: 'cadences' define cada cuántas horas se repite una acción PROGRAMABLE (por id de acción) para generar la agenda de tareas preventivas, sobre un horizonte 'cadenceHorizonHours'. Las acciones sin cadencia NO se agendan como tarea recurrente (son recomendaciones únicas). BORRADOR pendiente de validación de María.",
   "cadenceHorizonHours": 24,
+  "note_scaleValidity": "Horas que un resultado de escala PERMANENTE sigue vigente. Al vencer, el plan AGREGA una tarea de revalorar SIN suspender el cuidado derivado (el cuidado continúa; lo que se añade es la exigencia de revalorar). Sólo aplica cuando la VALORACIÓN y el CUIDADO son actos DISTINTOS: MDRPI NO la lleva porque su inspección c/4h ES la revaloración. INTERINO por investigación (8-sep-2026), pendiente de María. Además, cualquier cambio clínico relevante fuerza revaloración sin importar el tiempo.",
+  "scaleValidity": { "GLOBIAD": 24 },
   "cadences": {
     "cambios_2h_registro": { "everyHours": 2, "title": "Cambio postural" },
     "cambios_2_3h": { "everyHours": 3, "title": "Cambio postural" },
     "cambios_4h": { "everyHours": 4, "title": "Cambio postural" },
     "agho": { "everyHours": 12, "title": "Aplicar AGHO en zonas de riesgo" },
-    "control_humedad": { "everyHours": 8, "title": "Control de humedad / cambio de barrera" },
+    "control_humedad": { "everyHours": 8, "perShift": 1, "title": "Control de humedad / cambio de barrera" },
     "exam_piel_diario": { "everyHours": 24, "title": "Examen de piel" },
     "valoracion_piel_completa_diaria": { "everyHours": 24, "title": "Valoración de piel completa" },
     "aposito_preventivo": { "everyHours": 24, "title": "Revisar apósitos preventivos (sacro/talones)" }
@@ -81,9 +83,9 @@
     {
       "id": "lpp_moderado",
       "dimension": "lpp",
-      "when": { "bradenMin": 13, "bradenMax": 17 },
+      "when": { "bradenMin": 13, "bradenMax": 14 },
       "severity": "medio",
-      "message": "LPP · Riesgo MEDIO (Braden 13–17) — 1.er mes a cargo de la clínica; evaluar tunelizaciones/socavamientos",
+      "message": "LPP · Riesgo MEDIO (Braden 13–14) — 1.er mes a cargo de la clínica; evaluar tunelizaciones/socavamientos",
       "questions": [
         { "text": "¿Hay eritema que NO blanquea en prominencias óseas?", "alarm": "Sí" },
         { "text": "¿Permanece más de 2–3 h en la misma posición?", "alarm": "Sí" },
@@ -110,9 +112,9 @@
     {
       "id": "lpp_bajo",
       "dimension": "lpp",
-      "when": { "bradenMin": 18, "bradenMax": 23 },
+      "when": { "bradenMin": 15, "bradenMax": 18 },
       "severity": "bajo",
-      "message": "LPP · Riesgo BAJO (Braden 18–23) — candidato a tratamiento compartido",
+      "message": "LPP · Riesgo BAJO (Braden 15–18) — candidato a tratamiento compartido",
       "questions": [
         { "text": "¿Hay enrojecimiento en alguna prominencia ósea?", "alarm": "Sí" },
         { "text": "¿La piel está húmeda por incontinencia o sudoración?", "alarm": "Sí" }
@@ -122,6 +124,7 @@
         { "id": "agho", "label": "Hidratación con ácidos grasos hiperoxigenados (AGHO) en sacro/talones", "horizon": "ronda" },
         { "id": "aposito_preventivo", "label": "Apósitos preventivos en sacro y talones", "horizon": "ronda" },
         { "id": "exam_piel_diario", "label": "Examen diario de la piel", "horizon": "ronda" },
+        { "id": "control_humedad", "label": "Control de humedad (una vez por turno; escalar a c/4-6 h con incontinencia/sudoración/dispositivos) — INTERINO por investigación 8-sep-2026, pendiente de validación de María", "horizon": "ronda" },
         { "id": "educacion_prevencion", "label": "Educación a paciente/cuidador", "horizon": "puntual" }
       ],
       "escalation": {
@@ -180,6 +183,30 @@
           { "id": "esc_suplementar", "label": "Iniciar suplementación proteico-calórica", "horizon": "puntual" }
         ]
       }
+    },
+    {
+      "id": "lpp_imc_bajo",
+      "dimension": "lpp",
+      "when": { "bmiMax": 18.5 },
+      "severity": "medio",
+      "message": "IMC bajo (< 18.5): mayor riesgo de LPP",
+      "actions": [
+        { "id": "valoracion_mna", "label": "Valoración nutricional", "horizon": "puntual" },
+        { "id": "acolchado_prominencias", "label": "Acolchado de prominencias óseas", "horizon": "puntual" },
+        { "id": "exam_piel_diario", "label": "Vigilancia estrecha de la piel", "horizon": "ronda" }
+      ]
+    },
+    {
+      "id": "lpp_fragilidad",
+      "dimension": "lpp",
+      "when": { "fragile": true },
+      "severity": "medio",
+      "message": "Fragilidad: vulnerabilidad cutánea",
+      "actions": [
+        { "id": "exam_piel_diario", "label": "Intensificar cuidados de piel", "horizon": "ronda" },
+        { "id": "movilizacion", "label": "Intensificar movilización", "horizon": "puntual" },
+        { "id": "educacion_prevencion", "label": "Involucrar al cuidador", "horizon": "puntual" }
+      ]
     },
     {
       "id": "complic_infeccion_iwii",

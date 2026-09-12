@@ -2,6 +2,8 @@ import 'dart:convert';
 
 import 'package:flutter/services.dart' show rootBundle;
 
+import '../params/clinical_params.dart';
+
 /// Prioridad con la que una escala se ofrece tras evaluar los factores de riesgo.
 enum ScalePriority { obligatoria, sugerida }
 
@@ -221,8 +223,12 @@ class ScaleApplicabilityCatalog {
     // --- Braden [R] ---
     final b = c.braden;
     if (b != null) {
-      if (b <= 17) f.add('braden_riesgo');
-      if (b <= 12) f.add('braden_bajo');
+      // Cortes de CONDUCTA desde ClinicalParams (nunca literales): la compuerta
+      // "en riesgo" (GLOBIAD/ISTAP/…) y la etiqueta alto/muy alto. Las BANDAS de
+      // Braden viven en braden_scale.json; estos dos son gates, no bandas.
+      final params = ClinicalParams.I;
+      if (b <= params.bradenEnRiesgoMax) f.add('braden_riesgo');
+      if (b <= params.bradenAltoMuyAltoMax) f.add('braden_bajo');
     }
     final hum = c.bradenHumedad;
     if (hum != null && hum <= 2) f.add('incontinencia');

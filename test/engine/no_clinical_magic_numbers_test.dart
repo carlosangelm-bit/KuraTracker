@@ -35,6 +35,21 @@ const _files = <String>[
   'lib/engine/models/kura_engine_input.dart',
 ];
 
+/// Archivos que ANTES reimplementaban las bandas de Braden a mano (Fase A del
+/// re-bandeo). Aquí solo se prohíben los cortes de banda de Braden (12 y 17),
+/// no toda la lista `_forbidden`: son archivos de motor de riesgo con otros
+/// números legítimos (índices, edades). El reporte PDF NO entra en esta guardia
+/// porque usa `fontSize: 12` legítimo; su lógica de banda ya se externalizó a
+/// BradenScale.bandFor en la Fase A1 (no queda corte que guardar por número).
+const _bandGuardFiles = <String>[
+  'lib/engine/risk/scale_applicability.dart',
+  'lib/engine/risk/preventive_assessment.dart',
+];
+
+/// Solo los cortes de banda de Braden (deben leerse de ClinicalParams /
+/// braden_scale.json).
+const _bandForbidden = <double>[12, 17];
+
 void main() {
   test('la lógica del motor no contiene números mágicos clínicos', () {
     final offenders = <String>[];
@@ -61,6 +76,32 @@ void main() {
       isEmpty,
       reason: 'Umbrales clínicos hardcodeados en la lógica (deben leerse de '
           'ClinicalParams):\n${offenders.join('\n')}',
+    );
+  });
+
+  test('los archivos de riesgo no reimplementan las bandas de Braden (12/17)', () {
+    final offenders = <String>[];
+    for (final path in _bandGuardFiles) {
+      final src = File(path).readAsStringSync();
+      var code = _stripStringsAndComments(src);
+      code = code.replaceAll(RegExp(r'toStringAsFixed\(\d+\)'), 'toStringAsFixed()');
+      final numberRe = RegExp(r'(?<![\w.])\d+(?:\.\d+)?(?![\w])');
+      for (final m in numberRe.allMatches(code)) {
+        final value = double.parse(m.group(0)!);
+        if (_bandForbidden.any((f) => (f - value).abs() < 1e-9)) {
+          final ctx = code
+              .substring((m.start - 25).clamp(0, code.length), m.end + 15)
+              .replaceAll('\n', ' ')
+              .trim();
+          offenders.add('$path: literal "${m.group(0)}"  …$ctx…');
+        }
+      }
+    }
+    expect(
+      offenders,
+      isEmpty,
+      reason: 'Bandas de Braden reimplementadas a mano (deben leerse de '
+          'ClinicalParams / braden_scale.json):\n${offenders.join('\n')}',
     );
   });
 }
