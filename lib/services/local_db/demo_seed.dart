@@ -37,7 +37,7 @@ class DemoSeed {
   // v34: merge main→staging — combina la siembra de licencia (v33: entitlements
   // insumos/comercial solo en centros premium) con los arreglos de la semilla del
   // rebandeo Braden (v32 en main). Sube por encima de AMBOS para re-sembrar limpio.
-  static const String _seedFlag = 'seeded_v34';
+  static const String _seedFlag = 'seeded_v35';
 
   static Future<void> ensureSeeded(LocalStore store) async {
     if (store.getBool(_seedFlag)) return;
@@ -428,6 +428,33 @@ class DemoSeed {
           'status': 'active',
           'source': 'master',
           'created_at': iso(now),
+        },
+    ]);
+
+    // ---------------- Catálogo de precios (billing_catalog) ----------------
+    // Espejo de 0129 (centavos MXN, IVA incl.) para que el panel de Licencias muestre
+    // precios en la demo (sin Stripe). Anual = monto completo (=×10 del mensual).
+    await store.saveAll(Collections.billingCatalog, [
+      for (final r in const [
+        ['clinico_mensual', 'seat', 'clinico', 'month', 40000],
+        ['clinico_anual', 'seat', 'clinico', 'year', 400000],
+        ['protocolo_mensual', 'seat', 'protocolo', 'month', 30000],
+        ['protocolo_anual', 'seat', 'protocolo', 'year', 300000],
+        ['admin_mensual', 'module', 'admin', 'month', 120000],
+        ['admin_anual', 'module', 'admin', 'year', 1200000],
+        ['insumos_mensual', 'module', 'insumos', 'month', 140000],
+        ['insumos_anual', 'module', 'insumos', 'year', 1400000],
+        ['comercial_mensual', 'module', 'comercial', 'month', 90000],
+        ['comercial_anual', 'module', 'comercial', 'year', 900000],
+      ])
+        {
+          'lookup_key': r[0],
+          'kind': r[1],
+          'key': r[2],
+          'interval': r[3],
+          'unit': r[1] == 'module' ? 'center' : 'seat',
+          'unit_amount': r[4],
+          'currency': 'mxn',
         },
     ]);
 

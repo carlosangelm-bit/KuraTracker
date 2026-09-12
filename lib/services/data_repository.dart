@@ -994,6 +994,26 @@ class DataRepository {
     return null;
   }
 
+  /// Precio unitario en CENTAVOS (IVA incl.) de un concepto en un intervalo, leído
+  /// de billing_catalog (0129) — NUNCA a mano en el Dart. `interval` = 'month' |
+  /// 'year' (el anual es el monto completo, ya = ×10; no se multiplica aquí).
+  /// Devuelve 0 si el catálogo no trae la fila (fallback seguro para no romper la
+  /// suma; en prod/demo las diez filas están sembradas con monto).
+  int unitAmountCents(String kind, String key, String interval) {
+    for (final c in _store.getAll(Collections.billingCatalog)) {
+      if (c['kind'] == kind && c['key'] == key && c['interval'] == interval) {
+        return (c['unit_amount'] as num?)?.toInt() ?? 0;
+      }
+    }
+    return 0;
+  }
+
+  /// ¿El catálogo de precios está cargado (al menos una fila con monto)? El panel
+  /// lo usa para no mostrar $0 cuando en realidad no hay datos (demo sin sembrar).
+  bool get hasBillingCatalog => _store
+      .getAll(Collections.billingCatalog)
+      .any((c) => (c['unit_amount'] as num?) != null);
+
   /// Resumen de licencias del centro para el panel del admin (Fase 2). Se calcula
   /// aquí (desde org_entitlements + membresías + perfiles + pacientes) para
   /// MOSTRAR; el TOPE real lo imponen las funciones del servidor
@@ -1047,6 +1067,10 @@ class DataRepository {
     final plan = planEnt?['key'] as String? ?? 'basico';
     final pastDue = _store.getAll(Collections.orgEntitlements).any((e) =>
         e['organization_id'] == organizationId && e['status'] == 'past_due');
+    // Prueba vencida: en plan 'prueba' que ya caducó por tiempo (lee, no escribe).
+    final trialExpired = plan == 'prueba' &&
+        canReadModule(organizationId, 'clinico') &&
+        !canWriteModule(organizationId, 'clinico');
 
     final patients = listAllPatients()
         .where((p) => p.organizationId == organizationId)
@@ -1066,6 +1090,7 @@ class DataRepository {
       plan: plan,
       pastDue: pastDue,
       patientsUsed: patients,
+      trialExpired: trialExpired,
     );
   }
 
