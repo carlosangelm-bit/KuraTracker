@@ -1081,7 +1081,11 @@ class _OrganizationFormDialogState extends State<_OrganizationFormDialog> {
       _error = null;
     });
     try {
-      final created = await widget.repo.createOrganization(
+      // Un centro nuevo nace como PRUEBA (30 días de todo, luego solo lectura). La
+      // consola del master es el primer llamante de create_trial_organization, no su
+      // dueño: el alta pública lo llamará igual. createOrganization (INSERT pelón,
+      // sin derechos → centro inservible) queda superado.
+      final created = await widget.repo.createTrialOrganization(
           _nameCtrl.text.trim(), _centerType!,
           isTest: _isTest);
       // dialogCtx propio (ver convencion documentada en la pantalla):
