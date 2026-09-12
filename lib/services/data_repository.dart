@@ -844,10 +844,12 @@ class DataRepository {
   void _assertCanWriteClinical(String? organizationId) {
     if (_entitlement(organizationId, 'module', 'clinico') == null) return;
     if (centerCanWriteClinical(organizationId)) return;
-    throw Exception(
-        'CLINICAL_READ_ONLY: el centro está en modo lectura (pago vencido, prueba '
-        'terminada o suscripción no vigente); no se pueden crear ni editar registros '
-        'clínicos hasta regularizar.');
+    // Excepción con toString() LIMPIO (sin el prefijo "Exception:"): los screens que
+    // muestran '$e' enseñan la frase en español, no el nombre técnico. El enlace a
+    // Licencias lo ofrece la banda del shell (siempre visible en modo lectura).
+    throw const ClinicalReadOnlyException(
+        'El centro está en modo lectura (pago vencido, prueba terminada o suscripción '
+        'no vigente); no se pueden crear ni editar registros clínicos hasta regularizar.');
   }
 
   /// Traduce una excepción del candado de escritura clínica al mensaje de modo
@@ -855,6 +857,9 @@ class DataRepository {
   /// catch como aviso en vez de un error crudo. Pública y estática para usarse desde
   /// cualquier pantalla sin instancia.
   static String? readOnlyMessageFor(Object error) {
+    if (error is ClinicalReadOnlyException) return error.message;
+    // Fallback por si algún día llega como texto (p. ej. un error de red que
+    // envolvió el mensaje del servidor).
     const prefix = 'CLINICAL_READ_ONLY:';
     final s = error.toString();
     final i = s.indexOf(prefix);
@@ -6617,6 +6622,17 @@ class DataRepository {
 /// Supabase, [tempPassword] es una contrasena temporal generada por la Edge
 /// Function para compartir con el usuario cuando no hay SMTP configurado; en
 /// modo demo local es null (no hay Auth real).
+/// El centro está en modo LECTURA (prueba terminada / pago vencido / cancelado) y
+/// se intentó una escritura clínica. toString() es la frase en español sin el
+/// prefijo "Exception:" para que un screen que muestre '$e' no enseñe el nombre
+/// técnico. DataRepository.readOnlyMessageFor la reconoce.
+class ClinicalReadOnlyException implements Exception {
+  final String message;
+  const ClinicalReadOnlyException(this.message);
+  @override
+  String toString() => message;
+}
+
 class CreatedUser {
   final String uid;
   final String email;
