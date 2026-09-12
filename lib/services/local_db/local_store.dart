@@ -189,6 +189,7 @@ class Collections {
   static const userCenterMemberships = 'user_center_memberships';
   static const moduleSettings = 'module_settings';
   static const orgEntitlements = 'org_entitlements';
+  static const billingCatalog = 'billing_catalog';
   static const licenseRequests = 'license_requests';
   static const billingAnomalies = 'billing_anomalies';
   static const preventiveTasks = 'preventive_tasks';
@@ -253,6 +254,7 @@ class Collections {
     userCenterMemberships,
     moduleSettings,
     orgEntitlements,
+    billingCatalog,
     licenseRequests,
     billingAnomalies,
     preventiveTasks,

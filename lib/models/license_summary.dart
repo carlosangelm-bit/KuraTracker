@@ -65,6 +65,11 @@ class LicenseSummary {
   /// crudo de administrativos por separado.
   final int adminSeatOverflow;
 
+  /// El centro está en plan 'prueba' y esta YA venció por tiempo: sigue LEYENDO el
+  /// expediente pero no ESCRIBE (canReadModule sí, canWriteModule no). Dispara el
+  /// estado "prueba vencida" del panel. false en una prueba vigente o un plan de pago.
+  final bool trialExpired;
+
   const LicenseSummary({
     required this.clinicalSeats,
     required this.adminSlots,
@@ -74,6 +79,7 @@ class LicenseSummary {
     required this.pastDue,
     required this.patientsUsed,
     this.adminSeatOverflow = 0,
+    this.trialExpired = false,
   });
 
   // El add-on Protocolo Kura+ se tiene solo si se contrató cantidad ≥ 1.
