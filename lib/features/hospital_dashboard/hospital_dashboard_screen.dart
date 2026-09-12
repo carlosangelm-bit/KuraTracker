@@ -31,6 +31,11 @@ class _HospitalDashboardScreenState
     extends ConsumerState<HospitalDashboardScreen> {
   @override
   Widget build(BuildContext context) {
+    // Puebla BradenScale.cached y RECONSTRUYE al resolver. Sin esto, _aggregate
+    // corre con la caché vacía y bradenBandLevel devuelve null para todos → cada
+    // paciente cae en "sin valoración" y un Braden MUY ALTO queda invisible en el
+    // triage (Alto: 0). Misma precondición que risk_board_screen.
+    ref.watch(bradenScaleProvider);
     final repoAsync = ref.watch(dataRepositoryProvider);
     final user = ref.watch(sessionProvider).user;
 

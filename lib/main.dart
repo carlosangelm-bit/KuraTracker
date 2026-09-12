@@ -1,7 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_web_plugins/url_strategy.dart';
+
+import 'engine/risk/braden_scale.dart';
 
 import 'core/theme/kura_theme.dart';
 import 'core/router/app_router.dart';
@@ -108,6 +112,13 @@ Future<void> main() async {
   if (AppConfig.isSupabaseConfigured) {
     await SupabaseBootstrap.initialize();
   }
+
+  // Precarga la escala de Braden para que BradenScale.cached esté tibia antes de
+  // que cualquier pantalla llame a bradenBandLevel (helper SÍNCRONO que la lee).
+  // Cambiar bradenBandLevel a leer la caché sin precargarla dejó los tableros
+  // clasificando todo como "sin valoración". No-bloqueante: si tarda, los
+  // bradenScaleProvider reactivos de las pantallas son el respaldo.
+  unawaited(BradenScale.load());
 
   runApp(const ProviderScope(child: KuraTrackerApp()));
 }
