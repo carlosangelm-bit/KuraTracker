@@ -1488,6 +1488,18 @@ class DataRepository {
   bool premiumComercialFor(String? organizationId) =>
       hasModuleEntitlement(organizationId, 'comercial');
 
+  /// ¿El centro PAGÓ el módulo Administración (avanzado)? Las funciones
+  /// administrativas BÁSICAS van incluidas con la licencia clínica; solo el módulo
+  /// avanzado se cobra ($1,200, incluye 3 cupos administrativos + config del
+  /// protocolo, sitios extra y marca). Lee module:admin (mismo patrón que
+  /// premiumInsumosFor). NO gatea la visibilidad de /admin (esa es por rol,
+  /// app_router) ni la pestaña Licencias, el catálogo base / escalas / fuente de
+  /// recomendaciones, el Registro de divulgaciones ni la exportación del expediente:
+  /// la pantalla de compra vive dentro de /admin y la custodia del expediente
+  /// (NOM-004/LFPDPPP) no puede depender de que el pago esté al día.
+  bool premiumAdminFor(String? organizationId) =>
+      hasModuleEntitlement(organizationId, 'admin');
+
   /// ¿El centro tiene el add-on "Protocolo Kura+"? Se vende por asiento
   /// (seat:protocolo); el centro lo tiene si contrató ≥ 1. Antes leía la bandera
   /// legada organizations.premium_protocolo_kura (0049), que Stripe no escribe.
