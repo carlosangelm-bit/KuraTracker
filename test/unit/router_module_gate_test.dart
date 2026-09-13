@@ -35,8 +35,15 @@ void main() {
       '/admin', '/platform', '/caregiver',
       '/hospital', '/prevention-agenda',
     ];
+    // Un path RELATIVO (sin '/' inicial) es una ruta HIJA anidada: nunca es una
+    // ruta huérfana de primer nivel, y el redirect gatea por la location COMPLETA
+    // (que incluye el prefijo del padre). P. ej. las hijas de '/admin'
+    // (protocolo-kura, …) heredan el gate de rol de '/admin'. Es justamente el
+    // arreglo que este test recomienda: colgarlas BAJO la ruta del padre.
     bool isUngatedOk(String p) =>
-        p == '/' || ungated.any((u) => p == u || p.startsWith('$u/') || p.startsWith(u));
+        p == '/' ||
+        !p.startsWith('/') ||
+        ungated.any((u) => p == u || p.startsWith('$u/') || p.startsWith(u));
 
     for (final p in paths) {
       final covered = ModuleKeyX.forRoute(p) != null;
