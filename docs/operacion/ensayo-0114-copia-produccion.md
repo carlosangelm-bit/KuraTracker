@@ -470,33 +470,54 @@ inmediatamente antes del corte y anotar la hora; ese respaldo, no un `delete`, e
 
 #### Regla que evita caer en el escenario B por accidente
 
-**Migrar y desplegar en momentos SEPARADOS, con la verificación de la §7 en medio:**
+**Migrar y desplegar en momentos SEPARADOS, con la verificación de la §7 en medio.** Y el "en
+medio" hay que fabricarlo: por la vía normal **no existe**.
 
-1. Tomar el respaldo previo al corte (anotar la hora).
-2. Aplicar las 24 migraciones a producción — la app sigue siendo 0107.
-3. Correr la §7 **contra producción ya migrada**. Si algo sale rojo, se está en el escenario A:
-   basta con **no desplegar** (y, si se quiere, restaurar `create_organization_with_admin`),
+> **Por qué no basta "solo merquear a `main`".** `deploy.yml` corre `on: push: [main, staging]`
+> con el grafo `checks → migrations → [deploy_functions, build_deploy]`. O sea, un merge a `main`
+> **migra Y despliega en el mismo movimiento**: el job `migrations` (`supabase db push`) y, en
+> cuanto termina, el bundle y las functions. La ventana del escenario A (base migrada, app 0107)
+> **no existe por esa vía** — el `db push` y el deploy son el mismo run. Para abrir esa ventana
+> hay que aplicar las migraciones por un canal que NO despliegue.
+
+Ese canal ya existe: **`supabase-migrations.yml`** (`workflow_dispatch`, `environment: production`,
+su único paso real es `supabase db push`). Es el paso 2 de la secuencia:
+
+1. **Respaldo** previo al corte (anotar la hora). Es la red del escenario B.
+2. **`supabase-migrations.yml` a mano** (Actions → run workflow) → aplica 0108→0131 a producción.
+   La app en `main` sigue siendo **0107**, y ni el bundle ni las functions se tocaron.
+3. **Correr la §7 contra producción ya migrada.** Si algo sale rojo, se está en el escenario A:
+   basta con **no merquear a `main`** (y, si se quiere, restaurar `create_organization_with_admin`),
    sin haber tocado a ningún usuario.
-4. Solo con la §7 en verde, desplegar la Fase 2 (`main`).
+4. **Solo con la §7 en verde, merge a `main`.** Ahí `deploy.yml` corre completo, pero el job
+   `migrations` queda en **no-op** (`db push` compara contra lo ya aplicado en el paso 2 y no
+   encuentra pendientes), y bundle + functions **cruzan juntos** — eso lo garantiza el grafo
+   (`deploy_functions` y `build_deploy` ambos con `needs: [checks, migrations]`), no hay que
+   coordinarlo a mano.
 
-> **"Desplegar" son DOS artefactos que cruzan juntos, no solo el bundle.** Un push a `main`
-> corre `deploy.yml`, que publica el bundle de Flutter **y** las edge functions de
-> `supabase/functions/` (job `deploy_functions`). El bundle no es el único proceso vivo que
-> puede empezar a leer `org_entitlements`: en Fase 2, **`admin-create-user` llama a
-> `assert_seat_available`** (que lee `org_entitlements`) antes de crear al usuario. Hoy esa
-> llamada solo existe en `staging`; en `main` no. → mientras las functions de `main` no se
-> desplieguen, **ningún proceso vivo lee `org_entitlements`** y la reversa A sigue siendo
-> válida. Desplegar las functions **por separado** (o adelantadas al bundle) cruza al
-> escenario B **en silencio**: `admin-create-user` empezaría a exigir asientos contra los
-> derechos que dedujo 0114, sin que la app haya cambiado.
+> **"Desplegar" son DOS artefactos que cruzan juntos, no solo el bundle** (por eso importa que el
+> paso 4 sea un único merge y no un deploy selectivo de functions). El bundle no es el único
+> proceso vivo que puede empezar a leer `org_entitlements`: en Fase 2, **`admin-create-user`
+> llama a `assert_seat_available`** (que lee `org_entitlements`) antes de crear al usuario. Hoy
+> esa llamada solo existe en `staging`; en `main` no. → mientras las functions de `main` no se
+> desplieguen, **ningún proceso vivo lee `org_entitlements`** y la reversa A sigue válida.
+> Desplegar las functions **por separado** (p. ej. re-ejecutar solo `deploy_functions`) cruza al
+> escenario B **en silencio**: `admin-create-user` empezaría a exigir asientos contra los derechos
+> que dedujo 0114, sin que la app haya cambiado.
 > ```sh
 > # Check: en main, ninguna function lee la regla de asientos (debe salir VACÍO).
 > git grep -n assert_seat_available main -- 'supabase/functions/**'   # → vacío
 > git grep -n assert_seat_available staging -- 'supabase/functions/**' # → admin-create-user (ya en Fase 2)
 > ```
-> Corolario: bundle y functions cruzan **en el mismo push** (paso 4), nunca uno antes que el
-> otro.
 
 Entre el paso 2 y el 4, la reversa barata (A) sigue disponible. Después del 4, la única red es el
-respaldo (B). Nunca desplegar la Fase 2 (bundle **ni** functions) en el mismo movimiento que las
-migraciones.
+respaldo (B). Nunca aplicar migraciones y desplegar (bundle **ni** functions) en el mismo
+movimiento.
+
+> **Pendiente de confirmar (no darlo por hecho):** en **GitHub → Settings → Environments →
+> `production`**, revisar si hay **Required reviewers**. Si los hay, el job `migrations` de
+> `deploy.yml` (que usa `environment: production` cuando `ref_name == 'main'`) se **pausa
+> esperando aprobación** en cada merge a `main` — lo que daría la misma pausa "migrar → verificar
+> → desplegar" por otra vía, sin necesitar el paso 2 manual. Pero **hay que verificarlo en la
+> config real del repo**; si no hay reviewers, el merge a `main` corre de corrido y la única forma
+> de abrir la ventana del escenario A es el `supabase-migrations.yml` del paso 2.
