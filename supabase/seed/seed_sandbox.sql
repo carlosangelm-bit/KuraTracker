@@ -361,6 +361,70 @@ select set_config('kt.seed_org_id', (select org_clinica::text from sb), false);
 -- (un clínico solo ve a sus pacientes asignados).
 select set_config('kt.seed_staff_id', 'a0000000-0000-4000-a000-000000000021', false);
 
+-- -----------------------------------------------------------------------------
+-- 9. Centros de verificación de bloqueos / marca (etapas 3–6)
+-- -----------------------------------------------------------------------------
+-- Dos centros extra (is_test) SIN módulos de pago, para verificar de un tirón:
+-- bloqueos con precio, estados vacíos y el cambio de color de marca.
+--   · Hospital (marca AZUL), sin admin/insumos/comercial.
+--   · Clínica "solo asientos clínicos" (marca MORADA), sin admin/insumos.
+-- Ambos con plan + module:clinico (visibilidad del expediente) + seat:clinico, y
+-- SIN pacientes ni catálogo de nota (para ver los estados vacíos). Un admin por
+-- centro para entrar (contraseña = kt.sandbox_password, igual que los demás).
+create temp table if not exists sb2 on commit preserve rows as
+select
+  'a0000000-0000-4000-a000-000000000031'::uuid as org_hospital_test,
+  'a0000000-0000-4000-a000-000000000032'::uuid as org_basica_test,
+  'a0000000-0000-4000-a000-000000000041'::uuid as site_hospital_test,
+  'a0000000-0000-4000-a000-000000000042'::uuid as site_basica_test;
+
+-- Idempotencia de estos dos centros.
+delete from auth.users
+ where email in ('admin.hospital.test@sandbox.kuratracker.mx',
+                 'admin.basica.test@sandbox.kuratracker.mx');
+delete from public.org_entitlements
+ where organization_id in (select org_hospital_test from sb2
+                           union select org_basica_test from sb2);
+delete from public.sites
+ where organization_id in (select org_hospital_test from sb2
+                           union select org_basica_test from sb2);
+
+insert into public.organizations (id, name, center_type, is_test, is_active,
+                                  premium_insumos, premium_protocolo_kura, brand_primary_color)
+select org_hospital_test, 'Hospital Prueba (bloqueos)', 'hospital', true, true, false, false, '#1565C0' from sb2
+union all
+select org_basica_test, 'Clínica Prueba (solo asientos)', 'clinica_heridas', true, true, false, false, '#6A1B9A' from sb2
+on conflict (id) do update
+  set name = excluded.name, center_type = excluded.center_type,
+      is_test = true, is_active = true,
+      premium_insumos = excluded.premium_insumos,
+      premium_protocolo_kura = excluded.premium_protocolo_kura;
+
+insert into public.sites (id, organization_id, name, kind, address, is_active)
+select site_hospital_test, org_hospital_test, 'Hospital Prueba · Piso 1', 'hospital', 'Sede de pruebas', true from sb2
+union all
+select site_basica_test, org_basica_test, 'Clínica Prueba · Consultorio', 'clinica', 'Sede de pruebas', true from sb2;
+
+-- Derechos SOLO base: plan + module:clinico + seat:clinico. SIN module:admin,
+-- module:insumos ni module:comercial → esas pantallas muestran el bloqueo con precio.
+insert into public.org_entitlements (organization_id, kind, key, quantity, status, source)
+select o.org, e.kind, e.key, e.qty, 'active', 'master'
+  from (select org_hospital_test as org from sb2
+        union all select org_basica_test from sb2) o
+  cross join (values
+    ('plan',   'basico',  null::int),
+    ('module', 'clinico', null),
+    ('seat',   'clinico', 5)
+  ) as e(kind, key, qty)
+on conflict (organization_id, kind, key) do update
+  set quantity = excluded.quantity, status = 'active', source = 'master';
+
+select pg_temp.sb_user('admin.hospital.test@sandbox.kuratracker.mx', 'Admin Hospital Prueba',
+  array['admin']::public.user_role[], (select org_hospital_test from sb2));
+select pg_temp.sb_user('admin.basica.test@sandbox.kuratracker.mx', 'Admin Clínica Prueba',
+  array['admin']::public.user_role[], (select org_basica_test from sb2));
+
 drop function if exists pg_temp.sb_user(text, text, public.user_role[], uuid, text);
 drop table if exists sb_emails;
 drop table if exists sb;
+drop table if exists sb2;
