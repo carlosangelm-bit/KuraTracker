@@ -195,3 +195,87 @@ dinero dice su moneda. Ninguna cifra se queda sola.
 
 Antes de reportar cualquier pantalla: **cero usos de `KuraColors`** en los
 archivos tocados, y `flutter analyze` en 0.
+
+---
+
+## Firmas finales (Dart) — revisión de API, etapa 1
+
+Seis ajustes tras aprobar la etapa 1 (cambiar una firma con seis pantallas encima
+ya no es barato):
+
+1. **Selección CONTROLADA.** `KuraDataTable` ya no guarda la selección; el PADRE es
+   el dueño. Recibe `selected: Set<Object>` y notifica por `onSelectionChanged`, para
+   que el padre pueda limpiarla (Reportes tras generar, Reabasto al armar el pedido).
+2. **Celdas nuevas.** `KuraCell.custom({build, sortValue})` (p. ej. el stepper "Pedir"
+   de Reabasto) y `KuraCell.progress({used, total})` (barra de uso en Licencias, avance
+   de pedidos).
+3. **`KuraCell.money(int?)`** pinta **"—" en `textDisabled`** cuando es nulo (misma
+   regla que `unitAmountCents`/`moneyOrDash`: un precio ausente nunca se ve como cero).
+4. **Anchos por FRACCIÓN, no por píxel.** `KuraColumn` toma `fraction` (0..1) o `flex`;
+   `widthPx` queda solo para columnas de tamaño real (casilla de 34px, ícono). Reproduce
+   los porcentajes del canvas y no se desborda en ventana angosta.
+5. **`KuraModuleLock.action` NO se desvanece con el módulo.** Recibe
+   `required VoidCallback onPressed`: **con** módulo rinde el botón normal (dispara
+   `onPressed`); **sin** él, el botón apagado que abre la sección en diálogo. `band` y
+   `section` sí se desvanecen cuando el módulo está contratado.
+6. **Orden inicial.** `KuraDataTable` toma `initialSortColumn` e `initialSortAscending`
+   (VAC arranca por "próximo cambio" ascendente, lo vencido arriba).
+
+```dart
+// Tabla
+KuraDataTable({
+  required List<KuraColumn> columns,
+  required List<KuraRow> rows,
+  List<KuraCell?>? totals,
+  bool selectable = false,
+  Set<Object> selected = const {},              // CONTROLADA por el padre
+  ValueChanged<Set<Object>>? onSelectionChanged,
+  int? initialSortColumn,
+  bool initialSortAscending = true,
+})
+KuraColumn({ required String label, double? fraction, int? flex, double? widthPx,
+             bool numeric = false, bool sortable = false })
+KuraRow({ required Object id, required List<KuraCell> cells })
+
+// Celdas
+KuraCell.text(String value)
+KuraCell.identity({ required String name, String? identifier, String? initials,
+                    IconData? icon, bool person = false })
+KuraCell.number(num value, { String? unit, KuraCellStatus status = KuraCellStatus.none,
+                             int decimals = 0 })
+KuraCell.money(int? cents, { KuraCellStatus status = KuraCellStatus.none })  // null → "—"
+KuraCell.pill(String label, { bool muted = false })
+KuraCell.progress({ required int used, required int total })
+KuraCell.custom({ required Widget Function(BrandTokens) build, Comparable? sortValue })
+enum KuraCellStatus { none, danger, warning, success }
+
+// Bloqueo de módulo
+KuraModuleLock.band   ({ required DataRepository repo, required String organizationId,
+                         required String moduleKey, required String moduleName,
+                         required String description })
+KuraModuleLock.action ({ ...los mismos..., required String actionLabel,
+                         required VoidCallback onPressed, IconData? icon })
+KuraModuleLock.section({ ...los mismos... })
+
+// Estados / barra / cifra
+KuraEmptyState({ required IconData icon, required String title, required String message,
+                 required String primaryLabel, required VoidCallback onPrimary,
+                 String? secondaryLabel, VoidCallback? onSecondary })
+KuraErrorState({ required String title, required String reassurance, required String detail,
+                 required VoidCallback onRetry, String retryLabel = 'Reintentar' })
+KuraActionBar({ required String searchHint, ValueChanged<String>? onSearchChanged,
+                TextEditingController? searchController, String? primaryLabel,
+                IconData? primaryIcon, VoidCallback? onPrimary,
+                List<KuraMenuAction> moreActions = const [],
+                List<KuraFilter> filters = const [], String? showingText })
+KuraStat({ required String label, required String value, required String meaning,
+           String? unit, KuraStatTone tone = KuraStatTone.normal })
+```
+
+Pruebas que fijan los casos nuevos (en `test/widget/`): el padre puede limpiar la
+selección; `KuraCell.money(null)` pinta "—" y nunca "$0.00"; orden inicial por la
+columna dada; y `KuraModuleLock.action` con el módulo contratado rinde un botón que
+sí dispara `onPressed` (y no abre el diálogo de compra).
+
+`chipBg` es token de marca en `BrandTokens` (faltaba); los tintes del canvas se derivan
+en `lib/core/design/tints.dart`.

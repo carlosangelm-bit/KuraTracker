@@ -22,6 +22,8 @@ class KuraModuleLock extends StatelessWidget {
   final String moduleName; // "Insumos", "Administración avanzada"
   final String description; // qué incluye / qué se gana
   final String? actionLabel; // solo densidad "acción"
+  final VoidCallback? onPressed; // solo densidad "acción": qué hace CON el módulo
+  final IconData? icon; // solo densidad "acción": ícono del botón normal
   final _Density _density;
 
   /// Banda en línea — cuando el resto de la pantalla sí funciona.
@@ -33,10 +35,13 @@ class KuraModuleLock extends StatelessWidget {
     required this.moduleName,
     required this.description,
   })  : actionLabel = null,
+        onPressed = null,
+        icon = null,
         _density = _Density.band;
 
-  /// Acción bloqueada — un botón que se ve apagado ANTES de tocarlo; al tocarlo abre
-  /// la sección completa en un diálogo (nunca un snackbar).
+  /// Acción bloqueada. A diferencia de band/section, NO se desvanece con el módulo:
+  /// con el módulo rinde el botón NORMAL (dispara [onPressed]); sin él se ve apagado
+  /// y al tocarlo abre la sección completa en un diálogo (nunca un snackbar).
   const KuraModuleLock.action({
     super.key,
     required this.repo,
@@ -45,6 +50,8 @@ class KuraModuleLock extends StatelessWidget {
     required this.moduleName,
     required this.description,
     required this.actionLabel,
+    required this.onPressed,
+    this.icon,
   }) : _density = _Density.action;
 
   /// Sección completa — cuando el módulo ES la pantalla.
@@ -56,6 +63,8 @@ class KuraModuleLock extends StatelessWidget {
     required this.moduleName,
     required this.description,
   })  : actionLabel = null,
+        onPressed = null,
+        icon = null,
         _density = _Density.section;
 
   int? get _priceCents =>
@@ -67,19 +76,13 @@ class KuraModuleLock extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Ya contratado: no se rinde nada (el candado no aplica).
-    if (repo.hasModuleEntitlement(organizationId, moduleKey)) {
-      return const SizedBox.shrink();
-    }
     final t = BrandTokens.of(context);
-    switch (_density) {
-      case _Density.band:
-        return _band(context, t);
-      case _Density.action:
-        return _action(context, t);
-      case _Density.section:
-        return _section(context, t);
-    }
+    final contracted = repo.hasModuleEntitlement(organizationId, moduleKey);
+    // La acción NO se desvanece: con módulo es el botón normal, sin él el apagado.
+    if (_density == _Density.action) return _action(context, t, contracted);
+    // band/section sí se desvanecen cuando el módulo ya está contratado.
+    if (contracted) return const SizedBox.shrink();
+    return _density == _Density.band ? _band(context, t) : _section(context, t);
   }
 
   // a) Banda en línea.
@@ -121,8 +124,38 @@ class KuraModuleLock extends StatelessWidget {
     );
   }
 
-  // b) Acción bloqueada — apagada antes de tocarla; abre (c) en diálogo.
-  Widget _action(BuildContext context, BrandTokens t) {
+  // b) Acción bloqueada. Con módulo: botón NORMAL (tonal) que dispara onPressed.
+  // Sin módulo: apagada antes de tocarla; al tocar abre (c) en diálogo.
+  Widget _action(BuildContext context, BrandTokens t, bool contracted) {
+    if (contracted) {
+      return Material(
+        color: t.chipBg,
+        borderRadius: AppRadii.pillR,
+        child: InkWell(
+          borderRadius: AppRadii.pillR,
+          onTap: onPressed,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 9),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (icon != null) ...[
+                  Icon(icon, size: 16, color: t.brandPrimary),
+                  const SizedBox(width: 6),
+                ],
+                Text(
+                  actionLabel ?? moduleName,
+                  style: TextStyle(
+                      fontSize: AppType.label,
+                      fontWeight: AppType.bold,
+                      color: t.brandPrimary),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
     return InkWell(
       borderRadius: AppRadii.pillR,
       onTap: () => _openDialog(context),
