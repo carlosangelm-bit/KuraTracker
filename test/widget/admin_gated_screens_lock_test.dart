@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -23,13 +25,26 @@ import 'package:kuratracker/features/admin/patient_cleanup_screen.dart';
 /// Las de Acuity leen acuityServiceProvider en initState (red); se sustituye por un
 /// fake para poder montarlas sin Supabase.
 final _gatedScreens =
-    <({String name, Widget Function(DataRepository, String?) build})>[
-  (name: 'ProtocolKuraScreen', build: (r, o) => ProtocolKuraScreen(repo: r, organizationId: o)),
-  (name: 'ProtocolProductRulesScreen', build: (r, o) => ProtocolProductRulesScreen(repo: r, organizationId: o)),
-  (name: 'AcuitySessionTypeScreen', build: (r, o) => AcuitySessionTypeScreen(repo: r, organizationId: o)),
-  (name: 'AcuityVisitTypeMapScreen', build: (r, o) => AcuityVisitTypeMapScreen(repo: r, organizationId: o)),
-  (name: 'PatientCleanupScreen', build: (r, o) => PatientCleanupScreen(repo: r, organizationId: o)),
+    <({String name, String file, Widget Function(DataRepository, String?) build})>[
+  (name: 'ProtocolKuraScreen', file: 'protocol_kura_screen.dart', build: (r, o) => ProtocolKuraScreen(repo: r, organizationId: o)),
+  (name: 'ProtocolProductRulesScreen', file: 'protocol_product_rules_screen.dart', build: (r, o) => ProtocolProductRulesScreen(repo: r, organizationId: o)),
+  (name: 'AcuitySessionTypeScreen', file: 'acuity_session_type_screen.dart', build: (r, o) => AcuitySessionTypeScreen(repo: r, organizationId: o)),
+  (name: 'AcuityVisitTypeMapScreen', file: 'acuity_visit_type_map_screen.dart', build: (r, o) => AcuityVisitTypeMapScreen(repo: r, organizationId: o)),
+  (name: 'PatientCleanupScreen', file: 'patient_cleanup_screen.dart', build: (r, o) => PatientCleanupScreen(repo: r, organizationId: o)),
 ];
+
+/// Archivos de lib/features/admin/ que mencionan premiumAdminFor pero NO son
+/// pantallas hijas gateadas — el candado no es su forma. admin_home es el
+/// contenedor (gatea por sección); license_panel y license_plan_builder son la
+/// pestaña Licencias, que LEE el estado del módulo para mostrar precios y NUNCA se
+/// gatea (la compra vive ahí; custodia NOM-004). Cualquier archivo NUEVO que
+/// mencione premiumAdminFor y no esté aquí ni en _gatedScreens rompe el test — que
+/// es justamente lo que fuerza a enumerar una sexta pantalla gateada.
+const _nonGatedAdminFiles = <String>{
+  'admin_home_screen.dart',
+  'license_panel.dart',
+  'license_plan_builder_screen.dart',
+};
 
 class _FakeAcuity extends AcuityService {
   @override
@@ -56,6 +71,38 @@ void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
 
   const lockCta = 'Agregar por \$1,200 al mes';
+
+  test('_gatedScreens está completa: todo screen que menciona premiumAdminFor está '
+      'enumerado (o es una excepción explícita)', () {
+    final gatedFiles = {for (final g in _gatedScreens) g.file};
+    final dir = Directory('lib/features/admin');
+    final mentioning = dir
+        .listSync()
+        .whereType<File>()
+        .where((f) => f.path.endsWith('.dart'))
+        .where((f) => f.readAsStringSync().contains('premiumAdminFor'))
+        .map((f) => f.uri.pathSegments.last)
+        .toList();
+
+    expect(mentioning, isNotEmpty,
+        reason: 'No se halló ningún archivo con premiumAdminFor; ¿ruta mal?');
+
+    for (final file in mentioning) {
+      expect(
+        gatedFiles.contains(file) || _nonGatedAdminFiles.contains(file),
+        isTrue,
+        reason: '$file menciona premiumAdminFor pero no está en _gatedScreens '
+            '(si es una pantalla gateada, enumérala ahí para que esta prueba la '
+            'renderice) ni en _nonGatedAdminFiles (si de verdad no se gatea).',
+      );
+    }
+    // Y las excepciones/enumeradas siguen mencionándolo (no quedaron obsoletas).
+    for (final f in gatedFiles) {
+      expect(mentioning, contains(f),
+          reason: '$f está en _gatedScreens pero ya no menciona premiumAdminFor: '
+              '¿se le cayó el candado?');
+    }
+  });
 
   testWidgets('sin module:admin: las 5 muestran el bloqueo con precio',
       (tester) async {
