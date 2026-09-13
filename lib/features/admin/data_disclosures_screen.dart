@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 
 import '../../core/providers/session_provider.dart';
 import '../../core/theme/kura_theme.dart';
+import '../../core/widgets/kura_error_state.dart';
 import '../../models/data_disclosure.dart';
 import '../../services/data_repository.dart';
 
@@ -37,7 +38,19 @@ class _DataDisclosuresScreenState extends ConsumerState<DataDisclosuresScreen> {
       appBar: AppBar(title: const Text('Registro de divulgaciones')),
       body: repoAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, st) => Center(child: Text('Error: $e')),
+        error: (e, st) => Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: KuraErrorState(
+              title: 'No pudimos cargar el registro de divulgaciones',
+              reassurance:
+                  'Puede ser tu conexión. El registro está a salvo: es un acta '
+                  'inmutable, no se perdió nada.',
+              detail: '$e',
+              onRetry: () => ref.invalidate(dataRepositoryProvider),
+            ),
+          ),
+        ),
         data: (repo) {
           if (!_refreshed) {
             // Carga perezosa (no se hidratan al login).
