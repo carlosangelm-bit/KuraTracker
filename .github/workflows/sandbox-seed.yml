@@ -148,16 +148,42 @@ jobs:
           fi
           echo "Pasada 2 (ya usado) OK. El seed es idempotente y atómico."
 
-      - name: Verificar
+      # Verificación por IDENTIDAD, no por conteo. El sandbox ya no contiene solo lo
+      # que pone ESTE seed (otros dos workflows siembran ahí, más trabajo manual), así
+      # que un conteo absoluto se pone rojo por cosas ajenas y se deja de leer. Se
+      # comprueba que existan, por id/correo, los centros y cuentas que este seed crea
+      # con su configuración; y que los dos centros de verificación tengan module:clinico
+      # y NO admin/insumos/comercial — que es lo que los hace útiles.
+      - name: Verificar (por identidad)
         run: |
+          set -o pipefail
+          C1=a0000000-0000-4000-a000-000000000001  # Clínica Sandbox
+          C2=a0000000-0000-4000-a000-000000000002  # Hospital Sandbox
+          C3=a0000000-0000-4000-a000-000000000003  # Cuidadores Sandbox
+          CH=a0000000-0000-4000-a000-000000000031  # Hospital Prueba (bloqueos)
+          CB=a0000000-0000-4000-a000-000000000032  # Clínica Prueba (solo asientos)
           psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -At -c "
-            select 'centros_test=' || count(*) from public.organizations where is_test;
-            select 'cuentas=' || count(*) from auth.users where email like '%@sandbox.kuratracker.mx' or email like '%@cuidador.kuramas.com';
-            select 'pacientes_sandbox=' || count(*) from public.patients p join public.organizations o on o.id = p.organization_id where o.is_test;
+            select 'clinica=' || case when center_type='clinica_heridas' and is_test then 'OK' else 'FAIL' end from public.organizations where id='$C1';
+            select 'hospital=' || case when center_type='hospital' and is_test then 'OK' else 'FAIL' end from public.organizations where id='$C2';
+            select 'cuidadores=' || case when center_type='cuidadores' and is_test then 'OK' else 'FAIL' end from public.organizations where id='$C3';
+            select 'hosp_test=' || case when center_type='hospital' and is_test then 'OK' else 'FAIL' end from public.organizations where id='$CH';
+            select 'basica_test=' || case when center_type='clinica_heridas' and is_test then 'OK' else 'FAIL' end from public.organizations where id='$CB';
+            select 'cuentas=' || case when count(*)=9 then 'OK' else 'FAIL (' || count(*) || ')' end from auth.users where email in (
+              'master@sandbox.kuratracker.mx','admin@sandbox.kuratracker.mx','clinico@sandbox.kuratracker.mx',
+              'independiente@sandbox.kuratracker.mx','admin.hospital@sandbox.kuratracker.mx','enfermeria@sandbox.kuratracker.mx',
+              '5550001234@cuidador.kuramas.com','admin.hospital.test@sandbox.kuratracker.mx','admin.basica.test@sandbox.kuratracker.mx');
+            select 'hosp_test_clinico=' || case when exists(select 1 from public.org_entitlements where organization_id='$CH' and kind='module' and key='clinico' and status='active') then 'OK' else 'FAIL' end;
+            select 'hosp_test_seat=' || case when exists(select 1 from public.org_entitlements where organization_id='$CH' and kind='seat' and key='clinico' and status='active') then 'OK' else 'FAIL' end;
+            select 'hosp_test_nopaid=' || case when not exists(select 1 from public.org_entitlements where organization_id='$CH' and kind='module' and key in ('admin','insumos','comercial') and status='active') then 'OK' else 'FAIL' end;
+            select 'basica_test_clinico=' || case when exists(select 1 from public.org_entitlements where organization_id='$CB' and kind='module' and key='clinico' and status='active') then 'OK' else 'FAIL' end;
+            select 'basica_test_seat=' || case when exists(select 1 from public.org_entitlements where organization_id='$CB' and kind='seat' and key='clinico' and status='active') then 'OK' else 'FAIL' end;
+            select 'basica_test_nopaid=' || case when not exists(select 1 from public.org_entitlements where organization_id='$CB' and kind='module' and key in ('admin','insumos','comercial') and status='active') then 'OK' else 'FAIL' end;
+            select 'clinica_pacientes=' || case when count(*) > 0 then 'OK' else 'FAIL' end from public.patients where organization_id='$C1';
           " | tee /tmp/verify.txt
-          # 5 centros = 3 base + 2 de verificación de bloqueos/marca (§9).
-          # 9 cuentas = 7 base + los 2 admins de esos centros.
-          grep -q 'centros_test=5' /tmp/verify.txt || { echo '::error::Se esperaban 5 centros de prueba (3 base + 2 de verificación)'; exit 1; }
-          grep -q 'cuentas=9' /tmp/verify.txt || { echo '::error::Se esperaban 9 cuentas (7 base + 2 admins de prueba)'; exit 1; }
-          grep -q 'pacientes_sandbox=10' /tmp/verify.txt || { echo '::error::Se esperaban 10 pacientes sintéticos'; exit 1; }
-          echo "Sandbox sembrado. Cuentas: ver cabecera de supabase/seed/seed_sandbox.sql"
+          for chk in clinica hospital cuidadores hosp_test basica_test cuentas \
+                     hosp_test_clinico hosp_test_seat hosp_test_nopaid \
+                     basica_test_clinico basica_test_seat basica_test_nopaid \
+                     clinica_pacientes; do
+            grep -q "^${chk}=OK$" /tmp/verify.txt || { echo "::error::verificación falló o faltó: ${chk} (ver salida arriba)"; exit 1; }
+          done
+          echo "Sandbox verificado por identidad. Cuentas: ver cabecera de supabase/seed/seed_sandbox.sql"
