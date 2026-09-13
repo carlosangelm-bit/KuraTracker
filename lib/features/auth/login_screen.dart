@@ -46,7 +46,14 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           : 'Usuario no encontrado o inactivo.');
       return;
     }
-    if (mounted) context.go('/');
+    if (!mounted) return;
+    // Respeta el destino pretendido (?from=…) que el redirect guardó al mandarnos
+    // aquí desde un enlace profundo; si no hay, al dashboard. El redirect reajusta
+    // por rol (master→/platform, etc.) en la siguiente pasada.
+    final from = GoRouterState.of(context).uri.queryParameters['from'];
+    context.go(from != null && from.isNotEmpty && !from.startsWith('/login')
+        ? from
+        : '/');
   }
 
   /// Login del cuidador: teléfono → correo sintético + clave.
