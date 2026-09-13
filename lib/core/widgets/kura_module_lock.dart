@@ -7,6 +7,32 @@ import '../format/money.dart';
 import '../../services/data_repository.dart';
 import 'dashed_border_box.dart';
 
+/// Pantalla completa de bloqueo del módulo Administración avanzada: la usan las
+/// pantallas hijas gateadas cuando se abren SIN el módulo (segunda capa, además del
+/// candado del botón: con URL propia el botón ya no es la única entrada).
+Widget adminModuleLockedScaffold(
+  BuildContext context, {
+  required DataRepository repo,
+  required String? organizationId,
+  required String title,
+  required String description,
+}) =>
+    Scaffold(
+      appBar: AppBar(title: Text(title)),
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: KuraModuleLock.section(
+            repo: repo,
+            organizationId: organizationId ?? '',
+            moduleKey: 'admin',
+            moduleName: 'Administración avanzada',
+            description: description,
+          ),
+        ),
+      ),
+    );
+
 enum _Density { band, action, section }
 
 /// Bloqueo de módulo (canvas §2). Un solo componente, tres densidades — banda en

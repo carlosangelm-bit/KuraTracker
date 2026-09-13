@@ -34,6 +34,16 @@ import '../../features/referrals/referral_create_screen.dart';
 import '../../features/reports/reports_screen.dart';
 import '../../features/agenda/agenda_screen.dart';
 import '../../features/admin/admin_home_screen.dart';
+import '../../features/admin/protocol_kura_screen.dart';
+import '../../features/admin/protocol_product_rules_screen.dart';
+import '../../features/admin/acuity_session_type_screen.dart';
+import '../../features/admin/acuity_visit_type_map_screen.dart';
+import '../../features/admin/patient_cleanup_screen.dart';
+import '../../features/admin/scale_toggles_screen.dart';
+import '../../features/admin/recommendations_reference_screen.dart';
+import '../../features/admin/data_disclosures_screen.dart';
+import '../../services/data_repository.dart';
+import '../widgets/kura_error_state.dart';
 import '../../features/import_export/import_export_screen.dart';
 import '../../features/import_export/ekare_import_screen.dart';
 import '../../features/platform/platform_home_screen.dart';
@@ -63,6 +73,39 @@ class _RouterRefreshNotifier extends ChangeNotifier {
 /// El router se construye una sola vez (Provider), y se suscribe via
 /// ref.listen a cambios de sesion para disparar sus redirects sin perder
 /// el estado de navegacion en cada rebuild de widgets.
+/// Builder para una pantalla hija de /admin que necesita el DataRepository (async)
+/// y el centro en sesión. Resuelve el repo con su estado de carga/error y arma la
+/// pantalla; así cada ruta hija se declara en una línea sin repetir el `.when`.
+Widget Function(BuildContext, GoRouterState) _adminChild(
+    Widget Function(DataRepository repo, String? organizationId) build) {
+  return (context, state) => Consumer(
+        builder: (ctx, ref, _) {
+          final repoAsync = ref.watch(dataRepositoryProvider);
+          final org = ref.watch(sessionProvider).user?.organizationId;
+          return repoAsync.when(
+            loading: () =>
+                const Scaffold(body: Center(child: CircularProgressIndicator())),
+            error: (e, _) => Scaffold(
+              appBar: AppBar(),
+              body: Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: KuraErrorState(
+                    title: 'No pudimos cargar esta pantalla',
+                    reassurance:
+                        'Puede ser tu conexión. Tus datos están a salvo.',
+                    detail: '$e',
+                    onRetry: () => ref.invalidate(dataRepositoryProvider),
+                  ),
+                ),
+              ),
+            ),
+            data: (repo) => build(repo, org),
+          );
+        },
+      );
+}
+
 final routerProvider = Provider<GoRouter>((ref) {
   final refreshNotifier = _RouterRefreshNotifier();
   ref.listen(sessionProvider, (previous, next) {
@@ -448,7 +491,47 @@ final routerProvider = Provider<GoRouter>((ref) {
               patientId: state.pathParameters['patientId']!,
             ),
           ),
-          GoRoute(path: '/admin', builder: (context, state) => const AdminHomeScreen()),
+          GoRoute(
+            path: '/admin',
+            builder: (context, state) => const AdminHomeScreen(),
+            // Las 8 pantallas hijas de Administración, ahora con URL/shell/historial
+            // (antes Navigator.push las dejaba fuera). Al ser hijas de '/admin', el
+            // redirect de rol de arriba (location.startsWith('/admin')) rechaza a
+            // quien no es admin/master también aquí — sin candado, no basta el botón.
+            routes: [
+              GoRoute(
+                  path: 'protocolo-kura',
+                  builder: _adminChild((repo, org) =>
+                      ProtocolKuraScreen(repo: repo, organizationId: org))),
+              GoRoute(
+                  path: 'productos-protocolo',
+                  builder: _adminChild((repo, org) =>
+                      ProtocolProductRulesScreen(repo: repo, organizationId: org))),
+              GoRoute(
+                  path: 'tipo-cita-sesiones',
+                  builder: _adminChild((repo, org) =>
+                      AcuitySessionTypeScreen(repo: repo, organizationId: org))),
+              GoRoute(
+                  path: 'tipos-consulta',
+                  builder: _adminChild((repo, org) =>
+                      AcuityVisitTypeMapScreen(repo: repo, organizationId: org))),
+              GoRoute(
+                  path: 'depurar-expedientes',
+                  builder: _adminChild((repo, org) =>
+                      PatientCleanupScreen(repo: repo, organizationId: org))),
+              GoRoute(
+                  path: 'escalas-protocolo',
+                  builder: _adminChild((repo, org) =>
+                      ScaleTogglesScreen(repo: repo, organizationId: org))),
+              GoRoute(
+                  path: 'fuente-recomendaciones',
+                  builder: (context, state) =>
+                      const RecommendationsReferenceScreen()),
+              GoRoute(
+                  path: 'divulgaciones',
+                  builder: (context, state) => const DataDisclosuresScreen()),
+            ],
+          ),
           GoRoute(
             path: '/platform',
             builder: (context, state) => const PlatformHomeScreen(),

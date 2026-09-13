@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -19,7 +20,6 @@ import '../../core/widgets/kura_module_lock.dart';
 import '../../core/widgets/kura_empty_state.dart';
 import '../../core/widgets/kura_error_state.dart';
 import '../../core/widgets/dashed_border_box.dart';
-import '../import_export/import_export_screen.dart';
 import '../../core/name_format.dart';
 import '../../core/layout/responsive.dart';
 import '../../core/config/app_config.dart';
@@ -34,14 +34,6 @@ import '../../models/site.dart';
 import '../../models/staff.dart';
 import '../../services/csv_download.dart';
 import '../../services/data_repository.dart';
-import 'protocol_kura_screen.dart';
-import 'protocol_product_rules_screen.dart';
-import 'acuity_session_type_screen.dart';
-import 'acuity_visit_type_map_screen.dart';
-import 'scale_toggles_screen.dart';
-import 'recommendations_reference_screen.dart';
-import 'patient_cleanup_screen.dart';
-import 'data_disclosures_screen.dart';
 import '../../services/photo_upload_service.dart';
 
 /// Panel de administración: gestión de personal sanitario, sitios y
@@ -2010,16 +2002,14 @@ class _NoteCatalogTabState extends State<NoteCatalogTab> {
               name: 'Protocolo Kura+',
               desc: 'Qué conceptos van en cada paso',
               locked: adminLocked,
-              onOpen: () => _push(ProtocolKuraScreen(
-                  repo: widget.repo, organizationId: widget.organizationId)),
+              onOpen: () => context.push('/admin/protocolo-kura'),
             ),
             _CfgTile(
               icon: Icons.inventory_2_outlined,
               name: 'Productos del protocolo',
               desc: 'Qué insumo y cuánto, por paso',
               locked: adminLocked,
-              onOpen: () => _push(ProtocolProductRulesScreen(
-                  repo: widget.repo, organizationId: widget.organizationId)),
+              onOpen: () => context.push('/admin/productos-protocolo'),
             ),
             _CfgTile(
               icon: Icons.upload_outlined,
@@ -2033,24 +2023,21 @@ class _NoteCatalogTabState extends State<NoteCatalogTab> {
               name: 'Tipo de cita para sesiones',
               desc: 'Integración con Acuity',
               locked: adminLocked,
-              onOpen: () => _push(AcuitySessionTypeScreen(
-                  repo: widget.repo, organizationId: widget.organizationId)),
+              onOpen: () => context.push('/admin/tipo-cita-sesiones'),
             ),
             _CfgTile(
               icon: Icons.medical_information_outlined,
               name: 'Tipos de consulta',
               desc: 'Valoración o seguimiento, en Acuity',
               locked: adminLocked,
-              onOpen: () => _push(AcuityVisitTypeMapScreen(
-                  repo: widget.repo, organizationId: widget.organizationId)),
+              onOpen: () => context.push('/admin/tipos-consulta'),
             ),
             _CfgTile(
               icon: Icons.cleaning_services_outlined,
               name: 'Depurar expedientes',
               desc: 'Archivar en bloque contra tu padrón',
               locked: adminLocked,
-              onOpen: () => _push(PatientCleanupScreen(
-                  repo: widget.repo, organizationId: widget.organizationId)),
+              onOpen: () => context.push('/admin/depurar-expedientes'),
             ),
           ]),
         ],
@@ -2110,22 +2097,21 @@ class _NoteCatalogTabState extends State<NoteCatalogTab> {
               name: 'Registro de divulgaciones',
               desc: 'Constancia de cada salida de datos',
               locked: false,
-              onOpen: () => _push(const DataDisclosuresScreen()),
+              onOpen: () => context.push('/admin/divulgaciones'),
             ),
             _CfgTile(
               icon: Icons.rule_folder_outlined,
               name: 'Escalas del protocolo',
               desc: 'Cuáles participan en tu centro',
               locked: false,
-              onOpen: () => _push(ScaleTogglesScreen(
-                  repo: widget.repo, organizationId: widget.organizationId)),
+              onOpen: () => context.push('/admin/escalas-protocolo'),
             ),
             _CfgTile(
               icon: Icons.menu_book_outlined,
               name: 'Fuente de recomendaciones',
               desc: 'De dónde sale cada sugerencia',
               locked: false,
-              onOpen: () => _push(const RecommendationsReferenceScreen()),
+              onOpen: () => context.push('/admin/fuente-recomendaciones'),
             ),
             _CfgTile(
               icon: Icons.download_outlined,
@@ -2146,7 +2132,7 @@ class _NoteCatalogTabState extends State<NoteCatalogTab> {
               name: 'Exportar el expediente',
               desc: 'Completo, cuando lo necesites',
               locked: false,
-              onOpen: () => _push(const ImportExportScreen()),
+              onOpen: () => context.push('/import-export'),
             ),
           ]),
         ],
@@ -2348,8 +2334,6 @@ class _NoteCatalogTabState extends State<NoteCatalogTab> {
     );
   }
 
-  void _push(Widget screen) => Navigator.of(context)
-      .push(MaterialPageRoute(builder: (_) => screen));
 
   // Sección completa del módulo Administración (densidad c), en diálogo. La abre la
   // acción bloqueada y las tarjetas gateadas de la reja del grupo 2.

@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+
+import '../../core/widgets/kura_module_lock.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/theme/kura_theme.dart';
@@ -191,6 +193,15 @@ class _PatientCleanupScreenState extends ConsumerState<PatientCleanupScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Segunda capa del candado (además del botón): con URL propia, un admin
+    // sin el módulo entraría tecleando la ruta. Se bloquea al construir.
+    if (!widget.repo.premiumAdminFor(widget.organizationId)) {
+      return adminModuleLockedScaffold(context,
+          repo: widget.repo,
+          organizationId: widget.organizationId,
+          title: 'Depurar expedientes',
+          description: 'Archiva en bloque los expedientes que ya no atiendes, contra tu padrón.');
+    }
     final archived =
         widget.repo.listArchivedPatients(organizationId: widget.organizationId);
     return Scaffold(
