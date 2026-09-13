@@ -145,7 +145,15 @@ final routerProvider = Provider<GoRouter>((ref) {
       }
       if (!loggedIn && !goingToLogin && !goingToDemo) {
         // En demo, la landing es la selección de perfil; en prod, el login.
-        return isDemoMode ? '/demo' : '/login';
+        if (isDemoMode) return '/demo';
+        // Enlace profundo en frío: guarda el destino pretendido para restaurarlo al
+        // resolver la sesión (antes se perdía → caías en '/'). No se guardan destinos
+        // triviales ni de auth.
+        final from = state.uri.toString();
+        final keep = from != '/' &&
+            !from.startsWith('/login') &&
+            !from.startsWith('/demo');
+        return keep ? '/login?from=${Uri.encodeComponent(from)}' : '/login';
       }
 
       // El master (administrador de plataforma) no tiene datos clinicos
@@ -168,6 +176,15 @@ final routerProvider = Provider<GoRouter>((ref) {
       if (loggedIn && (goingToLogin || goingToDemo)) {
         if (isMaster) return '/platform';
         if (isCaregiver) return '/caregiver';
+        // Restaura el destino pretendido guardado en ?from= (enlace profundo en
+        // frío). Si no aplica al rol, la siguiente pasada del redirect lo reajusta.
+        final from = state.uri.queryParameters['from'];
+        if (from != null &&
+            from.isNotEmpty &&
+            !from.startsWith('/login') &&
+            !from.startsWith('/demo')) {
+          return from;
+        }
         return '/';
       }
 
