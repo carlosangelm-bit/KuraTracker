@@ -95,7 +95,10 @@ select unnest(array[
   'independiente@sandbox.kuratracker.mx',
   'admin.hospital@sandbox.kuratracker.mx',
   'enfermeria@sandbox.kuratracker.mx',
-  '5550001234@cuidador.kuramas.com'
+  '5550001234@cuidador.kuramas.com',
+  -- Centros de verificación (§9): sus dos admins también se limpian aquí.
+  'admin.hospital.test@sandbox.kuratracker.mx',
+  'admin.basica.test@sandbox.kuratracker.mx'
 ]) as email;
 
 -- -----------------------------------------------------------------------------
@@ -107,6 +110,41 @@ alter table public.consultations disable trigger trg_prevent_finalized_consultat
 delete from public.patients
  where organization_id in (select org_clinica from sb union select org_hospital from sb union select org_cuidadores from sb);
 alter table public.consultations enable trigger trg_prevent_finalized_consultation_change;
+
+-- Tablas que referencian auth.users SIN cascada (audit_log.actor_id,
+-- data_disclosures.actor_id, clinical_params.uploaded_by, …) bloquean el delete de
+-- un usuario que YA tiene renglones — pasa apenas el sandbox se usa. En vez de
+-- enumerarlas (el patrón se repite con cada tabla nueva), se barren TODAS las FK que
+-- apuntan a auth.users, borrando los renglones de los usuarios sandbox antes de
+-- borrarlos. DECISIÓN: en el sandbox estos son datos de prueba, no auditoría real, y
+-- esto NO toca el esquema de producción (guardado por kt.env='sandbox' arriba). Las FK
+-- con cascada también se listan aquí y borrar primero es inocuo (igual cascadearían).
+do $$
+declare r record;
+begin
+  for r in
+    select tc.table_schema, tc.table_name, kcu.column_name
+    from information_schema.table_constraints tc
+    join information_schema.key_column_usage kcu
+      on kcu.constraint_name = tc.constraint_name
+     and kcu.constraint_schema = tc.constraint_schema
+    join information_schema.constraint_column_usage ccu
+      on ccu.constraint_name = tc.constraint_name
+     and ccu.constraint_schema = tc.constraint_schema
+    where tc.constraint_type = 'FOREIGN KEY'
+      and ccu.table_schema = 'auth' and ccu.table_name = 'users'
+      and ccu.column_name = 'id'
+      -- Solo tablas de la app: las de auth.* (identities, sessions, …) ya cascadean
+      -- al borrar el usuario; no hay que tocarlas.
+      and tc.table_schema = 'public'
+      -- profiles se borra por su propia cascada (sus cascadas hacen el resto).
+      and tc.table_name <> 'profiles'
+  loop
+    execute format(
+      'delete from %I.%I where %I in (select id from auth.users where email in (select email from sb_emails))',
+      r.table_schema, r.table_name, r.column_name);
+  end loop;
+end $$;
 
 -- Usuarios (cascada: profiles → memberships, module_settings, asignaciones…).
 delete from auth.users where email in (select email from sb_emails);
@@ -378,10 +416,9 @@ select
   'a0000000-0000-4000-a000-000000000041'::uuid as site_hospital_test,
   'a0000000-0000-4000-a000-000000000042'::uuid as site_basica_test;
 
--- Idempotencia de estos dos centros.
-delete from auth.users
- where email in ('admin.hospital.test@sandbox.kuratracker.mx',
-                 'admin.basica.test@sandbox.kuratracker.mx');
+-- Idempotencia de estos dos centros. (Sus dos admins ya se limpiaron arriba: sus
+-- correos están en sb_emails, así que el barrido de FK + el delete de auth.users los
+-- cubren.)
 delete from public.org_entitlements
  where organization_id in (select org_hospital_test from sb2
                            union select org_basica_test from sb2);

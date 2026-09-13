@@ -107,27 +107,46 @@ jobs:
       # psql, :'pwd', así no se escribe en ningún archivo ni sale en el log);
       # seed_sandbox.sql deja kt.seed_org_id / kt.seed_staff_id para que los 6
       # pacientes caigan en la Clínica Sandbox asignados a la Dra. Clínica Sandbox.
-      - name: Sembrar
+      # Se corre DOS veces. La 2ª pasada reproduce el estado "sandbox ya usado" (con
+      # un renglón de auditoría de un usuario sandbox inyectado entre pasadas), que es
+      # lo que reventaba en la corrida #6 al borrar auth.users (FK audit_log.actor_id).
+      # Cada pasada es ATÓMICA: --single-transaction envuelve los tres -f en UNA
+      # transacción; si algo falla, NO queda rastro (antes el delete se confirmaba y el
+      # reseed nunca ocurría → el entorno quedaba peor que antes).
+      - name: Sembrar (dos pasadas — virgen y "ya usado")
         run: |
           set -o pipefail
           printf "%s\n" \
             "select set_config('kt.env', 'sandbox', false);" \
             "select set_config('kt.sandbox_password', :'pwd', false);" > /tmp/preambulo.sql
-          # OJO: se imprime la COLA COMPLETA del log, no un grep. Un grep por
-          # 'ERROR|LINE|DETAIL|HINT' deja el fallo MUDO cuando psql muere por algo
-          # que no es un error de SQL (conexion, permisos, timeout). GitHub
-          # enmascara los secretos en el log, asi que volcar la salida es seguro.
-          if ! psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -q -v pwd="$SANDBOX_USER_PASSWORD" \
+          run_seed() {
+            psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 --single-transaction -q \
+                 -v pwd="$SANDBOX_USER_PASSWORD" \
                  -f /tmp/preambulo.sql \
                  -f supabase/seed/seed_sandbox.sql \
-                 -f supabase/seed/seed_synthetic_patients.sql > /tmp/seed.log 2>&1; then
-            echo "::group::Salida completa de psql"
-            tail -n 80 /tmp/seed.log
-            echo "::endgroup::"
-            echo "::error::El seed falló - abre el grupo 'Salida completa de psql' de arriba."
+                 -f supabase/seed/seed_synthetic_patients.sql
+          }
+          dump() { echo "::group::Salida completa de psql"; tail -n 80 "$1"; echo "::endgroup::"; }
+          # Pasada 1.
+          if ! run_seed > /tmp/seed1.log 2>&1; then
+            dump /tmp/seed1.log
+            echo "::error::El seed falló en la 1ª pasada."
             exit 1
           fi
-          echo "Seed aplicado sin errores."
+          echo "Pasada 1 OK."
+          # Reproduce "ya usado": auditoría atribuida a un usuario sandbox. Es
+          # EXACTAMENTE la fila que bloqueaba el borrado de auth.users (FK sin cascada).
+          psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -q -c \
+            "insert into public.audit_log(actor_id, actor_role, action, table_name, record_id)
+             select id, 'admin', 'SANDBOX_SEED_TEST', 'sites', gen_random_uuid()
+               from auth.users where email = 'admin@sandbox.kuratracker.mx' limit 1;"
+          # Pasada 2 sobre el sandbox "usado": si el borrado no maneja las FK, revienta.
+          if ! run_seed > /tmp/seed2.log 2>&1; then
+            dump /tmp/seed2.log
+            echo "::error::El re-seed falló en la 2ª pasada (estado 'ya usado')."
+            exit 1
+          fi
+          echo "Pasada 2 (ya usado) OK. El seed es idempotente y atómico."
 
       - name: Verificar
         run: |
@@ -136,7 +155,9 @@ jobs:
             select 'cuentas=' || count(*) from auth.users where email like '%@sandbox.kuratracker.mx' or email like '%@cuidador.kuramas.com';
             select 'pacientes_sandbox=' || count(*) from public.patients p join public.organizations o on o.id = p.organization_id where o.is_test;
           " | tee /tmp/verify.txt
-          grep -q 'centros_test=3' /tmp/verify.txt || { echo '::error::Se esperaban 3 centros de prueba'; exit 1; }
-          grep -q 'cuentas=7' /tmp/verify.txt || { echo '::error::Se esperaban 7 cuentas'; exit 1; }
+          # 5 centros = 3 base + 2 de verificación de bloqueos/marca (§9).
+          # 9 cuentas = 7 base + los 2 admins de esos centros.
+          grep -q 'centros_test=5' /tmp/verify.txt || { echo '::error::Se esperaban 5 centros de prueba (3 base + 2 de verificación)'; exit 1; }
+          grep -q 'cuentas=9' /tmp/verify.txt || { echo '::error::Se esperaban 9 cuentas (7 base + 2 admins de prueba)'; exit 1; }
           grep -q 'pacientes_sandbox=10' /tmp/verify.txt || { echo '::error::Se esperaban 10 pacientes sintéticos'; exit 1; }
           echo "Sandbox sembrado. Cuentas: ver cabecera de supabase/seed/seed_sandbox.sql"
