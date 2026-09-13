@@ -344,11 +344,146 @@ Y con tres decisiones escritas:
 
 ### Plan de reversa para el corte real
 
-Las 24 migraciones son casi todas aditivas. Lo que no se deshace solo:
+La reversa NO es una sola. Depende de si la app de Fase 2 ya está sirviendo contra la base.
+Son dos escenarios distintos con reversas distintas; confundirlos apaga módulos de clientes
+reales.
 
-- `0126` elimina el trigger del tope de pacientes y revoca una función. Reversible, pero hay
-  que tener el SQL escrito **antes** del corte, no improvisado.
-- `0114` escribe derechos. Su reversa es
-  `delete from public.org_entitlements where source = 'master' and created_at >= '<hora del corte>'`,
-  que solo es segura si nadie compró nada en el intervalo.
-- El respaldo previo al corte es la reversa real. Tomarlo inmediatamente antes y anotar la hora.
+#### Escenario A — migraciones aplicadas, `main` (la app) todavía NO desplegado
+
+La base ya corrió 0108→0131, pero quien la consume sigue siendo la app **0107**, que no sabe
+de `org_entitlements`. Aquí sí hay reversa por datos + esquema: deshacer 0114 y deshacer los
+efectos destructivos de 0126, dejando la base como la ve la app 0107. Todo en una transacción.
+
+`org_entitlements` **nace vacía en 0113**, así que todo lo que contiene en este punto salió de
+`0114` (y de `create_trial_organization`, que aún no se ha usado): el `delete` va **sin filtro**,
+no hay derechos legítimos que preservar todavía.
+
+Y `0126` no solo revocó el `execute` de `create_organization_with_admin`: **reemplazó su cuerpo
+por un `raise`** (puerta cerrada). Re-otorgar `execute` sobre esa puerta no sirve — hay que
+restaurar el cuerpo que la app 0107 espera (el de 0116) **y luego** re-otorgar.
+
+```sql
+-- REVERSA (A). Correr contra la base ya migrada, con la app 0107 aún activa. Atómica.
+begin;
+
+-- 1) Deshacer 0114. La tabla nació vacía en 0113 → todo lo que hay salió del backfill.
+delete from public.org_entitlements;
+
+-- 2) Deshacer 0126, parte 1: recrear el tope de 5 pacientes del plan gratuito.
+create or replace function public.assert_free_plan_patient_cap()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $func$
+declare
+  v_count int;
+begin
+  if new.is_active is not true then
+    return new;
+  end if;
+  if tg_op = 'UPDATE' and old.is_active is true then
+    return new;
+  end if;
+  if not exists (
+    select 1 from public.org_entitlements e
+    where e.organization_id = new.organization_id
+      and e.kind = 'plan' and e.key = 'gratuito' and e.status = 'active'
+  ) then
+    return new;
+  end if;
+  select count(*) into v_count
+  from public.patients p
+  where p.organization_id = new.organization_id and p.is_active and p.id <> new.id;
+  if v_count >= 5 then
+    raise exception
+      'FREE_PLAN_PATIENT_CAP: el plan gratuito permite 5 pacientes; contrata un plan para agregar más.';
+  end if;
+  return new;
+end;
+$func$;
+
+drop trigger if exists trg_zz_free_plan_patient_cap on public.patients;
+create trigger trg_zz_free_plan_patient_cap
+  before insert or update on public.patients
+  for each row execute function public.assert_free_plan_patient_cap();
+
+-- 3) Deshacer 0126, parte 2: restaurar el CUERPO de create_organization_with_admin
+--    (el de 0116, lo que 0126 reemplazó por un raise) y re-otorgar execute.
+create or replace function public.create_organization_with_admin(
+  p_organization_name text,
+  p_admin_full_name text,
+  p_admin_is_clinical boolean default false
+)
+returns uuid language plpgsql security definer
+set search_path = public, pg_temp
+as $func$
+declare
+  v_org_id uuid;
+  v_staff_id uuid;
+  v_roles public.user_role[];
+begin
+  if auth.uid() is null then
+    raise exception 'No autenticado';
+  end if;
+  v_roles := case
+               when p_admin_is_clinical
+                 then array['admin', 'clinico']::public.user_role[]
+               else array['admin']::public.user_role[]
+             end;
+  insert into public.organizations (name) values (p_organization_name)
+  returning id into v_org_id;
+  insert into public.org_entitlements (organization_id, kind, key, quantity, status, source)
+  values
+    (v_org_id, 'plan',   'gratuito',  null, 'active', 'master'),
+    (v_org_id, 'module', 'clinico',   null, 'active', 'master'),
+    (v_org_id, 'seat',   'clinico',   1,    'active', 'master'),
+    (v_org_id, 'seat',   'protocolo', 1,    'active', 'master');
+  insert into public.user_center_memberships (profile_id, organization_id, roles, is_active)
+  values (auth.uid(), v_org_id, v_roles, true)
+  on conflict (profile_id, organization_id)
+    do update set roles = excluded.roles, is_active = true;
+  update public.profiles
+  set organization_id = v_org_id,
+      roles = v_roles,
+      full_name = coalesce(p_admin_full_name, full_name)
+  where id = auth.uid();
+  if p_admin_is_clinical then
+    insert into public.staff (profile_id, folio, full_name, role_title, organization_id)
+    values (auth.uid(), '', coalesce(p_admin_full_name, 'Administrador'), 'Administrador', v_org_id)
+    returning id into v_staff_id;
+  end if;
+  return v_org_id;
+end;
+$func$;
+
+grant execute on function public.create_organization_with_admin(text, text, boolean)
+  to authenticated;
+
+commit;
+```
+
+#### Escenario B — `main` (la app de Fase 2) YA desplegado
+
+Aquí la reversa por datos **NO aplica**. Con la app de Fase 2 sirviendo, `org_entitlements` es
+la fuente de verdad: `0115` exige el derecho para encender un módulo, y `0116`/`0128` exigen los
+asientos. **Borrar los derechos apaga TODOS los módulos de TODOS los centros** (el expediente,
+Insumos, Comercial, Administración) — el `delete` sin filtro del escenario A, con la app nueva
+encima, es un apagón, no una reversa. Restaurar create_organization_with_admin tampoco importa:
+la app nueva ya no la llama.
+
+**La única reversa en este escenario es restaurar el respaldo previo al corte.** Tomarlo
+inmediatamente antes del corte y anotar la hora; ese respaldo, no un `delete`, es la reversa.
+
+#### Regla que evita caer en el escenario B por accidente
+
+**Migrar y desplegar en momentos SEPARADOS, con la verificación de la §7 en medio:**
+
+1. Tomar el respaldo previo al corte (anotar la hora).
+2. Aplicar las 24 migraciones a producción — la app sigue siendo 0107.
+3. Correr la §7 **contra producción ya migrada**. Si algo sale rojo, se está en el escenario A:
+   reversa por datos (arriba), sin haber tocado a ningún usuario.
+4. Solo con la §7 en verde, desplegar la app de Fase 2 (`main`).
+
+Entre el paso 2 y el 4, la reversa barata (A) sigue disponible. Después del 4, la única red es el
+respaldo (B). Nunca desplegar la app en el mismo movimiento que las migraciones.
