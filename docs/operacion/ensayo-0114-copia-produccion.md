@@ -477,7 +477,26 @@ inmediatamente antes del corte y anotar la hora; ese respaldo, no un `delete`, e
 3. Correr la §7 **contra producción ya migrada**. Si algo sale rojo, se está en el escenario A:
    basta con **no desplegar** (y, si se quiere, restaurar `create_organization_with_admin`),
    sin haber tocado a ningún usuario.
-4. Solo con la §7 en verde, desplegar la app de Fase 2 (`main`).
+4. Solo con la §7 en verde, desplegar la Fase 2 (`main`).
+
+> **"Desplegar" son DOS artefactos que cruzan juntos, no solo el bundle.** Un push a `main`
+> corre `deploy.yml`, que publica el bundle de Flutter **y** las edge functions de
+> `supabase/functions/` (job `deploy_functions`). El bundle no es el único proceso vivo que
+> puede empezar a leer `org_entitlements`: en Fase 2, **`admin-create-user` llama a
+> `assert_seat_available`** (que lee `org_entitlements`) antes de crear al usuario. Hoy esa
+> llamada solo existe en `staging`; en `main` no. → mientras las functions de `main` no se
+> desplieguen, **ningún proceso vivo lee `org_entitlements`** y la reversa A sigue siendo
+> válida. Desplegar las functions **por separado** (o adelantadas al bundle) cruza al
+> escenario B **en silencio**: `admin-create-user` empezaría a exigir asientos contra los
+> derechos que dedujo 0114, sin que la app haya cambiado.
+> ```sh
+> # Check: en main, ninguna function lee la regla de asientos (debe salir VACÍO).
+> git grep -n assert_seat_available main -- 'supabase/functions/**'   # → vacío
+> git grep -n assert_seat_available staging -- 'supabase/functions/**' # → admin-create-user (ya en Fase 2)
+> ```
+> Corolario: bundle y functions cruzan **en el mismo push** (paso 4), nunca uno antes que el
+> otro.
 
 Entre el paso 2 y el 4, la reversa barata (A) sigue disponible. Después del 4, la única red es el
-respaldo (B). Nunca desplegar la app en el mismo movimiento que las migraciones.
+respaldo (B). Nunca desplegar la Fase 2 (bundle **ni** functions) en el mismo movimiento que las
+migraciones.
