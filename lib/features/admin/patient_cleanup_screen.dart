@@ -263,9 +263,8 @@ class _PatientCleanupScreenState extends ConsumerState<PatientCleanupScreen> {
                 maxLines: 16,
                 decoration: const InputDecoration(
                   border: OutlineInputBorder(),
-                  hintText: 'Victoria Eugenia Iturbide Coca\n'
-                      'Cesar Cabrales Cruz\n'
-                      'Manuel Morales Muñoz\n...',
+                  hintText: 'Un nombre por línea, tal como aparece en tu '
+                      'padrón\n(nombre y apellidos completos)\n…',
                 ),
               ),
               const SizedBox(height: 10),
