@@ -62,9 +62,10 @@ void main() {
     expect(find.text('Agregar por \$1,400 al mes'), findsOneWidget);
   });
 
-  testWidgets('acción bloqueada: al tocarla abre la sección con el precio',
+  testWidgets('acción bloqueada SIN módulo: al tocarla abre la sección con el precio',
       (tester) async {
     final repo = await repoWithOrgs();
+    var pressed = 0;
     await pumpBrand(
       tester,
       KuraModuleLock.action(
@@ -74,6 +75,7 @@ void main() {
         moduleName: 'Insumos',
         description: 'Lleva el control de tu inventario.',
         actionLabel: 'Cargar CSV',
+        onPressed: () => pressed++,
       ),
     );
     // Se ve apagada, con su etiqueta; el precio aún no.
@@ -83,6 +85,32 @@ void main() {
     await tester.tap(find.text('Cargar CSV'));
     await tester.pumpAndSettle();
     expect(find.text('Agregar por \$1,400 al mes'), findsOneWidget);
+    expect(pressed, 0, reason: 'sin módulo NO ejecuta la acción, ofrece comprarla');
+  });
+
+  testWidgets('acción bloqueada CON módulo: rinde el botón normal que dispara onPressed',
+      (tester) async {
+    final repo = await repoWithOrgs();
+    var pressed = 0;
+    await pumpBrand(
+      tester,
+      KuraModuleLock.action(
+        repo: repo,
+        organizationId: orgCon, // este SÍ tiene module:insumos
+        moduleKey: 'insumos',
+        moduleName: 'Insumos',
+        description: 'Lleva el control de tu inventario.',
+        actionLabel: 'Cargar CSV',
+        onPressed: () => pressed++,
+      ),
+    );
+    // No se desvanece: el botón está y funciona.
+    expect(find.text('Cargar CSV'), findsOneWidget);
+    await tester.tap(find.text('Cargar CSV'));
+    await tester.pumpAndSettle();
+    expect(pressed, 1);
+    // Con módulo NO abre el diálogo de compra.
+    expect(find.text('Agregar por \$1,400 al mes'), findsNothing);
   });
 
   testWidgets('no rinde nada cuando el módulo YA está contratado',

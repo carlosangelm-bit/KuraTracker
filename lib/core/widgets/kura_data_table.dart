@@ -28,19 +28,39 @@ String _group(int n) => n
     .toString()
     .replaceAllMapped(RegExp(r'\B(?=(\d{3})+(?!\d))'), (m) => ',');
 
-/// Definición de columna: ancho (fijo o flexible), alineación (numérica = derecha),
-/// y si ordena al tocar el encabezado.
+/// Definición de columna: ancho (fracción/flex/píxeles), alineación (numérica =
+/// derecha), y si ordena al tocar el encabezado. Los anchos del canvas son
+/// PORCENTAJES → usa [fraction] (o [flex]); [widthPx] solo para columnas de tamaño
+/// real (casilla, ícono). Sin ninguno = flex 1.
 class KuraColumn {
   final String label;
-  final double? width; // null = flexible
+
+  /// Ancho como FRACCIÓN del ancho total (0..1) — reproduce los % del canvas.
+  final double? fraction;
+
+  /// Ancho por FLEX (reparte el sobrante en proporción). Alternativa a [fraction].
+  final int? flex;
+
+  /// Ancho FIJO en píxeles — SOLO para columnas de tamaño real (no desborda en
+  /// ventana angosta como haría fijar todo en píxeles).
+  final double? widthPx;
+
   final bool numeric; // derecha + cifras tabulares
   final bool sortable;
   const KuraColumn({
     required this.label,
-    this.width,
+    this.fraction,
+    this.flex,
+    this.widthPx,
     this.numeric = false,
     this.sortable = false,
   });
+
+  TableColumnWidth get tableWidth {
+    if (widthPx != null) return FixedColumnWidth(widthPx!);
+    if (fraction != null) return FractionColumnWidth(fraction!);
+    return FlexColumnWidth((flex ?? 1).toDouble());
+  }
 }
 
 /// Una celda. Se construye por fábrica según su tipo; lleva su `sortValue` para que
@@ -146,8 +166,18 @@ class KuraCell {
     );
   }
 
-  /// Dinero a la derecha, dos decimales ("$1,104.00"), cifras tabulares.
-  factory KuraCell.money(int cents, {KuraCellStatus status = KuraCellStatus.none}) {
+  /// Dinero a la derecha, dos decimales ("$1,104.00"), cifras tabulares. Un monto
+  /// AUSENTE (null) se pinta "—" en textDisabled, nunca "$0" — misma regla que
+  /// moneyOrDash/unitAmountCents.
+  factory KuraCell.money(int? cents, {KuraCellStatus status = KuraCellStatus.none}) {
+    if (cents == null) {
+      return KuraCell._(
+        null,
+        (t) => Text('—',
+            textAlign: TextAlign.right,
+            style: TextStyle(fontSize: 13, color: t.textDisabled)),
+      );
+    }
     final whole = _group(cents ~/ 100);
     final frac = (cents.abs() % 100).toString().padLeft(2, '0');
     final text = '${cents < 0 ? '-' : ''}\$$whole.$frac';
@@ -161,6 +191,48 @@ class KuraCell {
               fontFeatures: const [FontFeature.tabularFigures()])),
     );
   }
+
+  /// Barra de USO/AVANCE (asientos usados vs contratados, avance de un pedido).
+  /// Ordena por proporción. total ≤ 0 → barra vacía.
+  factory KuraCell.progress({required int used, required int total}) {
+    final ratio = total <= 0 ? 0.0 : (used / total);
+    final clamped = ratio.clamp(0.0, 1.0).toDouble();
+    return KuraCell._(
+      ratio,
+      (t) => Row(
+        children: [
+          Expanded(
+            child: ClipRRect(
+              borderRadius: AppRadii.pillR,
+              child: Container(
+                height: 6,
+                color: t.chipBg,
+                alignment: Alignment.centerLeft,
+                child: FractionallySizedBox(
+                  widthFactor: clamped,
+                  child: Container(color: t.brandPrimary),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text('$used/$total',
+              style: TextStyle(
+                  fontSize: 11,
+                  color: t.textDisabled,
+                  fontFeatures: const [FontFeature.tabularFigures()])),
+        ],
+      ),
+    );
+  }
+
+  /// Celda a la medida (p. ej. un stepper "Pedir"). El color debe salir de tokens.
+  /// `sortValue` opcional para que la columna siga ordenando por un valor real.
+  factory KuraCell.custom({
+    required Widget Function(BrandTokens t) build,
+    Comparable<dynamic>? sortValue,
+  }) =>
+      KuraCell._(sortValue, build);
 
   /// Pastilla de celda (origen, estado, rol). Normal: chipBg. Atenuada: fondo
   /// background + borde punteado.
@@ -224,8 +296,17 @@ class KuraDataTable extends StatefulWidget {
   final List<KuraRow> rows;
   final List<KuraCell?>? totals; // fila de totales opcional (una celda por columna)
   final bool selectable;
-  final Set<Object>? initiallySelected;
+
+  /// Selección CONTROLADA: el padre es el dueño. La tabla pinta desde [selected] y
+  /// notifica el nuevo conjunto por [onSelectionChanged]; así el padre puede
+  /// limpiarla (Reportes tras generar, Reabasto al armar el pedido).
+  final Set<Object> selected;
   final ValueChanged<Set<Object>>? onSelectionChanged;
+
+  /// Orden inicial (índice de columna y sentido). VAC arranca por "próximo cambio"
+  /// ascendente, con lo vencido arriba.
+  final int? initialSortColumn;
+  final bool initialSortAscending;
 
   const KuraDataTable({
     super.key,
@@ -233,8 +314,10 @@ class KuraDataTable extends StatefulWidget {
     required this.rows,
     this.totals,
     this.selectable = false,
-    this.initiallySelected,
+    this.selected = const {},
     this.onSelectionChanged,
+    this.initialSortColumn,
+    this.initialSortAscending = true,
   });
 
   @override
@@ -244,8 +327,13 @@ class KuraDataTable extends StatefulWidget {
 class _KuraDataTableState extends State<KuraDataTable> {
   int? _sortCol;
   bool _asc = true;
-  late Set<Object> _selected =
-      {...?widget.initiallySelected};
+
+  @override
+  void initState() {
+    super.initState();
+    _sortCol = widget.initialSortColumn;
+    _asc = widget.initialSortAscending;
+  }
 
   List<KuraRow> get _sorted {
     if (_sortCol == null) return widget.rows;
@@ -274,40 +362,43 @@ class _KuraDataTableState extends State<KuraDataTable> {
     });
   }
 
+  // Selección controlada: se computa el NUEVO conjunto y se sube al padre; solo las
+  // filas de ESTA tabla se ven afectadas (no pisa selecciones ajenas).
   void _toggleAll(bool value) {
-    setState(() {
-      _selected = value ? {for (final r in widget.rows) r.id} : <Object>{};
-    });
-    widget.onSelectionChanged?.call({..._selected});
+    final ids = {for (final r in widget.rows) r.id};
+    final next = {...widget.selected};
+    if (value) {
+      next.addAll(ids);
+    } else {
+      next.removeAll(ids);
+    }
+    widget.onSelectionChanged?.call(next);
   }
 
   void _toggleRow(Object id, bool value) {
-    setState(() {
-      if (value) {
-        _selected.add(id);
-      } else {
-        _selected.remove(id);
-      }
-    });
-    widget.onSelectionChanged?.call({..._selected});
+    final next = {...widget.selected};
+    if (value) {
+      next.add(id);
+    } else {
+      next.remove(id);
+    }
+    widget.onSelectionChanged?.call(next);
   }
 
   @override
   Widget build(BuildContext context) {
     final t = BrandTokens.of(context);
     final rows = _sorted;
-    final allSelected =
-        widget.rows.isNotEmpty && _selected.length == widget.rows.length;
+    final allSelected = widget.rows.isNotEmpty &&
+        widget.rows.every((r) => widget.selected.contains(r.id));
 
     final columnWidths = <int, TableColumnWidth>{};
     var idx = 0;
     if (widget.selectable) {
-      columnWidths[idx++] = const FixedColumnWidth(42);
+      columnWidths[idx++] = const FixedColumnWidth(34);
     }
     for (final c in widget.columns) {
-      columnWidths[idx++] = c.width != null
-          ? FixedColumnWidth(c.width!)
-          : const FlexColumnWidth();
+      columnWidths[idx++] = c.tableWidth;
     }
 
     return Table(
@@ -379,7 +470,7 @@ class _KuraDataTableState extends State<KuraDataTable> {
     final cells = <Widget>[];
     if (widget.selectable) {
       cells.add(_cellPad(_Checkbox(
-        value: _selected.contains(row.id),
+        value: widget.selected.contains(row.id),
         onChanged: (v) => _toggleRow(row.id, v),
         brand: t.brandPrimary,
         border: t.textDisabled,
