@@ -2138,7 +2138,7 @@ class _NoteCatalogTabState extends State<NoteCatalogTab> {
               onOpen: _loadDefaultCatalog,
             ),
             (
-              icon: Icons.ios_share_outlined,
+              icon: Icons.download_outlined,
               name: 'Exportar el expediente',
               desc: 'Completo, cuando lo necesites',
               locked: false,
