@@ -1545,8 +1545,6 @@ class NoteCatalogTab extends StatefulWidget {
 class _NoteCatalogTabState extends State<NoteCatalogTab> {
   NoteOptionField _selectedField = NoteOptionField.careType;
   String _search = '';
-  bool _importing = false;
-  bool _loadingDefaults = false;
 
   /// Carga el catalogo base curado (mismo contenido que la precarga de
   /// 0010_note_option_catalog.sql) para este centro. Pensado sobre todo
@@ -1559,7 +1557,6 @@ class _NoteCatalogTabState extends State<NoteCatalogTab> {
   Future<void> _loadDefaultCatalog() async {
     final organizationId = widget.organizationId;
     if (organizationId == null) return;
-    setState(() => _loadingDefaults = true);
     try {
       final summary = await widget.repo.seedDefaultNoteOptions(organizationId: organizationId);
       if (mounted) {
@@ -1576,7 +1573,7 @@ class _NoteCatalogTabState extends State<NoteCatalogTab> {
         );
       }
     } finally {
-      if (mounted) setState(() => _loadingDefaults = false);
+      if (mounted) setState(() {});
     }
   }
 
@@ -1639,7 +1636,6 @@ class _NoteCatalogTabState extends State<NoteCatalogTab> {
     final bytes = result.files.first.bytes;
     if (bytes == null) return;
 
-    setState(() => _importing = true);
     try {
       final content = String.fromCharCodes(bytes);
       final rawRows = const CsvToListConverter(eol: '\n').convert(content);
@@ -1700,7 +1696,7 @@ class _NoteCatalogTabState extends State<NoteCatalogTab> {
         );
       }
     } finally {
-      if (mounted) setState(() => _importing = false);
+      if (mounted) setState(() {});
     }
   }
 
