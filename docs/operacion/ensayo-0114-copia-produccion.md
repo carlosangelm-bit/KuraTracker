@@ -351,65 +351,61 @@ reales.
 #### Escenario A — migraciones aplicadas, `main` (la app) todavía NO desplegado
 
 La base ya corrió 0108→0131, pero quien la consume sigue siendo la app **0107**, que no sabe
-de `org_entitlements`. Aquí sí hay reversa por datos + esquema: deshacer 0114 y deshacer los
-efectos destructivos de 0126, dejando la base como la ve la app 0107. Todo en una transacción.
+de `org_entitlements`. El objetivo de la reversa aquí es **volver al comportamiento 0107**, no
+"deshacer 0126 hasta 0116": `0114`, `0116`, `0118` y `0126` son TODAS de la Fase 2, así que la
+referencia correcta es la definición **pre-Fase-2**, no una versión intermedia de la propia
+Fase 2.
 
-`org_entitlements` **nace vacía en 0113**, así que todo lo que contiene en este punto salió de
-`0114` (y de `create_trial_organization`, que aún no se ha usado): el `delete` va **sin filtro**,
-no hay derechos legítimos que preservar todavía.
+La conclusión práctica, después de revisar qué del esquema de Fase 2 muerde a 0107, es que
+**casi no hay nada que deshacer**: las 24 migraciones son aditivas y, salvo una función, son
+inertes para la app 0107. Punto por punto:
 
-Y `0126` no solo revocó el `execute` de `create_organization_with_admin`: **reemplazó su cuerpo
-por un `raise`** (puerta cerrada). Re-otorgar `execute` sobre esa puerta no sirve — hay que
-restaurar el cuerpo que la app 0107 espera (el de 0116) **y luego** re-otorgar.
+**¿Hay que borrar `org_entitlements`? No — basta con no desplegar.**
+El único elemento del esquema de Fase 2 que LEE `org_entitlements` para condicionar algo que la
+app 0107 hace es el trigger `trg_zz_enforce_module_requires_entitlement` de **0115** sobre
+`module_settings` (al encender un módulo exige el derecho). Pero ese trigger **exime al master**
+(`if public.is_master() then return new;`), y en la app el **único** que escribe `module_settings`
+es la consola del master: `setModuleSetting` tiene un solo llamador de UI —
+`platform_home_screen.dart`— y `/platform` está gateada a master. Ninguna otra ruta de 0107 lee
+`org_entitlements`. → El dato que dejó 0114 es **inerte** para la app 0107.
+
+> **Check que lo sostiene** (correr contra la base ya migrada; ambas líneas deben ser verdad):
+> ```sql
+> -- (i) El trigger de 0115 exime al master:
+> select pg_get_functiondef('public.enforce_module_requires_entitlement()'::regprocedure)
+>        ilike '%is_master()%then%return new%';   -- espera: t
+> -- (ii) module_settings solo la escribe el master (no hay otro escritor en la app):
+> --      verificado en código — setModuleSetting() solo se invoca desde platform_home_screen
+> --      (/platform, gateada a master). grep 'setModuleSetting' lib/ → un solo llamador de UI.
+> ```
+> Y no solo es innecesario borrar: **borrar sería contraproducente**. Con `org_entitlements`
+> vacía, si el master tocara `module_settings` el trigger de 0115 lo dejaría pasar (exento), pero
+> se pierde el respaldo de derechos que 0114 dedujo; y si mañana se despliega la Fase 2 sobre esa
+> tabla vacía, es el apagón del escenario B. Dejar la tabla como está no le hace nada a 0107.
+
+**¿Recrear el tope de 5 pacientes del plan gratuito? No.**
+El trigger `trg_zz_free_plan_patient_cap` y su función `assert_free_plan_patient_cap()` **nacen
+en 0118** (Fase 2); en 0107 no existen. Recrearlos introduciría un candado que 0107 nunca tuvo.
+`0126` los quitó, y a 0107 le da igual. *(Si por alguna razón se decidiera conservarlos, el cuerpo
+correcto es el de **0120**, no el de 0118: 0118 mordía a un centro que ya había pagado —no podía
+dar de alta pacientes— y ése fue justamente el motivo de 0120, que redefine la función para ceder
+ante cualquier derecho de Stripe activo. El trigger no cambió entre 0118 y 0120; solo el cuerpo.)*
+
+**La única reparación real: restaurar `create_organization_with_admin` a su cuerpo de 0107.**
+`0126` reemplazó su cuerpo por un `raise` (puerta cerrada) y revocó su `execute`. El cuerpo que
+0107 espera es el de **0106** (NO el de 0116: el de 0116 inserta en `org_entitlements`, tabla de
+Fase 2, así que no revierte nada — reintroduce Fase 2). El cuerpo de 0106 solo toca
+`organizations`, `user_center_memberships`, `profiles` y `staff`: nada nacido en 0108+.
+Nota: hoy **ni siquiera la app 0107 la llama** (no existe ningún `.rpc('create_organization_with_admin')`;
+el alta de centros pasa por `create_trial_organization`), así que esto es fidelidad de esquema más
+que un desbloqueo funcional — pero es lo único que 0126 dejó fuera de la definición 0107.
 
 ```sql
 -- REVERSA (A). Correr contra la base ya migrada, con la app 0107 aún activa. Atómica.
+-- NO se borra org_entitlements y NO se recrea el tope de pacientes (ver arriba el porqué).
+-- Lo único que hace falta es devolver create_organization_with_admin a su cuerpo 0107 (0106).
 begin;
 
--- 1) Deshacer 0114. La tabla nació vacía en 0113 → todo lo que hay salió del backfill.
-delete from public.org_entitlements;
-
--- 2) Deshacer 0126, parte 1: recrear el tope de 5 pacientes del plan gratuito.
-create or replace function public.assert_free_plan_patient_cap()
-returns trigger
-language plpgsql
-security definer
-set search_path = public, pg_temp
-as $func$
-declare
-  v_count int;
-begin
-  if new.is_active is not true then
-    return new;
-  end if;
-  if tg_op = 'UPDATE' and old.is_active is true then
-    return new;
-  end if;
-  if not exists (
-    select 1 from public.org_entitlements e
-    where e.organization_id = new.organization_id
-      and e.kind = 'plan' and e.key = 'gratuito' and e.status = 'active'
-  ) then
-    return new;
-  end if;
-  select count(*) into v_count
-  from public.patients p
-  where p.organization_id = new.organization_id and p.is_active and p.id <> new.id;
-  if v_count >= 5 then
-    raise exception
-      'FREE_PLAN_PATIENT_CAP: el plan gratuito permite 5 pacientes; contrata un plan para agregar más.';
-  end if;
-  return new;
-end;
-$func$;
-
-drop trigger if exists trg_zz_free_plan_patient_cap on public.patients;
-create trigger trg_zz_free_plan_patient_cap
-  before insert or update on public.patients
-  for each row execute function public.assert_free_plan_patient_cap();
-
--- 3) Deshacer 0126, parte 2: restaurar el CUERPO de create_organization_with_admin
---    (el de 0116, lo que 0126 reemplazó por un raise) y re-otorgar execute.
 create or replace function public.create_organization_with_admin(
   p_organization_name text,
   p_admin_full_name text,
@@ -433,12 +429,8 @@ begin
              end;
   insert into public.organizations (name) values (p_organization_name)
   returning id into v_org_id;
-  insert into public.org_entitlements (organization_id, kind, key, quantity, status, source)
-  values
-    (v_org_id, 'plan',   'gratuito',  null, 'active', 'master'),
-    (v_org_id, 'module', 'clinico',   null, 'active', 'master'),
-    (v_org_id, 'seat',   'clinico',   1,    'active', 'master'),
-    (v_org_id, 'seat',   'protocolo', 1,    'active', 'master');
+  -- Membresía PRIMERO (el guard de profiles exige una coincidente para el cambio
+  -- de organization_id/roles). SIN insertar en org_entitlements: eso es Fase 2.
   insert into public.user_center_memberships (profile_id, organization_id, roles, is_active)
   values (auth.uid(), v_org_id, v_roles, true)
   on conflict (profile_id, organization_id)
@@ -467,10 +459,11 @@ commit;
 
 Aquí la reversa por datos **NO aplica**. Con la app de Fase 2 sirviendo, `org_entitlements` es
 la fuente de verdad: `0115` exige el derecho para encender un módulo, y `0116`/`0128` exigen los
-asientos. **Borrar los derechos apaga TODOS los módulos de TODOS los centros** (el expediente,
-Insumos, Comercial, Administración) — el `delete` sin filtro del escenario A, con la app nueva
-encima, es un apagón, no una reversa. Restaurar create_organization_with_admin tampoco importa:
-la app nueva ya no la llama.
+asientos. Y ojo con la asimetría respecto del escenario A: allá `org_entitlements` se deja
+**intacta** (es inerte para 0107); aquí, en cambio, tocarla es destructivo. **Borrar los derechos
+apaga TODOS los módulos de TODOS los centros** (el expediente, Insumos, Comercial, Administración):
+con la app nueva encima, un `delete` no es una reversa, es un apagón. Restaurar
+create_organization_with_admin tampoco importa: la app nueva no la llama (ni la vieja lo hacía).
 
 **La única reversa en este escenario es restaurar el respaldo previo al corte.** Tomarlo
 inmediatamente antes del corte y anotar la hora; ese respaldo, no un `delete`, es la reversa.
@@ -482,7 +475,8 @@ inmediatamente antes del corte y anotar la hora; ese respaldo, no un `delete`, e
 1. Tomar el respaldo previo al corte (anotar la hora).
 2. Aplicar las 24 migraciones a producción — la app sigue siendo 0107.
 3. Correr la §7 **contra producción ya migrada**. Si algo sale rojo, se está en el escenario A:
-   reversa por datos (arriba), sin haber tocado a ningún usuario.
+   basta con **no desplegar** (y, si se quiere, restaurar `create_organization_with_admin`),
+   sin haber tocado a ningún usuario.
 4. Solo con la §7 en verde, desplegar la app de Fase 2 (`main`).
 
 Entre el paso 2 y el 4, la reversa barata (A) sigue disponible. Después del 4, la única red es el
