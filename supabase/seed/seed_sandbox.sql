@@ -119,26 +119,41 @@ alter table public.consultations enable trigger trg_prevent_finalized_consultati
 -- borrarlos. DECISIÓN: en el sandbox estos son datos de prueba, no auditoría real, y
 -- esto NO toca el esquema de producción (guardado por kt.env='sandbox' arriba). Las FK
 -- con cascada también se listan aquí y borrar primero es inocuo (igual cascadearían).
+-- OJO con information_schema: constraint_column_usage FILTRA por propiedad de la
+-- tabla referenciada, y auth.users es de supabase_auth_admin → desde el rol del seed
+-- devuelve CERO filas y el bucle corre en vacío SIN error (bug de la corrida #7). Se
+-- usa pg_catalog, que no filtra por propiedad. Y como sabemos que existe al menos una
+-- (audit_log), CERO tablas = consulta ciega, no "sin trabajo" → se lanza excepción:
+-- un barrido que itera en vacío sin quejarse es indistinguible de uno que funciona.
 do $$
-declare r record;
+declare
+  r record;
+  v_count int;
 begin
+  select count(*) into v_count
+  from pg_constraint con
+  join pg_class c on c.oid = con.conrelid
+  join pg_namespace n on n.oid = c.relnamespace
+  where con.contype = 'f'
+    and con.confrelid = 'auth.users'::regclass
+    and n.nspname = 'public'
+    and c.relname <> 'profiles';
+  if v_count = 0 then
+    raise exception 'seed_sandbox: el barrido de FK a auth.users no ve ninguna tabla public (consulta ciega). Se esperaba al menos audit_log.';
+  end if;
+  raise notice 'seed_sandbox: barrido de FK a auth.users cubre % tabla(s).', v_count;
   for r in
-    select tc.table_schema, tc.table_name, kcu.column_name
-    from information_schema.table_constraints tc
-    join information_schema.key_column_usage kcu
-      on kcu.constraint_name = tc.constraint_name
-     and kcu.constraint_schema = tc.constraint_schema
-    join information_schema.constraint_column_usage ccu
-      on ccu.constraint_name = tc.constraint_name
-     and ccu.constraint_schema = tc.constraint_schema
-    where tc.constraint_type = 'FOREIGN KEY'
-      and ccu.table_schema = 'auth' and ccu.table_name = 'users'
-      and ccu.column_name = 'id'
-      -- Solo tablas de la app: las de auth.* (identities, sessions, …) ya cascadean
-      -- al borrar el usuario; no hay que tocarlas.
-      and tc.table_schema = 'public'
+    select n.nspname as table_schema, c.relname as table_name, a.attname as column_name
+    from pg_constraint con
+    join pg_class c on c.oid = con.conrelid
+    join pg_namespace n on n.oid = c.relnamespace
+    join pg_attribute a on a.attrelid = con.conrelid and a.attnum = con.conkey[1]
+    where con.contype = 'f'
+      and con.confrelid = 'auth.users'::regclass
+      -- Solo tablas de la app: las de auth.* (identities, sessions, …) cascadean solas.
+      and n.nspname = 'public'
       -- profiles se borra por su propia cascada (sus cascadas hacen el resto).
-      and tc.table_name <> 'profiles'
+      and c.relname <> 'profiles'
   loop
     execute format(
       'delete from %I.%I where %I in (select id from auth.users where email in (select email from sb_emails))',
