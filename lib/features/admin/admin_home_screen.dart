@@ -2001,7 +2001,7 @@ class _NoteCatalogTabState extends State<NoteCatalogTab> {
           ),
           if (adminLocked) const SizedBox(height: 16),
           _reja(t, [
-            (
+            _CfgTile(
               icon: Icons.auto_awesome,
               name: 'Protocolo Kura+',
               desc: 'Qué conceptos van en cada paso',
@@ -2009,7 +2009,7 @@ class _NoteCatalogTabState extends State<NoteCatalogTab> {
               onOpen: () => _push(ProtocolKuraScreen(
                   repo: widget.repo, organizationId: widget.organizationId)),
             ),
-            (
+            _CfgTile(
               icon: Icons.inventory_2_outlined,
               name: 'Productos del protocolo',
               desc: 'Qué insumo y cuánto, por paso',
@@ -2017,14 +2017,14 @@ class _NoteCatalogTabState extends State<NoteCatalogTab> {
               onOpen: () => _push(ProtocolProductRulesScreen(
                   repo: widget.repo, organizationId: widget.organizationId)),
             ),
-            (
+            _CfgTile(
               icon: Icons.upload_outlined,
               name: 'Cargar catálogo por CSV',
               desc: 'Sube tus conceptos en bloque',
               locked: adminLocked,
               onOpen: _uploadCsv,
             ),
-            (
+            _CfgTile(
               icon: Icons.event_repeat_outlined,
               name: 'Tipo de cita para sesiones',
               desc: 'Integración con Acuity',
@@ -2032,7 +2032,7 @@ class _NoteCatalogTabState extends State<NoteCatalogTab> {
               onOpen: () => _push(AcuitySessionTypeScreen(
                   repo: widget.repo, organizationId: widget.organizationId)),
             ),
-            (
+            _CfgTile(
               icon: Icons.medical_information_outlined,
               name: 'Tipos de consulta',
               desc: 'Valoración o seguimiento, en Acuity',
@@ -2040,7 +2040,7 @@ class _NoteCatalogTabState extends State<NoteCatalogTab> {
               onOpen: () => _push(AcuityVisitTypeMapScreen(
                   repo: widget.repo, organizationId: widget.organizationId)),
             ),
-            (
+            _CfgTile(
               icon: Icons.cleaning_services_outlined,
               name: 'Depurar expedientes',
               desc: 'Archivar en bloque contra tu padrón',
@@ -2101,14 +2101,14 @@ class _NoteCatalogTabState extends State<NoteCatalogTab> {
           ),
           const SizedBox(height: 20),
           _reja(t, [
-            (
+            _CfgTile(
               icon: Icons.fact_check_outlined,
               name: 'Registro de divulgaciones',
               desc: 'Constancia de cada salida de datos',
               locked: false,
               onOpen: () => _push(const DataDisclosuresScreen()),
             ),
-            (
+            _CfgTile(
               icon: Icons.rule_folder_outlined,
               name: 'Escalas del protocolo',
               desc: 'Cuáles participan en tu centro',
@@ -2116,28 +2116,28 @@ class _NoteCatalogTabState extends State<NoteCatalogTab> {
               onOpen: () => _push(ScaleTogglesScreen(
                   repo: widget.repo, organizationId: widget.organizationId)),
             ),
-            (
+            _CfgTile(
               icon: Icons.menu_book_outlined,
               name: 'Fuente de recomendaciones',
               desc: 'De dónde sale cada sugerencia',
               locked: false,
               onOpen: () => _push(const RecommendationsReferenceScreen()),
             ),
-            (
+            _CfgTile(
               icon: Icons.download_outlined,
               name: 'Descargar plantilla CSV',
               desc: 'Tu catálogo actual, en hoja',
               locked: false,
               onOpen: _downloadTemplate,
             ),
-            (
+            _CfgTile(
               icon: Icons.playlist_add_check_outlined,
               name: 'Cargar catálogo base',
               desc: 'Los conceptos curados por Kura+',
               locked: false,
               onOpen: _loadDefaultCatalog,
             ),
-            (
+            _CfgTile(
               icon: Icons.download_outlined,
               name: 'Exportar el expediente',
               desc: 'Completo, cuando lo necesites',
@@ -2256,15 +2256,7 @@ class _NoteCatalogTabState extends State<NoteCatalogTab> {
   // Reja responsiva de 3 columnas (2 / 1 en anchos menores).
   Widget _reja(
     BrandTokens t,
-    List<
-            ({
-              IconData icon,
-              String name,
-              String desc,
-              bool locked,
-              VoidCallback onOpen
-            })>
-        tiles,
+    List<_CfgTile> tiles,
   ) =>
       LayoutBuilder(
         builder: (ctx, c) {
@@ -2284,13 +2276,7 @@ class _NoteCatalogTabState extends State<NoteCatalogTab> {
 
   Widget _tile(
     BrandTokens t,
-    ({
-      IconData icon,
-      String name,
-      String desc,
-      bool locked,
-      VoidCallback onOpen
-    }) tile,
+    _CfgTile tile,
   ) {
     final locked = tile.locked;
     final inner = Padding(
@@ -2447,6 +2433,21 @@ class _NoteCatalogTabState extends State<NoteCatalogTab> {
       },
     );
   }
+}
+
+class _CfgTile {
+  final IconData icon;
+  final String name;
+  final String desc;
+  final bool locked;
+  final VoidCallback onOpen;
+  const _CfgTile({
+    required this.icon,
+    required this.name,
+    required this.desc,
+    required this.locked,
+    required this.onOpen,
+  });
 }
 
 Future<String?> _promptForLabel(BuildContext context, {required String title}) {
