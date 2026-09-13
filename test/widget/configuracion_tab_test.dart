@@ -13,7 +13,7 @@ void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
 
   testWidgets('los tres grupos rinden sin overflow', (tester) async {
-    tester.view.physicalSize = const Size(1100, 2200);
+    tester.view.physicalSize = const Size(1440, 2600);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);

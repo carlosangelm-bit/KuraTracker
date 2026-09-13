@@ -1940,19 +1940,27 @@ class _NoteCatalogTabState extends State<NoteCatalogTab> {
                         ),
                       ),
                       KuraCell.custom(
-                        build: (t) => Row(
-                          mainAxisSize: MainAxisSize.min,
-                          mainAxisAlignment: MainAxisAlignment.end,
-                          children: [
-                            _rowAction(t, 'Editar', () => _editDialog(o)),
-                            Text(' · ',
-                                style: TextStyle(
-                                    fontSize: 12, color: t.textDisabled)),
-                            _rowAction(
-                                t,
-                                o.isActive ? 'Desactivar' : 'Activar',
-                                () => _toggleActive(o)),
-                          ],
+                        // FittedBox: en la columna angosta (14%) "Editar · Desactivar"
+                        // se encoge en vez de desbordar.
+                        build: (t) => Align(
+                          alignment: Alignment.centerRight,
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            alignment: Alignment.centerRight,
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                _rowAction(t, 'Editar', () => _editDialog(o)),
+                                Text(' · ',
+                                    style: TextStyle(
+                                        fontSize: 12, color: t.textDisabled)),
+                                _rowAction(
+                                    t,
+                                    o.isActive ? 'Desactivar' : 'Activar',
+                                    () => _toggleActive(o)),
+                              ],
+                            ),
+                          ),
                         ),
                       ),
                     ],
