@@ -59,6 +59,11 @@ class PlatformSectionsShell extends ConsumerStatefulWidget {
 }
 
 class _PlatformSectionsShellState extends ConsumerState<PlatformSectionsShell> {
+  // Colapso MANUAL del riel. null = seguir el ancho (auto); true/false = elección
+  // del usuario. Vive en el State del shell (persiste en el ShellRoute), así que la
+  // elección sobrevive a los cambios de sección.
+  bool? _userCollapsed;
+
   /// Descarga el CSV con TODOS los parámetros clínicos del motor (umbrales,
   /// bandas de compresión y mapeos por grado) con su procedencia. Solo
   /// accesible desde la Plataforma (rol master). Lee los mismos assets que
@@ -238,8 +243,11 @@ class _PlatformSectionsShellState extends ConsumerState<PlatformSectionsShell> {
   @override
   Widget build(BuildContext context) {
     final repoAsync = ref.watch(dataRepositoryProvider);
-    // Riel abierto ≥1200 px, colapsado por debajo (§2.1/§2.2 del canvas).
-    final open = MediaQuery.of(context).size.width >= 1200;
+    // Riel abierto ≥1200 px por defecto (§2.1/§2.2 del canvas); el botón de
+    // colapsar/expandir manda por encima del ancho una vez que el usuario lo toca.
+    final autoCollapsed = MediaQuery.of(context).size.width < 1200;
+    final collapsed = _userCollapsed ?? autoCollapsed;
+    final open = !collapsed;
     final navs = platformNavDestinations();
     final plataforma = navs.first; // "Plataforma" con sus 9 secciones
     final user = ref.watch(sessionProvider).user;
@@ -297,12 +305,14 @@ class _PlatformSectionsShellState extends ConsumerState<PlatformSectionsShell> {
           KuraNavRail(
             destinations: navs,
             currentRoute: widget.currentRoute,
-            collapsed: !open,
+            collapsed: collapsed,
             // El encabezado del riel lleva el NOMBRE DEL PRODUCTO, no el de la
             // sección: si no, "Plataforma" saldría tres veces.
             brandName: 'KuraTracker',
             userName: user?.fullName,
             centerName: 'Consola del master',
+            onToggleCollapse: () =>
+                setState(() => _userCollapsed = !collapsed),
           ),
           const VerticalDivider(width: 1),
           Expanded(child: withHeader),

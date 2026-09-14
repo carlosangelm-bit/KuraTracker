@@ -44,14 +44,27 @@ import '../../services/photo_upload_service.dart';
 /// colapsado, el menú del encabezado; el cuerpo de la sección llega como [child].
 /// Vive en un ShellRoute ANIDADO, así que cambiar de sección NO reconstruye el riel —
 /// solo cambia el child. Se ve como cambiar de panel, no como cargar otra página.
-class AdminSectionsShell extends ConsumerWidget {
+class AdminSectionsShell extends ConsumerStatefulWidget {
   final Widget child;
   final String currentRoute; // /admin/<section>
   const AdminSectionsShell(
       {super.key, required this.child, required this.currentRoute});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<AdminSectionsShell> createState() =>
+      _AdminSectionsShellState();
+}
+
+class _AdminSectionsShellState extends ConsumerState<AdminSectionsShell> {
+  // Colapso MANUAL del riel. null = seguir el ancho (auto); true/false = elección
+  // del usuario. Vive en el State del shell, que persiste en el ShellRoute, así que
+  // la elección sobrevive a los cambios de sección.
+  bool? _userCollapsed;
+
+  @override
+  Widget build(BuildContext context) {
+    final child = widget.child;
+    final currentRoute = widget.currentRoute;
     // Guarda de rol (2ª capa; el redirect del router es la 1ª). En web una URL
     // no es candado: solo admin del centro y master ven Administración. Un
     // clinico que llegue aquí por cualquier ruta no ve nada administrativo.
@@ -61,8 +74,11 @@ class AdminSectionsShell extends ConsumerWidget {
         body: Center(child: Text('No tienes acceso a esta sección.')),
       );
     }
-    // Riel abierto ≥1200 px, colapsado por debajo (§2.1/§2.2).
-    final open = MediaQuery.of(context).size.width >= 1200;
+    // Riel abierto ≥1200 px por defecto (§2.1/§2.2); el botón de colapsar/expandir
+    // manda por encima del ancho una vez que el usuario lo toca.
+    final autoCollapsed = MediaQuery.of(context).size.width < 1200;
+    final collapsed = _userCollapsed ?? autoCollapsed;
+    final open = !collapsed;
     // UN solo riel: la MISMA declaración de la app, con los destinos clínicos de
     // primer nivel y Administración anidando sus seis secciones.
     final modules = ref.watch(enabledModulesProvider);
@@ -101,10 +117,12 @@ class AdminSectionsShell extends ConsumerWidget {
           KuraNavRail(
             destinations: navs,
             currentRoute: currentRoute,
-            collapsed: !open,
+            collapsed: collapsed,
             brandName: 'KuraTracker',
             userName: sessionUser?.fullName,
             centerName: 'Administración',
+            onToggleCollapse: () =>
+                setState(() => _userCollapsed = !collapsed),
           ),
           const VerticalDivider(width: 1),
           Expanded(child: withHeader),
