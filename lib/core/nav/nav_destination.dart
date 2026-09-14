@@ -16,16 +16,36 @@ class NavDestination {
   /// Condición de visibilidad (módulo contratado, rol, etc.). null = siempre visible.
   final bool Function()? visibleWhen;
 
+  /// Destino PRIMARIO de la barra inferior (móvil): va anclado abajo en vez de al
+  /// menú "Más". Es el campo que reemplaza la lista `primaryPaths` escrita a mano en
+  /// AppShell — el riel y la barra salen de ESTA declaración, así que "primario" es
+  /// una propiedad del destino, no una segunda lista que sincronizar (§5 etapa 5).
+  final bool isPrimary;
+
   const NavDestination({
     required this.label,
     required this.icon,
     required this.route,
     this.children = const [],
     this.visibleWhen,
+    this.isPrimary = false,
   });
 
   bool get isVisible => visibleWhen?.call() ?? true;
   bool get hasChildren => children.isNotEmpty;
+}
+
+/// Partición de la barra inferior (móvil) desde la MISMA declaración: los destinos
+/// visibles se separan en PRIMARIOS (anclados abajo) y DESBORDAMIENTO (menú "Más"),
+/// preservando el orden de la declaración. El riel muestra la unión de ambos, así que
+/// esta partición no puede perder ni inventar destinos respecto al riel (§9 prueba 1).
+({List<NavDestination> primary, List<NavDestination> overflow}) navBottomBarSplit(
+    List<NavDestination> destinations) {
+  final visible = destinations.where((d) => d.isVisible).toList();
+  return (
+    primary: visible.where((d) => d.isPrimary).toList(),
+    overflow: visible.where((d) => !d.isPrimary).toList(),
+  );
 }
 
 /// Un destino está activo si la URL actual es su ruta, o (teniendo hijos) cuelga de
