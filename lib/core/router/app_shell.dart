@@ -705,51 +705,71 @@ class _ReadOnlyBand extends StatelessWidget {
   }
 }
 
-class UserMenuButton extends ConsumerWidget {
-  const UserMenuButton({super.key});
+/// Menú de cuenta (cerrar sesión, cambiar de centro, ayuda, reiniciar demo)
+/// desplegado desde un [child] cualquiera: el avatar de la barra ([UserMenuButton])
+/// o el pie del riel de navegación (identidad = control). Reúne en un solo lugar lo
+/// que cuelga de la cuenta, para que ningún punto de la app pinte identidad sin dar
+/// acceso a cerrar sesión.
+class KuraAccountMenu extends ConsumerWidget {
+  final Widget child;
+  const KuraAccountMenu({super.key, required this.child});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final session = ref.watch(sessionProvider);
     final user = session.user;
+    if (user == null) return child;
+    return PopupMenuButton<String>(
+      tooltip: user.fullName,
+      onSelected: (value) {
+        if (value == 'logout') {
+          ref.read(sessionProvider.notifier).logout();
+          // El destino depende del modo: en la DEMO la landing es el selector
+          // de perfiles, no el login de producción (ahí no hay credenciales
+          // válidas y el visitante queda en un callejón sin salida, además de
+          // perder el acceso al botón "Reiniciar demo", que vive en esa pantalla).
+          context.go(AppConfig.isSupabaseConfigured ? '/login' : '/demo');
+        } else if (value == 'switch') {
+          showCenterSwitcher(context, ref);
+        } else if (value == 'help') {
+          openSupportAssistant(ref);
+        } else if (value == 'reset_demo') {
+          showResetDemoDialog(context, ref);
+        }
+      },
+      itemBuilder: (context) => [
+        PopupMenuItem(
+          enabled: false,
+          child: Text(user.fullName,
+              style: const TextStyle(fontWeight: FontWeight.w700)),
+        ),
+        PopupMenuItem(enabled: false, child: Text(user.role.label)),
+        const PopupMenuDivider(),
+        if (AppConfig.isSupabaseConfigured)
+          const PopupMenuItem(value: 'help', child: Text('Asistente de ayuda')),
+        if (session.canSwitchCenter)
+          const PopupMenuItem(value: 'switch', child: Text('Cambiar de centro')),
+        if (!AppConfig.isSupabaseConfigured)
+          const PopupMenuItem(
+              value: 'reset_demo', child: Text('Reiniciar demo')),
+        const PopupMenuItem(value: 'logout', child: Text('Cerrar sesión')),
+      ],
+      child: child,
+    );
+  }
+}
+
+class UserMenuButton extends ConsumerWidget {
+  const UserMenuButton({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final user = ref.watch(sessionProvider).user;
     if (user == null) return const SizedBox.shrink();
     final t = BrandTokens.of(context);
     return Padding(
       padding: const EdgeInsets.only(right: 8),
-      child: PopupMenuButton<String>(
-        tooltip: user.fullName,
-        onSelected: (value) {
-          if (value == 'logout') {
-            ref.read(sessionProvider.notifier).logout();
-            // El destino depende del modo: en la DEMO la landing es el selector
-            // de perfiles, no el login de producción (ahí no hay credenciales
-            // válidas y el visitante queda en un callejón sin salida, además de
-            // perder el acceso al botón "Reiniciar demo", que vive en esa pantalla).
-            context.go(AppConfig.isSupabaseConfigured ? '/login' : '/demo');
-          } else if (value == 'switch') {
-            showCenterSwitcher(context, ref);
-          } else if (value == 'help') {
-            openSupportAssistant(ref);
-          } else if (value == 'reset_demo') {
-            showResetDemoDialog(context, ref);
-          }
-        },
-        itemBuilder: (context) => [
-          PopupMenuItem(
-            enabled: false,
-            child: Text(user.fullName, style: const TextStyle(fontWeight: FontWeight.w700)),
-          ),
-          PopupMenuItem(enabled: false, child: Text(user.role.label)),
-          const PopupMenuDivider(),
-          if (AppConfig.isSupabaseConfigured)
-            const PopupMenuItem(value: 'help', child: Text('Asistente de ayuda')),
-          if (session.canSwitchCenter)
-            const PopupMenuItem(value: 'switch', child: Text('Cambiar de centro')),
-          if (!AppConfig.isSupabaseConfigured)
-            const PopupMenuItem(
-                value: 'reset_demo', child: Text('Reiniciar demo')),
-          const PopupMenuItem(value: 'logout', child: Text('Cerrar sesión')),
-        ],
+      child: KuraAccountMenu(
         child: CircleAvatar(
           radius: 16,
           backgroundColor: t.brandPrimary.withOpacity(0.15),
