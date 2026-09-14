@@ -102,3 +102,14 @@ Dos, en fila de dos columnas `gap 16`:
   sin ícono ni salida.
 - **Sin rol de compra**: se mantiene el mensaje actual, pero con el layout del
   `KuraEmptyState`.
+
+## Pendientes
+
+- **Marca de tiempo del sync de Shopify.** El aviso "Estado de Shopify" quiere decir
+  `Sincronizado con Shopify hace 14 min`, pero hoy el repositorio **no expone un
+  `synced_at`** del último sync. Implementado con **texto genérico de respaldo**
+  (`Sincronizado con Shopify`, sin "hace N min"). Para el "hace N min" hace falta
+  persistir la hora del último `syncShopifyInventory` (columna/al vuelo) y leerla aquí.
+- **"Sin rol de compra"** sigue usando `purchaseDeniedScaffold` (compartido con Tienda /
+  Reabasto / Consumo / Mapeo). Migrarlo al layout de `KuraEmptyState` es un cambio
+  transversal a esas pantallas → su propio hilo, no este.

@@ -591,16 +591,26 @@ Suite de insumos para clínicas de heridas (respaldada por Shopify). **Inicio
 - **Tienda** (sin premium), **Mapeo insumo ↔ producto**, **Inventario**, **Consumo y
   costeo por paciente**, **Reabasto sugerido** (estas cuatro, premium).
 
-- **Inventario:** existencias por sitio. Acciones (premium): **Sincronizar con
-  Shopify** (centro espejo Kura+), **Descargar CSV**, **Cargar CSV**. KPIs
-  **Artículos / Reordenar / Valor**; alcance **Por sitio / Por centro** (admin). Lista
-  de artículos (imagen, nombre, "Externo" o "Tienda Kura+", proveedor, costo/precio,
-  stock coloreado verde/ámbar/rojo). **"Agregar"**: producto de la tienda Kura+ o
-  externo (nombre, proveedor, costo, precio [auto costo +30%], umbral de reorden). El
-  detalle permite movimientos **Entrada / Salida / Ajuste** y ver el log. El **umbral
-  de reorden** también se edita en el diálogo de costo/precio, viene como **columna
-  en el CSV** de carga masiva, y puede fijarse **en lote** (acción del encabezado, para
-  el centro que cargó su inventario sin umbral).
+- **Inventario:** existencias por sitio, servidas como **tabla** (no lista): columnas
+  Artículo · Origen · Existencia · Umbral · Costo · Precio · Valor, ordenables, con
+  **fila de totales** (artículos, piezas y valor sumado). Encabezado con cuatro cifras
+  —**Artículos**, **Por reordenar** (bajo umbral + agotados), **Valor a costo**
+  (existencia × costo) y **Consumo del mes** (piezas, con la comparación contra el mes
+  anterior)— y **selector de sitio** cuando el alcance es por sitio. **Barra de
+  acciones**: buscador (nombre, SKU o proveedor), **Agregar artículo**, y en "Más
+  acciones" (con nombre completo) **Sincronizar existencias con Shopify** (centro espejo
+  Kura+), **Fijar umbral de reorden en lote**, **Descargar catálogo en CSV** y **Cargar
+  CSV**; filtros con conteo (Todos, Bajo umbral, Agotados, Tienda Kura+, Externos, Sin
+  umbral). La existencia se colorea verde/ámbar/rojo (un artículo **sin umbral** no se
+  pinta de aviso: no tiene contra qué compararse). Al pie, dos avisos: **artículos sin
+  umbral** (fuga silenciosa: sin umbral nunca aparecen en Reabasto aunque se agoten) con
+  botón para fijarlo en lote, y el **estado de Shopify** (solo centro espejo). **Agregar**:
+  producto de la tienda Kura+ o externo (nombre, proveedor, costo, precio [auto costo
+  +30%], umbral). El detalle del artículo permite movimientos **Entrada / Salida /
+  Ajuste** y ver el log; el **umbral** también se edita en el diálogo de costo/precio,
+  viene como **columna en el CSV** de carga masiva, y puede fijarse **en lote**. El
+  alcance **Por sitio / Por centro** lo fija el admin desde Configuración. Sin el módulo
+  Insumos, la pantalla muestra el bloqueo con el precio y salida a Licencias.
 - **Consumo:** elige un paciente, ve "Costo de insumos consumidos", chips de sugerencia
   del plan y **"Registrar consumo"** (descuenta stock).
 - **Mapeo:** por cada método del protocolo, liga el insumo genérico a productos/

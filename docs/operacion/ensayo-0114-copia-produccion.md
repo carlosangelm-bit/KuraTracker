@@ -515,9 +515,14 @@ respaldo (B). Nunca aplicar migraciones y desplegar (bundle **ni** functions) en
 movimiento.
 
 > **Pendiente de confirmar (no darlo por hecho):** en **GitHub → Settings → Environments →
-> `production`**, revisar si hay **Required reviewers**. Si los hay, el job `migrations` de
-> `deploy.yml` (que usa `environment: production` cuando `ref_name == 'main'`) se **pausa
-> esperando aprobación** en cada merge a `main` — lo que daría la misma pausa "migrar → verificar
-> → desplegar" por otra vía, sin necesitar el paso 2 manual. Pero **hay que verificarlo en la
-> config real del repo**; si no hay reviewers, el merge a `main` corre de corrido y la única forma
-> de abrir la ventana del escenario A es el `supabase-migrations.yml` del paso 2.
+> `production`**, revisar si hay **Required reviewers**. Si los hay, la pausa útil **no** es antes
+> de migrar, sino **entre migrar y desplegar** — y sale gratis porque los **tres** jobs declaran
+> `environment: production` cuando `ref_name == 'main'` (`deploy.yml` líneas 90, 148 y 215), así
+> que **cada uno espera su propia aprobación**. La secuencia en un merge a `main` sería: apruebas
+> `migrations` → corre (`db push`) → y ahí `deploy_functions` y `build_deploy` **se quedan
+> esperando** su aprobación: esa espera **es** la ventana del escenario A (base migrada, nada
+> desplegado). Es decir, el gate que sirve es el de los **dos jobs de despliegue**, no el de
+> `migrations`. Correr la §7 en esa pausa y aprobar solo si sale verde daría la misma garantía que
+> el paso 2 manual, por otra vía. Pero **hay que verificarlo en la config real del repo**; si no
+> hay reviewers, el merge a `main` corre de corrido y la única forma de abrir la ventana del
+> escenario A es el `supabase-migrations.yml` del paso 2.
