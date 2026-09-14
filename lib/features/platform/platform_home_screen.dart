@@ -626,9 +626,14 @@ class _OrganizationsTab extends StatelessWidget {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             const Text('Activo', style: TextStyle(fontSize: 10)),
+                            // shrinkWrap: sin el relleno de 48 px del área de toque,
+                            // 'Activo' + el switch caben en la fila del ListTile (antes
+                            // se desbordaba 7 px por abajo).
                             Switch(
                               value: o.isActive,
                               activeColor: KuraColors.primary,
+                              materialTapTargetSize:
+                                  MaterialTapTargetSize.shrinkWrap,
                               onChanged: (v) async {
                                 await repo.setOrganizationActive(o.id, v);
                                 onChanged();
