@@ -393,7 +393,6 @@ class _LicensePlanBuilderScreenState extends State<LicensePlanBuilderScreen> {
         margin: const EdgeInsets.only(bottom: 10),
         child: SwitchListTile(
           value: value,
-          activeColor: t.brandPrimary,
           onChanged: onChanged,
           title: Text(title,
               style: TextStyle(

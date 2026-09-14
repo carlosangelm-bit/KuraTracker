@@ -238,7 +238,7 @@ class _UsersScreenState extends State<UsersScreen> {
                         message: 'Ningún usuario coincide con los filtros.',
                       )
                     : ListView.separated(
-                        padding: const EdgeInsets.fromLTRB(16, 16, 16, 88),
+                        padding: EdgeInsets.fromLTRB(16, 16, 16, kuraListBottomInset(context)),
                         itemCount: users.length,
                         separatorBuilder: (_, __) => const SizedBox(height: 8),
                         itemBuilder: (context, i) => _userCard(users[i]),
@@ -414,7 +414,6 @@ class _UsersScreenState extends State<UsersScreen> {
                     _switchCol(
                       'Activo',
                       u.isActive,
-                      t.brandPrimary,
                       isSelf
                           ? null
                           : (v) async {
@@ -429,7 +428,6 @@ class _UsersScreenState extends State<UsersScreen> {
                     _switchCol(
                       'Premium',
                       u.premiumEnabled,
-                      t.statusSuccess,
                       (v) async {
                         // El repositorio rechaza si el centro no tiene el add-on
                         // Protocolo Kura+ (candado). Antes moría silencioso: el
@@ -487,13 +485,14 @@ class _UsersScreenState extends State<UsersScreen> {
     );
   }
 
-  Widget _switchCol(
-      String label, bool value, Color color, ValueChanged<bool>? onChanged) {
+  Widget _switchCol(String label, bool value, ValueChanged<bool>? onChanged) {
+    // El color del interruptor lo da el switchTheme (tokens de marca en los cuatro
+    // estados); aquí no va activeColor. El rótulo usa el 11 de la escala tipográfica.
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Text(label, style: const TextStyle(fontSize: 10)),
-        Switch(value: value, activeColor: color, onChanged: onChanged),
+        Text(label, style: const TextStyle(fontSize: 11)),
+        Switch(value: value, onChanged: onChanged),
       ],
     );
   }

@@ -51,7 +51,7 @@ class _PatientLabsScreenState extends ConsumerState<PatientLabsScreen> {
         data: (repo) {
           final labs = repo.listPatientLabs(widget.patientId);
           return ListView(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 88),
+            padding: EdgeInsets.fromLTRB(16, 16, 16, kuraListBottomInset(context)),
             children: [
               Text(
                 'El laboratorio más reciente alimenta el motor de cicatrización '

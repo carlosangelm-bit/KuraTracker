@@ -6,7 +6,8 @@ import '../../core/config/app_config.dart';
 import '../../core/design/tokens.dart';
 import '../../core/providers/session_provider.dart';
 import '../../core/router/app_router.dart';
-import '../../core/router/app_shell.dart' show kFloatingNavBarHeight;
+import '../../core/widgets/kura_primary_fab.dart'
+    show kuraFabLift, kuraLauncherBottom;
 import '../../core/theme/kura_theme.dart';
 import '../../models/app_user.dart';
 import '../support/support_chat_panel.dart';
@@ -146,17 +147,14 @@ class _TourScopeState extends ConsumerState<TourScope> {
   ///  - Móvil (<900): abajo-izquierda, elevado sobre la barra flotante (el FAB
   ///    vive en bottom-right, así que la izquierda queda libre).
   Positioned _floatingLauncher(BuildContext context, Widget child) {
-    final mq = MediaQuery.of(context);
-    final wide = mq.size.width >= 900;
-    // Elevación que el FAB se aplica a sí mismo (KuraPrimaryFab): misma fórmula.
-    final fabLift = mq.viewPadding.bottom + kFloatingNavBarHeight + 12;
-    // Huella visible del FAB por encima de esa elevación: margen endFloat + alto del
-    // FAB extendido (Material) + una separación. El lanzador se coloca sobre ella.
-    const fabFootprint = 16.0 + 48.0 + 12.0;
+    final wide = MediaQuery.of(context).size.width >= 900;
+    // Geometría de la esquina: FUENTE ÚNICA en kura_primary_fab.dart (la misma de la que
+    // sale la reserva inferior de las listas). Escritorio: apilado sobre la huella del
+    // FAB. Móvil: a la izquierda, a la altura del FAB (la derecha la ocupa el FAB).
     return Positioned(
       left: wide ? null : 16,
       right: wide ? 16 : null,
-      bottom: wide ? fabLift + fabFootprint : fabLift,
+      bottom: wide ? kuraLauncherBottom(context) : kuraFabLift(context),
       child: child,
     );
   }

@@ -6,6 +6,7 @@ import '../../core/design/tokens.dart';
 import '../../core/providers/session_provider.dart';
 import '../../core/router/app_shell.dart' show KuraScreen;
 import '../../services/data_repository.dart';
+import '../../core/widgets/kura_primary_fab.dart';
 import '../prevention_agenda/prevention_agenda_screen.dart' show PreventiveTasksView;
 import 'caregiver_patient_screen.dart' show CaregiverPatientMonitor;
 
@@ -112,7 +113,7 @@ class _PatientsTab extends StatelessWidget {
       );
     }
     return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 88),
+      padding: EdgeInsets.fromLTRB(16, 12, 16, kuraListBottomInset(context)),
       children: patientIds.map((id) {
         final p = repo.getPatient(id);
         if (p == null) return const SizedBox.shrink();
