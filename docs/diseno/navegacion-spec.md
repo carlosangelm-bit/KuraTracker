@@ -110,6 +110,19 @@ verificado a mano antes de darla por verde.
 5. **La app clínica**, solo con lo anterior rodado. Enfermería ya aprendió dónde está
    todo: el cambio se anuncia, no se suelta.
 
+   **Condición de salida de esta etapa** (no un pendiente suelto): mientras AppShell
+   siga pintando su riel en las rutas clínicas, la declaración DUPLICA su lógica
+   condicional (tipo de centro, gateo por módulo, roles). Esa duplicación se prueba con
+   `admin_nav_test` → "cierre de la clase", que hoy compara a mano cada destino
+   condicional contra `app_shell.dart` (por eso la lista `moduleGated` está escrita a
+   mano, con la línea de origen al lado: un noveno destino con condición propia NO la
+   hace crecer sola — misma limitación que `_gatedScreens`). Forzar hoy un escaneo de
+   fuente sería construir algo para tirarlo. Al cerrar esta etapa —cuando AppShell deje
+   de pintar riel en las rutas clínicas— la duplicación desaparece: `_itemsFor` de
+   AppShell se retira, la declaración pasa a ser la ÚNICA fuente, y ese test o muere (ya
+   no hay contra qué comparar) o se convierte en la fuente autoritativa. Revisar los dos
+   al retirar `_itemsFor`.
+
 ## 6. Lo que NO cambia
 
 Los componentes de contenido (`KuraDataTable`, `KuraStat`, `KuraActionBar`,

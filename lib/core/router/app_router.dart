@@ -445,73 +445,74 @@ final routerProvider = Provider<GoRouter>((ref) {
               patientId: state.pathParameters['patientId']!,
             ),
           ),
+          // /admin: cada sección con su URL propia (§5 etapa 3). Igual que /platform, el
+          // canónico es un route APARTE (sin hijos) para que solo dispare en /admin a
+          // secas. Anidar las secciones bajo un padre con redirect hacía que el
+          // redirect (matchedLocation == '/admin') capturara TAMBIÉN a las hijas → toda
+          // /admin/<sección> terminaba en /admin/usuarios. Se aplanan a rutas absolutas
+          // hermanas; el gate de rol es el redirect global (location.startsWith('/admin')).
           GoRoute(
             path: '/admin',
-            // Cada sección con su URL propia (§5 etapa 3): /admin canoniza a Usuarios;
-            // la sección activa se deriva de la URL, no de _tab. El redirect de rol
-            // (location.startsWith('/admin')) sigue rechazando a no-admin/master.
-            redirect: (context, state) =>
-                state.matchedLocation == '/admin' ? '/admin/usuarios' : null,
-            routes: [
-              // Las seis secciones → AdminHomeScreen con su sección.
-              GoRoute(
-                  path: 'usuarios',
-                  builder: (context, state) =>
-                      const AdminHomeScreen(section: 'usuarios')),
-              GoRoute(
-                  path: 'personal',
-                  builder: (context, state) =>
-                      const AdminHomeScreen(section: 'personal')),
-              GoRoute(
-                  path: 'sitios',
-                  builder: (context, state) =>
-                      const AdminHomeScreen(section: 'sitios')),
-              GoRoute(
-                  path: 'configuracion',
-                  builder: (context, state) =>
-                      const AdminHomeScreen(section: 'configuracion')),
-              GoRoute(
-                  path: 'marca',
-                  builder: (context, state) =>
-                      const AdminHomeScreen(section: 'marca')),
-              GoRoute(
-                  path: 'licencias',
-                  builder: (context, state) =>
-                      const AdminHomeScreen(section: 'licencias')),
-              // Las 8 pantallas hijas profundas de Administración (URL/shell/historial).
-              GoRoute(
-                  path: 'protocolo-kura',
-                  builder: _adminChild((repo, org) =>
-                      ProtocolKuraScreen(repo: repo, organizationId: org))),
-              GoRoute(
-                  path: 'productos-protocolo',
-                  builder: _adminChild((repo, org) =>
-                      ProtocolProductRulesScreen(repo: repo, organizationId: org))),
-              GoRoute(
-                  path: 'tipo-cita-sesiones',
-                  builder: _adminChild((repo, org) =>
-                      AcuitySessionTypeScreen(repo: repo, organizationId: org))),
-              GoRoute(
-                  path: 'tipos-consulta',
-                  builder: _adminChild((repo, org) =>
-                      AcuityVisitTypeMapScreen(repo: repo, organizationId: org))),
-              GoRoute(
-                  path: 'depurar-expedientes',
-                  builder: _adminChild((repo, org) =>
-                      PatientCleanupScreen(repo: repo, organizationId: org))),
-              GoRoute(
-                  path: 'escalas-protocolo',
-                  builder: _adminChild((repo, org) =>
-                      ScaleTogglesScreen(repo: repo, organizationId: org))),
-              GoRoute(
-                  path: 'fuente-recomendaciones',
-                  builder: (context, state) =>
-                      const RecommendationsReferenceScreen()),
-              GoRoute(
-                  path: 'divulgaciones',
-                  builder: (context, state) => const DataDisclosuresScreen()),
-            ],
+            redirect: (context, state) => '/admin/usuarios',
           ),
+          // Las seis secciones → AdminHomeScreen con su sección.
+          GoRoute(
+              path: '/admin/usuarios',
+              builder: (context, state) =>
+                  const AdminHomeScreen(section: 'usuarios')),
+          GoRoute(
+              path: '/admin/personal',
+              builder: (context, state) =>
+                  const AdminHomeScreen(section: 'personal')),
+          GoRoute(
+              path: '/admin/sitios',
+              builder: (context, state) =>
+                  const AdminHomeScreen(section: 'sitios')),
+          GoRoute(
+              path: '/admin/configuracion',
+              builder: (context, state) =>
+                  const AdminHomeScreen(section: 'configuracion')),
+          GoRoute(
+              path: '/admin/marca',
+              builder: (context, state) =>
+                  const AdminHomeScreen(section: 'marca')),
+          GoRoute(
+              path: '/admin/licencias',
+              builder: (context, state) =>
+                  const AdminHomeScreen(section: 'licencias')),
+          // Las 8 pantallas hijas profundas de Administración (rutas absolutas ahora que
+          // /admin ya no anida). El gate por rol lo da el redirect global.
+          GoRoute(
+              path: '/admin/protocolo-kura',
+              builder: _adminChild((repo, org) =>
+                  ProtocolKuraScreen(repo: repo, organizationId: org))),
+          GoRoute(
+              path: '/admin/productos-protocolo',
+              builder: _adminChild((repo, org) =>
+                  ProtocolProductRulesScreen(repo: repo, organizationId: org))),
+          GoRoute(
+              path: '/admin/tipo-cita-sesiones',
+              builder: _adminChild((repo, org) =>
+                  AcuitySessionTypeScreen(repo: repo, organizationId: org))),
+          GoRoute(
+              path: '/admin/tipos-consulta',
+              builder: _adminChild((repo, org) =>
+                  AcuityVisitTypeMapScreen(repo: repo, organizationId: org))),
+          GoRoute(
+              path: '/admin/depurar-expedientes',
+              builder: _adminChild((repo, org) =>
+                  PatientCleanupScreen(repo: repo, organizationId: org))),
+          GoRoute(
+              path: '/admin/escalas-protocolo',
+              builder: _adminChild((repo, org) =>
+                  ScaleTogglesScreen(repo: repo, organizationId: org))),
+          GoRoute(
+              path: '/admin/fuente-recomendaciones',
+              builder: (context, state) =>
+                  const RecommendationsReferenceScreen()),
+          GoRoute(
+              path: '/admin/divulgaciones',
+              builder: (context, state) => const DataDisclosuresScreen()),
           // /platform: cada sección con su URL propia (§5 etapa 2). Entrar en frío a
           // /platform/<sección> llega a la sección correcta; /platform (a secas)
           // canoniza a Centros. La pantalla activa se deriva de la URL, no de _tab.
