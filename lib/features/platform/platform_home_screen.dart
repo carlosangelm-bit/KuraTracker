@@ -10,6 +10,7 @@ import '../../core/layout/responsive.dart';
 import '../../core/providers/session_provider.dart';
 import '../../core/router/app_shell.dart' show UserMenuButton, centerTypeColor;
 import '../../core/widgets/kura_primary_fab.dart';
+import 'derechos/center_license_panel.dart';
 import '../../models/app_user.dart';
 import '../../models/center_type.dart';
 import '../../models/module_key.dart';
@@ -53,7 +54,7 @@ class _PlatformHomeScreenState extends ConsumerState<PlatformHomeScreen>
   // DefaultTabController: TabBar en AppBar.bottom queda como hermano,
   // no ancestro/descendiente, de un DefaultTabController que solo
   // envuelve el body).
-  late final TabController _tabController = TabController(length: 8, vsync: this)
+  late final TabController _tabController = TabController(length: 9, vsync: this)
     ..addListener(() {
       if (_tabController.indexIsChanging) return;
       if (_tabController.index != _tab) {
@@ -315,6 +316,7 @@ class _PlatformHomeScreenState extends ConsumerState<PlatformHomeScreen>
                   Tab(text: 'Marca'),
                   Tab(text: 'Módulos'),
                   Tab(text: 'Solicitudes'),
+                  Tab(text: 'Licencia'),
                 ],
                 onTap: (i) => setState(() => _tab = i),
               ),
@@ -377,6 +379,11 @@ class _PlatformHomeScreenState extends ConsumerState<PlatformHomeScreen>
                     3 => SitesTab(repo: repo, organizationId: _selectedOrgId),
                     4 => NoteCatalogTab(repo: repo, organizationId: _selectedOrgId),
                     5 => BrandingTab(repo: repo, organizationId: _selectedOrgId),
+                    8 => CenterLicensePanel(
+                        repo: repo,
+                        organizationId: _selectedOrgId,
+                        user: ref.watch(sessionProvider).user,
+                      ),
                     _ => _ModulesTab(
                         repo: repo,
                         organizationId: _selectedOrgId,
@@ -405,6 +412,7 @@ class _PlatformHomeScreenState extends ConsumerState<PlatformHomeScreen>
                   (Icons.palette_outlined, 'Marca'),
                   (Icons.tune_outlined, 'Módulos'),
                   (Icons.request_page_outlined, 'Solicitudes'),
+                  (Icons.workspace_premium_outlined, 'Licencia'),
                 ],
               ),
               const VerticalDivider(width: 1),
