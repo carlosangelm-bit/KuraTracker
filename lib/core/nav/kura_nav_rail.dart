@@ -108,20 +108,25 @@ class _KuraNavRailState extends State<KuraNavRail> {
                       fontWeight: FontWeight.w800,
                       color: t.textPrimary)),
             ),
+            // Botón de colapsar. Área de toque ≥44 px (IconButton reserva 48 por
+            // defecto) para que responda al clic, no solo al encoger la ventana.
             IconButton(
               tooltip: 'Colapsar',
               onPressed: onToggleCollapse,
+              constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
               icon: Icon(Icons.chevron_left, size: 20, color: t.textSecondary),
             ),
           ],
         ),
       );
 
+  // El buscador NO existe hasta la etapa 4. Hasta entonces se pinta con apariencia
+  // DESHABILITADA (atenuado, sin toque ni ripple) para no prometer un campo que no
+  // responde: no es un InkWell, no lleva onTap y va a media opacidad.
   Widget _searchOpen(BrandTokens t) => Padding(
         padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-        child: InkWell(
-          onTap: onSearch,
-          borderRadius: BorderRadius.circular(10),
+        child: Opacity(
+          opacity: 0.45,
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 8),
             decoration: BoxDecoration(
@@ -303,6 +308,7 @@ class _KuraNavRailState extends State<KuraNavRail> {
           IconButton(
             tooltip: 'Expandir',
             onPressed: onToggleCollapse,
+            constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
             icon: Icon(Icons.chevron_right, size: 20, color: t.textSecondary),
           ),
           const SizedBox(height: 8),
