@@ -1,13 +1,15 @@
 // Prueba de CONDUCTA sobre el ROUTER REAL: en /admin y /platform el encabezado vive
 // DENTRO del área de contenido (canvas "Navegación KuraTracker", tablero "Escritorio ·
-// riel abierto"), NO en una barra de título por encima. Por eso, a cualquier ancho:
-//   (a) NO existe AppBar por encima del contenido, y
-//   (b) el nombre de la sección aparece UNA sola vez en la pantalla.
-// Verificación en rojo: dejar la barra superior (AppBar) hace que el nombre salga dos
-// veces (barra + encabezado) y reaparece el AppBar → ambas aserciones fallan.
+// riel abierto"), NO en una barra de título por encima. A cualquier ancho: no existe
+// AppBar por encima del contenido y el nombre de la sección aparece una sola vez.
+// Verificación en rojo: dejar la barra reintroduce el AppBar y duplica el nombre.
 //
 // CI-ONLY: importar app_router arrastra todas las pantallas → google_fonts, que la
 // toolchain local (3.44) no compila. `flutter analyze` sí valida; corre en CI (3.27.1).
+//
+// Los casos de /platform están ATOMIZADOS (una aserción por prueba) para poder ubicar
+// un fallo por el conteo cuando los logs de CI no son legibles: si falla el alcance del
+// shell, caen todas; si no, cae solo la aserción del encabezado afectada.
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -19,6 +21,8 @@ import 'package:kuratracker/core/design/tokens.dart';
 import 'package:kuratracker/core/nav/kura_nav_rail.dart';
 import 'package:kuratracker/core/providers/session_provider.dart';
 import 'package:kuratracker/core/router/app_router.dart';
+import 'package:kuratracker/features/admin/admin_home_screen.dart';
+import 'package:kuratracker/features/platform/platform_home_screen.dart';
 import 'package:kuratracker/models/app_user.dart';
 import 'package:kuratracker/models/module_key.dart';
 import 'package:kuratracker/services/data_repository.dart';
@@ -45,16 +49,25 @@ const _master = AppUser(
   email: 'm@x.test',
 );
 
-Future<GoRouter> _mount(
-  WidgetTester t,
-  AppUser user,
-  Set<ModuleKey> modules,
-) async {
+const _adminMods = <ModuleKey>{
+  ModuleKey.patients,
+  ModuleKey.agenda,
+  ModuleKey.reports,
+};
+
+void _resize(WidgetTester t, double w) {
+  t.view.physicalSize = Size(w, 1000);
+  t.view.devicePixelRatio = 1.0;
+  addTearDown(t.view.resetPhysicalSize);
+  addTearDown(t.view.resetDevicePixelRatio);
+}
+
+Future<GoRouter> _mount(WidgetTester t, AppUser user, Set<ModuleKey> mods) async {
   final repo = await DataRepository.instance();
   final container = ProviderContainer(overrides: [
     sessionProvider.overrideWith((ref) => _FakeSessionController(user)),
     dataRepositoryProvider.overrideWith((ref) => repo),
-    enabledModulesProvider.overrideWithValue(modules),
+    enabledModulesProvider.overrideWithValue(mods),
   ]);
   addTearDown(container.dispose);
   final router = container.read(routerProvider);
@@ -69,60 +82,63 @@ Future<GoRouter> _mount(
   return router;
 }
 
-void _resize(WidgetTester t, double w) {
-  t.view.physicalSize = Size(w, 1000);
-  t.view.devicePixelRatio = 1.0;
-  addTearDown(t.view.resetPhysicalSize);
-  addTearDown(t.view.resetDevicePixelRatio);
+Future<void> _open(WidgetTester t, AppUser user, Set<ModuleKey> mods,
+    String route, double w) async {
+  _resize(t, w);
+  final router = await _mount(t, user, mods);
+  router.go(route);
+  await t.pumpAndSettle();
 }
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUp(() => SharedPreferences.setMockInitialValues({}));
 
-  // Cada caso: (etiqueta, usuario, módulos, ruta de sección, nombre del área).
-  final cases = <List<Object>>[
-    ['/admin', _admin, <ModuleKey>{ModuleKey.patients, ModuleKey.agenda, ModuleKey.reports}, '/admin/usuarios', 'Administración'],
-    ['/platform', _master, <ModuleKey>{}, '/platform/centros', 'Plataforma'],
-  ];
+  // ------------------------------------------------------------------ /admin
+  testWidgets('/admin ANCHO: encabezado en el contenido, sin AppBar', (t) async {
+    await _open(t, _admin, _adminMods, '/admin/usuarios', 1400);
+    expect(find.byType(AdminSectionsShell), findsOneWidget);
+    expect(find.byType(AppBar), findsNothing);
+    expect(find.byKey(const ValueKey('content-header-title')), findsOneWidget);
+  });
 
-  for (final c in cases) {
-    final label = c[0] as String;
-    final user = c[1] as AppUser;
-    final modules = c[2] as Set<ModuleKey>;
-    final route = c[3] as String;
-    final area = c[4] as String;
+  testWidgets('/admin ANGOSTO: menú de sección, área una vez, sin AppBar', (t) async {
+    await _open(t, _admin, _adminMods, '/admin/usuarios', 900);
+    expect(find.byType(AdminSectionsShell), findsOneWidget);
+    expect(find.byType(AppBar), findsNothing);
+    expect(find.byType(KuraSectionMenu), findsOneWidget);
+    expect(find.textContaining('Administración'), findsOneWidget);
+  });
 
-    testWidgets('$label ANCHO: encabezado en el contenido, sin AppBar', (t) async {
-      _resize(t, 1400); // riel abierto → miga estática (padre + título)
-      final router = await _mount(t, user, modules);
-      router.go(route);
-      await t.pumpAndSettle();
+  // --------------------------------------------------------------- /platform
+  // Atómicas: aíslan alcance del shell vs. cada aserción del encabezado.
+  testWidgets('/platform C1 ANCHO: el master alcanza el shell', (t) async {
+    await _open(t, _master, const {}, '/platform/centros', 1400);
+    expect(find.byType(PlatformSectionsShell), findsOneWidget);
+  });
 
-      // (a) No hay barra de título por encima del contenido.
-      expect(find.byType(AppBar), findsNothing,
-          reason: '$label ancho: quedó un AppBar por encima del contenido');
-      // (b) El título de la sección lo pinta el encabezado del contenido, una vez.
-      expect(find.byKey(const ValueKey('content-header-title')), findsOneWidget,
-          reason: '$label ancho: el título del encabezado no aparece una sola vez');
-    });
+  testWidgets('/platform C2 ANCHO: sin AppBar', (t) async {
+    await _open(t, _master, const {}, '/platform/centros', 1400);
+    expect(find.byType(AppBar), findsNothing);
+  });
 
-    testWidgets('$label ANGOSTO: menú Sección › Subsección, sin AppBar', (t) async {
-      _resize(t, 900); // riel colapsado (solo iconos) → encabezado con el menú
-      final router = await _mount(t, user, modules);
-      router.go(route);
-      await t.pumpAndSettle();
+  testWidgets('/platform C3 ANCHO: título del encabezado una vez', (t) async {
+    await _open(t, _master, const {}, '/platform/centros', 1400);
+    expect(find.byKey(const ValueKey('content-header-title')), findsOneWidget);
+  });
 
-      // (a) Tampoco hay AppBar en angosto.
-      expect(find.byType(AppBar), findsNothing,
-          reason: '$label angosto: quedó un AppBar por encima del contenido');
-      // El menú Sección › Subsección ▾ vive en ESTE encabezado, no en una franja.
-      expect(find.byType(KuraSectionMenu), findsOneWidget,
-          reason: '$label angosto: falta el menú de sección en el encabezado');
-      // (b) El nombre del área aparece UNA sola vez (en el menú; el riel colapsado
-      //     no pinta etiquetas). Dejar la barra lo pondría dos veces.
-      expect(find.textContaining(area), findsOneWidget,
-          reason: '$label angosto: "$area" no aparece exactamente una vez');
-    });
-  }
+  testWidgets('/platform D1 ANGOSTO: sin AppBar', (t) async {
+    await _open(t, _master, const {}, '/platform/centros', 900);
+    expect(find.byType(AppBar), findsNothing);
+  });
+
+  testWidgets('/platform D2 ANGOSTO: menú de sección', (t) async {
+    await _open(t, _master, const {}, '/platform/centros', 900);
+    expect(find.byType(KuraSectionMenu), findsOneWidget);
+  });
+
+  testWidgets('/platform D3 ANGOSTO: "Plataforma" una vez', (t) async {
+    await _open(t, _master, const {}, '/platform/centros', 900);
+    expect(find.textContaining('Plataforma'), findsOneWidget);
+  });
 }
