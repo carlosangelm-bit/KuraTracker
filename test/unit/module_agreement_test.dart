@@ -37,4 +37,14 @@ void main() {
     expect(a.kind, ModuleAgreementCase.onWithoutRight);
     expect(a.message, 'Con asientos activos pero sin el derecho clínico.');
   });
+
+  test('rightOff acepta texto propio por fila (simétrico a onWithoutRight)', () {
+    final a = moduleAgreement(
+      hasRight: true,
+      switchOn: false,
+      rightOffMessage: 'Sin asientos clínicos: nadie puede usar el expediente.',
+    );
+    expect(a.kind, ModuleAgreementCase.rightOff);
+    expect(a.message, 'Sin asientos clínicos: nadie puede usar el expediente.');
+  });
 }
