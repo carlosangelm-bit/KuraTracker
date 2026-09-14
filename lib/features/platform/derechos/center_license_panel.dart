@@ -9,6 +9,7 @@ import '../../../models/app_user.dart';
 import '../../../models/org_entitlement.dart';
 import '../../../services/data_repository.dart';
 import 'center_license_data.dart';
+import 'grant_entitlement_dialog.dart';
 import 'module_agreement.dart';
 
 /// Centro · Licencia (§5.2), consola master · Derechos, etapa 2. La pantalla que
@@ -17,7 +18,7 @@ import 'module_agreement.dart';
 /// silencioso "encendido sin derecho: nadie lo ve" (rojo). Todo color desde
 /// [BrandTokens]; importes desde billing_catalog vía unitAmountCents (null → "—").
 /// Reusa KuraDataTable/KuraStat en vez de dibujar tablas nuevas.
-class CenterLicensePanel extends StatelessWidget {
+class CenterLicensePanel extends StatefulWidget {
   final DataRepository repo;
   final String? organizationId;
   final AppUser? user;
@@ -27,6 +28,15 @@ class CenterLicensePanel extends StatelessWidget {
     required this.organizationId,
     required this.user,
   });
+
+  @override
+  State<CenterLicensePanel> createState() => _CenterLicensePanelState();
+}
+
+class _CenterLicensePanelState extends State<CenterLicensePanel> {
+  DataRepository get repo => widget.repo;
+  String? get organizationId => widget.organizationId;
+  AppUser? get user => widget.user;
 
   static const _seats = <({String key, String label})>[
     (key: 'clinico', label: 'Asientos clínicos'),
@@ -126,21 +136,102 @@ class CenterLicensePanel extends StatelessWidget {
   // ---- Piezas ----
   Widget _header(BrandTokens t) {
     final name = repo.organizationById(organizationId)?.name ?? 'Centro';
-    return Column(
+    return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('Plataforma · Licencia',
-            style: TextStyle(
-                fontSize: 13, fontWeight: FontWeight.w600, color: t.textSecondary)),
-        const SizedBox(height: 6),
-        Text(name,
-            style: TextStyle(
-                fontSize: 28,
-                fontWeight: FontWeight.w800,
-                letterSpacing: -0.02 * 28,
-                color: t.textPrimary)),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Plataforma · Licencia',
+                  style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: t.textSecondary)),
+              const SizedBox(height: 6),
+              Text(name,
+                  style: TextStyle(
+                      fontSize: 28,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -0.02 * 28,
+                      color: t.textPrimary)),
+            ],
+          ),
+        ),
+        FilledButton.icon(
+          onPressed: _openGrantDialog,
+          icon: const Icon(Icons.add, size: 18),
+          label: const Text('Otorgar derecho'),
+          style: FilledButton.styleFrom(
+            backgroundColor: t.brandPrimary,
+            foregroundColor: t.onBrand,
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+          ),
+        ),
       ],
     );
+  }
+
+  /// Arma los objetivos otorgables (módulos + asientos) con su importe de catálogo y
+  /// abre el diálogo. El diálogo llama masterGrantEntitlement; sus errores ya vienen
+  /// traducidos del repo y se muestran tal cual.
+  List<GrantTarget> _grantTargets() {
+    final orgId = organizationId;
+    if (orgId == null) return const [];
+    final targets = <GrantTarget>[
+      for (final r in moduleLicenseRows(repo, orgId))
+        GrantTarget(
+          kind: 'module',
+          key: r.key,
+          label: r.label,
+          monthlyCents: r.amountCents,
+        ),
+      for (final s in _seats)
+        GrantTarget(
+          kind: 'seat',
+          key: s.key,
+          label: s.label,
+          monthlyCents: repo.unitAmountCents('seat', s.key, 'month'),
+          needsQuantity: true,
+        ),
+    ];
+    return targets;
+  }
+
+  Future<void> _openGrantDialog() async {
+    final orgId = organizationId;
+    if (orgId == null) return;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => GrantEntitlementDialog(
+        targets: _grantTargets(),
+        onSubmit: ({
+          required target,
+          required grantType,
+          required reason,
+          quantity,
+          until,
+          required permanent,
+        }) async {
+          await repo.masterGrantEntitlement(
+            organizationId: orgId,
+            kind: target.kind,
+            key: target.key,
+            quantity: quantity,
+            grantType: grantType,
+            reason: reason,
+            until: until,
+            permanent: permanent,
+          );
+        },
+      ),
+    );
+    if (ok == true && mounted) {
+      setState(() {});
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Derecho otorgado.')),
+      );
+    }
   }
 
   Widget _sectionTitle(BrandTokens t, String s) => Text(s,

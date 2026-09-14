@@ -17,9 +17,13 @@ class ModuleAgreement {
 /// derecho— es la razón de ser del rediseño: hoy 0115 exime al master, así que el
 /// interruptor puede quedar encendido sin derecho y, bajo el AND, "nadie lo ve".
 /// Sin este caso a la vista, el rediseño entero se cae solo.
+/// [onWithoutRightMessage] permite un texto propio por fila para el caso rojo: el
+/// interruptor no es igual en todos los módulos (module:clinico se "enciende" por
+/// asientos, no por un switch), así que su copy debe hablar de asientos.
 ModuleAgreement moduleAgreement({
   required bool hasRight,
   required bool switchOn,
+  String? onWithoutRightMessage,
 }) {
   if (hasRight && switchOn) {
     return const ModuleAgreement(ModuleAgreementCase.normal, 'Activo');
@@ -29,8 +33,10 @@ ModuleAgreement moduleAgreement({
         ModuleAgreementCase.rightOff, 'Con derecho, apagado en el centro.');
   }
   if (!hasRight && switchOn) {
-    return const ModuleAgreement(ModuleAgreementCase.onWithoutRight,
-        'Encendido en el centro, pero sin derecho: nadie lo ve.');
+    return ModuleAgreement(
+        ModuleAgreementCase.onWithoutRight,
+        onWithoutRightMessage ??
+            'Encendido en el centro, pero sin derecho: nadie lo ve.');
   }
   return const ModuleAgreement(ModuleAgreementCase.noRight, 'Sin derecho');
 }
