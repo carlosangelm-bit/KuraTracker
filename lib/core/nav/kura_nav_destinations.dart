@@ -16,43 +16,67 @@ List<NavDestination> kuraNavDestinations({
   required bool isAdmin,
   required bool isMaster,
   required CenterType centerType,
+  bool isCaregiverOnly = false,
 }) {
-  NavDestination mod(ModuleKey m, IconData icon) => NavDestination(
+  // El CUIDADOR (Fase 3) es EXCLUSIVO: su única área es su monitoreo (/caregiver). Al
+  // absorber la lista de AppShell en esta declaración (§5 etapa 5, condición de salida:
+  // _itemsFor se retira ENTERO), el caso del cuidador vive aquí, no en una rama especial
+  // de AppShell. Con él, el resto se oculta — un solo destino, sin barra ni riel (la
+  // regla de ≥2 de NavigationBar/Rail hace el resto). app_shell.dart:54-58.
+  NavDestination mod(ModuleKey m, IconData icon, {bool isPrimary = false}) =>
+      NavDestination(
         label: m.label,
         icon: icon,
         route: m.route,
-        visibleWhen: () => moduleEnabled(m.dbValue),
+        isPrimary: isPrimary,
+        visibleWhen: () => moduleEnabled(m.dbValue) && !isCaregiverOnly,
       );
 
   // Agenda: en HOSPITAL el eje es la RONDA de prevención (tareas que siguen al
   // paciente), no las citas: enruta a /prevention-agenda con etiqueta "Rondas",
   // gateada por prevención. En los demás tipos, la agenda de citas (/agenda), gateada
   // por agenda. Copiado de app_shell.dart:68-79 — sin esta rama, un hospital caía en
-  // /agenda "no configurada".
+  // /agenda "no configurada". Es PRIMARIA en la barra inferior (antes en primaryPaths).
   final NavDestination agendaSlot = centerType == CenterType.hospital
       ? NavDestination(
           label: 'Rondas',
           icon: Icons.checklist_outlined,
           route: '/prevention-agenda',
-          visibleWhen: () => moduleEnabled(ModuleKey.prevention.dbValue),
+          isPrimary: true,
+          visibleWhen: () =>
+              moduleEnabled(ModuleKey.prevention.dbValue) && !isCaregiverOnly,
         )
       : NavDestination(
           label: 'Agenda',
           icon: Icons.calendar_today_outlined,
           route: '/agenda',
-          visibleWhen: () => moduleEnabled(ModuleKey.agenda.dbValue),
+          isPrimary: true,
+          visibleWhen: () =>
+              moduleEnabled(ModuleKey.agenda.dbValue) && !isCaregiverOnly,
         );
 
   return [
+    // Monitoreo (cuidador): su única pantalla. Visible SOLO para el cuidador exclusivo;
+    // para todos los demás, oculta. Va primero para que, en el caso improbable de
+    // acompañarse de otro destino, ancle abajo. app_shell.dart:54-58.
+    NavDestination(
+      label: 'Monitoreo',
+      icon: Icons.monitor_heart_outlined,
+      route: '/caregiver',
+      isPrimary: true,
+      visibleWhen: () => isCaregiverOnly,
+    ),
     // Inicio (dashboard): destino clínico de primer nivel salvo para el master, que
     // no tiene datos clínicos propios (0012). app_shell.dart:63 (siempre, no-master).
     NavDestination(
       label: 'Inicio',
       icon: Icons.dashboard_outlined,
       route: '/',
-      visibleWhen: () => !isMaster,
+      isPrimary: true,
+      visibleWhen: () => !isMaster && !isCaregiverOnly,
     ),
-    mod(ModuleKey.patients, Icons.people_outline), // app_shell.dart:65
+    mod(ModuleKey.patients, Icons.people_outline,
+        isPrimary: true), // app_shell.dart:65 (primaryPaths)
     agendaSlot, // app_shell.dart:68-79
     mod(ModuleKey.prevention, Icons.shield_outlined), // app_shell.dart:80 (/risk)
     mod(ModuleKey.vac, Icons.healing_outlined), // app_shell.dart:83
@@ -65,13 +89,15 @@ List<NavDestination> kuraNavDestinations({
       label: ModuleKey.ekare.label,
       icon: Icons.file_upload_outlined,
       route: ModuleKey.ekare.route,
-      visibleWhen: () => moduleEnabled(ModuleKey.ekare.dbValue) || isMaster,
+      visibleWhen: () =>
+          (moduleEnabled(ModuleKey.ekare.dbValue) || isMaster) &&
+          !isCaregiverOnly,
     ),
     NavDestination(
       label: 'Administración',
       icon: Icons.settings_outlined,
       route: '/admin',
-      visibleWhen: () => isAdmin,
+      visibleWhen: () => isAdmin && !isCaregiverOnly,
       // Las seis secciones reales de AdminHomeScreen, en su orden.
       children: const [
         NavDestination(
@@ -106,7 +132,7 @@ List<NavDestination> kuraNavDestinations({
       label: 'Plataforma',
       icon: Icons.hub_outlined,
       route: '/platform',
-      visibleWhen: () => isMaster,
+      visibleWhen: () => isMaster && !isCaregiverOnly,
       children: const [
         NavDestination(
             label: 'Centros',

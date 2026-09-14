@@ -70,60 +70,11 @@ void main() {
     expect(clinica.firstWhere((d) => d.route == '/agenda').label, 'Agenda');
   });
 
-  test('cierre de la clase: cada destino condicional de app_shell.dart tiene la '
-      'MISMA condición en la declaración', () {
-    // Rutas visibles de la declaración bajo ciertas banderas.
-    Set<String> vis({
-      bool Function(String)? mod,
-      bool isAdmin = false,
-      bool isMaster = false,
-      CenterType ct = CenterType.clinicaHeridas,
-    }) =>
-        _visibleRoutes(kuraNavDestinations(
-          moduleEnabled: mod ?? (_) => true,
-          isAdmin: isAdmin,
-          isMaster: isMaster,
-          centerType: ct,
-        ));
-
-    // app_shell.dart:63 — Inicio (/) siempre para no-master.
-    expect(vis(isMaster: false), contains('/'));
-    expect(vis(isMaster: true), isNot(contains('/')));
-
-    // Gateo por MÓDULO (cada destino aparece con su módulo y desaparece sin él).
-    // (moduleKey, route) — línea de app_shell.dart al lado.
-    const moduleGated = <(String, String)>[
-      ('patients', '/patients'), // app_shell.dart:65
-      ('prevention', '/risk'), // app_shell.dart:80
-      ('vac', '/vac'), // app_shell.dart:83
-      ('reports', '/reports'), // app_shell.dart:86
-      ('insumos', '/insumos'), // app_shell.dart:89
-      ('comercial', '/comercial'), // app_shell.dart:93
-      ('ekare', '/import-export'), // app_shell.dart:101
-    ];
-    for (final (key, route) in moduleGated) {
-      expect(vis(mod: (k) => k == key), contains(route),
-          reason: 'con $key debe verse $route');
-      expect(vis(mod: (_) => false, isMaster: false), isNot(contains(route)),
-          reason: 'sin $key no debe verse $route');
-    }
-    // ekare también para el master (app_shell no lo da, pero es su destino en la consola).
-    expect(vis(mod: (_) => false, isMaster: true), contains('/import-export'));
-
-    // app_shell.dart:68-79 — agenda por tipo de centro, gateada.
-    expect(vis(mod: (k) => k == 'prevention', ct: CenterType.hospital),
-        contains('/prevention-agenda'));
-    expect(vis(mod: (_) => false, ct: CenterType.hospital),
-        isNot(contains('/prevention-agenda')));
-    expect(vis(mod: (k) => k == 'agenda', ct: CenterType.clinicaHeridas),
-        contains('/agenda'));
-    expect(vis(mod: (_) => false, ct: CenterType.clinicaHeridas),
-        isNot(contains('/agenda')));
-
-    // app_shell.dart:97 — Administración (/admin) para el admin.
-    expect(vis(isAdmin: true), contains('/admin'));
-    expect(vis(isAdmin: false), isNot(contains('/admin')));
-  });
+  // NOTA (§5 etapa 5): el test "cierre de la clase" —que comparaba a mano cada destino
+  // condicional contra la lista `moduleGated` de app_shell.dart— se ELIMINÓ. Al retirar
+  // `_itemsFor` de AppShell, ya no hay una segunda lista contra la cual comparar: la
+  // declaración es la ÚNICA fuente. Lo sustituye la prueba 1 del §9 (riel ≡ barra), en
+  // clinical_nav_test.dart, que impide que el riel y la barra vuelvan a separarse.
 
   testWidgets('1 · cada una de las seis monta su pantalla y queda activa',
       (tester) async {
