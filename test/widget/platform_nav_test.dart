@@ -29,12 +29,21 @@ void main() {
       );
 
   test('la declaración trae EXACTAMENTE las nueve secciones, con su URL', () {
-    final plataforma = platformNavDestinations().single;
-    expect(plataforma.route, '/platform');
+    final plataforma =
+        platformNavDestinations().firstWhere((d) => d.route == '/platform');
     final got = {for (final c in plataforma.children) c.label: c.route};
     expect(got, expected);
     // Licencia —que vivía en el caso 8— tiene ahora su ruta.
     expect(got['Licencia'], '/platform/licencia');
+  });
+
+  test('el riel del master tiene dos destinos: Plataforma e Importar (hermanos)', () {
+    // "Importar expedientes" se absorbió de la tira externa a la declaración; ya no
+    // es un solo destino de primer nivel (72 px de riel colapsado sí se justifican).
+    final tops = platformNavDestinations();
+    expect(tops.map((d) => d.route).toList(), ['/platform', '/import-export']);
+    expect(tops.first.label, 'Plataforma');
+    expect(tops.last.label, 'Importar expedientes');
   });
 
   testWidgets('1 · cada una de las nueve monta su pantalla y queda activa',
@@ -118,7 +127,7 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
 
     final navs = platformNavDestinations();
-    final plataforma = navs.single;
+    final plataforma = navs.firstWhere((d) => d.route == '/platform');
 
     // Riel colapsado: Plataforma por su icono; los hijos NO están en el riel.
     final railRouter = GoRouter(
