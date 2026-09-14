@@ -21,14 +21,16 @@ import '../../core/widgets/kura_empty_state.dart';
 import '../../core/widgets/kura_error_state.dart';
 import '../../core/widgets/dashed_border_box.dart';
 import '../../core/name_format.dart';
-import '../../core/layout/responsive.dart';
 import '../../core/config/app_config.dart';
 import '../../core/providers/session_provider.dart';
 import '../../core/utils/caregiver_login.dart';
 import '../../core/router/app_shell.dart' show UserMenuButton;
 import '../../core/widgets/kura_primary_fab.dart';
+import '../../core/nav/kura_nav_rail.dart';
+import '../../core/nav/kura_nav_destinations.dart';
 import 'license_panel.dart';
 import '../../models/app_user.dart';
+import '../../models/module_key.dart';
 import '../../models/note_option_catalog.dart';
 import '../../models/site.dart';
 import '../../models/staff.dart';
@@ -39,40 +41,19 @@ import '../../services/photo_upload_service.dart';
 /// Panel de administración: gestión de personal sanitario, sitios y
 /// activación de usuarios / función premium (sección 4).
 class AdminHomeScreen extends ConsumerStatefulWidget {
-  const AdminHomeScreen({super.key});
+  /// Sección activa, derivada de la URL (/admin/<section>), nunca de un entero.
+  final String section;
+  const AdminHomeScreen({super.key, this.section = 'usuarios'});
 
   @override
   ConsumerState<AdminHomeScreen> createState() => _AdminHomeScreenState();
 }
 
-class _AdminHomeScreenState extends ConsumerState<AdminHomeScreen>
-    with SingleTickerProviderStateMixin {
-  int _tab = 0;
-  // TabController propio y explícito: NO depende de DefaultTabController.
-  //
-  // Bug previo: `TabBar` vivía en `AppBar.bottom` mientras `DefaultTabController`
-  // envolvía solo el `body`. En el árbol de widgets, TabBar y DefaultTabController
-  // quedaban como HERMANOS (AppBar y body son ambos hijos directos de Scaffold),
-  // no en relación ancestro/descendiente. Por eso `DefaultTabController.maybeOf(context)`
-  // -llamado internamente por TabBar- devolvía null. En debug esto lanza un
-  // FlutterError controlado por assert(); en release (el build real desplegado)
-  // el assert se elimina y el controller interno de TabBar queda null, causando
-  // luego "Null check operator used on a null value" dentro del propio framework
-  // de Flutter (_TabBarState), no en código de esta pantalla. Ocurría siempre,
-  // con datos vacíos o no: no dependía de que el admin tuviera o no fila en `staff`.
-  late final TabController _tabController = TabController(length: 6, vsync: this)
-    ..addListener(() {
-      if (_tabController.indexIsChanging) return;
-      if (_tabController.index != _tab) {
-        setState(() => _tab = _tabController.index);
-      }
-    });
-
-  @override
-  void dispose() {
-    _tabController.dispose();
-    super.dispose();
-  }
+class _AdminHomeScreenState extends ConsumerState<AdminHomeScreen> {
+  // Las seis secciones de Administración, por su segmento de URL.
+  static const _knownSections = {
+    'usuarios', 'personal', 'sitios', 'configuracion', 'marca', 'licencias',
+  };
 
   @override
   Widget build(BuildContext context) {
@@ -86,10 +67,6 @@ class _AdminHomeScreenState extends ConsumerState<AdminHomeScreen>
     // Id del usuario en sesion: la pestana de Usuarios lo usa para impedir que
     // el admin se cambie el rol o se desactive a si mismo (auto-bloqueo).
     final currentUserId = ref.watch(sessionProvider).user?.id;
-    // Desktop: secciones como rail lateral (maestro) + contenido (detalle);
-    // móvil conserva el TabBar horizontal.
-    final wide = MediaQuery.of(context).size.width >= Breakpoints.twoPane;
-
     // Guarda de rol (2ª capa; el redirect del router es la 1ª). En web una URL
     // no es candado: solo admin del centro y master ven Administración. Un
     // clinico que llegue aquí por cualquier ruta no ve nada administrativo.
@@ -100,30 +77,25 @@ class _AdminHomeScreenState extends ConsumerState<AdminHomeScreen>
       );
     }
 
+    final section =
+        _knownSections.contains(widget.section) ? widget.section : 'usuarios';
+    // Riel abierto ≥1200 px, colapsado por debajo (§2.1/§2.2).
+    final open = MediaQuery.of(context).size.width >= 1200;
+    // UN solo riel (KuraNavRail): la MISMA declaración de la app, con los destinos
+    // clínicos de primer nivel y Administración anidando sus seis secciones.
+    final modules = ref.watch(enabledModulesProvider);
+    final navs = kuraNavDestinations(
+      moduleEnabled: (k) => modules.any((m) => m.dbValue == k),
+      isAdmin: true,
+      isMaster: false,
+    );
+    final admin = navs.firstWhere((d) => d.route == '/admin');
+    final currentRoute = '/admin/$section';
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Administración'),
         actions: const [UserMenuButton()],
-        bottom: wide
-            ? null
-            : TabBar(
-                controller: _tabController,
-                tabs: const [
-                  Tab(text: 'Usuarios'),
-                  Tab(text: 'Personal sanitario'),
-                  Tab(text: 'Sitios'),
-                  Tab(text: 'Configuración'),
-                  Tab(text: 'Marca'),
-                  Tab(text: 'Licencias'),
-                ],
-                // Mueve el controller además del estado de contenido; si solo
-                // se cambia `_tab`, el indicador del TabBar queda un paso atrás
-                // (mismo patrón que el rail de escritorio abajo).
-                onTap: (i) => setState(() {
-                  _tab = i;
-                  _tabController.index = i;
-                }),
-              ),
       ),
       body: repoAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
@@ -141,50 +113,66 @@ class _AdminHomeScreenState extends ConsumerState<AdminHomeScreen>
           ),
         ),
         data: (repo) {
-          final Widget tab = switch (_tab) {
-            1 => StaffTab(repo: repo, organizationId: organizationId),
-            2 => SitesTab(repo: repo, organizationId: organizationId),
-            3 => NoteCatalogTab(repo: repo, organizationId: organizationId),
-            4 => repo.premiumAdminFor(organizationId)
-                ? BrandingTab(repo: repo, organizationId: organizationId)
-                : const _AdminModuleLocked('La personalización de marca'),
-            5 => LicensePanel(
-                repo: repo,
-                organizationId: organizationId,
-                user: sessionUser,
-              ),
-            _ => UsersTab(
-                repo: repo,
-                organizationId: organizationId,
-                currentUserId: currentUserId,
-              ),
-          };
-          // Móvil: contenido acotado; desktop: rail de secciones + contenido.
-          if (!wide) return PageMaxWidth(maxWidth: 1100, child: tab);
+          final content = _sectionBody(
+              repo, section, organizationId, currentUserId, sessionUser);
+          final withHeader = open
+              ? content
+              : Column(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: KuraSectionMenu(
+                            section: admin, currentRoute: currentRoute),
+                      ),
+                    ),
+                    const Divider(height: 1),
+                    Expanded(child: content),
+                  ],
+                );
           return Row(
             children: [
-              SectionRail(
-                selectedIndex: _tab,
-                onSelected: (i) => setState(() {
-                  _tab = i;
-                  _tabController.index = i;
-                }),
-                destinations: const [
-                  (Icons.people_outline, 'Usuarios'),
-                  (Icons.medical_services_outlined, 'Personal'),
-                  (Icons.location_on_outlined, 'Sitios'),
-                  (Icons.settings_outlined, 'Config.'),
-                  (Icons.palette_outlined, 'Marca'),
-                  (Icons.card_membership_outlined, 'Licencias'),
-                ],
+              KuraNavRail(
+                destinations: navs,
+                currentRoute: currentRoute,
+                collapsed: !open,
+                brandName: 'KuraTracker',
+                userName: sessionUser?.fullName,
+                centerName: 'Administración',
               ),
               const VerticalDivider(width: 1),
-              Expanded(child: tab),
+              Expanded(child: withHeader),
             ],
           );
         },
       ),
     );
+  }
+
+  /// El cuerpo de la sección activa. Mismos widgets que las viejas pestañas.
+  Widget _sectionBody(DataRepository repo, String section,
+      String? organizationId, String? currentUserId, AppUser? sessionUser) {
+    switch (section) {
+      case 'personal':
+        return StaffTab(repo: repo, organizationId: organizationId);
+      case 'sitios':
+        return SitesTab(repo: repo, organizationId: organizationId);
+      case 'configuracion':
+        return NoteCatalogTab(repo: repo, organizationId: organizationId);
+      case 'marca':
+        return repo.premiumAdminFor(organizationId)
+            ? BrandingTab(repo: repo, organizationId: organizationId)
+            : const _AdminModuleLocked('La personalización de marca');
+      case 'licencias':
+        return LicensePanel(
+            repo: repo, organizationId: organizationId, user: sessionUser);
+      default:
+        return UsersTab(
+            repo: repo,
+            organizationId: organizationId,
+            currentUserId: currentUserId);
+    }
   }
 }
 

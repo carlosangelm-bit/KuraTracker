@@ -23,6 +23,14 @@ List<NavDestination> kuraNavDestinations({
       );
 
   return [
+    // Inicio (dashboard): destino clínico de primer nivel salvo para el master, que
+    // no tiene datos clínicos propios (0012).
+    NavDestination(
+      label: 'Inicio',
+      icon: Icons.dashboard_outlined,
+      route: '/',
+      visibleWhen: () => !isMaster,
+    ),
     mod(ModuleKey.patients, Icons.people_outline),
     mod(ModuleKey.agenda, Icons.calendar_today_outlined),
     mod(ModuleKey.prevention, Icons.shield_outlined),
@@ -43,30 +51,31 @@ List<NavDestination> kuraNavDestinations({
       icon: Icons.settings_outlined,
       route: '/admin',
       visibleWhen: () => isAdmin,
+      // Las seis secciones reales de AdminHomeScreen, en su orden.
       children: const [
         NavDestination(
-            label: 'Configuración',
-            icon: Icons.tune_outlined,
-            route: '/admin/configuracion'),
-        NavDestination(
             label: 'Usuarios',
-            icon: Icons.group_outlined,
+            icon: Icons.people_outline,
             route: '/admin/usuarios'),
+        NavDestination(
+            label: 'Personal',
+            icon: Icons.medical_services_outlined,
+            route: '/admin/personal'),
         NavDestination(
             label: 'Sitios',
             icon: Icons.location_on_outlined,
             route: '/admin/sitios'),
         NavDestination(
-            label: 'Catálogo',
-            icon: Icons.list_alt_outlined,
-            route: '/admin/catalogo'),
+            label: 'Configuración',
+            icon: Icons.settings_outlined,
+            route: '/admin/configuracion'),
         NavDestination(
             label: 'Marca',
             icon: Icons.palette_outlined,
             route: '/admin/marca'),
         NavDestination(
             label: 'Licencias',
-            icon: Icons.workspace_premium_outlined,
+            icon: Icons.card_membership_outlined,
             route: '/admin/licencias'),
       ],
     ),

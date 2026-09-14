@@ -8,10 +8,13 @@ import 'package:kuratracker/core/router/shell_nav_visibility.dart';
 /// Conducta: dejar la tira externa (que AppShell muestre su nav en /platform) pone
 /// esto en rojo — verificado revirtiendo appShellShowsOwnNav a `=> true`.
 void main() {
-  test('AppShell NO pinta su nav en /platform (ni en sus subrutas)', () {
+  test('AppShell NO pinta su nav en /platform ni /admin (ni sus subrutas)', () {
     expect(appShellShowsOwnNav('/platform'), isFalse);
     expect(appShellShowsOwnNav('/platform/centros'), isFalse);
     expect(appShellShowsOwnNav('/platform/licencia'), isFalse);
+    expect(appShellShowsOwnNav('/admin'), isFalse);
+    expect(appShellShowsOwnNav('/admin/usuarios'), isFalse);
+    expect(appShellShowsOwnNav('/admin/licencias'), isFalse);
   });
 
   test('AppShell SÍ pinta su nav en el resto de las rutas', () {
