@@ -62,3 +62,51 @@ set search_path = public, pg_temp
 as $$
   select coalesce(nullif(current_setting('test.demand', true), '')::int, 0)
 $$;
+
+-- --- Lado Stripe (para 0133): columnas/tablas que apply_stripe toca. -----------
+alter table public.org_entitlements
+  add column if not exists stripe_subscription_item_id text,
+  add column if not exists stripe_subscription_id text,
+  add column if not exists updated_at timestamptz not null default now();
+
+alter table public.organizations
+  add column if not exists stripe_subscription_id text;
+
+-- authenticated/service_role los crea Supabase; aquí se stubean para que los GRANT pasen.
+do $$ begin create role authenticated; exception when duplicate_object then null; end $$;
+do $$ begin create role service_role; exception when duplicate_object then null; end $$;
+
+create table if not exists public.stripe_events (
+  event_id text primary key,
+  type text
+);
+
+create table if not exists public.billing_catalog (
+  lookup_key text primary key,
+  kind text not null,
+  key text not null,
+  interval text,
+  unit text,
+  unit_amount int
+);
+
+create table if not exists public.billing_anomalies (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null,
+  kind text not null,
+  detail text,
+  sub_low text,
+  sub_high text,
+  scope_key text not null default '',
+  seen_count int not null default 1,
+  status text not null default 'open',
+  last_seen_at timestamptz not null default now(),
+  resolved_at timestamptz
+);
+create unique index if not exists uq_billing_anomalies_key
+  on public.billing_anomalies(organization_id, kind, sub_low, sub_high, scope_key);
+
+-- Semilla mínima del catálogo para la prueba de ida y vuelta (module:insumos).
+insert into public.billing_catalog (lookup_key, kind, key, interval, unit, unit_amount)
+values ('insumos_lk', 'module', 'insumos', 'month', null, null)
+on conflict (lookup_key) do nothing;

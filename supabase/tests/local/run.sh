@@ -18,9 +18,10 @@ for _ in $(seq 1 30); do docker exec "$C" pg_isready -U postgres >/dev/null 2>&1
 
 psql() { docker exec -i "$C" psql -U postgres -d kt -v ON_ERROR_STOP=1 "$@"; }
 
-# El rol authenticated lo crea Supabase; aquí lo stubeamos para que los GRANT pasen.
-psql -c "do \$\$ begin create role authenticated; exception when duplicate_object then null; end \$\$;" >/dev/null
-
 psql < supabase/tests/local/master_grants_fixture.sql >/dev/null
 psql < supabase/migrations/0132_master_grants.sql >/dev/null
+psql < supabase/migrations/0133_stripe_takeover_clears_master_fields.sql >/dev/null
+echo "--- 0132: pruebas 1-4 (§6) ---"
 psql < supabase/tests/local/master_grants_local_tests.sql 2>&1 | grep -E "PASS|FAIL|ALL TESTS"
+echo "--- 0133: ida y vuelta + cancelada/activa ---"
+psql < supabase/tests/local/stripe_takeover_local_tests.sql 2>&1 | grep -E "PASS|FAIL|PASSED"
