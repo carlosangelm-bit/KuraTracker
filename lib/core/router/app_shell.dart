@@ -9,6 +9,7 @@ import 'package:go_router/go_router.dart';
 import '../design/tokens.dart';
 import '../providers/session_provider.dart';
 import '../widgets/kura_glass_card.dart';
+import 'shell_nav_visibility.dart';
 import '../../models/app_user.dart';
 import '../../models/center_type.dart';
 import '../../models/module_key.dart';
@@ -152,6 +153,9 @@ class AppShell extends ConsumerWidget {
     final items = _itemsFor(session.user, modules, session.activeCenterType);
     final selectedIndex = _indexFor(currentPath, items);
     final isWide = MediaQuery.of(context).size.width >= 900;
+    // En /platform el único riel es el de la consola (KuraNavRail): AppShell no
+    // pinta el suyo, para que no haya dos tiras ni doble marca de activo.
+    final showOwnNav = appShellShowsOwnNav(currentPath);
     // La barra flotante solo se muestra en pantallas de NIVEL SUPERIOR (las
     // pestañas). En pantallas "profundas" (detalle de paciente, formularios,
     // captura, seguimiento…) se oculta: son flujos con botón de regresar y, al
@@ -221,7 +225,7 @@ class AppShell extends ConsumerWidget {
         // licencia (Fase 1 §4) el conjunto de módulos puede ser vacío o de uno
         // solo por un instante mientras cargan los derechos; en ese caso NO se
         // monta el rail (mostrar solo el contenido) en vez de reventar el assert.
-        child: isWide && destinationsRail.length >= 2
+        child: isWide && showOwnNav && destinationsRail.length >= 2
           ? Row(
               children: [
                 NavigationRail(
@@ -255,7 +259,10 @@ class AppShell extends ConsumerWidget {
       // Se oculta también cuando hay <2 destinos: NavigationBar exige ≥2, y el
       // conjunto de módulos puede quedar vacío/de uno por un instante bajo el AND
       // por licencia (Fase 1 §4). Mejor sin barra que un crash de assert.
-      bottomNavigationBar: (isWide || !isTopLevel || mobileDestinations.length < 2)
+      bottomNavigationBar: (isWide ||
+              !isTopLevel ||
+              mobileDestinations.length < 2 ||
+              !showOwnNav)
           ? null
           : SafeArea(
               top: false,

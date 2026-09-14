@@ -30,7 +30,14 @@ List<NavDestination> kuraNavDestinations({
     mod(ModuleKey.insumos, Icons.inventory_2_outlined),
     mod(ModuleKey.comercial, Icons.sell_outlined),
     mod(ModuleKey.vac, Icons.healing_outlined),
-    mod(ModuleKey.ekare, Icons.file_upload_outlined),
+    // Importar expedientes: módulo clínico Y destino del master (antes vivía en la
+    // tira externa de /platform). Visible si el módulo está encendido o si es master.
+    NavDestination(
+      label: ModuleKey.ekare.label,
+      icon: Icons.file_upload_outlined,
+      route: ModuleKey.ekare.route,
+      visibleWhen: () => moduleEnabled(ModuleKey.ekare.dbValue) || isMaster,
+    ),
     NavDestination(
       label: 'Administración',
       icon: Icons.settings_outlined,
@@ -112,11 +119,18 @@ List<NavDestination> kuraNavDestinations({
   ];
 }
 
-/// Las secciones del master, listas para el riel de /platform: la declaración
-/// filtrada a "Plataforma" (y sus nueve hijos). Fuente única — la misma
-/// declaración de [kuraNavDestinations].
-List<NavDestination> platformNavDestinations() => kuraNavDestinations(
-      moduleEnabled: (_) => false,
-      isAdmin: false,
-      isMaster: true,
-    ).where((d) => d.route == '/platform').toList();
+/// El riel del master en /platform: sus destinos de primer nivel — "Plataforma"
+/// (con sus nueve secciones) y "Importar expedientes", hermanos — sacados de la
+/// MISMA declaración de [kuraNavDestinations] (filtrada a lo visible para el master).
+/// Plataforma va primero. Es el ÚNICO riel de la pantalla: AppShell no pinta el suyo
+/// en /platform (ver appShellShowsOwnNav).
+List<NavDestination> platformNavDestinations() {
+  final visible = kuraNavDestinations(
+    moduleEnabled: (_) => false,
+    isAdmin: false,
+    isMaster: true,
+  ).where((d) => d.isVisible).toList();
+  final plataforma = visible.firstWhere((d) => d.route == '/platform');
+  final rest = visible.where((d) => d.route != '/platform');
+  return [plataforma, ...rest];
+}
