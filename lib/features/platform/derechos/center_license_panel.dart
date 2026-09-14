@@ -6,9 +6,9 @@ import '../../../core/format/money.dart';
 import '../../../core/widgets/kura_data_table.dart';
 import '../../../core/widgets/kura_stat.dart';
 import '../../../models/app_user.dart';
-import '../../../models/module_key.dart';
 import '../../../models/org_entitlement.dart';
 import '../../../services/data_repository.dart';
+import 'center_license_data.dart';
 import 'module_agreement.dart';
 
 /// Centro · Licencia (§5.2), consola master · Derechos, etapa 2. La pantalla que
@@ -28,14 +28,6 @@ class CenterLicensePanel extends StatelessWidget {
     required this.user,
   });
 
-  // Un módulo de pago del grupo Módulos. `switchKey` = null cuando el módulo no
-  // tiene interruptor propio (admin se gatea por rol/derecho, no por module_settings).
-  static const _modules = <({String key, String label, ModuleKey? switchKey})>[
-    (key: 'admin', label: 'Administración avanzada', switchKey: null),
-    (key: 'insumos', label: 'Insumos', switchKey: ModuleKey.insumos),
-    (key: 'comercial', label: 'Comercial', switchKey: ModuleKey.comercial),
-  ];
-
   static const _seats = <({String key, String label})>[
     (key: 'clinico', label: 'Asientos clínicos'),
     (key: 'protocolo', label: 'Protocolo Kura+'),
@@ -46,18 +38,6 @@ class CenterLicensePanel extends StatelessWidget {
       if (e.kind == kind && e.key == key) return e;
     }
     return null;
-  }
-
-  /// El INTERRUPTOR crudo del centro (module_settings a nivel centro), independiente
-  /// del derecho: es justo lo que permite detectar el "encendido sin derecho".
-  bool _centerSwitch(ModuleKey m) {
-    final ct = repo.centerTypeFor(organizationId);
-    for (final s in repo.listModuleSettings(organizationId: organizationId)) {
-      if (s.moduleKey == m.dbValue && s.siteId == null && s.profileId == null) {
-        return s.enabled;
-      }
-    }
-    return m.defaultFor(ct);
   }
 
   String _nameFor(String? profileId) {
@@ -93,41 +73,14 @@ class CenterLicensePanel extends StatelessWidget {
     final ents = repo.entitlementsFor(orgId);
     final fmt = DateFormat('dd/MM/yyyy');
 
-    // Datos por módulo (incluye el acuerdo derecho×interruptor).
-    final moduleRows = <({
-      String label,
-      OrgEntitlement? ent,
-      bool hasRight,
-      bool hasSwitch,
-      bool switchOn,
-      ModuleAgreement agreement,
-      int? amountCents,
-    })>[];
-    var disagreements = 0;
-    var rightsActive = 0;
-    for (final m in _modules) {
-      final e = _ent(ents, 'module', m.key);
-      final hasRight = e != null && e.status == 'active';
-      if (hasRight) rightsActive++;
-      final hasSwitch = m.switchKey != null;
-      // Sin interruptor propio (admin): el "interruptor" sigue al derecho, así nunca
-      // aparece un desacuerdo falso.
-      final switchOn = hasSwitch ? _centerSwitch(m.switchKey!) : hasRight;
-      final ag = moduleAgreement(hasRight: hasRight, switchOn: switchOn);
-      if (ag.kind == ModuleAgreementCase.rightOff ||
-          ag.kind == ModuleAgreementCase.onWithoutRight) {
-        disagreements++;
-      }
-      moduleRows.add((
-        label: m.label,
-        ent: e,
-        hasRight: hasRight,
-        hasSwitch: hasSwitch,
-        switchOn: switchOn,
-        agreement: ag,
-        amountCents: repo.unitAmountCents('module', m.key, 'month'),
-      ));
-    }
+    // Filas de Módulos con su acuerdo derecho×interruptor (lógica en center_license_data).
+    final moduleRows = moduleLicenseRows(repo, orgId);
+    final rightsActive = moduleRows.where((r) => r.hasRight).length;
+    final disagreements = moduleRows
+        .where((r) =>
+            r.agreement.kind == ModuleAgreementCase.rightOff ||
+            r.agreement.kind == ModuleAgreementCase.onWithoutRight)
+        .length;
 
     final summary = repo.licenseSummaryFor(orgId);
 
@@ -140,7 +93,7 @@ class CenterLicensePanel extends StatelessWidget {
           KuraStat(
             label: 'Módulos con derecho',
             value: '$rightsActive',
-            meaning: 'de ${_modules.length} de pago',
+            meaning: 'de ${moduleRows.length} de pago',
           ),
           KuraStat(
             label: 'Desacuerdos',
@@ -217,7 +170,7 @@ class CenterLicensePanel extends StatelessWidget {
         },
       );
 
-  Widget _modulesTable(BrandTokens t, List rows) {
+  Widget _modulesTable(BrandTokens t, List<ModuleLicenseRow> rows) {
     return KuraDataTable(
       columns: const [
         KuraColumn(label: 'Módulo', fraction: 0.16),
@@ -231,24 +184,59 @@ class CenterLicensePanel extends StatelessWidget {
       ],
       rows: [
         for (final r in rows)
-          KuraRow(id: r.label, cells: [
-            KuraCell.identity(name: r.label as String, icon: Icons.widgets_outlined),
-            KuraCell.pill(_origen(r.ent as OrgEntitlement?),
-                muted: (r.ent as OrgEntitlement?) == null),
-            _mutedText(t, (r.ent as OrgEntitlement?)?.grantType ?? '—'),
-            _mutedText(t, _nameFor((r.ent as OrgEntitlement?)?.grantedBy)),
-            _mutedText(t, _vigencia(r.ent as OrgEntitlement?)),
-            _mutedText(
-                t,
-                (r.hasSwitch as bool)
-                    ? ((r.switchOn as bool) ? 'Encendido' : 'Apagado')
-                    : '—'),
-            KuraCell.custom(
-                build: (t) =>
-                    ModuleAgreementLabel(r.agreement as ModuleAgreement)),
-            KuraCell.money(r.amountCents as int?),
+          KuraRow(id: r.key, cells: [
+            _moduleNameCell(t, r),
+            KuraCell.pill(_origen(r.ent), muted: r.ent == null),
+            _mutedText(t, grantTypeLabel(r.ent?.grantType)),
+            _mutedText(t, _nameFor(r.ent?.grantedBy)),
+            _mutedText(t, _vigencia(r.ent)),
+            _mutedText(t, r.hasSwitch ? (r.switchOn ? 'Encendido' : 'Apagado') : '—'),
+            KuraCell.custom(build: (t) => ModuleAgreementLabel(r.agreement)),
+            KuraCell.money(r.amountCents),
           ]),
       ],
+    );
+  }
+
+  /// Celda de nombre del módulo con el MOTIVO debajo, entre comillas y en
+  /// textSecondary, SOLO en filas otorgadas a mano (source='master'). Una fila de
+  /// Stripe no muestra comillas vacías (moduleReasonLine devuelve null).
+  KuraCell _moduleNameCell(BrandTokens t, ModuleLicenseRow r) {
+    final reason = moduleReasonLine(r.ent);
+    return KuraCell.custom(
+      sortValue: r.label.toLowerCase(),
+      build: (t) => Row(
+        children: [
+          Container(
+            width: 30,
+            height: 30,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+                color: t.chipBg, borderRadius: BorderRadius.circular(7)),
+            child: Icon(Icons.widgets_outlined, size: 16, color: t.brandPrimary),
+          ),
+          const SizedBox(width: 11),
+          Flexible(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(r.label,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: t.textPrimary)),
+                if (reason != null)
+                  Text(reason,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontSize: 11, color: t.textSecondary)),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -275,7 +263,7 @@ class CenterLicensePanel extends StatelessWidget {
             return KuraRow(id: s.key, cells: [
               KuraCell.identity(name: s.label, icon: Icons.event_seat_outlined),
               KuraCell.pill(_origen(e), muted: e == null),
-              _mutedText(t, e?.grantType ?? '—'),
+              _mutedText(t, grantTypeLabel(e?.grantType)),
               _mutedText(t, _nameFor(e?.grantedBy)),
               _mutedText(t, _vigencia(e)),
               e == null
