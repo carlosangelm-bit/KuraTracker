@@ -7,7 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/theme/kura_theme.dart';
 import '../../core/providers/session_provider.dart';
-import '../../core/router/app_shell.dart' show UserMenuButton, centerTypeColor;
+import '../../core/router/app_shell.dart' show centerTypeColor;
 import '../../core/widgets/kura_primary_fab.dart';
 import '../../core/nav/kura_nav_destinations.dart';
 import '../../core/nav/kura_nav_rail.dart';
@@ -247,59 +247,60 @@ class _PlatformSectionsShellState extends ConsumerState<PlatformSectionsShell> {
     // colapsar/expandir manda por encima del ancho una vez que el usuario lo toca.
     final autoCollapsed = MediaQuery.of(context).size.width < 1200;
     final collapsed = _userCollapsed ?? autoCollapsed;
-    final open = !collapsed;
     final navs = platformNavDestinations();
     final plataforma = navs.first; // "Plataforma" con sus 9 secciones
     final user = ref.watch(sessionProvider).user;
-    final withHeader = open
-        ? widget.child
-        : Column(
-            children: [
-              Padding(
-                padding: const EdgeInsets.all(12),
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: KuraSectionMenu(
-                      section: plataforma, currentRoute: widget.currentRoute),
-                ),
-              ),
-              const Divider(height: 1),
-              Expanded(child: widget.child),
-            ],
-          );
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Plataforma'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.download_outlined),
-            tooltip: 'Descargar parámetros clínicos (CSV)',
-            onPressed: _downloadClinicalParams,
-          ),
-          IconButton(
-            icon: const Icon(Icons.upload_outlined),
-            tooltip: 'Cargar parámetros clínicos (CSV)',
-            onPressed: _uploadClinicalParams,
-          ),
-          // Anomalías de facturación ABIERTAS: señal que llega (no un log). Solo el
-          // master las ve (RLS). El badge muestra el conteo; al tocar, el detalle.
-          Builder(builder: (_) {
-            final count = repoAsync.valueOrNull?.openBillingAnomaliesCount() ?? 0;
-            return Badge(
-              isLabelVisible: count > 0,
-              label: Text('$count'),
-              child: IconButton(
-                icon: const Icon(Icons.report_gmailerrorred_outlined),
-                tooltip: count > 0
-                    ? '$count anomalía(s) de facturación abierta(s)'
-                    : 'Anomalías de facturación',
-                onPressed: () => _showBillingAnomalies(repoAsync.valueOrNull),
-              ),
-            );
-          }),
-          const UserMenuButton(),
-        ],
+
+    // Los iconos de acción que vivían en la barra superior (importar/exportar
+    // parámetros clínicos y las anomalías de facturación) se mudan al área de
+    // acciones del encabezado de contenido. La identidad NO se muda: se elimina — el
+    // pie del riel ya dice quién eres y en qué centro, así que un avatar en la esquina
+    // duplicaría. Por eso ya no va UserMenuButton.
+    final actions = <Widget>[
+      IconButton(
+        icon: const Icon(Icons.download_outlined),
+        tooltip: 'Descargar parámetros clínicos (CSV)',
+        onPressed: _downloadClinicalParams,
       ),
+      IconButton(
+        icon: const Icon(Icons.upload_outlined),
+        tooltip: 'Cargar parámetros clínicos (CSV)',
+        onPressed: _uploadClinicalParams,
+      ),
+      // Anomalías de facturación ABIERTAS: señal que llega (no un log). Solo el
+      // master las ve (RLS). El badge muestra el conteo; al tocar, el detalle.
+      Builder(builder: (_) {
+        final count = repoAsync.valueOrNull?.openBillingAnomaliesCount() ?? 0;
+        return Badge(
+          isLabelVisible: count > 0,
+          label: Text('$count'),
+          child: IconButton(
+            icon: const Icon(Icons.report_gmailerrorred_outlined),
+            tooltip: count > 0
+                ? '$count anomalía(s) de facturación abierta(s)'
+                : 'Anomalías de facturación',
+            onPressed: () => _showBillingAnomalies(repoAsync.valueOrNull),
+          ),
+        );
+      }),
+    ];
+
+    // SIN AppBar: el encabezado va DENTRO del área de contenido (canvas). "Plataforma"
+    // (la sección padre) sale una sola vez, en ese encabezado; en angosto lleva el
+    // menú Sección › Subsección ▾.
+    final content = Column(
+      children: [
+        KuraContentHeader(
+          section: plataforma,
+          currentRoute: widget.currentRoute,
+          collapsed: collapsed,
+          actions: actions,
+        ),
+        const Divider(height: 1),
+        Expanded(child: widget.child),
+      ],
+    );
+    return Scaffold(
       body: Row(
         children: [
           KuraNavRail(
@@ -315,7 +316,7 @@ class _PlatformSectionsShellState extends ConsumerState<PlatformSectionsShell> {
                 setState(() => _userCollapsed = !collapsed),
           ),
           const VerticalDivider(width: 1),
-          Expanded(child: withHeader),
+          Expanded(child: content),
         ],
       ),
     );

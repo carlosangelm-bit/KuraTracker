@@ -360,6 +360,75 @@ class _KuraNavRailState extends State<KuraNavRail> {
   static Key _activeKey(String route) => ValueKey('nav-active:$route');
 }
 
+/// Encabezado DENTRO del área de contenido (canvas "Navegación KuraTracker", tablero
+/// "Escritorio · riel abierto"): NO hay barra de título por encima del contenido. Va
+/// sobre [BrandTokens.surface] con padding 18×32, la sección PADRE en 11 px
+/// textSecondary encima del TÍTULO en 28 px w800 (la subsección activa, derivada de
+/// [currentRoute]), alineados a la izquierda, y las acciones a la derecha en la misma
+/// fila. En angosto (riel colapsado) el bloque izquierdo es el mismo menú
+/// `Sección › Subsección ▾` ([KuraSectionMenu]) que ya existía, ahora como parte de
+/// ESTE encabezado y no de una franja aparte. La identidad NO va aquí: el pie del riel
+/// ya dice quién eres y en qué centro (no se duplica un avatar en la esquina).
+class KuraContentHeader extends StatelessWidget {
+  final NavDestination section; // padre: Administración / Plataforma
+  final String currentRoute;
+  final bool collapsed; // angosto → menú de sección en vez de la miga estática
+  final List<Widget> actions;
+  const KuraContentHeader({
+    super.key,
+    required this.section,
+    required this.currentRoute,
+    required this.collapsed,
+    this.actions = const [],
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final t = BrandTokens.of(context);
+    final children = section.children.where((c) => c.isVisible).toList();
+    final active = children.where((c) => c.route == currentRoute);
+    final title = active.isEmpty ? section.label : active.first.label;
+
+    final Widget left = collapsed
+        ? KuraSectionMenu(section: section, currentRoute: currentRoute)
+        : Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(section.label,
+                  style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: t.textSecondary)),
+              const SizedBox(height: 2),
+              // El TÍTULO (la subsección activa) aparece UNA sola vez en la pantalla:
+              // no hay AppBar que lo repita. Con llave para poder afirmarlo.
+              Text(title,
+                  key: const ValueKey('content-header-title'),
+                  style: TextStyle(
+                      fontSize: 28,
+                      fontWeight: FontWeight.w800,
+                      height: 1.1,
+                      color: t.textPrimary)),
+            ],
+          );
+
+    return Container(
+      color: t.surface,
+      padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 18),
+      child: Row(
+        children: [
+          Expanded(
+            child: Align(alignment: Alignment.centerLeft, child: left),
+          ),
+          if (actions.isNotEmpty)
+            Row(mainAxisSize: MainAxisSize.min, children: actions),
+        ],
+      ),
+    );
+  }
+}
+
 /// Menú del ENCABEZADO del contenido en estado colapsado (§2.2): dice la sección
 /// activa como `Administración › Configuración ▾` y despliega las hermanas (los
 /// hijos del destino). En colapsado los hijos NO están en el riel, así que ESTE menú

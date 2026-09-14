@@ -24,7 +24,6 @@ import '../../core/name_format.dart';
 import '../../core/config/app_config.dart';
 import '../../core/providers/session_provider.dart';
 import '../../core/utils/caregiver_login.dart';
-import '../../core/router/app_shell.dart' show UserMenuButton;
 import '../../core/widgets/kura_primary_fab.dart';
 import '../../core/nav/kura_nav_rail.dart';
 import '../../core/nav/kura_nav_destinations.dart';
@@ -78,7 +77,6 @@ class _AdminSectionsShellState extends ConsumerState<AdminSectionsShell> {
     // manda por encima del ancho una vez que el usuario lo toca.
     final autoCollapsed = MediaQuery.of(context).size.width < 1200;
     final collapsed = _userCollapsed ?? autoCollapsed;
-    final open = !collapsed;
     // UN solo riel: la MISMA declaración de la app, con los destinos clínicos de
     // primer nivel y Administración anidando sus seis secciones.
     final modules = ref.watch(enabledModulesProvider);
@@ -91,27 +89,22 @@ class _AdminSectionsShellState extends ConsumerState<AdminSectionsShell> {
     );
     final admin = navs.firstWhere((d) => d.route == '/admin');
 
-    final withHeader = open
-        ? child
-        : Column(
-            children: [
-              Padding(
-                padding: const EdgeInsets.all(12),
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: KuraSectionMenu(
-                      section: admin, currentRoute: currentRoute),
-                ),
-              ),
-              const Divider(height: 1),
-              Expanded(child: child),
-            ],
-          );
+    // SIN AppBar: el encabezado vive DENTRO del área de contenido (canvas). El nombre
+    // de la sección sale una sola vez, ahí. En angosto ese mismo encabezado lleva el
+    // menú Sección › Subsección ▾. Administración no tiene acciones (la identidad se
+    // eliminó: el pie del riel ya dice quién eres y en qué centro).
+    final content = Column(
+      children: [
+        KuraContentHeader(
+          section: admin,
+          currentRoute: currentRoute,
+          collapsed: collapsed,
+        ),
+        const Divider(height: 1),
+        Expanded(child: child),
+      ],
+    );
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Administración'),
-        actions: const [UserMenuButton()],
-      ),
       body: Row(
         children: [
           KuraNavRail(
@@ -125,7 +118,7 @@ class _AdminSectionsShellState extends ConsumerState<AdminSectionsShell> {
                 setState(() => _userCollapsed = !collapsed),
           ),
           const VerticalDivider(width: 1),
-          Expanded(child: withHeader),
+          Expanded(child: content),
         ],
       ),
     );
