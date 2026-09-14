@@ -301,8 +301,6 @@ class _PlatformSectionsShellState extends ConsumerState<PlatformSectionsShell> {
       ],
     );
     return Scaffold(
-      // [EXPERIMENTO rojo — REVERTIR] Barra superior "dejada" → prueba en rojo.
-      appBar: AppBar(title: const Text('Plataforma')),
       body: Row(
         children: [
           KuraNavRail(

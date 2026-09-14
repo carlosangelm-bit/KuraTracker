@@ -105,9 +105,6 @@ class _AdminSectionsShellState extends ConsumerState<AdminSectionsShell> {
       ],
     );
     return Scaffold(
-      // [EXPERIMENTO rojo — REVERTIR] Barra superior "dejada": debe duplicar el nombre
-      // de la sección y reintroducir el AppBar → prueba del encabezado en rojo.
-      appBar: AppBar(title: const Text('Administración')),
       body: Row(
         children: [
           KuraNavRail(
