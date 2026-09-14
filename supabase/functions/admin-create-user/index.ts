@@ -129,6 +129,31 @@ serve(async (req) => {
     organizationId = callerProfile.organization_id as string;
   }
 
+  // 3.5) Tope de asientos (Fase 1 §6): validar ANTES de crear (no en la factura).
+  //       La regla vive en la base (assert_seat_available), compartida con
+  //       create_organization_with_admin. Los mensajes SEAT_* se traducen a una
+  //       respuesta accionable que la pantalla convierte en la oferta de comprar.
+  //       El cuidador no consume y la función lo deja pasar.
+  {
+    const { error: seatErr } = await admin.rpc("assert_seat_available", {
+      p_org: organizationId,
+      p_roles: roles,
+    });
+    if (seatErr) {
+      const msg = seatErr.message ?? "";
+      // SEAT_REQUIRES_ADMIN_MODULE se retiró (Administración básica va incluida con la
+      // licencia clínica): un administrativo sin cupo consume asiento clínico, así que
+      // el único rechazo por tope es SEAT_NO_CLINICAL (la demanda supera los asientos).
+      if (msg.includes("SEAT_NO_CLINICAL")) {
+        return json({
+          error: "No hay asientos disponibles en la licencia del centro. Compra más asientos para dar de alta a esta persona.",
+          code: "seat_limit",
+        }, 402);
+      }
+      return json({ error: `No se pudo validar la licencia del centro: ${msg}` }, 400);
+    }
+  }
+
   // 4) Crear la cuenta en Auth. El trigger handle_new_auth_user() creará el
   //    profile leyendo role/full_name/organization_id de user_metadata.
   //    Para el cuidador (login por teléfono + clave), el admin FIJA la clave y

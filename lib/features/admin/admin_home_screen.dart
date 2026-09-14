@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -11,83 +12,59 @@ import 'package:file_picker/file_picker.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../core/theme/kura_theme.dart';
+import '../../core/design/tokens.dart';
+import '../../core/design/tints.dart';
+import '../../core/widgets/kura_data_table.dart';
+import '../../core/widgets/kura_action_bar.dart';
+import '../../core/widgets/kura_module_lock.dart';
+import '../../core/widgets/kura_empty_state.dart';
+import '../../core/widgets/kura_error_state.dart';
+import '../../core/widgets/dashed_border_box.dart';
 import '../../core/name_format.dart';
-import '../../core/layout/responsive.dart';
 import '../../core/config/app_config.dart';
 import '../../core/providers/session_provider.dart';
 import '../../core/utils/caregiver_login.dart';
-import '../../core/router/app_shell.dart' show UserMenuButton;
+import '../../core/router/app_shell.dart' show KuraAccountMenu;
 import '../../core/widgets/kura_primary_fab.dart';
+import '../../core/nav/kura_nav_rail.dart';
+import '../../core/nav/kura_nav_destinations.dart';
+import 'license_panel.dart';
 import '../../models/app_user.dart';
+import '../../models/module_key.dart';
 import '../../models/note_option_catalog.dart';
 import '../../models/site.dart';
 import '../../models/staff.dart';
 import '../../services/csv_download.dart';
 import '../../services/data_repository.dart';
-import 'protocol_kura_screen.dart';
-import 'protocol_product_rules_screen.dart';
-import 'acuity_session_type_screen.dart';
-import 'acuity_visit_type_map_screen.dart';
-import 'scale_toggles_screen.dart';
-import 'recommendations_reference_screen.dart';
-import 'patient_cleanup_screen.dart';
-import 'data_disclosures_screen.dart';
 import '../../services/photo_upload_service.dart';
 
 /// Panel de administración: gestión de personal sanitario, sitios y
 /// activación de usuarios / función premium (sección 4).
-class AdminHomeScreen extends ConsumerStatefulWidget {
-  const AdminHomeScreen({super.key});
+/// SHELL de las secciones de Administración: pinta el riel único (KuraNavRail) y, en
+/// colapsado, el menú del encabezado; el cuerpo de la sección llega como [child].
+/// Vive en un ShellRoute ANIDADO, así que cambiar de sección NO reconstruye el riel —
+/// solo cambia el child. Se ve como cambiar de panel, no como cargar otra página.
+class AdminSectionsShell extends ConsumerStatefulWidget {
+  final Widget child;
+  final String currentRoute; // /admin/<section>
+  const AdminSectionsShell(
+      {super.key, required this.child, required this.currentRoute});
 
   @override
-  ConsumerState<AdminHomeScreen> createState() => _AdminHomeScreenState();
+  ConsumerState<AdminSectionsShell> createState() =>
+      _AdminSectionsShellState();
 }
 
-class _AdminHomeScreenState extends ConsumerState<AdminHomeScreen>
-    with SingleTickerProviderStateMixin {
-  int _tab = 0;
-  // TabController propio y explícito: NO depende de DefaultTabController.
-  //
-  // Bug previo: `TabBar` vivía en `AppBar.bottom` mientras `DefaultTabController`
-  // envolvía solo el `body`. En el árbol de widgets, TabBar y DefaultTabController
-  // quedaban como HERMANOS (AppBar y body son ambos hijos directos de Scaffold),
-  // no en relación ancestro/descendiente. Por eso `DefaultTabController.maybeOf(context)`
-  // -llamado internamente por TabBar- devolvía null. En debug esto lanza un
-  // FlutterError controlado por assert(); en release (el build real desplegado)
-  // el assert se elimina y el controller interno de TabBar queda null, causando
-  // luego "Null check operator used on a null value" dentro del propio framework
-  // de Flutter (_TabBarState), no en código de esta pantalla. Ocurría siempre,
-  // con datos vacíos o no: no dependía de que el admin tuviera o no fila en `staff`.
-  late final TabController _tabController = TabController(length: 5, vsync: this)
-    ..addListener(() {
-      if (_tabController.indexIsChanging) return;
-      if (_tabController.index != _tab) {
-        setState(() => _tab = _tabController.index);
-      }
-    });
-
-  @override
-  void dispose() {
-    _tabController.dispose();
-    super.dispose();
-  }
+class _AdminSectionsShellState extends ConsumerState<AdminSectionsShell> {
+  // Colapso MANUAL del riel. null = seguir el ancho (auto); true/false = elección
+  // del usuario. Vive en el State del shell, que persiste en el ShellRoute, así que
+  // la elección sobrevive a los cambios de sección.
+  bool? _userCollapsed;
 
   @override
   Widget build(BuildContext context) {
-    final repoAsync = ref.watch(dataRepositoryProvider);
-    // organizationId del admin en sesion: se pasa explicitamente a cada tab
-    // para que las altas (staff/sitio/concepto de catalogo) queden
-    // correctamente acotadas al centro del admin (columnas not null en
-    // Supabase, ver 0011_organizations.sql), en vez de derivarlo de forma
-    // implicita dentro de cada dialogo.
-    final organizationId = ref.watch(sessionProvider).user?.organizationId;
-    // Id del usuario en sesion: la pestana de Usuarios lo usa para impedir que
-    // el admin se cambie el rol o se desactive a si mismo (auto-bloqueo).
-    final currentUserId = ref.watch(sessionProvider).user?.id;
-    // Desktop: secciones como rail lateral (maestro) + contenido (detalle);
-    // móvil conserva el TabBar horizontal.
-    final wide = MediaQuery.of(context).size.width >= Breakpoints.twoPane;
-
+    final child = widget.child;
+    final currentRoute = widget.currentRoute;
     // Guarda de rol (2ª capa; el redirect del router es la 1ª). En web una URL
     // no es candado: solo admin del centro y master ven Administración. Un
     // clinico que llegue aquí por cualquier ruta no ve nada administrativo.
@@ -97,72 +74,154 @@ class _AdminHomeScreenState extends ConsumerState<AdminHomeScreen>
         body: Center(child: Text('No tienes acceso a esta sección.')),
       );
     }
+    // Riel abierto ≥1200 px por defecto (§2.1/§2.2); el botón de colapsar/expandir
+    // manda por encima del ancho una vez que el usuario lo toca.
+    final autoCollapsed = MediaQuery.of(context).size.width < 1200;
+    final collapsed = _userCollapsed ?? autoCollapsed;
+    // UN solo riel: la MISMA declaración de la app, con los destinos clínicos de
+    // primer nivel y Administración anidando sus seis secciones.
+    final modules = ref.watch(enabledModulesProvider);
+    final navs = kuraNavDestinations(
+      moduleEnabled: (k) => modules.any((m) => m.dbValue == k),
+      isAdmin: true,
+      isMaster: false,
+      // Tipo de centro activo: define la rama de agenda (hospital → Rondas).
+      centerType: ref.watch(sessionProvider).activeCenterType,
+    );
+    final admin = navs.firstWhere((d) => d.route == '/admin');
 
+    // SIN AppBar: el encabezado vive DENTRO del área de contenido (canvas). El nombre
+    // de la sección sale una sola vez, ahí. En angosto ese mismo encabezado lleva el
+    // menú Sección › Subsección ▾. Administración no tiene acciones (la identidad se
+    // eliminó: el pie del riel ya dice quién eres y en qué centro).
+    final content = Column(
+      children: [
+        KuraContentHeader(
+          section: admin,
+          currentRoute: currentRoute,
+          collapsed: collapsed,
+        ),
+        const Divider(height: 1),
+        Expanded(child: child),
+      ],
+    );
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Administración'),
-        actions: const [UserMenuButton()],
-        bottom: wide
-            ? null
-            : TabBar(
-                controller: _tabController,
-                tabs: const [
-                  Tab(text: 'Usuarios'),
-                  Tab(text: 'Personal sanitario'),
-                  Tab(text: 'Sitios'),
-                  Tab(text: 'Configuración'),
-                  Tab(text: 'Marca'),
-                ],
-                // Mueve el controller además del estado de contenido; si solo
-                // se cambia `_tab`, el indicador del TabBar queda un paso atrás
-                // (mismo patrón que el rail de escritorio abajo).
-                onTap: (i) => setState(() {
-                  _tab = i;
-                  _tabController.index = i;
-                }),
-              ),
-      ),
-      body: repoAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, st) => Center(child: Text('Error: $e')),
-        data: (repo) {
-          final Widget tab = switch (_tab) {
-            1 => StaffTab(repo: repo, organizationId: organizationId),
-            2 => SitesTab(repo: repo, organizationId: organizationId),
-            3 => NoteCatalogTab(repo: repo, organizationId: organizationId),
-            4 => BrandingTab(repo: repo, organizationId: organizationId),
-            _ => UsersTab(
-                repo: repo,
-                organizationId: organizationId,
-                currentUserId: currentUserId,
-              ),
-          };
-          // Móvil: contenido acotado; desktop: rail de secciones + contenido.
-          if (!wide) return PageMaxWidth(maxWidth: 1100, child: tab);
-          return Row(
-            children: [
-              SectionRail(
-                selectedIndex: _tab,
-                onSelected: (i) => setState(() {
-                  _tab = i;
-                  _tabController.index = i;
-                }),
-                destinations: const [
-                  (Icons.people_outline, 'Usuarios'),
-                  (Icons.medical_services_outlined, 'Personal'),
-                  (Icons.location_on_outlined, 'Sitios'),
-                  (Icons.settings_outlined, 'Config.'),
-                  (Icons.palette_outlined, 'Marca'),
-                ],
-              ),
-              const VerticalDivider(width: 1),
-              Expanded(child: tab),
-            ],
-          );
-        },
+      body: Row(
+        children: [
+          KuraNavRail(
+            destinations: navs,
+            currentRoute: currentRoute,
+            collapsed: collapsed,
+            brandName: 'KuraTracker',
+            userName: sessionUser?.fullName,
+            centerName: 'Administración',
+            onToggleCollapse: () =>
+                setState(() => _userCollapsed = !collapsed),
+            // El pie del riel es el menú de cuenta (cerrar sesión, etc.): al quitar
+            // el AppBar se fue el UserMenuButton, así que la identidad ES el control.
+            accountMenuBuilder: (ctx, child) => KuraAccountMenu(child: child),
+          ),
+          const VerticalDivider(width: 1),
+          Expanded(child: content),
+        ],
       ),
     );
   }
+}
+
+/// El CUERPO de una sección de Administración (solo el panel, sin riel). Lo construye
+/// cada ruta de sección con NoTransitionPage — cambiar de sección no navega, cambia el
+/// panel dentro del mismo shell.
+class AdminSectionBody extends ConsumerWidget {
+  final String section;
+  const AdminSectionBody({super.key, required this.section});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final repoAsync = ref.watch(dataRepositoryProvider);
+    final sessionUser = ref.watch(sessionProvider).user;
+    // organizationId/currentUserId del admin en sesión, acotan las altas al centro.
+    final organizationId = sessionUser?.organizationId;
+    final currentUserId = sessionUser?.id;
+    return repoAsync.when(
+      loading: () => const Center(child: CircularProgressIndicator()),
+      error: (e, st) => Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: KuraErrorState(
+            title: 'No pudimos cargar la administración',
+            reassurance:
+                'Puede ser tu conexión. Tus datos están a salvo: nada se '
+                'perdió ni se guardó a medias.',
+            detail: '$e',
+            onRetry: () => ref.invalidate(dataRepositoryProvider),
+          ),
+        ),
+      ),
+      data: (repo) {
+        switch (section) {
+          case 'personal':
+            return StaffTab(repo: repo, organizationId: organizationId);
+          case 'sitios':
+            return SitesTab(repo: repo, organizationId: organizationId);
+          case 'configuracion':
+            return NoteCatalogTab(repo: repo, organizationId: organizationId);
+          case 'marca':
+            return repo.premiumAdminFor(organizationId)
+                ? BrandingTab(repo: repo, organizationId: organizationId)
+                : const _AdminModuleLocked('La personalización de marca');
+          case 'licencias':
+            return LicensePanel(
+                repo: repo, organizationId: organizationId, user: sessionUser);
+          default:
+            return UsersTab(
+                repo: repo,
+                organizationId: organizationId,
+                currentUserId: currentUserId);
+        }
+      },
+    );
+  }
+}
+
+/// Candado del módulo Administración (AVANZADO). Las funciones administrativas
+/// BÁSICAS van incluidas con la licencia clínica; solo lo avanzado (config del
+/// protocolo, sitios extra, marca, 3 cupos admin dedicados) se cobra. Mismo criterio
+/// que _PremiumLocked de Insumos: el mensaje dice qué falta y abre el camino de compra.
+/// NO se gatean, a propósito: la pestaña Licencias (la compra vive ahí), el catálogo
+/// base / escalas / fuente de recomendaciones, el Registro de divulgaciones ni la
+/// exportación del expediente (custodia NOM-004/LFPDPPP no depende del pago).
+void _showAdminModuleUpsell(BuildContext context) {
+  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+      content: Text(
+          'Esta función es parte del módulo Administración avanzada. Solicítalo '
+          'a tu administrador de plataforma para habilitarla.')));
+}
+
+/// Pantalla completa detrás del módulo Administración (avanzado): reemplaza el
+/// contenido de una pestaña cuando el centro no lo tiene (p. ej. Marca).
+class _AdminModuleLocked extends StatelessWidget {
+  final String feature;
+  const _AdminModuleLocked(this.feature);
+  @override
+  Widget build(BuildContext context) => Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.workspace_premium_outlined,
+                  color: KuraColors.warning),
+              const SizedBox(height: 8),
+              Text(
+                '$feature es parte del módulo Administración avanzada.\n'
+                'Solicítalo a tu administrador de plataforma para habilitarlo.',
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        ),
+      );
 }
 
 /// Pestaña de gestión de usuarios y roles. Se reutiliza en dos contextos:
@@ -675,6 +734,29 @@ class _UserFormDialogState extends State<_UserFormDialog> {
     final roleErr = validateRoleSet(_roles);
     if (roleErr != null) {
       setState(() => _error = roleErr);
+      return;
+    }
+    // Gate del módulo Administración (avanzado): un usuario SOLO-administrativo (sin
+    // rol clínico ni enfermería ni cuidador) consume un asiento CLÍNICO cuando el
+    // centro no tiene el módulo (que trae 3 cupos admin dedicados). Se bloquea SOLO
+    // "más allá de lo que permita el conteo": si aún hay asiento clínico libre, el
+    // alta pasa y la base lo absorbe. assert_seat_available sigue siendo la autoridad;
+    // esto evita el viaje y nombra el módulo en vez de un genérico "sin asientos".
+    final adminOnly = _roles.contains(AppRole.admin) &&
+        !_roles.contains(AppRole.clinico) &&
+        !_roles.contains(AppRole.enfermeria) &&
+        !_roles.contains(AppRole.cuidador);
+    if (adminOnly &&
+        !widget.repo.premiumAdminFor(widget.organizationId) &&
+        widget.repo
+            .licenseSummaryFor(widget.organizationId)
+            .clinicalSeats
+            .full) {
+      setState(() => _error =
+          'Este usuario es solo administrativo. Sin el módulo Administración '
+          'avanzada (que incluye 3 cupos admin dedicados) consume un asiento '
+          'clínico, y no '
+          'hay asientos clínicos disponibles. Contrata el módulo o libera un asiento.');
       return;
     }
     setState(() {
@@ -1225,6 +1307,10 @@ class _SitesTabState extends State<SitesTab> {
   @override
   Widget build(BuildContext context) {
     final sites = widget.repo.listSites(organizationId: widget.organizationId);
+    // El PRIMER sitio va incluido; del segundo en adelante requiere el módulo
+    // Administración (avanzado). Editar/activar los existentes no se gatea.
+    final canAddSite =
+        sites.isEmpty || widget.repo.premiumAdminFor(widget.organizationId);
     return Scaffold(
       body: sites.isEmpty
           ? const _EmptyState(
@@ -1273,8 +1359,10 @@ class _SitesTabState extends State<SitesTab> {
               },
             ),
       floatingActionButton: KuraPrimaryFab(
-        onPressed: () => _openSiteForm(),
-        icon: Icons.add_location_alt_outlined,
+        onPressed: canAddSite
+            ? () => _openSiteForm()
+            : () => _showAdminModuleUpsell(context),
+        icon: canAddSite ? Icons.add_location_alt_outlined : Icons.lock_outline,
         label: 'Nuevo',
       ),
     );
@@ -1444,8 +1532,7 @@ class NoteCatalogTab extends StatefulWidget {
 
 class _NoteCatalogTabState extends State<NoteCatalogTab> {
   NoteOptionField _selectedField = NoteOptionField.careType;
-  bool _importing = false;
-  bool _loadingDefaults = false;
+  String _search = '';
 
   /// Carga el catalogo base curado (mismo contenido que la precarga de
   /// 0010_note_option_catalog.sql) para este centro. Pensado sobre todo
@@ -1458,7 +1545,6 @@ class _NoteCatalogTabState extends State<NoteCatalogTab> {
   Future<void> _loadDefaultCatalog() async {
     final organizationId = widget.organizationId;
     if (organizationId == null) return;
-    setState(() => _loadingDefaults = true);
     try {
       final summary = await widget.repo.seedDefaultNoteOptions(organizationId: organizationId);
       if (mounted) {
@@ -1475,7 +1561,7 @@ class _NoteCatalogTabState extends State<NoteCatalogTab> {
         );
       }
     } finally {
-      if (mounted) setState(() => _loadingDefaults = false);
+      if (mounted) setState(() {});
     }
   }
 
@@ -1538,7 +1624,6 @@ class _NoteCatalogTabState extends State<NoteCatalogTab> {
     final bytes = result.files.first.bytes;
     if (bytes == null) return;
 
-    setState(() => _importing = true);
     try {
       final content = String.fromCharCodes(bytes);
       final rawRows = const CsvToListConverter(eol: '\n').convert(content);
@@ -1599,7 +1684,7 @@ class _NoteCatalogTabState extends State<NoteCatalogTab> {
         );
       }
     } finally {
-      if (mounted) setState(() => _importing = false);
+      if (mounted) setState(() {});
     }
   }
 
@@ -1683,305 +1768,670 @@ class _NoteCatalogTabState extends State<NoteCatalogTab> {
 
   @override
   Widget build(BuildContext context) {
-    final options = widget.repo.listAllNoteOptions(_selectedField, organizationId: widget.organizationId);
+    final t = BrandTokens.of(context);
+    final adminLocked = !widget.repo.premiumAdminFor(widget.organizationId);
     return Scaffold(
-      // ListView (no Column): toda la pantalla desplaza como una sola lista.
-      // En movil el encabezado fijo era mas alto que el body disponible (dos
-      // AppBar apiladas + TabBar + NavigationBar), asi que desbordaba: los
-      // ChoiceChip de seccion quedaban recortados ("menus no navegables") y la
-      // lista se quedaba con ~0px ("el slider/Switch no funciona").
       body: ListView(
+        padding: const EdgeInsets.fromLTRB(24, 24, 24, 96),
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Catálogo de la nota de seguimiento',
-                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'Estos conceptos son los que el personal clínico ve como '
-                  'chips al registrar una nota de seguimiento. Configúralos '
-                  'una vez para todo el centro; desactivar no borra el '
-                  'historial de notas que ya los usaron.',
-                  style: TextStyle(fontSize: 12, color: KuraColors.darkText.withOpacity(0.6)),
-                ),
-                const SizedBox(height: 12),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    OutlinedButton.icon(
-                      onPressed: _loadingDefaults ? null : _loadDefaultCatalog,
-                      icon: _loadingDefaults
-                          ? const SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.playlist_add_check_outlined, size: 18),
-                      label: Text(_loadingDefaults ? 'Cargando…' : 'Cargar catálogo base'),
-                    ),
-                    OutlinedButton.icon(
-                      onPressed: _downloadTemplate,
-                      icon: const Icon(Icons.download_outlined, size: 18),
-                      label: const Text('Descargar plantilla CSV'),
-                    ),
-                    OutlinedButton.icon(
-                      onPressed: _importing ? null : _uploadCsv,
-                      icon: _importing
-                          ? const SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.upload_outlined, size: 18),
-                      label: Text(_importing ? 'Importando…' : 'Cargar CSV'),
-                    ),
-                    // Configuración del Protocolo Kura+ vista por categoría:
-                    // asigna, por paso del protocolo, los conceptos del catálogo.
-                    FilledButton.tonalIcon(
-                      onPressed: () => Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => ProtocolKuraScreen(
-                            repo: widget.repo,
-                            organizationId: widget.organizationId,
-                          ),
-                        ),
-                      ),
-                      icon: const Icon(Icons.auto_awesome, size: 18),
-                      label: const Text('Protocolo Kura+'),
-                    ),
-                    // Vínculo protocolo → producto por medida (0076): por
-                    // categoría, qué producto del inventario y en qué cantidad.
-                    FilledButton.tonalIcon(
-                      onPressed: () => Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => ProtocolProductRulesScreen(
-                            repo: widget.repo,
-                            organizationId: widget.organizationId,
-                          ),
-                        ),
-                      ),
-                      icon: const Icon(Icons.inventory_2_outlined, size: 18),
-                      label: const Text('Productos del protocolo'),
-                    ),
-                    // Tipo de cita de Acuity para las sesiones del plan (0080).
-                    FilledButton.tonalIcon(
-                      onPressed: () => Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => AcuitySessionTypeScreen(
-                            repo: widget.repo,
-                            organizationId: widget.organizationId,
-                          ),
-                        ),
-                      ),
-                      icon: const Icon(Icons.event_repeat_outlined, size: 18),
-                      label: const Text('Tipo de cita (sesiones)'),
-                    ),
-                    // Mapeo tipo de cita de Acuity → valoración/seguimiento (0083).
-                    FilledButton.tonalIcon(
-                      onPressed: () => Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => AcuityVisitTypeMapScreen(
-                            repo: widget.repo,
-                            organizationId: widget.organizationId,
-                          ),
-                        ),
-                      ),
-                      icon: const Icon(Icons.medical_information_outlined,
-                          size: 18),
-                      label: const Text('Tipos de consulta (Acuity)'),
-                    ),
-                    // Escalas del protocolo de hospitalización habilitadas (0085).
-                    FilledButton.tonalIcon(
-                      onPressed: () => Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => ScaleTogglesScreen(
-                            repo: widget.repo,
-                            organizationId: widget.organizationId,
-                          ),
-                        ),
-                      ),
-                      icon: const Icon(Icons.rule_folder_outlined, size: 18),
-                      label: const Text('Escalas del protocolo'),
-                    ),
-                    // KT-16: referencia de la fuente única de recomendaciones.
-                    FilledButton.tonalIcon(
-                      onPressed: () => Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => const RecommendationsReferenceScreen(),
-                        ),
-                      ),
-                      icon: const Icon(Icons.menu_book_outlined, size: 18),
-                      label: const Text('Fuente de recomendaciones'),
-                    ),
-                    // Depuración de expedientes (0086): archiva pacientes que ya
-                    // no se atienden (p. ej. import histórico de Acuity).
-                    FilledButton.tonalIcon(
-                      onPressed: () => Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => PatientCleanupScreen(
-                            repo: widget.repo,
-                            organizationId: widget.organizationId,
-                          ),
-                        ),
-                      ),
-                      icon: const Icon(Icons.cleaning_services_outlined,
-                          size: 18),
-                      label: const Text('Depurar expedientes'),
-                    ),
-                    // Registro de divulgaciones (0101): constancia de cada
-                    // salida de datos del centro.
-                    FilledButton.tonalIcon(
-                      onPressed: () => Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => const DataDisclosuresScreen(),
-                        ),
-                      ),
-                      icon: const Icon(Icons.fact_check_outlined, size: 18),
-                      label: const Text('Registro de divulgaciones'),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  '"Cargar catálogo base" agrega, en las 4 secciones, los '
-                  'conceptos más comunes (curados por Kura+) que aún no '
-                  'existan en este centro -- útil para arrancar rápido un '
-                  'centro nuevo sin configurar todo desde cero; no duplica '
-                  'ni pisa lo que ya tengas. La plantilla CSV incluye las 4 '
-                  'secciones (tipo de atención, descripción, material, '
-                  'evolución) con el catálogo actual del centro; al cargarla '
-                  'se agregan conceptos nuevos y se actualiza el estado '
-                  'activo/inactivo de los existentes. También puedes seguir '
-                  'agregando uno por uno abajo.',
-                  style: TextStyle(fontSize: 11, color: KuraColors.darkText.withOpacity(0.5)),
-                ),
-                const SizedBox(height: 12),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: NoteOptionField.values.map((f) {
-                    final selected = f == _selectedField;
-                    return ChoiceChip(
-                      label: Text(f.label),
-                      selected: selected,
-                      selectedColor: KuraColors.primary.withOpacity(0.15),
-                      onSelected: (_) => setState(() => _selectedField = f),
-                    );
-                  }).toList(),
-                ),
-              ],
-            ),
+          Text(
+            'Configuración del centro',
+            style: TextStyle(
+                fontSize: AppType.display,
+                fontWeight: AppType.extrabold,
+                letterSpacing: -0.02 * AppType.display,
+                color: t.textPrimary),
           ),
-          const Divider(height: 1),
-          options.isEmpty
-                ? const _EmptyState(
-                    icon: Icons.list_alt_outlined,
-                    message: 'Sin conceptos configurados aún para este campo.',
-                  )
-                : ListView.separated(
-                    // shrinkWrap + NeverScrollable: esta lista NO scrollea sola;
-                    // el scroll lo lleva el ListView externo (toda la pantalla).
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 88),
-                    itemCount: options.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 6),
-                    itemBuilder: (context, i) {
-                      final o = options[i];
-                      return Card(
-                        color: o.isActive ? null : KuraColors.chipBg,
-                        child: Padding(
-                          padding: const EdgeInsets.fromLTRB(16, 4, 8, 4),
-                          child: Row(
-                            children: [
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Padding(
-                                      padding: const EdgeInsets.symmetric(vertical: 8),
-                                      child: Text(
-                                        o.label,
-                                        style: TextStyle(
-                                          decoration: o.isActive ? null : TextDecoration.lineThrough,
-                                          color: o.isActive
-                                              ? null
-                                              : KuraColors.darkText.withOpacity(0.5),
-                                        ),
-                                      ),
-                                    ),
-                                    // Etiqueta kura_tag (puente hacia el motor Protocolo
-                                    // Kura+): cada campo ofrece SOLO sus etiquetas
-                                    // (NoteOptionField.availableTags). Los campos que no
-                                    // usan etiqueta (Tipo de atención, Evolución) devuelven
-                                    // lista vacía y aquí NO se muestra el menú.
-                                    if (_selectedField.availableTags.isNotEmpty)
-                                      DropdownButton<KuraTag?>(
-                                        // Si el concepto trae una etiqueta que no pertenece
-                                        // a este campo (dato antiguo), se muestra como "Sin
-                                        // etiqueta" para no romper el Dropdown.
-                                        value: _selectedField.availableTags
-                                                .contains(o.kuraTag)
-                                            ? o.kuraTag
-                                            : null,
-                                        isDense: true,
-                                        underline: const SizedBox.shrink(),
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          color: KuraColors.darkText.withOpacity(0.7),
-                                        ),
-                                        items: [
-                                          const DropdownMenuItem<KuraTag?>(
-                                            value: null,
-                                            child: Text('Sin etiqueta'),
-                                          ),
-                                          ..._selectedField.availableTags.map(
-                                            (t) => DropdownMenuItem<KuraTag?>(
-                                              value: t,
-                                              child: Text(t.label),
-                                            ),
-                                          ),
-                                        ],
-                                        onChanged: (t) => _setKuraTag(o, t),
-                                      ),
-                                  ],
-                                ),
-                              ),
-                              IconButton(
-                                icon: const Icon(
-                                  Icons.delete_outline,
-                                  color: KuraColors.danger,
-                                ),
-                                tooltip: 'Borrar concepto',
-                                onPressed: () => _deleteOption(o),
-                              ),
-                              Switch(
-                                value: o.isActive,
-                                activeColor: KuraColors.primary,
-                                onChanged: (_) => _toggleActive(o),
-                              ),
-                            ],
-                          ),
-                        ),
-                      );
-                    },
-                  ),
+          const SizedBox(height: AppSpacing.xs),
+          Text(
+            'Lo que tu equipo ve al capturar, los protocolos que sigue y la '
+            'constancia de lo que sale del expediente.',
+            style: TextStyle(fontSize: AppType.body, color: t.textSecondary),
+          ),
+          const SizedBox(height: 26),
+          _grupo1(t, adminLocked),
+          const SizedBox(height: 26),
+          _grupo2(t, adminLocked),
+          const SizedBox(height: 26),
+          _grupo3(t),
         ],
-      ),
-      floatingActionButton: KuraPrimaryFab(
-        onPressed: _addOption,
-        icon: Icons.add,
-        label: 'Nuevo concepto',
       ),
     );
   }
+
+  // -------------------------------------------------------------------------
+  // Grupo 1 — Catálogo de la nota de seguimiento
+  // -------------------------------------------------------------------------
+  Widget _grupo1(BrandTokens t, bool adminLocked) {
+    final all = widget.repo
+        .listAllNoteOptions(_selectedField, organizationId: widget.organizationId);
+    final q = _search.trim().toLowerCase();
+    final options =
+        q.isEmpty ? all : all.where((o) => o.label.toLowerCase().contains(q)).toList();
+    final taggable = _selectedField.availableTags.isNotEmpty;
+
+    return _groupCard(
+      t,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Catálogo de la nota de seguimiento',
+                      style: TextStyle(
+                          fontSize: 19,
+                          fontWeight: AppType.bold,
+                          letterSpacing: -0.01 * 19,
+                          color: t.textPrimary),
+                    ),
+                    const SizedBox(height: AppSpacing.xs),
+                    Text(
+                      'Los conceptos que tu personal clínico ve como opciones al '
+                      'registrar una nota. Se configura una vez para todo el centro.',
+                      style: TextStyle(fontSize: 13, color: t.textSecondary),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 24),
+              _primaryPill(t, 'Nuevo concepto', _addOption),
+              const SizedBox(width: 10),
+              _herramientasMenu(t, adminLocked),
+            ],
+          ),
+          const SizedBox(height: 20),
+          KuraActionBar(
+            searchHint: 'Buscar concepto',
+            onSearchChanged: (v) => setState(() => _search = v),
+            filters: [
+              for (final f in NoteOptionField.values)
+                KuraFilter(
+                  label: f.label,
+                  count: widget.repo
+                      .listAllNoteOptions(f, organizationId: widget.organizationId)
+                      .length,
+                  selected: f == _selectedField,
+                  onTap: () => setState(() => _selectedField = f),
+                ),
+            ],
+            showingText: 'Mostrando ${options.length} de ${all.length}',
+          ),
+          const SizedBox(height: 16),
+          if (options.isEmpty)
+            KuraEmptyState(
+              icon: Icons.list_alt_outlined,
+              title: q.isEmpty ? 'Sin conceptos en esta sección' : 'Sin coincidencias',
+              message: q.isEmpty
+                  ? 'Agrega el primer concepto de "${_selectedField.label}", o carga el catálogo base curado por Kura+.'
+                  : 'Ningún concepto coincide con "$_search".',
+              primaryLabel: 'Nuevo concepto',
+              onPrimary: _addOption,
+              secondaryLabel: q.isEmpty ? 'Cargar catálogo base' : null,
+              onSecondary: q.isEmpty ? _loadDefaultCatalog : null,
+            )
+          else
+            KuraDataTable(
+              columns: [
+                KuraColumn(
+                    label: 'Concepto',
+                    fraction: taggable ? 0.44 : 0.71,
+                    sortable: true),
+                if (taggable)
+                  const KuraColumn(
+                      label: 'Paso del Protocolo Kura+', fraction: 0.27),
+                const KuraColumn(label: 'Estado', fraction: 0.15, sortable: true),
+                const KuraColumn(label: 'Acciones', fraction: 0.14, numeric: true),
+              ],
+              rows: [
+                for (final o in options)
+                  KuraRow(
+                    id: o.id,
+                    cells: [
+                      KuraCell.custom(
+                        sortValue: o.label.toLowerCase(),
+                        build: (t) => Text(
+                          o.label,
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: AppType.semibold,
+                            color: o.isActive ? t.textPrimary : t.textDisabled,
+                            decoration:
+                                o.isActive ? null : TextDecoration.lineThrough,
+                          ),
+                        ),
+                      ),
+                      if (taggable)
+                        (o.kuraTag != null &&
+                                _selectedField.availableTags.contains(o.kuraTag)
+                            ? KuraCell.pill(o.kuraTag!.label)
+                            : KuraCell.custom(
+                                sortValue: '',
+                                build: (t) => Text('Sin asignar',
+                                    style: TextStyle(
+                                        fontSize: 12, color: t.textDisabled)),
+                              )),
+                      KuraCell.custom(
+                        sortValue: o.isActive ? 1 : 0,
+                        build: (t) => Text(
+                          o.isActive ? 'Activo' : 'Inactivo',
+                          style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: AppType.bold,
+                              color:
+                                  o.isActive ? t.statusSuccess : t.textDisabled),
+                        ),
+                      ),
+                      KuraCell.custom(
+                        // FittedBox: en la columna angosta (14%) "Editar · Desactivar"
+                        // se encoge en vez de desbordar.
+                        build: (t) => Align(
+                          alignment: Alignment.centerRight,
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            alignment: Alignment.centerRight,
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                _rowAction(t, 'Editar', () => _editDialog(o)),
+                                Text(' · ',
+                                    style: TextStyle(
+                                        fontSize: 12, color: t.textDisabled)),
+                                _rowAction(
+                                    t,
+                                    o.isActive ? 'Desactivar' : 'Activar',
+                                    () => _toggleActive(o)),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+              ],
+            ),
+          const SizedBox(height: 10),
+          _footnote(t),
+        ],
+      ),
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  // Grupo 2 — Tu propio protocolo (el módulo pagado)
+  // -------------------------------------------------------------------------
+  Widget _grupo2(BrandTokens t, bool adminLocked) {
+    return _groupCard(
+      t,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Tu propio protocolo',
+              style: TextStyle(
+                  fontSize: 19, fontWeight: AppType.bold, color: t.textPrimary)),
+          const SizedBox(height: AppSpacing.xs),
+          Text(
+            'Escribe los pasos que sigue tu centro y qué producto usa en cada '
+            'uno, en vez de usar el protocolo curado por Kura+.',
+            style: TextStyle(fontSize: 13, color: t.textSecondary),
+          ),
+          const SizedBox(height: 20),
+          // Banda de bloqueo: se pinta sola solo si el módulo NO está contratado.
+          KuraModuleLock.band(
+            repo: widget.repo,
+            organizationId: widget.organizationId ?? '',
+            moduleKey: 'admin',
+            moduleName: 'Estas seis funciones son del módulo Administración avanzada',
+            description:
+                'Incluye además 3 usuarios administrativos, varias sedes y tu '
+                'marca en los reportes. IVA incluido.',
+          ),
+          if (adminLocked) const SizedBox(height: 16),
+          _reja(t, [
+            _CfgTile(
+              icon: Icons.auto_awesome,
+              name: 'Protocolo Kura+',
+              desc: 'Qué conceptos van en cada paso',
+              locked: adminLocked,
+              onOpen: () => context.go('/admin/protocolo-kura'),
+            ),
+            _CfgTile(
+              icon: Icons.inventory_2_outlined,
+              name: 'Productos del protocolo',
+              desc: 'Qué insumo y cuánto, por paso',
+              locked: adminLocked,
+              onOpen: () => context.go('/admin/productos-protocolo'),
+            ),
+            _CfgTile(
+              icon: Icons.upload_outlined,
+              name: 'Cargar catálogo por CSV',
+              desc: 'Sube tus conceptos en bloque',
+              locked: adminLocked,
+              onOpen: _uploadCsv,
+            ),
+            _CfgTile(
+              icon: Icons.event_repeat_outlined,
+              name: 'Tipo de cita para sesiones',
+              desc: 'Integración con Acuity',
+              locked: adminLocked,
+              onOpen: () => context.go('/admin/tipo-cita-sesiones'),
+            ),
+            _CfgTile(
+              icon: Icons.medical_information_outlined,
+              name: 'Tipos de consulta',
+              desc: 'Valoración o seguimiento, en Acuity',
+              locked: adminLocked,
+              onOpen: () => context.go('/admin/tipos-consulta'),
+            ),
+            _CfgTile(
+              icon: Icons.cleaning_services_outlined,
+              name: 'Depurar expedientes',
+              desc: 'Archivar en bloque contra tu padrón',
+              locked: adminLocked,
+              onOpen: () => context.go('/admin/depurar-expedientes'),
+            ),
+          ]),
+        ],
+      ),
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  // Grupo 3 — Expediente y cumplimiento (nunca se gatea)
+  // -------------------------------------------------------------------------
+  Widget _grupo3(BrandTokens t) {
+    return _groupCard(
+      t,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Expediente y cumplimiento',
+                        style: TextStyle(
+                            fontSize: 19,
+                            fontWeight: AppType.bold,
+                            color: t.textPrimary)),
+                    const SizedBox(height: AppSpacing.xs),
+                    Text(
+                      'Lo que la ley te exige poder hacer con tu expediente. Nunca '
+                      'depende de un módulo ni de que el pago esté al día.',
+                      style: TextStyle(fontSize: 13, color: t.textSecondary),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 16),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Tints.status(t.statusSuccess, t.surface, 0.12),
+                  borderRadius: AppRadii.pillR,
+                ),
+                child: Text('Siempre incluido',
+                    style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: AppType.bold,
+                        color: t.statusSuccess)),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          _reja(t, [
+            _CfgTile(
+              icon: Icons.fact_check_outlined,
+              name: 'Registro de divulgaciones',
+              desc: 'Constancia de cada salida de datos',
+              locked: false,
+              onOpen: () => context.go('/admin/divulgaciones'),
+            ),
+            _CfgTile(
+              icon: Icons.rule_folder_outlined,
+              name: 'Escalas del protocolo',
+              desc: 'Cuáles participan en tu centro',
+              locked: false,
+              onOpen: () => context.go('/admin/escalas-protocolo'),
+            ),
+            _CfgTile(
+              icon: Icons.menu_book_outlined,
+              name: 'Fuente de recomendaciones',
+              desc: 'De dónde sale cada sugerencia',
+              locked: false,
+              onOpen: () => context.go('/admin/fuente-recomendaciones'),
+            ),
+            _CfgTile(
+              icon: Icons.download_outlined,
+              name: 'Descargar plantilla CSV',
+              desc: 'Tu catálogo actual, en hoja',
+              locked: false,
+              onOpen: _downloadTemplate,
+            ),
+            _CfgTile(
+              icon: Icons.playlist_add_check_outlined,
+              name: 'Cargar catálogo base',
+              desc: 'Los conceptos curados por Kura+',
+              locked: false,
+              onOpen: _loadDefaultCatalog,
+            ),
+            _CfgTile(
+              icon: Icons.download_outlined,
+              name: 'Exportar el expediente',
+              desc: 'Completo, cuando lo necesites',
+              locked: false,
+              onOpen: () => context.go('/import-export'),
+            ),
+          ]),
+        ],
+      ),
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  // Helpers de presentación
+  // -------------------------------------------------------------------------
+  Widget _groupCard(BrandTokens t, {required Widget child}) => Container(
+        decoration: BoxDecoration(
+          color: t.surface,
+          borderRadius: AppRadii.mdR,
+          border: Border.all(color: t.border),
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 26),
+        child: child,
+      );
+
+  Widget _primaryPill(BrandTokens t, String label, VoidCallback onTap) => Material(
+        color: t.brandPrimary,
+        borderRadius: AppRadii.pillR,
+        child: InkWell(
+          borderRadius: AppRadii.pillR,
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+            child: Text(label,
+                style: TextStyle(
+                    fontSize: 13, fontWeight: AppType.bold, color: t.onBrand)),
+          ),
+        ),
+      );
+
+  Widget _herramientasMenu(BrandTokens t, bool adminLocked) =>
+      PopupMenuButton<int>(
+        tooltip: 'Herramientas',
+        onSelected: (i) {
+          switch (i) {
+            case 0:
+              _loadDefaultCatalog();
+            case 1:
+              _downloadTemplate();
+            case 2:
+              adminLocked ? _openAdminSection() : _uploadCsv();
+          }
+        },
+        itemBuilder: (_) => [
+          const PopupMenuItem(value: 0, child: Text('Cargar catálogo base')),
+          const PopupMenuItem(value: 1, child: Text('Descargar plantilla CSV')),
+          PopupMenuItem(
+            value: 2,
+            child: Row(
+              children: [
+                if (adminLocked) ...[
+                  Icon(Icons.lock_outline, size: 16, color: t.textDisabled),
+                  const SizedBox(width: 6),
+                ],
+                const Flexible(child: Text('Cargar CSV')),
+              ],
+            ),
+          ),
+        ],
+        child: Container(
+          decoration:
+              BoxDecoration(color: t.chipBg, borderRadius: AppRadii.pillR),
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('Herramientas',
+                  style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: AppType.bold,
+                      color: t.brandPrimary)),
+              const SizedBox(width: 4),
+              Icon(Icons.keyboard_arrow_down, size: 13, color: t.brandPrimary),
+            ],
+          ),
+        ),
+      );
+
+  Widget _rowAction(BrandTokens t, String label, VoidCallback onTap) => InkWell(
+        onTap: onTap,
+        borderRadius: AppRadii.smR,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+          child: Text(label,
+              style: TextStyle(fontSize: 12, color: t.textSecondary)),
+        ),
+      );
+
+  Widget _footnote(BrandTokens t) => Text.rich(
+        TextSpan(
+          style: TextStyle(fontSize: 11, height: 1.5, color: t.textDisabled),
+          children: [
+            const TextSpan(text: 'Desactivar oculta el concepto de las notas '
+                'nuevas y '),
+            TextSpan(
+                text: 'no toca',
+                style: TextStyle(
+                    color: t.textSecondary, fontWeight: AppType.bold)),
+            const TextSpan(
+                text: ' las notas ya guardadas. El paso del protocolo es lo que '
+                    'conecta cada concepto con las sugerencias de Kura+.'),
+          ],
+        ),
+      );
+
+  // Reja responsiva de 3 columnas (2 / 1 en anchos menores).
+  Widget _reja(
+    BrandTokens t,
+    List<_CfgTile> tiles,
+  ) =>
+      LayoutBuilder(
+        builder: (ctx, c) {
+          final cols = c.maxWidth >= 720 ? 3 : (c.maxWidth >= 440 ? 2 : 1);
+          const gap = 12.0;
+          final w = (c.maxWidth - gap * (cols - 1)) / cols;
+          return Wrap(
+            spacing: gap,
+            runSpacing: gap,
+            children: [
+              for (final tile in tiles)
+                SizedBox(width: w, child: _tile(t, tile)),
+            ],
+          );
+        },
+      );
+
+  Widget _tile(
+    BrandTokens t,
+    _CfgTile tile,
+  ) {
+    final locked = tile.locked;
+    final inner = Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 34,
+            height: 34,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: t.chipBg,
+              borderRadius: BorderRadius.circular(9),
+            ),
+            child: Icon(tile.icon,
+                size: 18, color: locked ? t.textDisabled : t.brandPrimary),
+          ),
+          const SizedBox(width: 13),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(tile.name,
+                    style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: AppType.bold,
+                        color: locked ? t.textSecondary : t.textPrimary)),
+                const SizedBox(height: 2),
+                Text(tile.desc,
+                    style: TextStyle(
+                        fontSize: 11, height: 1.45, color: t.textSecondary)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+    if (locked) {
+      return InkWell(
+        borderRadius: AppRadii.mdR,
+        onTap: _openAdminSection,
+        child: DashedBorderBox(
+          color: t.border,
+          radius: AppRadii.md,
+          fill: Tints.brand(t, 0.02),
+          child: inner,
+        ),
+      );
+    }
+    return Material(
+      color: t.surface,
+      borderRadius: AppRadii.mdR,
+      child: InkWell(
+        borderRadius: AppRadii.mdR,
+        onTap: tile.onOpen,
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: AppRadii.mdR,
+            border: Border.all(color: t.border),
+          ),
+          child: inner,
+        ),
+      ),
+    );
+  }
+
+
+  // Sección completa del módulo Administración (densidad c), en diálogo. La abre la
+  // acción bloqueada y las tarjetas gateadas de la reja del grupo 2.
+  void _openAdminSection() {
+    showDialog<void>(
+      context: context,
+      builder: (dialogCtx) {
+        final t = BrandTokens.of(dialogCtx);
+        return Dialog(
+          backgroundColor: t.surface,
+          shape: const RoundedRectangleBorder(borderRadius: AppRadii.mdR),
+          child: Padding(
+            padding: const EdgeInsets.all(AppSpacing.sm),
+            child: KuraModuleLock.section(
+              repo: widget.repo,
+              organizationId: widget.organizationId ?? '',
+              moduleKey: 'admin',
+              moduleName: 'Administración avanzada',
+              description:
+                  'Escribe los pasos que sigue tu centro y qué producto usa en '
+                  'cada uno, en vez del protocolo curado por Kura+.',
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  // "Editar" de una fila: la etiqueta del paso (si el campo la usa) y borrar.
+  Future<void> _editDialog(NoteOptionCatalogItem item) async {
+    final taggable = _selectedField.availableTags.isNotEmpty;
+    await showDialog<void>(
+      context: context,
+      builder: (dialogCtx) {
+        var sel = _selectedField.availableTags.contains(item.kuraTag)
+            ? item.kuraTag
+            : null;
+        return StatefulBuilder(
+          builder: (ctx, setLocal) => AlertDialog(
+            title: Text(item.label),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (taggable) ...[
+                  const Text('Paso del Protocolo Kura+',
+                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                  DropdownButton<KuraTag?>(
+                    value: sel,
+                    isExpanded: true,
+                    items: [
+                      const DropdownMenuItem<KuraTag?>(
+                          value: null, child: Text('Sin asignar')),
+                      ..._selectedField.availableTags.map(
+                        (tg) => DropdownMenuItem<KuraTag?>(
+                            value: tg, child: Text(tg.label)),
+                      ),
+                    ],
+                    onChanged: (v) {
+                      setLocal(() => sel = v);
+                      _setKuraTag(item, v);
+                    },
+                  ),
+                  const SizedBox(height: 8),
+                ] else
+                  const Text('Este campo no usa paso del protocolo.',
+                      style: TextStyle(fontSize: 12)),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(dialogCtx);
+                  _deleteOption(item);
+                },
+                child: const Text('Borrar concepto'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(dialogCtx),
+                child: const Text('Listo'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _CfgTile {
+  final IconData icon;
+  final String name;
+  final String desc;
+  final bool locked;
+  final VoidCallback onOpen;
+  const _CfgTile({
+    required this.icon,
+    required this.name,
+    required this.desc,
+    required this.locked,
+    required this.onOpen,
+  });
 }
 
 Future<String?> _promptForLabel(BuildContext context, {required String title}) {

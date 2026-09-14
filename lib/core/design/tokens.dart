@@ -57,6 +57,7 @@ class BrandTokens extends ThemeExtension<BrandTokens> {
   // Superficies / base (neutras y calmadas).
   final Color background;
   final Color surface;
+  final Color chipBg; // superficie de pastilla/cuadro de ícono (tinte de marca suave)
   final Color surfaceGlassHigh; // relleno translúcido del vidrio (arriba)
   final Color surfaceGlassLow; // relleno translúcido del vidrio (abajo)
   final Color glassBorder; // borde/canto claro del vidrio
@@ -76,6 +77,12 @@ class BrandTokens extends ThemeExtension<BrandTokens> {
   final Color statusWarning;
   final Color statusSuccess;
   final Color statusNeutral;
+  // Texto sobre tinte de estado: statusWarning/statusSuccess no tienen contraste
+  // suficiente como TEXTO sobre blanco (son rellenos). Estos son los tonos oscuros
+  // legibles del semáforo. Clínicos → iguales en las tres marcas. NUNCA a mano en
+  // un widget (mismo error que chipBg): salen de aquí.
+  final Color statusWarningText;
+  final Color statusSuccessText;
 
   const BrandTokens({
     required this.brandPrimary,
@@ -84,6 +91,7 @@ class BrandTokens extends ThemeExtension<BrandTokens> {
     required this.heroBottom,
     required this.background,
     required this.surface,
+    required this.chipBg,
     required this.surfaceGlassHigh,
     required this.surfaceGlassLow,
     required this.glassBorder,
@@ -97,6 +105,8 @@ class BrandTokens extends ThemeExtension<BrandTokens> {
     required this.statusWarning,
     required this.statusSuccess,
     required this.statusNeutral,
+    required this.statusWarningText,
+    required this.statusSuccessText,
   });
 
   /// Única marca implementada por ahora: Kura.
@@ -107,6 +117,7 @@ class BrandTokens extends ThemeExtension<BrandTokens> {
     heroBottom: KuraPalette.heroBottom,
     background: KuraPalette.background,
     surface: KuraPalette.surface,
+    chipBg: KuraPalette.chipBg,
     // Relleno del vidrio: alto (0.72) arriba y algo más translúcido (0.55)
     // abajo, para el "sheen". Deliberadamente alto para no lavar el texto
     // clínico sobre el vidrio.
@@ -123,6 +134,8 @@ class BrandTokens extends ThemeExtension<BrandTokens> {
     statusWarning: KuraPalette.statusWarning,
     statusSuccess: KuraPalette.statusSuccess,
     statusNeutral: Color(0xFF9E968E),
+    statusWarningText: Color(0xFF8A6111),
+    statusSuccessText: Color(0xFF116B44),
   );
 
   /// Marca HOSPITAL (azul). Misma estructura que [kura]; solo cambian los
@@ -136,6 +149,7 @@ class BrandTokens extends ThemeExtension<BrandTokens> {
     heroBottom: Color(0xFF2563EB),
     background: Color(0xFFF3F6FC), // neutro frío azulado
     surface: KuraPalette.surface,
+    chipBg: Color(0xFFE7EDFA), // tinte azul suave (marca hospital)
     surfaceGlassHigh: Color(0xB8FFFFFF),
     surfaceGlassLow: Color(0x8CFFFFFF),
     glassBorder: Color(0x99FFFFFF),
@@ -149,6 +163,8 @@ class BrandTokens extends ThemeExtension<BrandTokens> {
     statusWarning: KuraPalette.statusWarning,
     statusSuccess: KuraPalette.statusSuccess,
     statusNeutral: Color(0xFF9AA1B0),
+    statusWarningText: Color(0xFF8A6111),
+    statusSuccessText: Color(0xFF116B44),
   );
 
   /// Marca CUIDADORES (rosa). BORRADOR de color (0xFFDB2777, pink-600),
@@ -160,6 +176,7 @@ class BrandTokens extends ThemeExtension<BrandTokens> {
     heroBottom: Color(0xFFDB2777),
     background: Color(0xFFFCF4F8), // neutro rosado casi blanco
     surface: KuraPalette.surface,
+    chipBg: Color(0xFFF6E3EC), // tinte rosa suave (marca cuidadores)
     surfaceGlassHigh: Color(0xB8FFFFFF),
     surfaceGlassLow: Color(0x8CFFFFFF),
     glassBorder: Color(0x99FFFFFF),
@@ -173,6 +190,8 @@ class BrandTokens extends ThemeExtension<BrandTokens> {
     statusWarning: KuraPalette.statusWarning,
     statusSuccess: KuraPalette.statusSuccess,
     statusNeutral: Color(0xFFAE9AA4),
+    statusWarningText: Color(0xFF8A6111),
+    statusSuccessText: Color(0xFF116B44),
   );
 
   /// Tokens de la marca que corresponde al tipo de centro activo.
@@ -200,6 +219,7 @@ class BrandTokens extends ThemeExtension<BrandTokens> {
     Color? heroBottom,
     Color? background,
     Color? surface,
+    Color? chipBg,
     Color? surfaceGlassHigh,
     Color? surfaceGlassLow,
     Color? glassBorder,
@@ -213,6 +233,8 @@ class BrandTokens extends ThemeExtension<BrandTokens> {
     Color? statusWarning,
     Color? statusSuccess,
     Color? statusNeutral,
+    Color? statusWarningText,
+    Color? statusSuccessText,
   }) {
     return BrandTokens(
       brandPrimary: brandPrimary ?? this.brandPrimary,
@@ -221,6 +243,7 @@ class BrandTokens extends ThemeExtension<BrandTokens> {
       heroBottom: heroBottom ?? this.heroBottom,
       background: background ?? this.background,
       surface: surface ?? this.surface,
+      chipBg: chipBg ?? this.chipBg,
       surfaceGlassHigh: surfaceGlassHigh ?? this.surfaceGlassHigh,
       surfaceGlassLow: surfaceGlassLow ?? this.surfaceGlassLow,
       glassBorder: glassBorder ?? this.glassBorder,
@@ -234,6 +257,8 @@ class BrandTokens extends ThemeExtension<BrandTokens> {
       statusWarning: statusWarning ?? this.statusWarning,
       statusSuccess: statusSuccess ?? this.statusSuccess,
       statusNeutral: statusNeutral ?? this.statusNeutral,
+      statusWarningText: statusWarningText ?? this.statusWarningText,
+      statusSuccessText: statusSuccessText ?? this.statusSuccessText,
     );
   }
 
@@ -247,6 +272,7 @@ class BrandTokens extends ThemeExtension<BrandTokens> {
       heroBottom: Color.lerp(heroBottom, other.heroBottom, t)!,
       background: Color.lerp(background, other.background, t)!,
       surface: Color.lerp(surface, other.surface, t)!,
+      chipBg: Color.lerp(chipBg, other.chipBg, t)!,
       surfaceGlassHigh: Color.lerp(surfaceGlassHigh, other.surfaceGlassHigh, t)!,
       surfaceGlassLow: Color.lerp(surfaceGlassLow, other.surfaceGlassLow, t)!,
       glassBorder: Color.lerp(glassBorder, other.glassBorder, t)!,
@@ -260,6 +286,10 @@ class BrandTokens extends ThemeExtension<BrandTokens> {
       statusWarning: Color.lerp(statusWarning, other.statusWarning, t)!,
       statusSuccess: Color.lerp(statusSuccess, other.statusSuccess, t)!,
       statusNeutral: Color.lerp(statusNeutral, other.statusNeutral, t)!,
+      statusWarningText:
+          Color.lerp(statusWarningText, other.statusWarningText, t)!,
+      statusSuccessText:
+          Color.lerp(statusSuccessText, other.statusSuccessText, t)!,
     );
   }
 }

@@ -1,0 +1,112 @@
+-- Fixture MÍNIMO para ejercitar el código REAL de 0132 (columnas, backfill, CHECK,
+-- log, RPCs) sin la cadena completa de migraciones ni el stack de Supabase. Recrea
+-- solo lo que 0132 toca/referencia, con las MISMAS firmas.
+create extension if not exists pgcrypto;
+
+-- auth.uid() de Supabase, stub: lee un GUC de prueba.
+create schema if not exists auth;
+create or replace function auth.uid() returns uuid
+language sql stable as $$
+  select nullif(current_setting('test.uid', true), '')::uuid
+$$;
+
+-- enum de roles (0001-ish).
+do $$ begin
+  create type public.user_role as enum ('admin','clinico','master','cuidador','enfermeria');
+exception when duplicate_object then null; end $$;
+
+create table if not exists public.profiles (
+  id uuid primary key default gen_random_uuid(),
+  roles public.user_role[] not null default '{}',
+  role public.user_role,
+  is_active boolean not null default true
+);
+
+create table if not exists public.organizations (
+  id uuid primary key default gen_random_uuid(),
+  name text not null
+);
+
+-- is_master() idéntico a 0096.
+create or replace function public.is_master()
+returns boolean language sql stable security definer
+set search_path = public, pg_temp
+as $$
+  select coalesce((select 'master'::public.user_role = any(roles)
+                   from public.profiles where id = auth.uid()), false);
+$$;
+
+-- org_entitlements con la forma de 0113 (lo que 0132 extiende).
+create table if not exists public.org_entitlements (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id),
+  kind text not null check (kind in ('plan','module','seat')),
+  key text not null,
+  quantity integer,
+  constraint ent_quantity_shape check (
+    (kind = 'seat' and quantity is not null and quantity >= 0)
+    or (kind <> 'seat' and quantity is null)
+  ),
+  status text not null default 'active' check (status in ('active','past_due','canceled')),
+  current_period_end timestamptz,
+  source text not null check (source in ('stripe','master'))
+);
+create unique index if not exists uq_org_entitlements_org_kind_key
+  on public.org_entitlements(organization_id, kind, key);
+
+-- consumed_seat_demand(uuid): stub controlable por GUC (el real vive en 0128 y
+-- tiene su propia prueba; aquí solo se ejercita la guardia 3 de la RPC).
+create or replace function public.consumed_seat_demand(p_org uuid)
+returns int language sql stable
+set search_path = public, pg_temp
+as $$
+  select coalesce(nullif(current_setting('test.demand', true), '')::int, 0)
+$$;
+
+-- --- Lado Stripe (para 0133): columnas/tablas que apply_stripe toca. -----------
+alter table public.org_entitlements
+  add column if not exists stripe_subscription_item_id text,
+  add column if not exists stripe_subscription_id text,
+  add column if not exists updated_at timestamptz not null default now();
+
+alter table public.organizations
+  add column if not exists stripe_subscription_id text;
+
+-- authenticated/service_role los crea Supabase; aquí se stubean para que los GRANT pasen.
+do $$ begin create role authenticated; exception when duplicate_object then null; end $$;
+do $$ begin create role service_role; exception when duplicate_object then null; end $$;
+
+create table if not exists public.stripe_events (
+  event_id text primary key,
+  type text
+);
+
+create table if not exists public.billing_catalog (
+  lookup_key text primary key,
+  kind text not null,
+  key text not null,
+  interval text,
+  unit text,
+  unit_amount int
+);
+
+create table if not exists public.billing_anomalies (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null,
+  kind text not null,
+  detail text,
+  sub_low text,
+  sub_high text,
+  scope_key text not null default '',
+  seen_count int not null default 1,
+  status text not null default 'open',
+  last_seen_at timestamptz not null default now(),
+  resolved_at timestamptz
+);
+create unique index if not exists uq_billing_anomalies_key
+  on public.billing_anomalies(organization_id, kind, sub_low, sub_high, scope_key);
+
+-- Semilla mínima del catálogo para la prueba de ida y vuelta (module:insumos).
+insert into public.billing_catalog (lookup_key, kind, key, interval, unit, unit_amount)
+values ('insumos_lk', 'module', 'insumos', 'month', null, null)
+on conflict (lookup_key) do nothing;

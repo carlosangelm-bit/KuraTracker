@@ -9,11 +9,13 @@ import '../core/config/app_config.dart';
 import '../models/adverse_event.dart';
 import '../models/antecedentes.dart';
 import '../models/app_user.dart';
+import '../models/license_summary.dart';
 import '../models/caregiver_patient_assignment.dart';
 import '../models/center_type.dart';
 import '../models/clinical_amendment.dart';
 import '../models/module_key.dart';
 import '../models/module_setting.dart';
+import '../models/org_entitlement.dart';
 import '../models/preventive_task.dart';
 import '../models/consent.dart';
 import '../models/consultation.dart';
@@ -830,21 +832,589 @@ class DataRepository {
     }
   }
 
-  /// Estado EFECTIVO de un módulo para (centro, sitio, usuario), resolviendo
-  /// usuario > sitio > centro > default-por-tipo.
+  /// ¿El centro tiene un derecho de MÓDULO activo con esta `key`? (Fase 1 §4).
+  /// Fuente: org_entitlements (kind='module', status='active'). Fallback SEGURO:
+  /// sin derecho cargado → false (mejor un nav vacío un instante que un módulo
+  /// encendido sin derecho). El webhook/master es quien crea estos derechos.
+  bool hasModuleEntitlement(String? organizationId, String key) {
+    if (organizationId == null) return false;
+    for (final e in _store.getAll(Collections.orgEntitlements)) {
+      if (e['organization_id'] == organizationId &&
+          e['kind'] == 'module' &&
+          e['key'] == key &&
+          e['status'] == 'active') {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /// ¿El centro tiene un derecho de ASIENTO (kind='seat') activo con cantidad ≥ 1?
+  /// Se usa para los add-on por asiento (p. ej. Protocolo Kura+ = seat:protocolo).
+  bool hasSeatEntitlement(String? organizationId, String key) {
+    if (organizationId == null) return false;
+    for (final e in _store.getAll(Collections.orgEntitlements)) {
+      if (e['organization_id'] == organizationId &&
+          e['kind'] == 'seat' &&
+          e['key'] == key &&
+          e['status'] == 'active' &&
+          ((e['quantity'] as num?)?.toInt() ?? 0) >= 1) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /// ¿El centro puede LEER el módulo? El derecho existe en CUALQUIER estado
+  /// (active/past_due/canceled). Así un centro que dejó de pagar SIGUE abriendo su
+  /// expediente —la promesa que el panel ya hace por escrito—; solo pierde la
+  /// escritura. Lo usan el nav y el router (isModuleEnabled).
+  bool canReadModule(String? organizationId, String key) {
+    if (organizationId == null) return false;
+    for (final e in _store.getAll(Collections.orgEntitlements)) {
+      if (e['organization_id'] == organizationId &&
+          e['kind'] == 'module' &&
+          e['key'] == key) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /// ¿El centro puede ESCRIBIR en el módulo? Solo con el derecho VIGENTE, y la
+  /// autoridad de vigencia es distinta por origen (asimetría, diseñada ya para la
+  /// prueba de 30 días aunque aún no exista):
+  ///  - source='stripe': basta status='active'. Stripe manda la transición; NUNCA
+  ///    se gatea por current_period_end, o una renovación que llega tarde deja fuera
+  ///    por minutos a quien SÍ pagó.
+  ///  - source='master' (prueba/otorgado a mano): status='active' Y no vencido por
+  ///    TIEMPO (current_period_end), porque ningún sistema externo avisa del
+  ///    vencimiento — el tiempo es la única verdad, y se lee aquí (hoy esa columna
+  ///    se escribe y nunca se leía como vencimiento).
+  bool canWriteModule(String? organizationId, String key) {
+    if (organizationId == null) return false;
+    for (final e in _store.getAll(Collections.orgEntitlements)) {
+      if (e['organization_id'] == organizationId &&
+          e['kind'] == 'module' &&
+          e['key'] == key) {
+        if (e['status'] != 'active') return false;
+        if (e['source'] == 'master') {
+          final cpe = e['current_period_end'] as String?;
+          final end = cpe == null ? null : DateTime.tryParse(cpe);
+          if (end != null && !end.isAfter(DateTime.now())) return false;
+        }
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /// Atajo a nivel centro: ¿puede escribir en el expediente clínico? (module:clinico,
+  /// que respalda pacientes/agenda/prevención/reportes/VAC/eKare). Los botones de
+  /// crear/guardar/editar clínicos se gatean con esto; el nav/lectura NO.
+  bool centerCanWriteClinical(String? organizationId) =>
+      canWriteModule(organizationId, 'clinico');
+
+  /// Motivo por el que el centro está en modo LECTURA (para la banda del shell), o
+  /// null si puede escribir con normalidad. Deriva del estado del derecho clínico.
+  String? clinicalReadOnlyReason(String? organizationId) {
+    if (organizationId == null) return null;
+    final e = _entitlement(organizationId, 'module', 'clinico');
+    if (e == null) return null; // sin derecho: es otro problema (centro sin sembrar).
+    if (centerCanWriteClinical(organizationId)) return null; // puede escribir: sin banda.
+    final status = e['status'] as String?;
+    final source = e['source'] as String?;
+    if (status == 'past_due') {
+      return 'Pago vencido. El expediente sigue accesible para lectura; para volver '
+          'a crear y editar, regulariza el pago.';
+    }
+    if (source == 'master') {
+      return 'Tu periodo de prueba terminó. El expediente sigue accesible para '
+          'lectura; suscríbete para volver a crear y editar.';
+    }
+    return 'Suscripción no vigente. El expediente sigue accesible para lectura; '
+        'suscríbete para volver a crear y editar.';
+  }
+
+  /// CANDADO DE ESCRITURA CLÍNICA (§4): vive en el repositorio, no en los botones,
+  /// para cubrir TODOS los llamantes —pacientes, riesgo, escalas, agenda, VAC,
+  /// tratamiento, planes— presentes y futuros, no solo los que alguien se acuerde de
+  /// esconder. Esconder botones en la UI queda como cosmético.
+  ///
+  /// Solo bloquea si HAY derecho clínico y NO es escribible (past_due / canceled /
+  /// prueba vencida por tiempo). Sin derecho clínico (centro sin sembrar, fixture de
+  /// prueba) NO bloquea: ese caso lo maneja el AND de visibilidad, y bloquear aquí
+  /// rompería escrituras legítimas y la suite. Prefijo estable CLINICAL_READ_ONLY:
+  /// (como SEAT_* / FREE_PLAN_PATIENT_CAP) para que la UI lo traduzca al aviso de modo
+  /// lectura con su CTA, no a un error crudo.
+  void _assertCanWriteClinical(String? organizationId) {
+    if (_entitlement(organizationId, 'module', 'clinico') == null) return;
+    if (centerCanWriteClinical(organizationId)) return;
+    // Excepción con toString() LIMPIO (sin el prefijo "Exception:"): los screens que
+    // muestran '$e' enseñan la frase en español, no el nombre técnico. El enlace a
+    // Licencias lo ofrece la banda del shell (siempre visible en modo lectura).
+    throw const ClinicalReadOnlyException(
+        'El centro está en modo lectura (pago vencido, prueba terminada o suscripción '
+        'no vigente); no se pueden crear ni editar registros clínicos hasta regularizar.');
+  }
+
+  /// Traduce una excepción del candado de escritura clínica al mensaje de modo
+  /// lectura (o null si no es esa excepción), para que un screen lo muestre en su
+  /// catch como aviso en vez de un error crudo. Pública y estática para usarse desde
+  /// cualquier pantalla sin instancia.
+  static String? readOnlyMessageFor(Object error) {
+    if (error is ClinicalReadOnlyException) return error.message;
+    // Fallback por si algún día llega como texto (p. ej. un error de red que
+    // envolvió el mensaje del servidor).
+    const prefix = 'CLINICAL_READ_ONLY:';
+    final s = error.toString();
+    final i = s.indexOf(prefix);
+    return i < 0 ? null : s.substring(i + prefix.length).trim();
+  }
+
+  String? _orgOfPatient(String? patientId) =>
+      patientId == null ? null : getPatient(patientId)?.organizationId;
+
+  String? _orgOfWound(String? woundId) {
+    if (woundId == null) return null;
+    for (final w in _store.getAll(Collections.wounds)) {
+      if (w['id'] == woundId) return _orgOfPatient(w['patient_id'] as String?);
+    }
+    return null;
+  }
+
+  /// Un derecho de org_entitlements por (kind, key), o null. Interno del panel
+  /// de licencias (para leer cantidad/estado, no solo presencia).
+  Map<String, dynamic>? _entitlement(String? orgId, String kind, String key) {
+    if (orgId == null) return null;
+    for (final e in _store.getAll(Collections.orgEntitlements)) {
+      if (e['organization_id'] == orgId && e['kind'] == kind && e['key'] == key) {
+        return e;
+      }
+    }
+    return null;
+  }
+
+  // ---------------- Consola master · Derechos (0132) ----------------
+  // La UI de /platform opera DERECHOS vía estas RPC (nunca un insert/update directo
+  // a org_entitlements). Cada una traduce el código de error del servidor al
+  // español para la UI.
+
+  /// Traduce el código de error de las RPC master_* a un mensaje en español y lo
+  /// relanza. SIEMPRE lanza (nunca retorna).
+  Never _throwGrantError(Object e) {
+    final msg = e is PostgrestException ? e.message : '$e';
+    if (msg.contains('GRANT_STRIPE_OWNED')) {
+      throw Exception(
+          'Ese derecho lo gobierna Stripe: cámbialo en la suscripción, no aquí.');
+    }
+    if (msg.contains('GRANT_BELOW_DEMAND')) {
+      final n = RegExp(r'(\d+)').firstMatch(msg)?.group(1);
+      throw Exception(n == null
+          ? 'El centro ya usa más asientos; no puedes bajar el tope por debajo.'
+          : 'El centro ya usa $n asientos; no puedes bajar el tope por debajo.');
+    }
+    if (msg.contains('MASTER_ONLY')) {
+      throw Exception('Solo el master puede otorgar derechos.');
+    }
+    if (msg.contains('GRANT_NO_EXPIRY')) {
+      throw Exception(
+          'Falta la fecha de vigencia (o marca "Permanente" a propósito).');
+    }
+    if (msg.contains('GRANT_AMBIGUOUS_EXPIRY')) {
+      throw Exception(
+          'No puede ser permanente y tener fecha a la vez: elige una.');
+    }
+    if (msg.contains('ent_master_grant_shape')) {
+      throw Exception('El motivo debe tener al menos 10 caracteres.');
+    }
+    // Otros (p. ej. el trigger de "último capaz de definir planes" de 0111/0112):
+    // el mensaje se propaga tal cual, sin la envoltura "Exception:".
+    throw Exception(msg.replaceFirst('Exception: ', ''));
+  }
+
+  /// Otorga o enmienda un derecho a mano (RPC `master_grant_entitlement`).
+  Future<void> masterGrantEntitlement({
+    required String organizationId,
+    required String kind,
+    required String key,
+    int? quantity,
+    required String grantType,
+    required String reason,
+    DateTime? until,
+    required bool permanent,
+  }) async {
+    final store = _store;
+    if (store is! SupabaseDataStore) {
+      throw Exception('Otorgar derechos solo está disponible en modo Supabase.');
+    }
+    try {
+      await store.callRpc('master_grant_entitlement', {
+        'p_org': organizationId,
+        'p_kind': kind,
+        'p_key': key,
+        'p_quantity': quantity,
+        'p_grant_type': grantType,
+        'p_reason': reason,
+        'p_until': until?.toUtc().toIso8601String(),
+        'p_permanent': permanent,
+      });
+    } catch (e) {
+      _throwGrantError(e);
+    }
+    await store.refreshCollection(Collections.orgEntitlements);
+  }
+
+  /// Revoca un derecho otorgado a mano (RPC `master_revoke_entitlement`). No borra:
+  /// pone status='canceled' y deja rastro en la bitácora.
+  Future<void> masterRevokeEntitlement({
+    required String organizationId,
+    required String kind,
+    required String key,
+    required String reason,
+  }) async {
+    final store = _store;
+    if (store is! SupabaseDataStore) {
+      throw Exception('Revocar derechos solo está disponible en modo Supabase.');
+    }
+    try {
+      await store.callRpc('master_revoke_entitlement', {
+        'p_org': organizationId,
+        'p_kind': kind,
+        'p_key': key,
+        'p_reason': reason,
+      });
+    } catch (e) {
+      _throwGrantError(e);
+    }
+    await store.refreshCollection(Collections.orgEntitlements);
+  }
+
+  /// Activa/desactiva una cuenta (RPC `master_set_profile_active`). Los triggers de
+  /// 0111/0112 (último capaz de definir planes) siguen mandando: su mensaje se
+  /// propaga tal cual.
+  Future<void> masterSetProfileActive(String profileId, bool active) async {
+    final store = _store;
+    if (store is! SupabaseDataStore) {
+      throw Exception('Solo disponible en modo Supabase.');
+    }
+    try {
+      await store.callRpc('master_set_profile_active', {
+        'p_profile': profileId,
+        'p_active': active,
+      });
+    } catch (e) {
+      _throwGrantError(e);
+    }
+    await store.refreshCollection(Collections.profiles);
+  }
+
+  /// Derechos del centro con sus campos de otorgamiento, para el panel.
+  List<OrgEntitlement> entitlementsFor(String organizationId) => _store
+      .getAll(Collections.orgEntitlements)
+      .where((e) => e['organization_id'] == organizationId)
+      .map(OrgEntitlement.fromJson)
+      .toList();
+
+  /// Todos los derechos con source='master', de todos los centros, ordenados por
+  /// vencimiento: los VENCIDOS primero, luego por vencimiento ascendente, los
+  /// PERMANENTES al final.
+  List<ManualGrant> manualGrants() {
+    final grants = _store
+        .getAll(Collections.orgEntitlements)
+        .map(OrgEntitlement.fromJson)
+        .where((e) => e.source == 'master')
+        .map((e) => ManualGrant(
+              entitlement: e,
+              organizationName: organizationById(e.organizationId)?.name ?? '—',
+            ))
+        .toList();
+    grants.sort((a, b) {
+      // Permanentes al final.
+      if (a.isPermanent != b.isPermanent) return a.isPermanent ? 1 : -1;
+      if (a.isPermanent && b.isPermanent) {
+        return a.organizationName
+            .toLowerCase()
+            .compareTo(b.organizationName.toLowerCase());
+      }
+      // Por vencimiento ascendente → los vencidos (fecha pasada) quedan arriba.
+      final ae = a.currentPeriodEnd, be = b.currentPeriodEnd;
+      if (ae == null && be == null) return 0;
+      if (ae == null) return 1;
+      if (be == null) return -1;
+      return ae.compareTo(be);
+    });
+    return grants;
+  }
+
+  /// Precio unitario en CENTAVOS (IVA incl.) de un concepto en un intervalo, leído
+  /// de billing_catalog (0129) — NUNCA a mano en el Dart. `interval` = 'month' |
+  /// 'year' (el anual es el monto completo, ya = ×10; no se multiplica aquí).
+  /// Devuelve `null` cuando falta la fila O la fila no trae monto: el fallo es POR
+  /// FILA, no todo-o-nada. Un precio ausente NUNCA es 0 — quien lo consume pinta
+  /// "—" y marca el total como incompleto (un ausente no debe parecerse a un cero).
+  int? unitAmountCents(String kind, String key, String interval) {
+    for (final c in _store.getAll(Collections.billingCatalog)) {
+      if (c['kind'] == kind && c['key'] == key && c['interval'] == interval) {
+        return (c['unit_amount'] as num?)?.toInt();
+      }
+    }
+    return null;
+  }
+
+  ({int cents, bool complete}) _sumCents(List<int?> parts) {
+    var total = 0;
+    var complete = true;
+    for (final p in parts) {
+      if (p == null) {
+        complete = false;
+      } else {
+        total += p;
+      }
+    }
+    return (cents: total, complete: complete);
+  }
+
+  /// Suma VISIBLE de la TABLA de la pantalla de Licencias (mensual): asientos
+  /// clínicos contratados × precio + Kura+ contratado × precio. El CUPO
+  /// ADMINISTRATIVO no tiene subtotal en la tabla (viene incluido con el módulo, que
+  /// se cobra UNA vez en su tarjeta); los cuidadores no consumen. Es la mitad de la
+  /// regla "tabla + tarjetas de módulo = hero": aquí para que el panel y el test
+  /// usen la MISMA definición y no puedan contradecirse. null-aware por fila.
+  ({int cents, bool complete}) licenseTableTotalFor(String? organizationId) {
+    final s = licenseSummaryFor(organizationId);
+    final proto = s.protocolo.contracted < 0 ? 0 : s.protocolo.contracted;
+    final clin = unitAmountCents('seat', 'clinico', 'month');
+    final pr = unitAmountCents('seat', 'protocolo', 'month');
+    return _sumCents([
+      clin == null ? null : s.clinicalSeats.contracted * clin,
+      pr == null ? null : proto * pr,
+    ]);
+  }
+
+  /// Suma VISIBLE de las TARJETAS DE MÓDULO (mensual): las tarifas de los módulos
+  /// ACTIVOS (Administración avanzada, Insumos, Comercial). El cargo de cada módulo
+  /// se muestra UNA sola vez, aquí. Otra mitad de "tabla + tarjetas = hero".
+  ({int cents, bool complete}) licenseModuleTotalFor(String? organizationId) {
+    final parts = <int?>[];
+    if (premiumAdminFor(organizationId)) {
+      parts.add(unitAmountCents('module', 'admin', 'month'));
+    }
+    if (premiumInsumosFor(organizationId)) {
+      parts.add(unitAmountCents('module', 'insumos', 'month'));
+    }
+    if (premiumComercialFor(organizationId)) {
+      parts.add(unitAmountCents('module', 'comercial', 'month'));
+    }
+    return _sumCents(parts);
+  }
+
+  /// Total mensual del hero = tabla + tarjetas de módulo, por DEFINICIÓN. Así lo
+  /// visible en pantalla suma exactamente el hero (si no, se contradice sola).
+  ({int cents, bool complete}) licenseHeroTotalFor(String? organizationId) {
+    final t = licenseTableTotalFor(organizationId);
+    final m = licenseModuleTotalFor(organizationId);
+    return (cents: t.cents + m.cents, complete: t.complete && m.complete);
+  }
+
+  /// Resumen de licencias del centro para el panel del admin (Fase 2). Se calcula
+  /// aquí (desde org_entitlements + membresías + perfiles + pacientes) para
+  /// MOSTRAR; el TOPE real lo imponen las funciones del servidor
+  /// (assert_seat_available / consumed_*), misma lógica.
+  LicenseSummary licenseSummaryFor(String? organizationId) {
+    final usersById = {for (final u in listUsers()) u.id: u};
+
+    var clinicalUsed = 0, adminUsed = 0, caregivers = 0;
+    for (final m in listMembershipsForOrg(organizationId ?? '')) {
+      if (!m.isActive || m.seatExempt) continue;
+      final u = usersById[m.profileId];
+      if (u == null || !u.isActive) continue;
+      // Consume asiento clínico := clínico-capaz (canDiagnose, con relleno admin)
+      // O enfermería. Es DISTINTO a "puede definir planes": enfermería usa el
+      // módulo clínico sin diagnosticar, así que ocupa asiento clínico y NO cupo
+      // admin. Espejo de public.consumes_clinical_seat (el tope real del servidor).
+      if (u.consumesClinicalSeat) {
+        clinicalUsed++;
+      } else if (u.isAdmin) {
+        adminUsed++;
+      } else if (u.hasRole(AppRole.cuidador)) {
+        caregivers++;
+      }
+    }
+
+    int? qty(String kind, String key) =>
+        (_entitlement(organizationId, kind, key)?['quantity'] as num?)?.toInt();
+    final clinicalContracted = qty('seat', 'clinico') ?? 0;
+    final adminIncluded = hasModuleEntitlement(organizationId, 'admin') ? 3 : 0;
+
+    // Invariante de demanda (§6, espejo de consumed_seat_demand del servidor): un
+    // administrativo PURO que no cabe en los cupos incluidos consume un asiento
+    // CLÍNICO. Sin esto, el contador clínico no veía a esos administrativos y el
+    // asiento que el portero les cobra quedaba libre otra vez (regresión ff201e7).
+    final adminOverflow =
+        adminUsed - adminIncluded > 0 ? adminUsed - adminIncluded : 0;
+    final clinicalDemand = clinicalUsed + adminOverflow;
+
+    // Protocolo Kura+: asignadas = perfiles activos del centro con premium; compradas
+    // = seat:protocolo. Sin add-on del centro → contracted -1 (no aplica).
+    final assigned = usersById.values
+        .where((u) =>
+            u.organizationId == organizationId && u.isActive && u.premiumEnabled)
+        .length;
+    final protocoloPurchased = qty('seat', 'protocolo');
+
+    // Plan y estado de pago. El plan gratuito con tope se retiró; un centro nuevo
+    // nace como 'prueba' (create_trial_organization).
+    final planEnt = _entitlement(organizationId, 'plan', 'prueba') ??
+        _entitlement(organizationId, 'plan', 'basico');
+    final plan = planEnt?['key'] as String? ?? 'basico';
+    final pastDue = _store.getAll(Collections.orgEntitlements).any((e) =>
+        e['organization_id'] == organizationId && e['status'] == 'past_due');
+    // Prueba vencida: en plan 'prueba' que ya caducó por tiempo (lee, no escribe).
+    final trialExpired = plan == 'prueba' &&
+        canReadModule(organizationId, 'clinico') &&
+        !canWriteModule(organizationId, 'clinico');
+
+    final patients = listAllPatients()
+        .where((p) => p.organizationId == organizationId)
+        .length;
+
+    return LicenseSummary(
+      // used = DEMANDA clínica: clínicos + administrativos desbordados.
+      clinicalSeats:
+          LicenseCounter(used: clinicalDemand, contracted: clinicalContracted),
+      // Contador crudo de administrativos, mostrado aparte (cupos incluidos: 3 con
+      // el módulo, 0 sin él). El desbordamiento va en adminSeatOverflow.
+      adminSlots: LicenseCounter(used: adminUsed, contracted: adminIncluded),
+      adminSeatOverflow: adminOverflow,
+      caregivers: caregivers,
+      protocolo: LicenseCounter(
+          used: assigned, contracted: protocoloPurchased ?? -1),
+      plan: plan,
+      pastDue: pastDue,
+      patientsUsed: patients,
+      trialExpired: trialExpired,
+    );
+  }
+
+  /// Registra una solicitud de más licencias (compra por solicitud, interino).
+  /// Es una SOLICITUD, no un derecho: la plataforma la atiende. El derecho lo
+  /// sigue escribiendo el webhook/master en org_entitlements.
+  Future<void> requestLicenses({
+    required String organizationId,
+    required String kind, // seat_clinico | protocolo | module | otro
+    int? requestedQuantity,
+    String? detail,
+    String? note,
+    required AppUser by,
+  }) async {
+    await _store.insertRow(Collections.licenseRequests, {
+      'organization_id': organizationId,
+      'kind': kind,
+      if (requestedQuantity != null) 'requested_quantity': requestedQuantity,
+      if (detail != null) 'detail': detail,
+      if (note != null) 'note': note,
+      'status': 'open',
+      'created_by': by.id,
+      'created_by_role': by.role.name,
+    });
+  }
+
+  /// ¿Se puede comprar en la app (hay backend de Stripe)? En demo (LocalStore) no,
+  /// así que el panel cae al formulario de solicitud.
+  bool get supportsLicenseCheckout => _store is SupabaseDataStore;
+
+  /// Inicia el checkout de licencia (Fase 2). Llama a license-checkout, que toma el
+  /// centro del PERFIL del llamante (nunca del body). Devuelve un mapa normalizado:
+  ///   {'url': ...}     → suscripción NUEVA; redirigir al checkout de Stripe.
+  ///   {'updated': true}→ suscripción existente ACTUALIZADA (prorrateo); sin url.
+  ///   {'error': msg, 'status': n} → falló; status 409 = techo del autoservicio (la
+  ///                     función ya dejó la fila en license_requests).
+  Future<Map<String, dynamic>> startLicenseCheckout({
+    required String interval, // 'month' | 'year'
+    Map<String, int>? seats, // {'clinico': n, 'protocolo': n}
+    List<String>? modules, // ['admin','insumos','comercial']
+  }) async {
+    final store = _store;
+    if (store is! SupabaseDataStore) {
+      return {'error': 'La compra en línea no está disponible en la demo.'};
+    }
+    try {
+      final data = await store.invokeFunction('license-checkout', {
+        'interval': interval,
+        if (seats != null && seats.isNotEmpty) 'seats': seats,
+        if (modules != null && modules.isNotEmpty) 'modules': modules,
+      });
+      return data;
+    } on FunctionException catch (e) {
+      final details = e.details;
+      final msg = (details is Map && details['error'] is String)
+          ? details['error'] as String
+          : 'No se pudo iniciar la compra (código ${e.status}).';
+      return {'error': msg, 'status': e.status};
+    }
+  }
+
+  /// Solicitudes de licencia (para la consola de plataforma; el master ve todas
+  /// por RLS). Más recientes primero.
+  List<Map<String, dynamic>> listLicenseRequests({String? status}) => _store
+      .getAll(Collections.licenseRequests)
+      .where((r) => status == null || r['status'] == status)
+      .toList()
+    ..sort((a, b) => ((b['created_at'] as String?) ?? '')
+        .compareTo((a['created_at'] as String?) ?? ''));
+
+  /// Marca una solicitud como atendida (solo master, RLS). No otorga el derecho:
+  /// eso se hace aparte (master en org_entitlements o el webhook).
+  Future<void> markLicenseRequestHandled(String id, {String? byProfileId}) async {
+    await _store.updateRow(Collections.licenseRequests, id, {
+      'status': 'handled',
+      'handled_at': DateTime.now().toIso8601String(),
+      'handled_by': byProfileId,
+    });
+  }
+
+  /// Anomalías de facturación (billing_anomalies) para la consola de plataforma.
+  /// Solo el master las ve (RLS); otras sesiones reciben lista vacía. Más
+  /// recientemente vistas primero.
+  List<Map<String, dynamic>> listBillingAnomalies({String? status}) => _store
+      .getAll(Collections.billingAnomalies)
+      .where((a) => status == null || a['status'] == status)
+      .toList()
+    ..sort((a, b) => ((b['last_seen_at'] as String?) ?? '')
+        .compareTo((a['last_seen_at'] as String?) ?? ''));
+
+  /// Cuántas anomalías de facturación siguen ABIERTAS (para el badge de la consola).
+  int openBillingAnomaliesCount() => _store
+      .getAll(Collections.billingAnomalies)
+      .where((a) => a['status'] == 'open')
+      .length;
+
+  /// Estado EFECTIVO de un módulo para (centro, sitio, usuario):
+  ///   tiene DERECHO (org_entitlements) AND module_settings lo enciende
+  ///   (usuario > sitio > centro > default-por-tipo) AND availableFor(tipo).
+  /// El derecho es la capa de licencia (Fase 1 §4): sin él, el módulo no se
+  /// muestra aunque module_settings lo tenga encendido.
   bool isModuleEnabled(
     ModuleKey module, {
     required String? organizationId,
     String? siteId,
     String? profileId,
   }) {
-    if (organizationId == null) {
-      return module.defaultFor(CenterType.clinicaHeridas);
-    }
+    // Sin centro no hay derechos que consultar: fallback seguro a apagado.
+    if (organizationId == null) return false;
     final centerType = centerTypeFor(organizationId);
     // Módulo no disponible para este tipo de centro: apagado siempre, sin
     // importar ajustes previos (p.ej. eKare en hospital).
     if (!module.availableFor(centerType)) return false;
+    // Capa de licencia (VISIBILIDAD/LECTURA): basta que el derecho EXISTA, en
+    // cualquier estado. Un centro past_due/canceled sigue viendo el nav y abriendo
+    // su expediente; lo que pierde es la ESCRITURA (canWriteModule, gateada en los
+    // botones de crear/guardar/editar). Sin esto, a un centro con la tarjeta vencida
+    // se le escondía el expediente, contradiciendo la banda del panel.
+    if (!canReadModule(organizationId, module.entitlementKey)) {
+      return false;
+    }
     final settings = listModuleSettings(organizationId: organizationId)
         .where((m) => m.moduleKey == module.dbValue)
         .toList();
@@ -890,26 +1460,81 @@ class DataRepository {
         .toSet();
   }
 
-  /// Crea una organizacion (centro) nueva. Uso exclusivo del area
-  /// "Plataforma" (solo master, ver PlatformHomeScreen): a diferencia del
-  /// RPC create_organization_with_admin (que ademas promueve al llamador
-  /// a admin de la organizacion nueva), esto es un INSERT directo -- el
-  /// master sigue siendo master, no se vincula automaticamente como admin
-  /// de la organizacion creada.
-  Future<Organization> createOrganization(String name, CenterType centerType,
-      {bool isTest = false}) async {
-    final data = {
-      'id': _uuid.v4(),
+  // createOrganization (INSERT directo, sin derechos → centro inservible bajo el AND)
+  // se retiró: un centro nuevo nace SIEMPRE por createTrialOrganization. Así no hay
+  // dos formas de crear un centro (era el fork que create_trial_organization cerró).
+
+  /// ÚNICO nacimiento de un centro de PRUEBA (plan:prueba, 30 días con todo incluido;
+  /// después, solo lectura por tiempo vía canWriteModule). Espejo del RPC
+  /// create_trial_organization (0125): en Supabase lo llama (caller-agnóstico,
+  /// fundador por parámetro), en demo (LocalStore) siembra los derechos directo. La
+  /// consola del master no se vincula como fundador (founder null); el master crea
+  /// usuarios después con admin-create-user. El conjunto de derechos debe quedar
+  /// IGUAL que el RPC (si cambia uno, cambiar el otro).
+  Future<Organization> createTrialOrganization(
+    String name,
+    CenterType centerType, {
+    bool isTest = false,
+    int trialDays = 30,
+    int clinicalSeats = 5,
+    int protocoloSeats = 5,
+  }) async {
+    final store = _store;
+    if (store is SupabaseDataStore) {
+      final orgId = await store.callRpcResult('create_trial_organization', {
+        'p_organization_name': name,
+        'p_center_type': centerType.dbValue,
+        'p_trial_days': trialDays,
+        'p_clinical_seats': clinicalSeats,
+        'p_protocolo_seats': protocoloSeats,
+        'p_is_test': isTest,
+      });
+      await store.refreshCollection(Collections.organizations);
+      await store.refreshCollection(Collections.orgEntitlements);
+      return organizationById(orgId as String) ??
+          Organization.fromJson({
+            'id': orgId,
+            'name': name,
+            'center_type': centerType.dbValue,
+            'is_active': true,
+            'is_test': isTest,
+          });
+    }
+    // Demo/LocalStore: crea el centro + siembra los derechos de la prueba (mismo
+    // conjunto que el RPC), con vencimiento por tiempo.
+    final id = _uuid.v4();
+    final now = DateTime.now();
+    final endIso = now.add(Duration(days: trialDays)).toIso8601String();
+    final orgRow = await store.insertRow(Collections.organizations, {
+      'id': id,
       'name': name,
-      // EXPLÍCITO, no el default 'clinica_heridas' del 0040: un hospital creado
-      // como clínica no muestra sus módulos, no los deja encender, y enfermería
-      // no puede escribir (has_hospital_org_access exige center_type=hospital).
       'center_type': centerType.dbValue,
       'is_test': isTest,
       'is_active': true,
-    };
-    final saved = await _store.insertRow(Collections.organizations, data);
-    return Organization.fromJson(saved);
+    });
+    Map<String, dynamic> ent(String kind, String key, int? qty) => {
+          'id': _uuid.v4(),
+          'organization_id': id,
+          'kind': kind,
+          'key': key,
+          'quantity': qty,
+          'status': 'active',
+          'current_period_end': endIso,
+          'source': 'master',
+          'created_at': now.toIso8601String(),
+        };
+    for (final e in [
+      ent('plan', 'prueba', null),
+      ent('module', 'clinico', null),
+      ent('module', 'admin', null),
+      ent('module', 'insumos', null),
+      ent('module', 'comercial', null),
+      ent('seat', 'clinico', clinicalSeats < 1 ? 1 : clinicalSeats),
+      ent('seat', 'protocolo', protocoloSeats < 0 ? 0 : protocoloSeats),
+    ]) {
+      await store.insertRow(Collections.orgEntitlements, e);
+    }
+    return Organization.fromJson(orgRow);
   }
 
   Future<void> setOrganizationActive(String organizationId, bool active) async {
@@ -1090,13 +1715,36 @@ class DataRepository {
     }
   }
 
-  /// ¿El centro tiene la licencia premium del módulo de Insumos? (0047)
+  /// ¿El centro PAGÓ el módulo de Insumos? Es el candado de PAGO (las pantallas de
+  /// inventario/mapeo/consumo/reabasto), NO la visibilidad del nav (eso monta sobre
+  /// clinico, ver ModuleKey.entitlementKey). Lee el derecho module:insumos, que
+  /// escribe el webhook de Stripe al comprar (o el master). Antes leía la bandera
+  /// legada organizations.premium_insumos (0047), que la ruta de Stripe no escribe.
   bool premiumInsumosFor(String? organizationId) =>
-      organizationById(organizationId)?.premiumInsumos ?? false;
+      hasModuleEntitlement(organizationId, 'insumos');
 
-  /// ¿El centro tiene el add-on premium "Protocolo Kura+"? (0049)
+  /// ¿El centro PAGÓ el módulo Comercial? Candado propio (antes leía, por error, el
+  /// de Insumos → un centro con Insumos tenía Comercial gratis). Lee module:comercial.
+  bool premiumComercialFor(String? organizationId) =>
+      hasModuleEntitlement(organizationId, 'comercial');
+
+  /// ¿El centro PAGÓ el módulo Administración avanzada? Las funciones
+  /// administrativas BÁSICAS van incluidas con la licencia clínica; solo el módulo
+  /// avanzado se cobra ($1,200, incluye 3 cupos administrativos + config del
+  /// protocolo, sitios extra y marca). Lee module:admin (mismo patrón que
+  /// premiumInsumosFor). NO gatea la visibilidad de /admin (esa es por rol,
+  /// app_router) ni la pestaña Licencias, el catálogo base / escalas / fuente de
+  /// recomendaciones, el Registro de divulgaciones ni la exportación del expediente:
+  /// la pantalla de compra vive dentro de /admin y la custodia del expediente
+  /// (NOM-004/LFPDPPP) no puede depender de que el pago esté al día.
+  bool premiumAdminFor(String? organizationId) =>
+      hasModuleEntitlement(organizationId, 'admin');
+
+  /// ¿El centro tiene el add-on "Protocolo Kura+"? Se vende por asiento
+  /// (seat:protocolo); el centro lo tiene si contrató ≥ 1. Antes leía la bandera
+  /// legada organizations.premium_protocolo_kura (0049), que Stripe no escribe.
   bool premiumProtocoloKuraFor(String? organizationId) =>
-      organizationById(organizationId)?.premiumProtocoloKura ?? false;
+      hasSeatEntitlement(organizationId, 'protocolo');
 
   /// Activa/desactiva el add-on premium "Protocolo Kura+" del centro (RPC
   /// set_org_premium_protocolo_kura, 0049, solo master).
@@ -1463,6 +2111,15 @@ class DataRepository {
       await _maybePushShopifyAdjust(item, delta);
     }
     return InventoryMovement.fromJson(saved);
+  }
+
+  /// Inserta una corrección del clínico al clasificador de visión (dataset de
+  /// entrenamiento; tabla wound_vision_corrections, migraciones 0109/0110). El
+  /// [data] ya trae wound_id, clinician_class, points, engine_version, etc.; la
+  /// RLS acota por membresía del centro. Best-effort: no debe romper el guardado
+  /// de la medición si falla.
+  Future<void> addVisionCorrection(Map<String, dynamic> data) async {
+    await _store.insertRow('wound_vision_corrections', data);
   }
 
   /// Ajusta la existencia en Shopify (espejo Kura+) si el artículo está ligado
@@ -3345,6 +4002,7 @@ class DataRepository {
     String? apnpNotes,
     String folioPrefix = 'EXP',
   }) async {
+    _assertCanWriteClinical(organizationId);
     final year = DateTime.now().year;
     final id = _uuid.v4();
 
@@ -4138,6 +4796,7 @@ class DataRepository {
     String? notes,
     required String? staffId,
   }) async {
+    _assertCanWriteClinical(organizationId);
     final data = {
       'id': _uuid.v4(),
       'organization_id': organizationId,
@@ -4415,6 +5074,7 @@ class DataRepository {
     String? notes,
     required String? staffId,
   }) async {
+    _assertCanWriteClinical(organizationId);
     final now = DateTime.now().toIso8601String();
     final data = {
       'id': _uuid.v4(),
@@ -4452,6 +5112,7 @@ class DataRepository {
     String? createdBy,
     DateTime? now,
   }) async {
+    _assertCanWriteClinical(organizationId);
     if (centerTypeFor(organizationId) != CenterType.hospital) return 0;
     return regeneratePreventivePlan(
       patientId,
@@ -4471,6 +5132,7 @@ class DataRepository {
     required String? organizationId,
     String? createdBy,
   }) async {
+    _assertCanWriteClinical(organizationId);
     if (centerTypeFor(organizationId) != CenterType.hospital) return;
     final now = DateTime.now();
     final existing = _store
@@ -4510,6 +5172,7 @@ class DataRepository {
     required String? organizationId,
     String? createdBy,
   }) async {
+    _assertCanWriteClinical(organizationId);
     if (centerTypeFor(organizationId) != CenterType.hospital) return;
     final now = DateTime.now();
     final existing = _store
@@ -4570,6 +5233,7 @@ class DataRepository {
     required String? organizationId,
     String? createdBy,
   }) async {
+    _assertCanWriteClinical(organizationId);
     if (centerTypeFor(organizationId) != CenterType.hospital) return;
     await _clearFutureRuleTasks(patientId, 'asepsis');
     if (severity != 'warn' && severity != 'danger') return;
@@ -4596,6 +5260,7 @@ class DataRepository {
     required PreventionRulesCatalog catalog,
     String? createdBy,
   }) async {
+    _assertCanWriteClinical(organizationId);
     if (centerTypeFor(organizationId) != CenterType.hospital) return;
     await _clearFutureRuleTasks(patientId, 'extravasacion');
     final g = int.tryParse(grado) ?? 0;
@@ -4645,6 +5310,7 @@ class DataRepository {
     required String? organizationId,
     String? createdBy,
   }) async {
+    _assertCanWriteClinical(organizationId);
     if (centerTypeFor(organizationId) != CenterType.hospital) return;
     final ruleId = scaleId.toLowerCase();
     await _clearFutureRuleTasks(patientId, ruleId);
@@ -4748,6 +5414,7 @@ class DataRepository {
     String? notes,
     required String? staffId,
   }) async {
+    _assertCanWriteClinical(organizationId);
     final data = {
       'id': _uuid.v4(),
       'organization_id': organizationId,
@@ -5171,6 +5838,7 @@ class DataRepository {
     String? createdBy,
     DateTime? now,
   }) async {
+    _assertCanWriteClinical(organizationId);
     if (centerTypeFor(organizationId) != CenterType.hospital) return;
     // Regenerador UNIFICADO (C0): reglas por banda + escalas permanentes, en una
     // pasada con dedup cruzado. Antes usaba generatePreventiveTasksFor (solo
@@ -5531,6 +6199,7 @@ class DataRepository {
     String? visitSummary,
     String? transcript,
   }) async {
+    _assertCanWriteClinical(_orgOfPatient(patientId));
     final data = {
       'id': _uuid.v4(),
       'patient_id': patientId,
@@ -5818,6 +6487,8 @@ class DataRepository {
   }
 
   Future<Wound> createWound(Map<String, dynamic> data) async {
+    _assertCanWriteClinical((data['organization_id'] as String?) ??
+        _orgOfPatient(data['patient_id'] as String?));
     final row = Map<String, dynamic>.from(data);
     row['id'] = row['id'] ?? _uuid.v4();
     row['created_at'] = row['created_at'] ?? DateTime.now().toIso8601String();
@@ -5857,6 +6528,7 @@ class DataRepository {
       .toList();
 
   Future<WoundAssessment> createAssessment(Map<String, dynamic> data) async {
+    _assertCanWriteClinical(_orgOfWound(data['wound_id'] as String?));
     final row = Map<String, dynamic>.from(data);
     row['id'] = row['id'] ?? _uuid.v4();
     final saved = await _store.insertRow(Collections.woundAssessments, row);
@@ -5895,6 +6567,7 @@ class DataRepository {
   }
 
   Future<WoundMeasurement> createMeasurement(Map<String, dynamic> data) async {
+    _assertCanWriteClinical(_orgOfWound(data['wound_id'] as String?));
     final row = Map<String, dynamic>.from(data);
     row['id'] = row['id'] ?? _uuid.v4();
     final saved = await _store.insertRow(Collections.woundMeasurements, row);
@@ -5913,6 +6586,8 @@ class DataRepository {
   }
 
   Future<PerfusionNutritionData> upsertPerfusion(Map<String, dynamic> data) async {
+    _assertCanWriteClinical((data['organization_id'] as String?) ??
+        _orgOfPatient(data['patient_id'] as String?));
     final row = Map<String, dynamic>.from(data);
     row['id'] = row['id'] ?? _uuid.v4();
     final saved = await _store.upsertRow(Collections.perfusionNutrition, row);
@@ -5958,6 +6633,7 @@ class DataRepository {
     String? finalDescription,
     required List<TreatmentComponentRecord> components,
   }) async {
+    _assertCanWriteClinical(_orgOfWound(woundId));
     final existing = _store
         .getAll(Collections.treatmentPlans)
         .where((p) => p['consultation_id'] == consultationId && p['wound_id'] == woundId);
@@ -6510,6 +7186,17 @@ class DataRepository {
 /// Supabase, [tempPassword] es una contrasena temporal generada por la Edge
 /// Function para compartir con el usuario cuando no hay SMTP configurado; en
 /// modo demo local es null (no hay Auth real).
+/// El centro está en modo LECTURA (prueba terminada / pago vencido / cancelado) y
+/// se intentó una escritura clínica. toString() es la frase en español sin el
+/// prefijo "Exception:" para que un screen que muestre '$e' no enseñe el nombre
+/// técnico. DataRepository.readOnlyMessageFor la reconoce.
+class ClinicalReadOnlyException implements Exception {
+  final String message;
+  const ClinicalReadOnlyException(this.message);
+  @override
+  String toString() => message;
+}
+
 class CreatedUser {
   final String uid;
   final String email;

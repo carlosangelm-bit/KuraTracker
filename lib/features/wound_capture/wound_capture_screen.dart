@@ -4,6 +4,7 @@
 // ignore_for_file: invalid_use_of_protected_member, invalid_use_of_visible_for_testing_member
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -12,6 +13,7 @@ import 'package:intl/intl.dart';
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 
+import '../../core/config/app_config.dart';
 import '../../core/theme/kura_theme.dart';
 import '../../core/utils/image_pick_error.dart';
 import '../../services/image_transcode.dart';
@@ -33,6 +35,7 @@ import 'widgets/bed_composition_sliders.dart';
 import 'widgets/undermining_tunneling_editor.dart';
 import 'widgets/body_map_selector.dart';
 import 'widgets/live_prognosis_panel.dart';
+import 'widgets/wound_vision_screen.dart';
 import '../treatment/treatment_step_screen.dart';
 
 /// Pantalla unica de captura de herida con divulgacion progresiva
@@ -75,6 +78,12 @@ class _WoundCaptureScreenState extends ConsumerState<WoundCaptureScreen> {
   final _volumeCtrl = TextEditingController();
   bool _volumeAutoFollowing = true;
 
+  // Largo/ancho/profundidad con controller propio para poder PRE-LLENARLOS
+  // desde el motor de visión ("Medir con foto") y al reabrir un borrador.
+  final _lengthCtrl = TextEditingController();
+  final _widthCtrl = TextEditingController();
+  final _depthCtrl = TextEditingController();
+
   @override
   void initState() {
     super.initState();
@@ -86,7 +95,145 @@ class _WoundCaptureScreenState extends ConsumerState<WoundCaptureScreen> {
   void dispose() {
     _debounce?.cancel();
     _volumeCtrl.dispose();
+    _lengthCtrl.dispose();
+    _widthCtrl.dispose();
+    _depthCtrl.dispose();
     super.dispose();
+  }
+
+  /// Sincroniza los campos de texto de medición con el estado (tras restaurar
+  /// un borrador o aplicar una medición del motor de visión). No toca el campo
+  /// si ya muestra el mismo número, para no mover el cursor del clínico.
+  void _syncMeasureControllers(WoundCaptureFormState formState) {
+    String fmt(double v) => v <= 0 ? '' : (v == v.roundToDouble() ? v.toStringAsFixed(0) : v.toStringAsFixed(1));
+    void sync(TextEditingController c, double v) {
+      final t = fmt(v);
+      if ((double.tryParse(c.text.replaceAll(',', '.')) ?? 0) != v && c.text != t) c.text = t;
+    }
+    sync(_lengthCtrl, formState.lengthCm);
+    sync(_widthCtrl, formState.widthCm);
+    sync(_depthCtrl, formState.depthCm);
+  }
+
+  /// «Medir con foto»: abre el motor de visión sobre una de las fotos de la
+  /// valoración y, si el clínico aplica el resultado, pre-llena largo, ancho y
+  /// composición del lecho (editables) con trazabilidad en vision_meta.
+  // Correcciones del clínico al motor (capa E): al APLICAR se persisten con el
+  // wound_measurement_id ya creado, en el guardado.
+  List<Map<String, dynamic>> _pendingCorrections = [];
+
+  /// Persiste correcciones (dataset). Best-effort: nunca rompe el guardado.
+  /// Si alguna fila rebota (p. ej. RLS o red), NO se traga en silencio: se
+  /// registra en el log y se avisa al clínico con un SnackBar discreto, para
+  /// que un fallo de etiquetado se note esa misma sesión y no la semana que
+  /// viene al abrir la tabla.
+  Future<void> _persistCorrections(List<Map<String, dynamic>> rows,
+      {required String woundId, String? measurementId}) async {
+    if (rows.isEmpty) return;
+    final repo = ref.read(dataRepositoryProvider).valueOrNull;
+    final user = ref.read(sessionProvider).user;
+    if (repo == null || user == null) return;
+    final messenger = ScaffoldMessenger.of(context);
+    var failed = 0;
+    for (final row in rows) {
+      try {
+        await repo.addVisionCorrection({
+          ...row,
+          'wound_id': woundId,
+          if (measurementId != null) 'wound_measurement_id': measurementId,
+          'created_by': user.id,
+          'created_by_role': user.role.name,
+        });
+      } catch (e) {
+        failed++;
+        debugPrint('Corrección de visión no guardada (wound_id=$woundId): $e');
+      }
+    }
+    if (failed > 0 && mounted) {
+      messenger.showSnackBar(SnackBar(
+        content: Text(failed == rows.length
+            ? 'No se pudo guardar la corrección del motor (permiso o conexión). No quedó registrada.'
+            : 'No se pudieron guardar $failed de ${rows.length} correcciones del motor.'),
+        backgroundColor: Colors.orange.shade800,
+        duration: const Duration(seconds: 5),
+      ));
+    }
+  }
+
+  Future<void> _measureWithPhoto(WoundCaptureController controller) async {
+    final formState = controller.state;
+    final photos = [
+      for (final p in formState.photoPaths)
+        if (formState.photoBytesByPath[p] != null) formState.photoBytesByPath[p]!,
+    ];
+    if (photos.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Primero captura una fotografía de la herida con la tarjeta de calibración.'),
+      ));
+      return;
+    }
+    Uint8List? chosen = photos.length == 1 ? photos.first : null;
+    if (chosen == null) {
+      chosen = await showModalBottomSheet<Uint8List>(
+        context: context,
+        builder: (ctx) => SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Padding(
+                padding: EdgeInsets.all(12),
+                child: Text('¿Qué foto quieres medir?', style: TextStyle(fontWeight: FontWeight.w700)),
+              ),
+              for (var i = 0; i < photos.length; i++)
+                ListTile(
+                  leading: ClipRRect(
+                    borderRadius: BorderRadius.circular(6),
+                    child: Image.memory(photos[i], width: 48, height: 48, fit: BoxFit.cover),
+                  ),
+                  title: Text('Fotografía ${i + 1}'),
+                  onTap: () => Navigator.pop(ctx, photos[i]),
+                ),
+            ],
+          ),
+        ),
+      );
+    }
+    if (chosen == null || !mounted) return;
+    // Orphan (salir sin aplicar): solo si la herida YA existe (una herida nueva
+    // aún no tiene id). El caso aplicado se persiste al guardar.
+    final realWoundId =
+        (widget.woundId != null && widget.woundId != 'new') ? widget.woundId : null;
+    final applied = await WoundVisionScreen.open(
+      context,
+      chosen,
+      onKeepOrphanCorrections: realWoundId == null
+          ? null
+          : (rows) => _persistCorrections(rows, woundId: realWoundId),
+    );
+    if (applied == null || !mounted) return;
+    final r = applied.result;
+    _pendingCorrections = applied.corrections;
+    formState.applyVisionMeasurement(
+      lengthCm: applied.lengthCm,
+      widthCm: applied.widthCm,
+      areaPlanimetricCm2: r.measurement.areaCm2,
+      granulacionPct: r.tissue.granulacion,
+      esfaceloPct: r.tissue.esfacelo,
+      necrosisPct: r.tissue.necrosis,
+      epitelizacionPct: r.tissue.epitelizacion,
+      source: r.measurementSource,
+      meta: r.toVisionMeta(),
+    );
+    _syncMeasureControllers(formState);
+    controller.touch();
+    _scheduleRecompute();
+    setState(() {});
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(
+        'Medidas de la foto aplicadas (${applied.modeLabel}): '
+        '${applied.lengthCm.toStringAsFixed(1)} × ${applied.widthCm.toStringAsFixed(1)} cm. Revisa y ajusta si hace falta.',
+      ),
+    ));
   }
 
   /// Mantiene _volumeCtrl sincronizado con el auto-calculo de Kundin
@@ -164,6 +311,7 @@ class _WoundCaptureScreenState extends ConsumerState<WoundCaptureScreen> {
         controller.state.photoPaths.clear();
         controller.state.photoBytesByPath.clear();
         controller.state.applyJson(form.cast<String, dynamic>());
+        _syncMeasureControllers(controller.state);
         final photos = snap!['photos'];
         if (photos is List) {
           for (var k = 0; k < photos.length; k++) {
@@ -566,7 +714,16 @@ class _WoundCaptureScreenState extends ConsumerState<WoundCaptureScreen> {
           'captured_before_debridement': formState.capturedBeforeDebridement,
           'volume_cm3': formState.volumeCm3,
           'volume_manual': formState.isVolumeManuallyOverridden,
+          // Origen de la medición (0108): manual o motor de visión.
+          'measurement_source': formState.measurementSource,
+          'area_planimetric_cm2': formState.areaPlanimetricCm2,
+          'vision_meta': formState.visionMetaForSave,
         });
+
+        // Correcciones del clínico (capa E): ya con wound_id + measurement_id.
+        await _persistCorrections(_pendingCorrections,
+            woundId: wound.id, measurementId: measurement.id);
+        _pendingCorrections = [];
 
         await repo.upsertPerfusion({
           'consultation_id': consultationId,
@@ -1092,34 +1249,99 @@ class _WoundCaptureScreenState extends ConsumerState<WoundCaptureScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              // Medición por foto (motor de visión on-device). Propone largo,
+              // ancho y composición del lecho; el clínico revisa y edita.
+              // Gateado por VISION_ENABLED (apagado por defecto): sin el flag no
+              // se ofrece la medición automática (la captura manual sigue igual).
+              if (AppConfig.visionEnabled) ...[
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: formState.photoPaths.isEmpty ? null : () => _measureWithPhoto(controller),
+                      icon: const Icon(Icons.straighten, size: 18),
+                      label: Text(formState.isVisionMeasured ? 'Volver a medir con foto' : 'Medir con foto'),
+                    ),
+                  ),
+                  if (formState.isVisionMeasured) ...[
+                    const SizedBox(width: 8),
+                    TextButton(
+                      onPressed: () => update(() => formState.clearVisionMeasurement()),
+                      child: const Text('Quitar origen foto'),
+                    ),
+                  ],
+                ],
+              ),
+              if (formState.photoPaths.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4, bottom: 8),
+                  child: Text(
+                    'Captura una foto con la tarjeta de calibración junto a la herida para medir automáticamente.',
+                    style: TextStyle(fontSize: 11, color: KuraColors.darkText.withOpacity(0.5)),
+                  ),
+                ),
+              if (formState.isVisionMeasured)
+                Container(
+                  margin: const EdgeInsets.only(top: 6, bottom: 10),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: KuraColors.infoBlue.withOpacity(0.08),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: KuraColors.infoBlue.withOpacity(0.3)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.photo_camera_outlined, size: 16, color: KuraColors.infoBlue),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Largo, ancho y lecho propuestos por el motor de visión'
+                          '${formState.areaPlanimetricCm2 == null ? '' : ' · área por planimetría ${formState.areaPlanimetricCm2!.toStringAsFixed(2)} cm²'}'
+                          '${formState.visionEdited ? ' · editado a mano' : ''}. '
+                          'Apoyo a la decisión clínica — no sustituye el juicio clínico.',
+                          style: const TextStyle(fontSize: 11),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+              const SizedBox(height: 4),
               Row(
                 children: [
                   Expanded(
                     child: TextFormField(
+                      controller: _lengthCtrl,
                       decoration: const InputDecoration(labelText: 'Longitud (cm) *'),
                       keyboardType: TextInputType.number,
                       onChanged: (v) => update(() {
-                        formState.lengthCm = double.tryParse(v) ?? 0;
+                        final nv = double.tryParse(v.replaceAll(',', '.')) ?? 0;
+                        if (nv != formState.lengthCm) formState.markVisionEdited();
+                        formState.lengthCm = nv;
                       }),
                     ),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
                     child: TextFormField(
+                      controller: _widthCtrl,
                       decoration: const InputDecoration(labelText: 'Anchura (cm) *'),
                       keyboardType: TextInputType.number,
                       onChanged: (v) => update(() {
-                        formState.widthCm = double.tryParse(v) ?? 0;
+                        final nv = double.tryParse(v.replaceAll(',', '.')) ?? 0;
+                        if (nv != formState.widthCm) formState.markVisionEdited();
+                        formState.widthCm = nv;
                       }),
                     ),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
                     child: TextFormField(
+                      controller: _depthCtrl,
                       decoration: const InputDecoration(labelText: 'Profundidad (cm)'),
                       keyboardType: TextInputType.number,
                       onChanged: (v) => update(() {
-                        formState.depthCm = double.tryParse(v) ?? 0;
+                        formState.depthCm = double.tryParse(v.replaceAll(',', '.')) ?? 0;
                       }),
                     ),
                   ),
@@ -1242,10 +1464,22 @@ class _WoundCaptureScreenState extends ConsumerState<WoundCaptureScreen> {
                 esfacelo: formState.esfaceloPct,
                 necrosis: formState.necrosisPct,
                 epitelizacion: formState.epitelizacionPct,
-                onGranulacionChanged: (v) => update(() => formState.granulacionPct = v),
-                onEsfaceloChanged: (v) => update(() => formState.esfaceloPct = v),
-                onNecrosisChanged: (v) => update(() => formState.necrosisPct = v),
-                onEpitelizacionChanged: (v) => update(() => formState.epitelizacionPct = v),
+                onGranulacionChanged: (v) => update(() {
+                  formState.markVisionEdited();
+                  formState.granulacionPct = v;
+                }),
+                onEsfaceloChanged: (v) => update(() {
+                  formState.markVisionEdited();
+                  formState.esfaceloPct = v;
+                }),
+                onNecrosisChanged: (v) => update(() {
+                  formState.markVisionEdited();
+                  formState.necrosisPct = v;
+                }),
+                onEpitelizacionChanged: (v) => update(() {
+                  formState.markVisionEdited();
+                  formState.epitelizacionPct = v;
+                }),
                 capturedBeforeDebridement: formState.capturedBeforeDebridement,
                 onCapturedBeforeDebridementChanged: (v) =>
                     update(() => formState.capturedBeforeDebridement = v),

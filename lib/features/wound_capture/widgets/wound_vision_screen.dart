@@ -1,0 +1,1429 @@
+import 'dart:math' as math;
+import 'dart:typed_data';
+
+import 'package:flutter/foundation.dart' show compute;
+import 'package:flutter/material.dart';
+
+import '../../../core/theme/kura_theme.dart';
+import '../../../engine/vision/vision_geometry.dart';
+import '../../../engine/vision/vision_params.dart';
+import '../../../engine/vision/wound_vision_engine.dart';
+
+/// Lo que la pantalla devuelve al formulario cuando el clínico pulsa
+/// «Aplicar a la valoración».
+class WoundVisionApplyResult {
+  final WoundVisionResult result;
+  final Uint8List rectifiedPng;
+  final Uint8List overlayPng;
+  /// Correcciones del clínico al clasificador (dataset de entrenamiento). Cada
+  /// una: {clinician_class, note?, engine_version, calibration_mode, mm_per_px,
+  /// rectified_size, points:[{x,y,engine_class,lab}]}. La pantalla de captura
+  /// les añade wound_id/created_by/rol y (si aplica) wound_measurement_id.
+  final List<Map<String, dynamic>> corrections;
+  const WoundVisionApplyResult({
+    required this.result,
+    required this.rectifiedPng,
+    required this.overlayPng,
+    this.corrections = const [],
+  });
+
+  /// Largo/ancho redondeados a 0,1 cm como los captura el clínico con regla.
+  double get lengthCm => (result.measurement.lengthCm * 10).round() / 10;
+  double get widthCm => (result.measurement.widthCm * 10).round() / 10;
+
+  /// Etiqueta legible del modo de calibración (tarjeta / disco), en minúsculas.
+  String get modeLabel => result.calibration.mode.label.toLowerCase();
+}
+
+/// Pantalla «Medir con foto»: calibra la foto (tarjeta WoundCalibrate o
+/// disco), deja que el clínico toque la herida (o la trace a mano), y muestra
+/// área, largo, ancho, perímetro y composición del lecho para aplicarlos al
+/// formulario. Todo corre en el dispositivo; la foto no sale de él.
+class WoundVisionScreen extends StatefulWidget {
+  final Uint8List photoBytes;
+
+  /// Persistencia de correcciones cuando el clínico marcó algunas pero SALE sin
+  /// aplicar la medición (caso de fallo del motor, la señal más valiosa). La
+  /// pantalla de captura persiste esas correcciones sin wound_measurement_id.
+  final Future<void> Function(List<Map<String, dynamic>> corrections)? onKeepOrphanCorrections;
+
+  const WoundVisionScreen({super.key, required this.photoBytes, this.onKeepOrphanCorrections});
+
+  /// Abre la pantalla y devuelve el resultado aplicado (o null si se canceló).
+  static Future<WoundVisionApplyResult?> open(
+    BuildContext context,
+    Uint8List photoBytes, {
+    Future<void> Function(List<Map<String, dynamic>> corrections)? onKeepOrphanCorrections,
+  }) {
+    return Navigator.of(context).push<WoundVisionApplyResult>(
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => WoundVisionScreen(
+          photoBytes: photoBytes,
+          onKeepOrphanCorrections: onKeepOrphanCorrections,
+        ),
+      ),
+    );
+  }
+
+  @override
+  State<WoundVisionScreen> createState() => _WoundVisionScreenState();
+}
+
+// rodear: el dedo va POR FUERA de la herida; el trazo es ZONA DE BÚSQUEDA y el
+//   motor afina el borde real (analyzeEnclosingTrace) — el que mejor mide.
+// auto: toques-semilla dentro de la herida (analyze).
+// manual: el trazo se toma como el borde EXACTO (analyzeManualTrace).
+enum _Mode { rodear, auto, manual }
+
+class _WoundVisionScreenState extends State<WoundVisionScreen> {
+  WoundVisionEngine? _engine;
+  CalibrationOutcome? _calibration;
+  WoundVisionResult? _result;
+  String? _error;
+  bool _busy = true;
+  String _busyLabel = 'Buscando la referencia de escala…';
+  _Mode _mode = _Mode.rodear; // POR DEFECTO: el que mejor mide
+  final List<Pt> _seeds = [];
+  final List<Pt> _trace = [];
+  // Modos que usan _trace (dibujo/trazo): rodear (zona de búsqueda) y manual
+  // (borde exacto). auto usa semillas.
+  bool get _isTraceMode => _mode == _Mode.rodear || _mode == _Mode.manual;
+  double _sensitivity = 0.5;
+  bool _showTissue = true;
+
+  // --- Vista por CLASE de tejido + inspector (fase de resultados) ---
+  // Clases: 0 granulación, 1 esfacelo, 2 necrosis, 3 epitelización, 254 brillo.
+  // Colores ANTINATURALES (requisito: distinguir el diagnóstico del tejido).
+  static const Map<int, String> _classNames = {
+    0: 'Granulación', 1: 'Esfacelo', 2: 'Necrosis', 3: 'Epitelización', 254: 'Brillo / no eval.'
+  };
+  static const Map<int, Color> _classColors = {
+    0: Color(0xFF00E5FF), // cian
+    1: Color(0xFFFF00EA), // magenta
+    2: Color(0xFFC6FF00), // verde lima
+    3: Color(0xFFFF8A00), // naranja
+    254: Color(0xFFB0B0B0), // brillo: gris (en el overlay va en patrón de damero)
+  };
+  final Set<int> _classesOn = {0, 1, 2, 3, 254};
+  double _classOpacity = 0.6;
+  Uint8List? _classOverlay; // PNG memoizado
+  String? _classOverlayKey;
+  TissueInspection? _inspection; // resultado del inspector (tap)
+  Pt? _inspectRectPx; // punto tocado (px rectificados) para el marcador
+
+  // --- Correcciones del clínico (dataset de entrenamiento, capa E) ---
+  // 8 clases: los 4 tejidos + piel_no_herida + brillo + otro(nota) + no_estoy_seguro.
+  static const Map<String, String> _clinicianClasses = {
+    'granulacion': 'Granulación',
+    'esfacelo': 'Esfacelo',
+    'necrosis': 'Necrosis',
+    'epitelizacion': 'Epitelización',
+    'piel_no_herida': 'Es piel, no herida',
+    'brillo': 'Brillo / reflejo',
+    'otro': 'Otro (con nota)',
+    'no_estoy_seguro': 'No estoy seguro',
+  };
+  bool _correcting = false; // modo corrección: los toques marcan zona (no inspeccionan)
+  final List<Map<String, dynamic>> _pendingPoints = []; // puntos de la corrección en curso
+  final List<Map<String, dynamic>> _corrections = []; // correcciones guardadas (para persistir)
+
+  /// Lab promedio de un parche (~5×5 px rectificados) alrededor de un punto, en
+  /// el espacio de trabajo (que ya es un promedio por el downscale → menos ruido
+  /// del sensor). Devuelve [L,a,b] o null si cae fuera del mapa.
+  List<double>? _patchLab(TissueMap m, int rx, int ry) {
+    if (m.factor <= 0) return null;
+    final cx = (rx - m.offsetX) ~/ m.factor, cy = (ry - m.offsetY) ~/ m.factor;
+    final r = math.max(1, (2 / m.factor).round()); // radio en px de trabajo
+    var n = 0;
+    var l = 0.0, a = 0.0, b = 0.0;
+    for (var dy = -r; dy <= r; dy++) {
+      for (var dx = -r; dx <= r; dx++) {
+        final x = cx + dx, y = cy + dy;
+        if (x < 0 || y < 0 || x >= m.width || y >= m.height) continue;
+        final i = (y * m.width + x) * 3;
+        l += m.lab[i];
+        a += m.lab[i + 1];
+        b += m.lab[i + 2];
+        n++;
+      }
+    }
+    if (n == 0) return null;
+    return [l / n, a / n, b / n];
+  }
+
+  void _addCorrectionPoint(CalibrationResult cal, WoundVisionResult res, int rx, int ry) {
+    if (rx < 0 || ry < 0 || rx >= cal.width || ry >= cal.height) return;
+    final lab = _patchLab(res.tissueMap, rx, ry);
+    final eng = res.tissueMap.labelAtRectPx(rx, ry);
+    if (lab == null || eng == null) return;
+    setState(() {
+      _pendingPoints.add({
+        'x': rx,
+        'y': ry,
+        'engine_class': eng, // lo que puso el motor ahí (0..3, 254 brillo)
+        'lab': [
+          double.parse(lab[0].toStringAsFixed(2)),
+          double.parse(lab[1].toStringAsFixed(2)),
+          double.parse(lab[2].toStringAsFixed(2)),
+        ],
+      });
+    });
+  }
+
+  Future<void> _saveCorrection(CalibrationResult cal, WoundVisionResult res) async {
+    if (_pendingPoints.isEmpty) return;
+    final picked = await _pickClinicianClass();
+    if (picked == null || !mounted) return;
+    setState(() {
+      _corrections.add({
+        'clinician_class': picked.$1,
+        if (picked.$2 != null && picked.$2!.trim().isNotEmpty) 'note': picked.$2!.trim(),
+        'engine_version': res.engineVersion,
+        'calibration_mode': cal.mode == CalibrationMode.card ? 'card' : 'disc',
+        'mm_per_px': cal.mmPerPx,
+        'rectified_size': [cal.width, cal.height],
+        'points': List<Map<String, dynamic>>.from(_pendingPoints),
+      });
+      _pendingPoints.clear();
+    });
+  }
+
+  /// Selector de la clase REAL (8 opciones). Para 'otro' pide una nota.
+  Future<(String, String?)?> _pickClinicianClass() async {
+    final cls = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Padding(
+              padding: EdgeInsets.all(12),
+              child: Text('¿Qué tejido es EN REALIDAD?', style: TextStyle(fontWeight: FontWeight.w700)),
+            ),
+            for (final e in _clinicianClasses.entries)
+              ListTile(
+                dense: true,
+                title: Text(e.value),
+                onTap: () => Navigator.pop(ctx, e.key),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (cls == null || !mounted) return null;
+    if (cls != 'otro') return (cls, null);
+    final ctrl = TextEditingController();
+    final note = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('¿Qué es? (obligatorio)'),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          decoration: const InputDecoration(hintText: 'Describe el tejido/estructura'),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, ctrl.text.trim()), child: const Text('Guardar')),
+        ],
+      ),
+    );
+    if (note == null || note.isEmpty) return null; // 'otro' exige nota (constraint 0109)
+    return ('otro', note);
+  }
+
+  void _undoCorrection() {
+    setState(() {
+      if (_pendingPoints.isNotEmpty) {
+        _pendingPoints.removeLast();
+      } else if (_corrections.isNotEmpty) {
+        _corrections.removeLast();
+      }
+    });
+  }
+
+  Uint8List _classOverlayFor(CalibrationResult cal, WoundVisionResult res) {
+    final key = '${identityHashCode(res)}|${(_classesOn.toList()..sort()).join(',')}|${_classOpacity.toStringAsFixed(2)}';
+    if (_classOverlayKey == key && _classOverlay != null) return _classOverlay!;
+    _classOverlay = WoundVisionEngine.renderClassOverlay(
+      res.tissueMap,
+      rectWidth: cal.width,
+      rectHeight: cal.height,
+      classes: _classesOn,
+      opacity: _classOpacity,
+    );
+    _classOverlayKey = key;
+    return _classOverlay!;
+  }
+  // El paso de marcar/trazar se abre a PANTALLA COMPLETA (imagen al máximo, con
+  // zoom y desplazamiento); las medidas y «Aplicar» aparecen al salir de él.
+  bool _tracing = true;
+  final TransformationController _tc = TransformationController();
+
+  // --- Trazo a mano alzada (modo manual): 1 dedo dibuja, 2 dedos zoom/pinch ---
+  // Los toques y cada arrastre se agrupan en `_strokeStarts` (índice en `_trace`
+  // donde empezó el grupo) para que Deshacer borre el TRAZO completo del último
+  // arrastre (o el último vértice suelto), no punto por punto.
+  int _pointers = 0; // punteros activos sobre la imagen
+  final List<int> _strokeStarts = []; // inicio (en _trace) de cada grupo
+  int? _strokePendingStart; // inicio del arrastre en curso (aún sin commit)
+  bool _strokeCommitted = false; // el arrastre ya empujó su entrada en _strokeStarts
+  Pt? _lastDrawPx; // último punto añadido, para submuestrear por distancia
+  static const double _minDrawStepPx = 2.0; // submuestreo (px rectificados)
+
+  @override
+  void initState() {
+    super.initState();
+    _start();
+  }
+
+  @override
+  void dispose() {
+    _tc.dispose();
+    super.dispose();
+  }
+
+  Future<void> _start() async {
+    try {
+      final (spec, params) = await VisionAssets.load();
+      final engine = WoundVisionEngine(spec: spec, params: params);
+      _sensitivity = params.sensitivityDefault;
+      final outcome = await compute(_calibrateTask, _CalibrateArgs(engine, widget.photoBytes));
+      if (!mounted) return;
+      setState(() {
+        _engine = engine;
+        _calibration = outcome;
+        _busy = false;
+        if (outcome.result == null) _error = outcome.failure?.message ?? 'No se pudo calibrar la foto.';
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _error = 'Error al procesar la foto: $e';
+      });
+    }
+  }
+
+  Future<void> _reanalyze() async {
+    final engine = _engine, cal = _calibration;
+    if (engine == null || cal == null || cal.result == null) return;
+    if (_mode == _Mode.auto && _seeds.isEmpty) {
+      setState(() => _result = null);
+      return;
+    }
+    if (_isTraceMode && _trace.length < 3) {
+      setState(() => _result = null);
+      return;
+    }
+    setState(() {
+      _busy = true;
+      _busyLabel = _mode == _Mode.auto
+          ? 'Delimitando la herida…'
+          : (_mode == _Mode.rodear ? 'Afinando el borde…' : 'Midiendo el contorno…');
+    });
+    try {
+      final res = await compute(
+        _analyzeTask,
+        _AnalyzeArgs(
+          engine: engine,
+          calibration: cal,
+          mode: _mode,
+          seeds: _mode == _Mode.auto ? List<Pt>.from(_seeds) : const [],
+          trace: _isTraceMode ? List<Pt>.from(_trace) : const [],
+          sensitivity: _sensitivity,
+        ),
+      );
+      if (!mounted) return;
+      setState(() {
+        _result = res;
+        _busy = false;
+        if (res == null && _mode == _Mode.auto) {
+          _error = 'No se pudo delimitar la herida desde ese punto. Toca de nuevo dentro de la herida o traza el contorno a mano.';
+        } else {
+          _error = null;
+        }
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _error = 'Error al analizar: $e';
+      });
+    }
+  }
+
+  void _onTap(Pt imagePx) {
+    final cal = _calibration?.result;
+    if (cal == null || _busy) return;
+    if (imagePx.x < 0 || imagePx.y < 0 || imagePx.x >= cal.width || imagePx.y >= cal.height) return;
+    setState(() {
+      if (_mode == _Mode.auto) {
+        _seeds.add(imagePx);
+      } else {
+        // Vértice suelto: su propio grupo para Deshacer.
+        _strokeStarts.add(_trace.length);
+        _trace.add(imagePx);
+      }
+    });
+    _reanalyze();
+  }
+
+  // --- Trazo a mano alzada, dirigido por eventos de puntero (dentro del hijo
+  // del InteractiveViewer, así el zoom no distorsiona el mapeo local→px). Un
+  // dedo dibuja; al bajar el segundo se abandona el trazo en curso y el gesto
+  // pasa al viewer (zoom). No se re-analiza a mitad de arrastre (caro): solo al
+  // levantar el dedo.
+  void _drawBegin() {
+    if (!_isTraceMode || _busy) return;
+    _strokePendingStart = _trace.length;
+    _strokeCommitted = false;
+    _lastDrawPx = null;
+  }
+
+  void _drawExtend(Pt imagePx) {
+    final cal = _calibration?.result;
+    if (cal == null || _busy || !_isTraceMode || _pointers != 1) return;
+    if (_strokePendingStart == null) return;
+    if (imagePx.x < 0 || imagePx.y < 0 || imagePx.x >= cal.width || imagePx.y >= cal.height) return;
+    if (_lastDrawPx != null) {
+      final dx = imagePx.x - _lastDrawPx!.x, dy = imagePx.y - _lastDrawPx!.y;
+      if (dx * dx + dy * dy < _minDrawStepPx * _minDrawStepPx) return; // submuestreo
+    }
+    setState(() {
+      if (!_strokeCommitted) {
+        _strokeStarts.add(_strokePendingStart!);
+        _strokeCommitted = true;
+      }
+      _trace.add(imagePx);
+      _lastDrawPx = imagePx;
+    });
+  }
+
+  void _drawEnd() {
+    final committed = _strokeCommitted;
+    _strokePendingStart = null;
+    _strokeCommitted = false;
+    _lastDrawPx = null;
+    if (committed) _reanalyze(); // re-mide una vez, al terminar el trazo
+  }
+
+  /// Al bajar un 2º dedo: se descarta el trazo en curso (el gesto es zoom, no
+  /// dibujo) — resuelve la carrera "segundo dedo justo después del primero".
+  void _drawAbort() {
+    if (_strokePendingStart == null) return;
+    setState(() {
+      if (_strokeCommitted) {
+        _trace.removeRange(_strokePendingStart!, _trace.length);
+        if (_strokeStarts.isNotEmpty && _strokeStarts.last == _strokePendingStart) {
+          _strokeStarts.removeLast();
+        }
+      }
+      _strokePendingStart = null;
+      _strokeCommitted = false;
+      _lastDrawPx = null;
+    });
+  }
+
+  void _undo() {
+    setState(() {
+      if (_mode == _Mode.auto) {
+        if (_seeds.isNotEmpty) _seeds.removeLast();
+      } else if (_strokeStarts.isNotEmpty) {
+        final start = _strokeStarts.removeLast();
+        if (start <= _trace.length) _trace.removeRange(start, _trace.length);
+      } else if (_trace.isNotEmpty) {
+        _trace.removeLast(); // respaldo
+      }
+    });
+    _reanalyze();
+  }
+
+  void _clear() {
+    setState(() {
+      _seeds.clear();
+      _trace.clear();
+      _strokeStarts.clear();
+      _strokePendingStart = null;
+      _strokeCommitted = false;
+      _lastDrawPx = null;
+      _result = null;
+      _error = null;
+    });
+  }
+
+  void _apply() {
+    final res = _result, cal = _calibration?.result;
+    if (res == null || cal == null) return;
+    // Al APLICAR, las correcciones viajan con el resultado; la pantalla de
+    // captura las persiste con el wound_measurement_id ya creado.
+    Navigator.of(context).pop(WoundVisionApplyResult(
+      result: res,
+      rectifiedPng: cal.rectifiedPng,
+      overlayPng: res.overlayPng,
+      corrections: List<Map<String, dynamic>>.from(_corrections),
+    ));
+  }
+
+  /// Salir sin aplicar: si hay correcciones marcadas, preguntar UNA vez si se
+  /// conservan (sesión abandonada = la señal más valiosa). Si sí, se persisten
+  /// SIN measurement_id vía [onKeepOrphanCorrections].
+  Future<void> _attemptExit() async {
+    if (_corrections.isEmpty) {
+      if (mounted) Navigator.of(context).pop();
+      return;
+    }
+    final keep = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('¿Conservar las correcciones?'),
+        content: Text(
+            'Marcaste ${_corrections.length} corrección(es) pero no aplicaste la medición. '
+            '¿Las guardamos para entrenar el motor? (sin ellas, esta señal se pierde)'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Descartar')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Conservar')),
+        ],
+      ),
+    );
+    if (!mounted) return;
+    if (keep == true && widget.onKeepOrphanCorrections != null) {
+      await widget.onKeepOrphanCorrections!(List<Map<String, dynamic>>.from(_corrections));
+    }
+    if (mounted) Navigator.of(context).pop();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cal = _calibration?.result;
+    final Widget body;
+    if (cal == null) {
+      body = Scaffold(
+        appBar: AppBar(title: const Text('Medir con foto')),
+        body: _buildCalibrating(),
+      );
+    } else {
+      body = _tracing ? _buildTracing(context, cal) : _buildResults(context, cal);
+    }
+    // Intercepta el back del sistema/AppBar para preguntar por las correcciones.
+    return PopScope(
+      canPop: _corrections.isEmpty,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _attemptExit();
+      },
+      child: body,
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // FASE 1 · TRAZADO a pantalla completa: la foto ocupa todo el alto disponible,
+  // con zoom (pellizco) y desplazamiento (arrastre) para ajustar el borde con
+  // precisión. Los controles flotan SOBRE la imagen (no le quitan espacio). El
+  // botón «Ver medidas» sale del modo de trazado a la fase de resultados.
+  // ---------------------------------------------------------------------------
+  Widget _buildTracing(BuildContext context, CalibrationResult cal) {
+    final hint = switch (_mode) {
+      _Mode.rodear =>
+        'RODEA la herida POR FUERA con el dedo (por piel sana, sin pisar el borde): '
+            'el motor afina el borde real. 1 dedo dibuja, 2 dedos hacen zoom.',
+      _Mode.auto =>
+        'Toca DENTRO de la herida; pellizca para acercar y arrastra para mover. Si tiene varios tejidos, toca cada uno.',
+      _Mode.manual =>
+        'Traza el borde EXACTO de la herida (mínimo 3 puntos); se cierra solo. 1 dedo dibuja, 2 dedos hacen zoom.',
+    };
+    return Scaffold(
+      backgroundColor: const Color(0xFF141118),
+      body: SafeArea(
+        child: Stack(
+          children: [
+            Positioned.fill(child: _buildInteractiveImage(cal)),
+            if (_busy)
+              const Positioned.fill(
+                child: ColoredBox(
+                  color: Color(0x66000000),
+                  child: Center(child: CircularProgressIndicator(color: Colors.white)),
+                ),
+              ),
+            // Barra superior flotante: cerrar · modo · tejido · deshacer · limpiar.
+            Positioned(
+              top: 8,
+              left: 8,
+              right: 8,
+              child: _overlayBar(
+                child: Row(
+                  children: [
+                    IconButton(
+                      tooltip: 'Cerrar',
+                      icon: const Icon(Icons.close, color: Colors.white),
+                      onPressed: _attemptExit,
+                    ),
+                    SegmentedButton<_Mode>(
+                      segments: const [
+                        ButtonSegment(
+                            value: _Mode.rodear,
+                            icon: Icon(Icons.highlight_alt),
+                            tooltip: 'Rodear la herida'),
+                        ButtonSegment(
+                            value: _Mode.auto,
+                            icon: Icon(Icons.touch_app_outlined),
+                            tooltip: 'Tocar la herida'),
+                        ButtonSegment(
+                            value: _Mode.manual,
+                            icon: Icon(Icons.gesture),
+                            tooltip: 'Trazar a mano'),
+                      ],
+                      selected: {_mode},
+                      showSelectedIcon: false,
+                      onSelectionChanged: _busy
+                          ? null
+                          : (s) {
+                              setState(() {
+                                _mode = s.first;
+                                _result = null;
+                                _error = null;
+                              });
+                              _reanalyze();
+                            },
+                      style: const ButtonStyle(visualDensity: VisualDensity.compact),
+                    ),
+                    const Spacer(),
+                    IconButton(
+                      tooltip: _showTissue ? 'Ocultar tejido' : 'Ver tejido',
+                      icon: Icon(_showTissue ? Icons.layers : Icons.layers_clear_outlined,
+                          color: Colors.white),
+                      onPressed: () => setState(() => _showTissue = !_showTissue),
+                    ),
+                    IconButton(
+                      tooltip: 'Deshacer último punto',
+                      onPressed: _busy || (_mode == _Mode.auto ? _seeds.isEmpty : _trace.isEmpty)
+                          ? null
+                          : _undo,
+                      icon: const Icon(Icons.undo, color: Colors.white),
+                    ),
+                    IconButton(
+                      tooltip: 'Limpiar',
+                      onPressed: _busy || (_seeds.isEmpty && _trace.isEmpty) ? null : _clear,
+                      icon: const Icon(Icons.delete_sweep_outlined, color: Colors.white),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            // Barra inferior flotante: sensibilidad (auto) · pista · «Ver medidas».
+            Positioned(
+              bottom: 8,
+              left: 8,
+              right: 8,
+              child: _overlayBar(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // Sensibilidad: aplica a auto (semillas) y rodear (afina el
+                    // borde). Manual toma el trazo tal cual, no la usa.
+                    if (_mode != _Mode.manual)
+                      Row(
+                        children: [
+                          const Text('Sensibilidad',
+                              style: TextStyle(fontSize: 12, color: Colors.white70)),
+                          Expanded(
+                            child: Slider(
+                              value: _sensitivity,
+                              min: 0,
+                              max: 1,
+                              divisions: 10,
+                              label: _sensitivity < 0.5
+                                  ? 'Más estricta'
+                                  : (_sensitivity > 0.5 ? 'Más amplia' : 'Neutra'),
+                              onChanged: _busy ? null : (v) => setState(() => _sensitivity = v),
+                              onChangeEnd: (_) => _reanalyze(),
+                            ),
+                          ),
+                        ],
+                      ),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(_error ?? hint,
+                              style: const TextStyle(color: Colors.white70, fontSize: 12)),
+                        ),
+                        const SizedBox(width: 12),
+                        FilledButton.icon(
+                          onPressed: _result == null || _busy
+                              ? null
+                              : () => setState(() => _tracing = false),
+                          icon: const Icon(Icons.straighten),
+                          label: const Text('Ver medidas'),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _overlayBar({required Widget child}) => Material(
+        color: const Color(0xCC1E1B26),
+        borderRadius: BorderRadius.circular(14),
+        elevation: 4,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+          child: child,
+        ),
+      );
+
+  /// Imagen rectificada + tejido + marcas dentro de un [InteractiveViewer]
+  /// (zoom/pan). El [GestureDetector] va DENTRO del hijo del viewer, así que su
+  /// `localPosition` llega en coordenadas del hijo SIN transformar por el zoom:
+  /// el mapeo toque→píxel (y por tanto la calibración) se conserva intacto.
+  Widget _buildInteractiveImage(CalibrationResult cal) {
+    final res = _result;
+    return LayoutBuilder(builder: (context, c) {
+      // Ajuste tipo BoxFit.contain calculado a mano para mapear toques → px.
+      final scale = math.min(c.maxWidth / cal.width, c.maxHeight / cal.height);
+      final dw = cal.width * scale, dh = cal.height * scale;
+      final ox = (c.maxWidth - dw) / 2, oy = (c.maxHeight - dh) / 2;
+      return InteractiveViewer(
+        transformationController: _tc,
+        minScale: 1,
+        maxScale: 10,
+        // En los modos de TRAZO (rodear/manual) se DESACTIVA el pan del viewer:
+        // así 1 dedo dibuja sin competir con el viewer (sin carrera de arena) y 2
+        // dedos siguen haciendo zoom (pinch). En automático el pan queda activo
+        // (los toques colocan semillas, no se arrastra). scaleEnabled siempre.
+        panEnabled: _mode == _Mode.auto,
+        boundaryMargin: const EdgeInsets.all(120),
+        // Listener DENTRO del hijo del viewer: su localPosition llega en coords
+        // del hijo (sin transformar por el zoom), igual que onTapUp. Cuenta
+        // punteros para decidir dibujo (1) vs zoom (2+).
+        child: Listener(
+          onPointerDown: (e) {
+            _pointers++;
+            if (_isTraceMode && !_busy) {
+              if (_pointers == 1) {
+                _drawBegin();
+              } else if (_pointers >= 2) {
+                _drawAbort();
+              }
+            }
+          },
+          onPointerMove: (e) {
+            if (_isTraceMode && _pointers == 1) {
+              final lx = (e.localPosition.dx - ox) / scale, ly = (e.localPosition.dy - oy) / scale;
+              _drawExtend(Pt(lx, ly));
+            }
+          },
+          onPointerUp: (e) {
+            if (_pointers > 0) _pointers--;
+            if (_pointers == 0 && _isTraceMode) _drawEnd();
+          },
+          onPointerCancel: (e) {
+            if (_pointers > 0) _pointers--;
+            if (_pointers == 0 && _isTraceMode) _drawEnd();
+          },
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTapUp: (d) {
+              final lx = (d.localPosition.dx - ox) / scale, ly = (d.localPosition.dy - oy) / scale;
+              _onTap(Pt(lx, ly));
+            },
+            child: Stack(
+            children: [
+              Positioned(
+                left: ox,
+                top: oy,
+                width: dw,
+                height: dh,
+                child: Image.memory(cal.rectifiedPng, fit: BoxFit.fill, gaplessPlayback: true),
+              ),
+              if (res != null && _showTissue)
+                Positioned(
+                  left: ox,
+                  top: oy,
+                  width: dw,
+                  height: dh,
+                  child: Image.memory(res.overlayPng, fit: BoxFit.fill, gaplessPlayback: true),
+                ),
+              Positioned(
+                left: ox,
+                top: oy,
+                width: dw,
+                height: dh,
+                child: CustomPaint(
+                  painter: _MarksPainter(
+                    seeds: _mode == _Mode.auto ? _seeds : const [],
+                    trace: _isTraceMode ? _trace : const [],
+                    scale: scale,
+                    excluded: cal.excludedRects,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          ),
+        ),
+      );
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // FASE 2 · RESULTADOS: medidas, composición del lecho, calidad y «Aplicar».
+  // Una vista previa con «Editar contorno» reabre la fase de trazado.
+  // ---------------------------------------------------------------------------
+  Widget _buildResults(BuildContext context, CalibrationResult cal) {
+    final gates = _result?.gates ?? cal.gates;
+    return Scaffold(
+      appBar: AppBar(title: const Text('Medir con foto')),
+      body: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            _resultPreview(cal),
+            const SizedBox(height: 12),
+            _buildMetrics(cal, gates),
+          ],
+        ),
+      ),
+      bottomNavigationBar: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Apoyo a la decisión clínica — no sustituye el juicio clínico. '
+                  'Revisa y ajusta las medidas antes de guardar.',
+                  style: TextStyle(fontSize: 11, color: KuraColors.darkText.withOpacity(0.6)),
+                ),
+              ),
+              const SizedBox(width: 12),
+              FilledButton.icon(
+                onPressed: _result == null || _busy ? null : _apply,
+                icon: const Icon(Icons.check),
+                label: const Text('Aplicar a la valoración'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _resultPreview(CalibrationResult cal) {
+    final res = _result;
+    return Container(
+      decoration:
+          BoxDecoration(color: const Color(0xFF1E1B26), borderRadius: BorderRadius.circular(12)),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        children: [
+          LayoutBuilder(builder: (context, c) {
+            const boxH = 260.0;
+            final boxW = c.maxWidth;
+            final scale = math.min(boxW / cal.width, boxH / cal.height);
+            final dw = cal.width * scale, dh = cal.height * scale;
+            final ox = (boxW - dw) / 2, oy = (boxH - dh) / 2;
+            return SizedBox(
+              height: boxH,
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                // INSPECTOR: tocar un punto (con la vista de clases activa) dice
+                // qué clase asignó el motor y su ΔE a cada prototipo.
+                // Corrigiendo: los toques marcan la ZONA. Si no, INSPECCIONAN.
+                onTapUp: (res == null || !_showTissue)
+                    ? null
+                    : (d) {
+                        final rx = ((d.localPosition.dx - ox) / scale).round();
+                        final ry = ((d.localPosition.dy - oy) / scale).round();
+                        if (_correcting) {
+                          _addCorrectionPoint(cal, res, rx, ry);
+                        } else {
+                          final insp = res.tissueMap.inspectRectPx(rx, ry);
+                          setState(() {
+                            _inspection = insp;
+                            _inspectRectPx = insp == null ? null : Pt(rx.toDouble(), ry.toDouble());
+                          });
+                        }
+                      },
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    Image.memory(cal.rectifiedPng, fit: BoxFit.contain, gaplessPlayback: true),
+                    if (res != null && _showTissue)
+                      Image.memory(_classOverlayFor(cal, res), fit: BoxFit.contain, gaplessPlayback: true),
+                    if (_showTissue && !_correcting && _inspectRectPx != null)
+                      Positioned(
+                        left: ox + _inspectRectPx!.x * scale - 9,
+                        top: oy + _inspectRectPx!.y * scale - 9,
+                        child: const IgnorePointer(
+                          child: Icon(Icons.add_circle_outline, size: 18, color: Colors.white),
+                        ),
+                      ),
+                    // Marcadores de los puntos de la corrección en curso.
+                    if (_correcting)
+                      for (final p in _pendingPoints)
+                        Positioned(
+                          left: ox + (p['x'] as int) * scale - 5,
+                          top: oy + (p['y'] as int) * scale - 5,
+                          child: const IgnorePointer(
+                            child: Icon(Icons.circle, size: 10, color: Color(0xFFFFEB3B)),
+                          ),
+                        ),
+                  ],
+                ),
+              ),
+            );
+          }),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            child: Row(
+              children: [
+                TextButton.icon(
+                  onPressed: () => setState(() {
+                    _tracing = true;
+                    _inspection = null;
+                    _inspectRectPx = null;
+                  }),
+                  icon: const Icon(Icons.edit_outlined, color: Colors.white),
+                  label: Text(_mode == _Mode.auto ? 'Editar / marcar' : 'Editar contorno',
+                      style: const TextStyle(color: Colors.white)),
+                ),
+                const Spacer(),
+                IconButton(
+                  tooltip: _showTissue ? 'Ocultar clases' : 'Ver clases',
+                  icon: Icon(_showTissue ? Icons.layers : Icons.layers_clear_outlined,
+                      color: Colors.white70),
+                  onPressed: () => setState(() => _showTissue = !_showTissue),
+                ),
+              ],
+            ),
+          ),
+          if (res != null && _showTissue) _classControls(cal, res),
+        ],
+      ),
+    );
+  }
+
+  /// Controles de la vista por clase: interruptores por clase (con su color),
+  /// opacidad, leyenda con % y fracción de brillo, y lectura del inspector.
+  Widget _classControls(CalibrationResult cal, WoundVisionResult res) {
+    // Fracción por brillo, contada del propio mapa (254 / evaluables+brillo).
+    var spec = 0, tot = 0;
+    for (final l in res.tissueMap.labels) {
+      if (l <= 3) tot++;
+      if (l == 254) {
+        spec++;
+        tot++;
+      }
+    }
+    final specPct = tot == 0 ? 0.0 : 100 * spec / tot;
+    final t = res.tissue;
+    final pctByClass = {0: t.granulacion, 1: t.esfacelo, 2: t.necrosis, 3: t.epitelizacion};
+    final insp = _inspection;
+    final white70 = Colors.white.withValues(alpha: 0.7);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Interruptores por clase (color antinatural en el avatar).
+          Wrap(
+            spacing: 6,
+            runSpacing: 4,
+            children: [
+              for (final k in const [0, 1, 2, 3, 254])
+                FilterChip(
+                  visualDensity: VisualDensity.compact,
+                  selected: _classesOn.contains(k),
+                  avatar: CircleAvatar(radius: 7, backgroundColor: _classColors[k]),
+                  label: Text(
+                    k == 254
+                        ? _classNames[k]!
+                        : '${_classNames[k]!} ${pctByClass[k]!.round()}%',
+                    style: const TextStyle(fontSize: 11),
+                  ),
+                  onSelected: (v) => setState(() {
+                    if (v) {
+                      _classesOn.add(k);
+                    } else {
+                      _classesOn.remove(k);
+                    }
+                    _classOverlayKey = null; // fuerza re-render del overlay
+                  }),
+                ),
+            ],
+          ),
+          Row(
+            children: [
+              Text('Opacidad', style: TextStyle(fontSize: 12, color: white70)),
+              Expanded(
+                child: Slider(
+                  value: _classOpacity,
+                  min: 0.1,
+                  max: 1.0,
+                  onChanged: (v) => setState(() => _classOpacity = v),
+                ),
+              ),
+              Text('Descartado por brillo: ${specPct.toStringAsFixed(0)}%',
+                  style: TextStyle(fontSize: 11, color: white70)),
+            ],
+          ),
+          // INSPECTOR: clase asignada + ΔE a cada prototipo (ascendente). Deja
+          // ver, p. ej., piel a ΔE 11 de necrosis mientras la herida está a 26.
+          if (insp != null) ...[
+            const SizedBox(height: 4),
+            Text(
+              'Punto tocado → el motor lo llamó: ${_classNames[insp.label] ?? (insp.label == 255 ? 'fuera' : 'clase ${insp.label}')}',
+              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Colors.white),
+            ),
+            const SizedBox(height: 2),
+            for (final e in (insp.deltaEByClass.entries.toList()
+                  ..sort((a, b) => a.value.compareTo(b.value))))
+              Row(
+                children: [
+                  Container(
+                    width: 10,
+                    height: 10,
+                    margin: const EdgeInsets.only(right: 6),
+                    decoration: BoxDecoration(color: _classColors[e.key], shape: BoxShape.circle),
+                  ),
+                  Text(
+                    '${_classNames[e.key]}: ΔE ${e.value.toStringAsFixed(1)}',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: e.key == insp.label ? Colors.white : white70,
+                      fontWeight: e.key == insp.label ? FontWeight.w700 : FontWeight.w400,
+                    ),
+                  ),
+                ],
+              ),
+          ] else
+            Text('Toca un punto de la imagen para inspeccionar la clasificación.',
+                style: TextStyle(fontSize: 11, color: white70)),
+
+          // --- Correcciones del clínico (dataset de entrenamiento) ---
+          const Divider(height: 18, color: Colors.white24),
+          Row(
+            children: [
+              const Icon(Icons.rate_review_outlined, size: 16, color: Colors.white70),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  'Corregir el motor'
+                  '${_corrections.isEmpty ? '' : ' · ${_corrections.length} guardada${_corrections.length == 1 ? '' : 's'}'}',
+                  style: const TextStyle(fontSize: 12, color: Colors.white),
+                ),
+              ),
+              Switch(
+                value: _correcting,
+                onChanged: (v) => setState(() {
+                  _correcting = v;
+                  if (v) {
+                    _inspection = null;
+                    _inspectRectPx = null;
+                  } else {
+                    _pendingPoints.clear();
+                  }
+                }),
+              ),
+            ],
+          ),
+          if (_correcting) ...[
+            Text(
+              'Toca la ZONA mal clasificada (unos toques bastan) y guárdala diciendo qué es EN REALIDAD. '
+              '${_pendingPoints.length} punto(s) marcados.',
+              style: TextStyle(fontSize: 11, color: white70),
+            ),
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                FilledButton.icon(
+                  onPressed: _pendingPoints.isEmpty ? null : () => _saveCorrection(cal, res),
+                  icon: const Icon(Icons.check, size: 16),
+                  label: const Text('Guardar corrección'),
+                ),
+                const SizedBox(width: 8),
+                TextButton(
+                  onPressed: (_pendingPoints.isEmpty && _corrections.isEmpty) ? null : _undoCorrection,
+                  child: Text('Deshacer', style: TextStyle(color: white70)),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCalibrating() {
+    if (_busy) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const CircularProgressIndicator(),
+            const SizedBox(height: 16),
+            Text(_busyLabel),
+          ],
+        ),
+      );
+    }
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.qr_code_scanner, size: 48, color: KuraColors.warning),
+            const SizedBox(height: 12),
+            Text(_error ?? 'No se encontró una referencia de escala.', textAlign: TextAlign.center),
+            const SizedBox(height: 12),
+            Text(
+              'Para medir en centímetros la foto debe incluir la tarjeta de calibración '
+              'WoundCalibrate (plana, completa y sin reflejos) o el disco de referencia verde, '
+              'junto a la herida y en el mismo plano. Coloca el BORDE LARGO de la tarjeta '
+              'paralelo al eje cabeza-pies (a lo largo del cuerpo, como una regla): así el largo '
+              'se mide de cabeza a pies y el ancho a lo ancho.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 12, color: KuraColors.darkText.withOpacity(0.6)),
+            ),
+            const SizedBox(height: 12),
+            _cardOrientationDiagram(),
+            const SizedBox(height: 20),
+            OutlinedButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Volver')),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Diagrama de colocación: el borde LARGO de la tarjeta paralelo al eje
+  /// cabeza-pies (a lo largo del cuerpo), con la herida (●) al lado. Es la
+  /// posición inercial y la que hace que el motor mida el largo de cabeza a pies.
+  Widget _cardOrientationDiagram() {
+    final cap = TextStyle(fontSize: 11, color: KuraColors.darkText.withOpacity(0.7));
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: KuraColors.chipBg,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text('cabeza', style: cap),
+          const Icon(Icons.keyboard_arrow_up, size: 16, color: KuraColors.primary),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              // Tarjeta: borde LARGO vertical (∥ cabeza-pies).
+              Container(
+                width: 30,
+                height: 64,
+                decoration: BoxDecoration(
+                  border: Border.all(color: KuraColors.primary, width: 2),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: const Center(
+                  child: RotatedBox(
+                    quarterTurns: 3,
+                    child: Text('tarjeta',
+                        style: TextStyle(fontSize: 8, color: KuraColors.primary, fontWeight: FontWeight.w700)),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              const Icon(Icons.circle, size: 12, color: KuraColors.warning), // herida
+            ],
+          ),
+          const Icon(Icons.keyboard_arrow_down, size: 16, color: KuraColors.primary),
+          Text('pies', style: cap),
+          const SizedBox(height: 4),
+          Text('Borde LARGO de la tarjeta ∥ eje cabeza-pies',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: KuraColors.darkText.withOpacity(0.8))),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMetrics(CalibrationResult cal, List<QualityGate> gates) {
+    final res = _result;
+    final m = res?.measurement;
+    final t = res?.tissue;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Icon(cal.mode == CalibrationMode.card ? Icons.qr_code_2 : Icons.circle_outlined, size: 18, color: KuraColors.primary),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                '${cal.mode.label} · ${(cal.mmPerPx * 1000).toStringAsFixed(0)} µm/px',
+                style: const TextStyle(fontWeight: FontWeight.w700),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        if (_error != null)
+          Container(
+            margin: const EdgeInsets.only(bottom: 8),
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: KuraColors.warning.withOpacity(0.12),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Text(_error!, style: const TextStyle(fontSize: 12)),
+          ),
+        if (m != null) ...[
+          _MeasureGrid(measurement: m),
+          const SizedBox(height: 12),
+          if (t != null) _TissueBars(tissue: t),
+          const SizedBox(height: 8),
+          Text(
+            'Área por planimetría: ${m.areaCm2.toStringAsFixed(2)} cm² · estimado por elipse (L × A × 0,785): '
+            '${m.ellipseEstimateCm2.toStringAsFixed(2)} cm².',
+            style: TextStyle(fontSize: 11, color: KuraColors.darkText.withOpacity(0.6)),
+          ),
+          const SizedBox(height: 12),
+        ] else
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            child: Text(
+              'Aún no hay medidas: usa «Editar contorno» para marcar o trazar la herida.',
+              style: TextStyle(color: KuraColors.darkText.withOpacity(0.6)),
+            ),
+          ),
+        const Text('Calidad de la captura', style: TextStyle(fontWeight: FontWeight.w700)),
+        const SizedBox(height: 6),
+        for (final g in gates) _GateTile(gate: g),
+      ],
+    );
+  }
+}
+
+// -----------------------------------------------------------------------------
+// Tareas (aptas para compute/isolate; en Web corren en el mismo hilo)
+// -----------------------------------------------------------------------------
+
+class _CalibrateArgs {
+  final WoundVisionEngine engine;
+  final Uint8List bytes;
+  const _CalibrateArgs(this.engine, this.bytes);
+}
+
+CalibrationOutcome _calibrateTask(_CalibrateArgs a) => a.engine.calibratePhoto(a.bytes);
+
+class _AnalyzeArgs {
+  final WoundVisionEngine engine;
+  final CalibrationOutcome calibration;
+  final _Mode mode;
+  final List<Pt> seeds;
+  final List<Pt> trace;
+  final double sensitivity;
+  const _AnalyzeArgs({
+    required this.engine,
+    required this.calibration,
+    required this.mode,
+    required this.seeds,
+    required this.trace,
+    required this.sensitivity,
+  });
+}
+
+WoundVisionResult? _analyzeTask(_AnalyzeArgs a) {
+  switch (a.mode) {
+    case _Mode.rodear:
+      // El trazo va POR FUERA: zona de búsqueda; el motor afina el borde real.
+      return a.engine.analyzeEnclosingTrace(a.calibration,
+          polygon: a.trace, sensitivity: a.sensitivity);
+    case _Mode.manual:
+      // El trazo ES el borde exacto.
+      return a.engine.analyzeManualTrace(a.calibration, polygon: a.trace);
+    case _Mode.auto:
+      return a.engine.analyze(a.calibration, seeds: a.seeds, sensitivity: a.sensitivity);
+  }
+}
+
+// -----------------------------------------------------------------------------
+// Widgets auxiliares
+// -----------------------------------------------------------------------------
+
+class _MarksPainter extends CustomPainter {
+  final List<Pt> seeds;
+  final List<Pt> trace;
+  final double scale;
+  final List<RectD> excluded;
+  const _MarksPainter({required this.seeds, required this.trace, required this.scale, required this.excluded});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final ex = Paint()
+      ..color = const Color(0x55000000)
+      ..style = PaintingStyle.fill;
+    for (final r in excluded) {
+      canvas.drawRect(Rect.fromLTRB(r.x0 * scale, r.y0 * scale, r.x1 * scale, r.y1 * scale), ex);
+    }
+    final seedFill = Paint()..color = const Color(0xFF22C55E);
+    final seedRing = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2;
+    for (final s in seeds) {
+      final o = Offset(s.x * scale, s.y * scale);
+      canvas.drawCircle(o, 7, seedFill);
+      canvas.drawCircle(o, 7, seedRing);
+    }
+    if (trace.isNotEmpty) {
+      final line = Paint()
+        ..color = const Color(0xFF7C3AED)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2;
+      final path = Path()..moveTo(trace.first.x * scale, trace.first.y * scale);
+      for (final p in trace.skip(1)) {
+        path.lineTo(p.x * scale, p.y * scale);
+      }
+      if (trace.length >= 3) path.close();
+      canvas.drawPath(path, line);
+      final dot = Paint()..color = Colors.white;
+      for (final p in trace) {
+        canvas.drawCircle(Offset(p.x * scale, p.y * scale), 4, dot);
+      }
+    }
+  }
+
+  // Las listas de semillas/trazo son mutables y se comparten entre builds, así
+  // que la comparación por identidad no detecta cambios: repintar siempre (es
+  // una capa ligera).
+  @override
+  bool shouldRepaint(covariant _MarksPainter old) => true;
+}
+
+class _MeasureGrid extends StatelessWidget {
+  final WoundMeasurementResult measurement;
+  const _MeasureGrid({required this.measurement});
+
+  @override
+  Widget build(BuildContext context) {
+    Widget cell(String label, String value) => Expanded(
+          child: Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(color: KuraColors.chipBg, borderRadius: BorderRadius.circular(10)),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(label, style: TextStyle(fontSize: 11, color: KuraColors.darkText.withOpacity(0.6))),
+                const SizedBox(height: 2),
+                Text(value, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+              ],
+            ),
+          ),
+        );
+    return Column(
+      children: [
+        Row(children: [
+          cell('Largo', '${measurement.lengthCm.toStringAsFixed(1)} cm'),
+          const SizedBox(width: 8),
+          cell('Ancho', '${measurement.widthCm.toStringAsFixed(1)} cm'),
+        ]),
+        const SizedBox(height: 8),
+        Row(children: [
+          cell('Área', '${measurement.areaCm2.toStringAsFixed(2)} cm²'),
+          const SizedBox(width: 8),
+          cell('Perímetro', '${measurement.perimeterCm.toStringAsFixed(1)} cm'),
+        ]),
+      ],
+    );
+  }
+}
+
+class _TissueBars extends StatelessWidget {
+  final TissueComposition tissue;
+  const _TissueBars({required this.tissue});
+
+  @override
+  Widget build(BuildContext context) {
+    final rows = [
+      ('Granulación', tissue.granulacion, KuraTissueColors.granulacion),
+      ('Esfacelo', tissue.esfacelo, KuraTissueColors.esfacelo),
+      ('Necrosis', tissue.necrosis, KuraTissueColors.necrosis),
+      ('Epitelización', tissue.epitelizacion, KuraTissueColors.epitelizacion),
+    ];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const Text('Composición del lecho (estimada)', style: TextStyle(fontWeight: FontWeight.w700)),
+        const SizedBox(height: 6),
+        for (final r in rows)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 3),
+            child: Row(
+              children: [
+                SizedBox(width: 100, child: Text(r.$1, style: const TextStyle(fontSize: 12))),
+                Expanded(
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(6),
+                    child: LinearProgressIndicator(
+                      value: (r.$2 / 100).clamp(0.0, 1.0),
+                      minHeight: 10,
+                      backgroundColor: KuraColors.chipBg,
+                      color: r.$3,
+                    ),
+                  ),
+                ),
+                SizedBox(
+                  width: 44,
+                  child: Text('${r.$2.round()} %',
+                      textAlign: TextAlign.right, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12)),
+                ),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _GateTile extends StatelessWidget {
+  final QualityGate gate;
+  const _GateTile({required this.gate});
+
+  @override
+  Widget build(BuildContext context) {
+    final (icon, color) = switch (gate.status) {
+      GateStatus.pass => (Icons.check_circle, KuraColors.success),
+      GateStatus.warn => (Icons.warning_amber_rounded, KuraColors.warning),
+      GateStatus.fail => (Icons.cancel, KuraColors.danger),
+      GateStatus.skipped => (Icons.remove_circle_outline, KuraColors.darkText.withOpacity(0.35)),
+    };
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 16, color: color),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(gate.label, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                Text(gate.detail, style: TextStyle(fontSize: 11, color: KuraColors.darkText.withOpacity(0.6))),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}

@@ -34,7 +34,10 @@ class DemoSeed {
   // una sola vez en instalaciones demo previas (wipeAll + _seed), evitando
   // duplicados y datos viejos. Cada rediseño del roster sube este número.
   // v12: roster curado por escenario (clínica 7 / hospital 5 / cuidadores 3).
-  static const String _seedFlag = 'seeded_v32';
+  // v34: merge main→staging — combina la siembra de licencia (v33: entitlements
+  // insumos/comercial solo en centros premium) con los arreglos de la semilla del
+  // rebandeo Braden (v32 en main). Sube por encima de AMBOS para re-sembrar limpio.
+  static const String _seedFlag = 'seeded_v36';
 
   static Future<void> ensureSeeded(LocalStore store) async {
     if (store.getBool(_seedFlag)) return;
@@ -358,6 +361,104 @@ class DemoSeed {
         'is_active': true,
         'created_at': iso(now),
       },
+    ]);
+
+    // ---------------- Derechos de licencia (Fase 1 §4) ----------------
+    // Con el AND por licencia, un módulo solo se muestra si el centro tiene el
+    // derecho. Se siembran los derechos de TODOS los centros demo para no ocultar
+    // lo que hoy se ve. Recordar: el AND es derecho AND module_settings/default,
+    // así que otorgar un derecho NO enciende un módulo que el default tenga
+    // apagado (hospital/cuidadores siguen sin insumos ni comercial).
+    await store.saveAll(Collections.orgEntitlements, [
+      // VISIBILIDAD + base: module:clinico (sobre él montan Insumos/Comercial en el
+      // nav) y module:admin (cupos) para todos los centros; seat:clinico holgado.
+      for (final orgId in [
+        organizationId,
+        organizationId2,
+        organizationIdHospital,
+        organizationIdCuidadores,
+        organizationIdIndependiente,
+      ]) ...[
+        for (final k in ['clinico', 'admin'])
+          {
+            'id': _uuid.v4(),
+            'organization_id': orgId,
+            'kind': 'module',
+            'key': k,
+            'quantity': null,
+            'status': 'active',
+            'source': 'master',
+            'created_at': iso(now),
+          },
+        {
+          'id': _uuid.v4(),
+          'organization_id': orgId,
+          'kind': 'seat',
+          'key': 'clinico',
+          'quantity': 50,
+          'status': 'active',
+          'source': 'master',
+          'created_at': iso(now),
+        },
+      ],
+      // PAGO: module:insumos y module:comercial son ahora el candado premium (no la
+      // visibilidad). Solo los centros que los tienen (principal e independiente,
+      // los que traían premium_insumos=true). Los demás ven el módulo y topan con
+      // el paywall, que es el comportamiento correcto.
+      for (final orgId in [organizationId, organizationIdIndependiente])
+        for (final k in ['insumos', 'comercial'])
+          {
+            'id': _uuid.v4(),
+            'organization_id': orgId,
+            'kind': 'module',
+            'key': k,
+            'quantity': null,
+            'status': 'active',
+            'source': 'master',
+            'created_at': iso(now),
+          },
+      // Protocolo Kura+ (por asiento): solo principal e independiente.
+      for (final orgId in [organizationId, organizationIdIndependiente])
+        {
+          'id': _uuid.v4(),
+          'organization_id': orgId,
+          'kind': 'seat',
+          'key': 'protocolo',
+          'quantity': 10,
+          'status': 'active',
+          'source': 'master',
+          'created_at': iso(now),
+        },
+    ]);
+
+    // ---------------- Catálogo de precios (billing_catalog) ----------------
+    // Espejo de 0129 (centavos MXN, IVA incl.) para que el panel de Licencias muestre
+    // precios en la demo (sin Stripe). Anual = monto completo (=×10 del mensual).
+    await store.saveAll(Collections.billingCatalog, [
+      for (final r in const [
+        ['clinico_mensual', 'seat', 'clinico', 'month', 40000],
+        ['clinico_anual', 'seat', 'clinico', 'year', 400000],
+        ['protocolo_mensual', 'seat', 'protocolo', 'month', 30000],
+        ['protocolo_anual', 'seat', 'protocolo', 'year', 300000],
+        ['admin_mensual', 'module', 'admin', 'month', 120000],
+        ['admin_anual', 'module', 'admin', 'year', 1200000],
+        ['insumos_mensual', 'module', 'insumos', 'month', 140000],
+        ['insumos_anual', 'module', 'insumos', 'year', 1400000],
+        ['comercial_mensual', 'module', 'comercial', 'month', 90000],
+        ['comercial_anual', 'module', 'comercial', 'year', 900000],
+      ])
+        {
+          // id estable (= lookup_key) para que un upsert por id no pise otra fila
+          // (LocalStore.upsert deduplica por 'id'; sin él, null==null colisiona).
+          'id': r[0],
+          'lookup_key': r[0],
+          'kind': r[1],
+          'key': r[2],
+          'interval': r[3],
+          'unit': r[1] == 'module' ? 'center' : 'seat',
+          'unit_amount': r[4],
+          'currency': 'mxn',
+        },
     ]);
 
     // ---------------- Personal sanitario ----------------

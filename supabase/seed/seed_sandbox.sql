@@ -95,7 +95,10 @@ select unnest(array[
   'independiente@sandbox.kuratracker.mx',
   'admin.hospital@sandbox.kuratracker.mx',
   'enfermeria@sandbox.kuratracker.mx',
-  '5550001234@cuidador.kuramas.com'
+  '5550001234@cuidador.kuramas.com',
+  -- Centros de verificación (§9): sus dos admins también se limpian aquí.
+  'admin.hospital.test@sandbox.kuratracker.mx',
+  'admin.basica.test@sandbox.kuratracker.mx'
 ]) as email;
 
 -- -----------------------------------------------------------------------------
@@ -107,6 +110,56 @@ alter table public.consultations disable trigger trg_prevent_finalized_consultat
 delete from public.patients
  where organization_id in (select org_clinica from sb union select org_hospital from sb union select org_cuidadores from sb);
 alter table public.consultations enable trigger trg_prevent_finalized_consultation_change;
+
+-- Tablas que referencian auth.users SIN cascada (audit_log.actor_id,
+-- data_disclosures.actor_id, clinical_params.uploaded_by, …) bloquean el delete de
+-- un usuario que YA tiene renglones — pasa apenas el sandbox se usa. En vez de
+-- enumerarlas (el patrón se repite con cada tabla nueva), se barren TODAS las FK que
+-- apuntan a auth.users, borrando los renglones de los usuarios sandbox antes de
+-- borrarlos. DECISIÓN: en el sandbox estos son datos de prueba, no auditoría real, y
+-- esto NO toca el esquema de producción (guardado por kt.env='sandbox' arriba). Las FK
+-- con cascada también se listan aquí y borrar primero es inocuo (igual cascadearían).
+-- OJO con information_schema: constraint_column_usage FILTRA por propiedad de la
+-- tabla referenciada, y auth.users es de supabase_auth_admin → desde el rol del seed
+-- devuelve CERO filas y el bucle corre en vacío SIN error (bug de la corrida #7). Se
+-- usa pg_catalog, que no filtra por propiedad. Y como sabemos que existe al menos una
+-- (audit_log), CERO tablas = consulta ciega, no "sin trabajo" → se lanza excepción:
+-- un barrido que itera en vacío sin quejarse es indistinguible de uno que funciona.
+do $$
+declare
+  r record;
+  v_count int;
+begin
+  select count(*) into v_count
+  from pg_constraint con
+  join pg_class c on c.oid = con.conrelid
+  join pg_namespace n on n.oid = c.relnamespace
+  where con.contype = 'f'
+    and con.confrelid = 'auth.users'::regclass
+    and n.nspname = 'public'
+    and c.relname <> 'profiles';
+  if v_count = 0 then
+    raise exception 'seed_sandbox: el barrido de FK a auth.users no ve ninguna tabla public (consulta ciega). Se esperaba al menos audit_log.';
+  end if;
+  raise notice 'seed_sandbox: barrido de FK a auth.users cubre % tabla(s).', v_count;
+  for r in
+    select n.nspname as table_schema, c.relname as table_name, a.attname as column_name
+    from pg_constraint con
+    join pg_class c on c.oid = con.conrelid
+    join pg_namespace n on n.oid = c.relnamespace
+    join pg_attribute a on a.attrelid = con.conrelid and a.attnum = con.conkey[1]
+    where con.contype = 'f'
+      and con.confrelid = 'auth.users'::regclass
+      -- Solo tablas de la app: las de auth.* (identities, sessions, …) cascadean solas.
+      and n.nspname = 'public'
+      -- profiles se borra por su propia cascada (sus cascadas hacen el resto).
+      and c.relname <> 'profiles'
+  loop
+    execute format(
+      'delete from %I.%I where %I in (select id from auth.users where email in (select email from sb_emails))',
+      r.table_schema, r.table_name, r.column_name);
+  end loop;
+end $$;
 
 -- Usuarios (cascada: profiles → memberships, module_settings, asignaciones…).
 delete from auth.users where email in (select email from sb_emails);
@@ -361,6 +414,69 @@ select set_config('kt.seed_org_id', (select org_clinica::text from sb), false);
 -- (un clínico solo ve a sus pacientes asignados).
 select set_config('kt.seed_staff_id', 'a0000000-0000-4000-a000-000000000021', false);
 
+-- -----------------------------------------------------------------------------
+-- 9. Centros de verificación de bloqueos / marca (etapas 3–6)
+-- -----------------------------------------------------------------------------
+-- Dos centros extra (is_test) SIN módulos de pago, para verificar de un tirón:
+-- bloqueos con precio, estados vacíos y el cambio de color de marca.
+--   · Hospital (marca AZUL), sin admin/insumos/comercial.
+--   · Clínica "solo asientos clínicos" (marca MORADA), sin admin/insumos.
+-- Ambos con plan + module:clinico (visibilidad del expediente) + seat:clinico, y
+-- SIN pacientes ni catálogo de nota (para ver los estados vacíos). Un admin por
+-- centro para entrar (contraseña = kt.sandbox_password, igual que los demás).
+create temp table if not exists sb2 on commit preserve rows as
+select
+  'a0000000-0000-4000-a000-000000000031'::uuid as org_hospital_test,
+  'a0000000-0000-4000-a000-000000000032'::uuid as org_basica_test,
+  'a0000000-0000-4000-a000-000000000041'::uuid as site_hospital_test,
+  'a0000000-0000-4000-a000-000000000042'::uuid as site_basica_test;
+
+-- Idempotencia de estos dos centros. (Sus dos admins ya se limpiaron arriba: sus
+-- correos están en sb_emails, así que el barrido de FK + el delete de auth.users los
+-- cubren.)
+delete from public.org_entitlements
+ where organization_id in (select org_hospital_test from sb2
+                           union select org_basica_test from sb2);
+delete from public.sites
+ where organization_id in (select org_hospital_test from sb2
+                           union select org_basica_test from sb2);
+
+insert into public.organizations (id, name, center_type, is_test, is_active,
+                                  premium_insumos, premium_protocolo_kura, brand_primary_color)
+select org_hospital_test, 'Hospital Prueba (bloqueos)', 'hospital', true, true, false, false, '#1565C0' from sb2
+union all
+select org_basica_test, 'Clínica Prueba (solo asientos)', 'clinica_heridas', true, true, false, false, '#6A1B9A' from sb2
+on conflict (id) do update
+  set name = excluded.name, center_type = excluded.center_type,
+      is_test = true, is_active = true,
+      premium_insumos = excluded.premium_insumos,
+      premium_protocolo_kura = excluded.premium_protocolo_kura;
+
+insert into public.sites (id, organization_id, name, kind, address, is_active)
+select site_hospital_test, org_hospital_test, 'Hospital Prueba · Piso 1', 'hospital', 'Sede de pruebas', true from sb2
+union all
+select site_basica_test, org_basica_test, 'Clínica Prueba · Consultorio', 'clinica', 'Sede de pruebas', true from sb2;
+
+-- Derechos SOLO base: plan + module:clinico + seat:clinico. SIN module:admin,
+-- module:insumos ni module:comercial → esas pantallas muestran el bloqueo con precio.
+insert into public.org_entitlements (organization_id, kind, key, quantity, status, source)
+select o.org, e.kind, e.key, e.qty, 'active', 'master'
+  from (select org_hospital_test as org from sb2
+        union all select org_basica_test from sb2) o
+  cross join (values
+    ('plan',   'basico',  null::int),
+    ('module', 'clinico', null),
+    ('seat',   'clinico', 5)
+  ) as e(kind, key, qty)
+on conflict (organization_id, kind, key) do update
+  set quantity = excluded.quantity, status = 'active', source = 'master';
+
+select pg_temp.sb_user('admin.hospital.test@sandbox.kuratracker.mx', 'Admin Hospital Prueba',
+  array['admin']::public.user_role[], (select org_hospital_test from sb2));
+select pg_temp.sb_user('admin.basica.test@sandbox.kuratracker.mx', 'Admin Clínica Prueba',
+  array['admin']::public.user_role[], (select org_basica_test from sb2));
+
 drop function if exists pg_temp.sb_user(text, text, public.user_role[], uuid, text);
 drop table if exists sb_emails;
 drop table if exists sb;
+drop table if exists sb2;

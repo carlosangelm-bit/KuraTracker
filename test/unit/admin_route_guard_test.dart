@@ -14,7 +14,9 @@ void main() {
       File(path).readAsStringSync().replaceAll(RegExp(r'\s+'), ' ');
 
   test('capa 1: el router redirige /admin a / si no es admin ni master', () {
-    final router = flat('lib/core/router/app_router.dart');
+    // La decisión de auth/rol del redirect se extrajo a nav_redirect.dart
+    // (resolveNavRedirect), que es lo que invoca el router real.
+    final router = flat('lib/core/router/nav_redirect.dart');
     expect(
       router,
       contains("!canPurchase && location.startsWith('/admin')"),

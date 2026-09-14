@@ -68,7 +68,7 @@ void main() {
     final before = repo.listOrganizations();
     final countBefore = before.length;
 
-    final created = await repo.createOrganization('Centro de Prueba E2E', CenterType.clinicaHeridas);
+    final created = await repo.createTrialOrganization('Centro de Prueba E2E', CenterType.clinicaHeridas);
 
     expect(created.name, 'Centro de Prueba E2E');
     expect(created.isActive, isTrue);
@@ -83,7 +83,7 @@ void main() {
       'organizacion indicada, sin afectar a las demas', () async {
     final repo = await DataRepository.instance();
 
-    final created = await repo.createOrganization('Centro para desactivar', CenterType.clinicaHeridas);
+    final created = await repo.createTrialOrganization('Centro para desactivar', CenterType.clinicaHeridas);
     expect(created.isActive, isTrue);
 
     await repo.setOrganizationActive(created.id, false);

@@ -1,0 +1,255 @@
+import 'dart:typed_data';
+
+import 'color_spaces.dart';
+import 'vision_geometry.dart';
+
+/// Cómo se obtuvo la escala (px → mm).
+enum CalibrationMode {
+  /// Tarjeta WoundCalibrate (4 AprilTags): homografía completa, perspectiva corregida.
+  card,
+
+  /// Disco adhesivo de diámetro conocido: solo escala, sin corrección de perspectiva.
+  disc,
+}
+
+extension CalibrationModeX on CalibrationMode {
+  /// Valor persistido en `wound_measurements.measurement_source`.
+  String get sourceValue => switch (this) {
+        CalibrationMode.card => 'vision_card',
+        CalibrationMode.disc => 'vision_disc',
+      };
+
+  String get label => switch (this) {
+        CalibrationMode.card => 'Tarjeta de calibración',
+        CalibrationMode.disc => 'Disco de referencia',
+      };
+}
+
+/// Estado de una compuerta de calidad.
+enum GateStatus { pass, warn, fail, skipped }
+
+class QualityGate {
+  final String id;
+  final String label;
+  final GateStatus status;
+  final String detail;
+  const QualityGate(this.id, this.label, this.status, this.detail);
+
+  Map<String, dynamic> toJson() => {'id': id, 'status': status.name, 'detail': detail};
+}
+
+/// Resultado de la calibración: imagen rectificada (o reescalada, en modo
+/// disco) + escala + compuertas. Los bytes PNG son lo único que la UI necesita
+/// para dibujar; el raster vive en memoria solo durante la sesión de medición.
+class CalibrationResult {
+  final CalibrationMode mode;
+  final double mmPerPx; // de la imagen rectificada
+  final int width; // px rectificada
+  final int height;
+  final Uint8List rectifiedPng;
+
+  /// Zonas que NO son herida por construcción (tarjeta o disco), en px rectificados.
+  final List<RectD> excludedRects;
+
+  /// Homografía foto original (px) → rectificada (px). Identidad+escala en modo disco.
+  final Homography photoToRectified;
+  final List<QualityGate> gates;
+  final Map<String, dynamic> meta; // detalles numéricos para vision_meta
+
+  const CalibrationResult({
+    required this.mode,
+    required this.mmPerPx,
+    required this.width,
+    required this.height,
+    required this.rectifiedPng,
+    required this.excludedRects,
+    required this.photoToRectified,
+    required this.gates,
+    required this.meta,
+  });
+
+  bool get hasBlockingFailure => gates.any((g) => g.status == GateStatus.fail);
+}
+
+/// Fallo de calibración con motivo legible.
+class CalibrationFailure {
+  final String reason; // 'no_reference' | 'partial_tags' | 'decode_error'
+  final String message;
+  final int tagsFound;
+  const CalibrationFailure(this.reason, this.message, {this.tagsFound = 0});
+}
+
+/// Porcentajes de tejido (suman 100). Claves iguales a los sliders del lecho.
+class TissueComposition {
+  final double granulacion;
+  final double esfacelo;
+  final double necrosis;
+  final double epitelizacion;
+  const TissueComposition({
+    required this.granulacion,
+    required this.esfacelo,
+    required this.necrosis,
+    required this.epitelizacion,
+  });
+
+  static const zero = TissueComposition(granulacion: 0, esfacelo: 0, necrosis: 0, epitelizacion: 0);
+
+  Map<String, dynamic> toJson() => {
+        'granulacion_pct': granulacion,
+        'esfacelo_pct': esfacelo,
+        'necrosis_pct': necrosis,
+        'epitelizacion_pct': epitelizacion,
+      };
+
+  double get suma => granulacion + esfacelo + necrosis + epitelizacion;
+}
+
+/// Medidas geométricas en unidades clínicas.
+class WoundMeasurementResult {
+  final double areaCm2; // por conteo de píxeles (planimetría) — NO cambia
+  // OFICIAL (convención de regla, ejes X/Y de la rectificada = marco de la
+  // tarjeta): largo = extensión en X (borde LARGO de la tarjeta ∥ cabeza-pies),
+  // ancho = extensión en Y (lateral). Alimentan ellipseArea/Kundin y area_cm2
+  // (ver docs/engine/motor_vision.md).
+  final double lengthCm; // extensión en el eje X (cabeza-pies)
+  final double widthCm; // extensión en el eje Y (lateral)
+  final double perimeterCm;
+  final double ellipseEstimateCm2; // L × A × 0.785 (0.785 validado vs regla)
+  // Feret máximo y su ancho perpendicular: dato ADICIONAL (vision_meta), nunca
+  // la medida oficial. Sirve para inspección/QA, no para el expediente.
+  final double feretLengthCm; // diámetro de Feret máximo (cualquier dirección)
+  final double feretWidthCm; // extensión perpendicular al eje de Feret
+  final Pt lengthA; // extremos del eje de largo (px rectificados)
+  final Pt lengthB;
+  final Pt widthA; // extremos del ancho (px rectificados)
+  final Pt widthB;
+
+  const WoundMeasurementResult({
+    required this.areaCm2,
+    required this.lengthCm,
+    required this.widthCm,
+    required this.perimeterCm,
+    required this.ellipseEstimateCm2,
+    required this.feretLengthCm,
+    required this.feretWidthCm,
+    required this.lengthA,
+    required this.lengthB,
+    required this.widthA,
+    required this.widthB,
+  });
+
+  Map<String, dynamic> toJson() => {
+        'area_cm2': areaCm2,
+        'length_cm': lengthCm,
+        'width_cm': widthCm,
+        'perimeter_cm': perimeterCm,
+        'ellipse_estimate_cm2': ellipseEstimateCm2,
+        // Adicional, no oficial: Feret y su ancho perpendicular.
+        'feret_length_cm': feretLengthCm,
+        'feret_width_cm': feretWidthCm,
+      };
+}
+
+/// Lo que el motor asignó a un píxel + su ΔE a cada prototipo de tejido.
+/// Alimenta el INSPECTOR de la pantalla ("por qué se equivoca"): p. ej. una piel
+/// oscura perilesional a ΔE 11 del prototipo de necrosis mientras la herida está
+/// a ΔE 26 del suyo.
+class TissueInspection {
+  final int label; // TissueClass: 0..3, 254 brillo, 255 fuera
+  final Map<int, double> deltaEByClass; // clase (0..3) → ΔE al prototipo
+  const TissueInspection(this.label, this.deltaEByClass);
+}
+
+/// Mapa de etiquetas por píxel del clasificador (espacio de TRABAJO) + lo
+/// necesario para dibujarlo sobre la rectificada e inspeccionarlo. Es EXPOSICIÓN
+/// de lo que el motor ya calculó: no cambia ninguna clasificación ni medida.
+class TissueMap {
+  final Uint8List labels; // width*height, TissueClass ints (254 brillo, 255 fuera)
+  final int width; // px de trabajo
+  final int height;
+  // rectPx = workPx * factor + offset. Para mapear toques de la rectificada.
+  final int factor;
+  final int offsetX;
+  final int offsetY;
+  final Float64List lab; // Lab del raster de trabajo (width*height*3), como lo vio el clasificador
+  final Map<int, List<double>> prototypes; // clase (0..3) → Lab del prototipo
+
+  const TissueMap({
+    required this.labels,
+    required this.width,
+    required this.height,
+    required this.factor,
+    required this.offsetX,
+    required this.offsetY,
+    required this.lab,
+    required this.prototypes,
+  });
+
+  int? _workIndex(int rectX, int rectY) {
+    if (factor <= 0) return null;
+    final wx = (rectX - offsetX) ~/ factor, wy = (rectY - offsetY) ~/ factor;
+    if (wx < 0 || wy < 0 || wx >= width || wy >= height) return null;
+    return wy * width + wx;
+  }
+
+  /// Clase asignada a un punto de la rectificada, o null si cae fuera del mapa.
+  int? labelAtRectPx(int rectX, int rectY) {
+    final i = _workIndex(rectX, rectY);
+    return i == null ? null : labels[i];
+  }
+
+  /// Inspección en un punto de la rectificada: clase + ΔE a cada prototipo.
+  TissueInspection? inspectRectPx(int rectX, int rectY) {
+    final i = _workIndex(rectX, rectY);
+    if (i == null) return null;
+    final de = <int, double>{};
+    for (final e in prototypes.entries) {
+      de[e.key] = ColorSpaces.labDistance(lab, i * 3, Float64List.fromList(e.value), 0);
+    }
+    return TissueInspection(labels[i], de);
+  }
+}
+
+/// Resultado completo de un análisis (segmentación + tejido + medidas).
+class WoundVisionResult {
+  final CalibrationResult calibration;
+  final List<Pt> contourPx; // polígono simplificado, px rectificados
+  final WoundMeasurementResult measurement;
+  final TissueComposition tissue;
+  final Uint8List overlayPng; // RGBA: contorno + tinte de tejido + ejes
+  final List<QualityGate> gates; // compuertas de calibración + de la herida
+  final String engineVersion;
+  final bool manualTrace; // true si el contorno lo trazó el clínico (sin segmentación)
+  final TissueMap tissueMap; // etiquetas por píxel + prototipos (para ver clase a clase e inspeccionar)
+
+  const WoundVisionResult({
+    required this.calibration,
+    required this.contourPx,
+    required this.measurement,
+    required this.tissue,
+    required this.overlayPng,
+    required this.gates,
+    required this.engineVersion,
+    required this.manualTrace,
+    required this.tissueMap,
+  });
+
+  /// Valor para `wound_measurements.measurement_source`.
+  String get measurementSource => manualTrace ? 'vision_manual_trace' : calibration.mode.sourceValue;
+
+  /// JSON compacto para `wound_measurements.vision_meta` (auditoría/reproducibilidad).
+  Map<String, dynamic> toVisionMeta() => {
+        'engine_version': engineVersion,
+        'mode': calibration.mode.name,
+        'manual_trace': manualTrace,
+        'mm_per_px': calibration.mmPerPx,
+        'rectified_size': [calibration.width, calibration.height],
+        'measurement': measurement.toJson(),
+        'tissue': tissue.toJson(),
+        'gates': [for (final g in gates) g.toJson()],
+        'contour_px': [
+          for (final p in contourPx) [double.parse(p.x.toStringAsFixed(1)), double.parse(p.y.toStringAsFixed(1))]
+        ],
+        'calibration': calibration.meta,
+      };
+}

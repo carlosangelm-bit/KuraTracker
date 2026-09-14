@@ -181,6 +181,12 @@ serve(async (req) => {
         }
       }
       if (rows.length > 0) {
+        // PRESERVACIÓN de la clasificación clínica (§3, migración 0124): las
+        // filas NO incluyen `kura_tag` ni `generic_product` A PROPÓSITO. El upsert
+        // por (shopify_product_id, shopify_variant_id) solo actualiza las columnas
+        // presentes en el payload, así que esas dos se CONSERVAN en cada re-sync.
+        // NO agregarlas aquí: haría que un catálogo nuevo borre la clasificación
+        // sembrada y la función se volvería inútil.
         const { error: upErr } = await admin
           .from("product_catalog")
           .upsert(rows, { onConflict: "shopify_product_id,shopify_variant_id" });

@@ -5,21 +5,31 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
-import '../../core/theme/kura_theme.dart';
+import '../../core/design/tokens.dart';
+import '../../core/format/money.dart';
 import '../../core/providers/session_provider.dart';
 import '../../core/router/app_shell.dart' show UserMenuButton;
-import '../../core/widgets/kura_primary_fab.dart';
-import 'purchase_guard.dart';
+import '../../core/widgets/kura_action_bar.dart';
+import '../../core/widgets/kura_data_table.dart';
+import '../../core/widgets/kura_empty_state.dart';
+import '../../core/widgets/kura_error_state.dart';
+import '../../core/widgets/kura_module_lock.dart';
 import '../../models/inventory.dart';
 import '../../services/csv_download.dart';
 import '../../services/data_repository.dart';
+import 'consumo_meaning.dart';
+import 'inventory_stat_row.dart';
 import 'product_picker.dart';
+import 'purchase_guard.dart';
 
-String _money(double? v, [String? cur]) =>
-    v == null ? '—' : '\$${v.toStringAsFixed(2)} ${cur ?? 'MXN'}';
+/// Centavos a partir de un monto en pesos (double). Los helpers de dinero del
+/// core hablan en centavos; el inventario guarda costo/precio en pesos.
+int? _cents(double? pesos) => pesos == null ? null : (pesos * 100).round();
 
-/// Inventario de insumos por SITIO (Insumos, Fase 3 premium): existencias de
-/// productos de la tienda Kura+ y externos, con bitácora de movimientos.
+/// Inventario de insumos por SITIO (Insumos, Fase 3 premium), rediseñado sobre el
+/// sistema de componentes: dato tabular servido como tabla (no como lista de
+/// subtítulos de 11px), con cifras con contexto, buscador, filtros con conteo,
+/// totales y las cuatro acciones pesadas con NOMBRE completo.
 class InventarioScreen extends ConsumerStatefulWidget {
   const InventarioScreen({super.key});
   @override
@@ -28,8 +38,16 @@ class InventarioScreen extends ConsumerStatefulWidget {
 
 class _InventarioScreenState extends ConsumerState<InventarioScreen> {
   String? _siteId;
-  bool _importing = false;
   bool _syncing = false;
+  String _query = '';
+  String _filter = 'all'; // all | low | out | store | external | nothreshold
+  final _searchCtrl = TextEditingController();
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
 
   /// Bajada del espejo: trae existencias de Shopify y ajusta el inventario del
   /// sitio (solo centro Kura+ marcado como espejo).
@@ -126,7 +144,6 @@ class _InventarioScreenState extends ConsumerState<InventarioScreen> {
     final bytes = result.files.first.bytes;
     if (bytes == null) return;
 
-    setState(() => _importing = true);
     try {
       final content = String.fromCharCodes(bytes);
       final raw = const CsvToListConverter(eol: '\n', shouldParseNumbers: false)
@@ -245,185 +262,727 @@ class _InventarioScreenState extends ConsumerState<InventarioScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('No se pudo cargar el CSV: $e')));
       }
-    } finally {
-      if (mounted) setState(() => _importing = false);
     }
+  }
+
+  /// Consumo del mes en curso (piezas) y comparación contra el mes anterior. La
+  /// cifra NUNCA va sola: siempre sale con su línea de comparación (acuerdo del
+  /// canvas). `pct` es null cuando el mes anterior no tuvo consumo (no hay contra
+  /// qué comparar).
+  ({int current, int prev, String prevLabel}) _consumo(
+      DataRepository repo, String siteId) {
+    final consumos = repo
+        .listInventoryMovements(siteId: siteId)
+        .where((m) => m.reason == InventoryReason.consumo);
+    final now = DateTime.now();
+    int inMonth(int y, int mo) => consumos
+        .where((m) => m.createdAt.year == y && m.createdAt.month == mo)
+        .fold(0, (a, m) => a + m.delta.abs());
+    final prevDate = DateTime(now.year, now.month - 1, 1);
+    return (
+      current: inMonth(now.year, now.month),
+      prev: inMonth(prevDate.year, prevDate.month),
+      prevLabel: spanishMonth(prevDate.month),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final repoAsync = ref.watch(dataRepositoryProvider);
     final user = ref.watch(sessionProvider).user;
+    // Sin rol de compra: la compra de insumos es del admin del centro.
     if (!canPurchaseSupplies(user)) return purchaseDeniedScaffold('Inventario');
 
+    final t = BrandTokens.of(context);
     return Scaffold(
+      backgroundColor: t.background,
       appBar: AppBar(
-        leading: BackButton(onPressed: () => context.go('/insumos')),
-        title: const Text('Inventario'),
-        actions: [
-          if (repoAsync.valueOrNull
-                  ?.premiumInsumosFor(user?.organizationId) ??
-              false) ...[
-            if (repoAsync.valueOrNull
-                    ?.shopifyMirrorFor(user?.organizationId) ??
-                false)
-              IconButton(
-                tooltip: 'Sincronizar existencias con Shopify',
-                icon: _syncing
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2))
-                    : const Icon(Icons.sync),
-                onPressed: _syncing
-                    ? null
-                    : () => _syncShopify(repoAsync.value!, user?.organizationId),
-              ),
-            IconButton(
-              tooltip: 'Descargar CSV (catálogo)',
-              icon: const Icon(Icons.download_outlined),
-              onPressed: () =>
-                  _downloadCsv(repoAsync.value!, user?.organizationId),
-            ),
-            IconButton(
-              tooltip: 'Cargar CSV',
-              icon: _importing
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2))
-                  : const Icon(Icons.upload_outlined),
-              onPressed: _importing
-                  ? null
-                  : () => _uploadCsv(repoAsync.value!, user?.organizationId),
-            ),
-            IconButton(
-              tooltip: 'Fijar umbral de reorden en lote',
-              icon: const Icon(Icons.rule),
-              onPressed: () =>
-                  _batchThreshold(repoAsync.valueOrNull, user?.organizationId),
-            ),
-          ],
-          const UserMenuButton(),
-        ],
+        automaticallyImplyLeading: false,
+        backgroundColor: t.surface,
+        elevation: 0,
+        toolbarHeight: 52,
+        actions: const [UserMenuButton()],
       ),
       body: repoAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, st) => Center(child: Text('Error: $e')),
-        data: (repo) {
-          final orgId = user?.organizationId;
-          if (!repo.premiumInsumosFor(orgId)) return const _PremiumLocked();
+        error: (e, st) => _wrap(
+          t,
+          KuraErrorState(
+            title: 'No pudimos cargar el inventario',
+            reassurance: 'Tus existencias y movimientos están a salvo; solo '
+                'no pudimos leerlos ahora.',
+            detail: '$e',
+            onRetry: () => ref.invalidate(dataRepositoryProvider),
+          ),
+        ),
+        data: (repo) => _body(context, t, repo, user),
+      ),
+    );
+  }
 
-          final sites =
-              repo.listSites(organizationId: orgId).where((s) => s.isActive).toList();
-          if (sites.isEmpty) {
-            return const Center(
-                child: Padding(
-                    padding: EdgeInsets.all(32),
-                    child: Text('Este centro no tiene sitios configurados.')));
-          }
-          // Alcance del inventario (0053): 'center' = una sola bolsa (sitio
-          // principal, sin selector); 'site' = por sitio con selector.
-          final scope = repo.inventoryScopeFor(orgId);
-          // Espejo de Shopify = una sola tienda = un solo stock. Si el centro
-          // usa el espejo, el inventario se UNIFICA por centro (una sola bolsa,
-          // sites.first) sin importar el scope configurado: así, cuando el admin
-          // sincroniza con Shopify, TODOS los usuarios del centro ven el mismo
-          // inventario (antes cada usuario tenía que sincronizar su propio
-          // sitio, y María veía vacío si caía en otro sitio).
-          final mirrorUnified = repo.shopifyMirrorFor(orgId);
-          final centerMode = scope == 'center' || mirrorUnified;
-          if (centerMode) {
-            _siteId = sites.first.id;
-          } else {
-            _siteId ??= repo.primarySiteIdForProfile(user?.id) ?? sites.first.id;
-            if (!sites.any((s) => s.id == _siteId)) _siteId = sites.first.id;
-          }
+  Widget _wrap(BrandTokens t, Widget child) => Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 1200),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(40, 30, 40, 44),
+            child: child,
+          ),
+        ),
+      );
 
-          final items = repo.listInventoryItems(organizationId: orgId, siteId: _siteId);
-          final onHand = repo.inventoryOnHand(_siteId!);
-          final lowCount = items
-              .where((it) =>
-                  it.reorderThreshold != null &&
-                  (onHand[it.id] ?? 0) <= it.reorderThreshold!)
-              .length;
-          final invValue = items.fold<double>(
-              0, (a, it) => a + (it.unitCost ?? 0) * (onHand[it.id] ?? 0));
-          final isAdmin = user?.isAdmin ?? false;
+  Widget _body(
+      BuildContext context, BrandTokens t, DataRepository repo, dynamic user) {
+    final orgId = user?.organizationId as String?;
 
-          return Column(
-            children: [
-              _InvSummary(
-                total: items.length,
-                low: lowCount,
-                value: invValue,
-                scope: scope,
-                // Con espejo Shopify el inventario queda unificado por centro;
-                // el selector de scope no aplica (se oculta) para no confundir.
-                canEditScope: isAdmin && !mirrorUnified,
-                mirrorUnified: mirrorUnified,
-                onScope: (s) async {
-                  await repo.setInventoryScope(orgId!, s);
-                  if (mounted) setState(() {});
-                },
-              ),
-              if (!centerMode && sites.length > 1)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.place_outlined, size: 18),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: DropdownButton<String>(
-                          isExpanded: true,
-                          value: _siteId,
-                          underline: const SizedBox.shrink(),
-                          items: [
-                            for (final s in sites)
-                              DropdownMenuItem(value: s.id, child: Text(s.name)),
-                          ],
-                          onChanged: (v) => setState(() => _siteId = v),
-                        ),
-                      ),
-                    ],
+    // Sin módulo: sección completa del bloqueo (precio de billing_catalog + salida
+    // a Licencias), no una línea gris suelta.
+    if (!repo.premiumInsumosFor(orgId)) {
+      return _wrap(
+        t,
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _header(t, repo, orgId, sites: const [], centerMode: true),
+            const SizedBox(height: 24),
+            KuraModuleLock.section(
+              repo: repo,
+              organizationId: orgId ?? '',
+              moduleKey: 'insumos',
+              moduleName: 'Insumos',
+              description: 'Inventario por sede, consumo, costeo y reabasto de '
+                  'tus insumos —de la tienda Kura+ o de cualquier proveedor.',
+            ),
+          ],
+        ),
+      );
+    }
+
+    final sites =
+        repo.listSites(organizationId: orgId).where((s) => s.isActive).toList();
+    if (sites.isEmpty) {
+      return _wrap(
+        t,
+        Text('Este centro no tiene sitios configurados.',
+            style: TextStyle(color: t.textSecondary)),
+      );
+    }
+
+    // Alcance (0053): 'center' = una sola bolsa; 'site' = por sitio con selector.
+    // El espejo de Shopify unifica por centro sin importar el scope.
+    final scope = repo.inventoryScopeFor(orgId);
+    final mirrorUnified = repo.shopifyMirrorFor(orgId);
+    final centerMode = scope == 'center' || mirrorUnified;
+    if (centerMode) {
+      _siteId = sites.first.id;
+    } else {
+      _siteId ??= repo.primarySiteIdForProfile(user?.id) ?? sites.first.id;
+      if (!sites.any((s) => s.id == _siteId)) _siteId = sites.first.id;
+    }
+
+    final items = repo.listInventoryItems(organizationId: orgId, siteId: _siteId);
+    final onHand = repo.inventoryOnHand(_siteId!);
+    int oh(InventoryItem it) => onHand[it.id] ?? 0;
+
+    // Estado vacío.
+    if (items.isEmpty) {
+      return _wrap(
+        t,
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _header(t, repo, orgId, sites: sites, centerMode: centerMode),
+            const SizedBox(height: 40),
+            KuraEmptyState(
+              icon: Icons.inventory_2_outlined,
+              title: 'Todavía no hay artículos en esta sede',
+              message: 'Agrega productos de tu tienda o captura los que compras '
+                  'con otro proveedor. Si ya los tienes en una hoja, súbelos de '
+                  'una vez.',
+              primaryLabel: 'Agregar artículo',
+              onPrimary: () => _addItem(repo, orgId),
+              secondaryLabel: 'Cargar CSV',
+              onSecondary: () => _uploadCsv(repo, orgId),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // Conteos para las cifras y los filtros (sobre todos los del sitio).
+    final outCount = items.where((it) => oh(it) <= 0).length;
+    final lowCount = items
+        .where((it) =>
+            it.reorderThreshold != null &&
+            oh(it) > 0 &&
+            oh(it) <= it.reorderThreshold!)
+        .length;
+    final reorderCount = outCount + lowCount; // "Por reordenar"
+    final storeCount = items.where((it) => !it.isExternal).length;
+    final externalCount = items.where((it) => it.isExternal).length;
+    final noThresholdCount =
+        items.where((it) => it.reorderThreshold == null).length;
+    final invValuePesos =
+        items.fold<double>(0, (a, it) => a + (it.unitCost ?? 0) * oh(it));
+    final consumo = _consumo(repo, _siteId!);
+
+    // Filtro + búsqueda.
+    final q = _query.trim().toLowerCase();
+    bool matchesFilter(InventoryItem it) {
+      final h = oh(it);
+      switch (_filter) {
+        case 'low':
+          return it.reorderThreshold != null &&
+              h > 0 &&
+              h <= it.reorderThreshold!;
+        case 'out':
+          return h <= 0;
+        case 'store':
+          return !it.isExternal;
+        case 'external':
+          return it.isExternal;
+        case 'nothreshold':
+          return it.reorderThreshold == null;
+        default:
+          return true;
+      }
+    }
+
+    bool matchesQuery(InventoryItem it) {
+      if (q.isEmpty) return true;
+      return it.name.toLowerCase().contains(q) ||
+          (it.supplier ?? '').toLowerCase().contains(q) ||
+          (it.notes ?? '').toLowerCase().contains(q);
+    }
+
+    final shown =
+        items.where((it) => matchesFilter(it) && matchesQuery(it)).toList();
+    final shownPz = shown.fold<int>(0, (a, it) => a + oh(it));
+    final shownValue =
+        shown.fold<double>(0, (a, it) => a + (it.unitCost ?? 0) * oh(it));
+
+    return ListView(
+      children: [
+        Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 1200),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(40, 30, 40, 44),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _header(t, repo, orgId, sites: sites, centerMode: centerMode),
+                  const SizedBox(height: 24),
+                  // Fila de cifras.
+                  InventoryStatRow(
+                    articleCount: items.length,
+                    reorderCount: reorderCount,
+                    outCount: outCount,
+                    valueCents: _cents(invValuePesos) ?? 0,
+                    consumoCurrent: consumo.current,
+                    consumoPrev: consumo.prev,
+                    prevMonthLabel: consumo.prevLabel,
                   ),
-                ),
-              Expanded(
-                child: items.isEmpty
-                    ? const Center(
-                        child: Padding(
-                          padding: EdgeInsets.all(32),
-                          child: Text(
-                            'Sin artículos en este sitio.\n'
-                            'Agrega productos de tu tienda o externos.',
-                            textAlign: TextAlign.center,
+                  const SizedBox(height: 20),
+                  // Barra de acciones.
+                  _cardBox(
+                    t,
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 22, vertical: 18),
+                    child: KuraActionBar(
+                      searchHint: 'Buscar por nombre, SKU o proveedor',
+                      searchController: _searchCtrl,
+                      onSearchChanged: (v) => setState(() => _query = v),
+                      primaryLabel: 'Agregar artículo',
+                      primaryIcon: Icons.add,
+                      onPrimary: () => _addItem(repo, orgId),
+                      moreActions: [
+                        if (mirrorUnified)
+                          KuraMenuAction(
+                            label: 'Sincronizar existencias con Shopify',
+                            icon: Icons.sync,
+                            onSelected: () => _syncShopify(repo, orgId),
                           ),
+                        KuraMenuAction(
+                          label: 'Fijar umbral de reorden en lote',
+                          icon: Icons.rule,
+                          onSelected: () => _batchThreshold(repo, orgId),
                         ),
-                      )
-                    : ListView.separated(
-                        padding: const EdgeInsets.fromLTRB(12, 8, 12, 88),
-                        itemCount: items.length,
-                        separatorBuilder: (_, __) => const SizedBox(height: 8),
-                        itemBuilder: (_, i) => _ItemTile(
-                          item: items[i],
-                          onHand: onHand[items[i].id] ?? 0,
-                          onTap: () => _openItem(repo, items[i]),
+                        KuraMenuAction(
+                          label: 'Descargar catálogo en CSV',
+                          icon: Icons.download_outlined,
+                          onSelected: () => _downloadCsv(repo, orgId),
                         ),
-                      ),
+                        KuraMenuAction(
+                          label: 'Cargar CSV',
+                          icon: Icons.upload_outlined,
+                          onSelected: () => _uploadCsv(repo, orgId),
+                        ),
+                      ],
+                      filters: [
+                        _f('Todos', items.length, 'all'),
+                        _f('Bajo umbral', lowCount, 'low'),
+                        _f('Agotados', outCount, 'out'),
+                        _f('Tienda Kura+', storeCount, 'store'),
+                        _f('Externos', externalCount, 'external'),
+                        _f('Sin umbral', noThresholdCount, 'nothreshold'),
+                      ],
+                      showingText:
+                          'Mostrando ${shown.length} de ${items.length}',
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  // Tabla.
+                  _cardBox(
+                    t,
+                    padding: const EdgeInsets.fromLTRB(24, 22, 24, 8),
+                    child: _table(t, repo, shown, oh, shownPz, shownValue),
+                  ),
+                  const SizedBox(height: 16),
+                  // Avisos al pie.
+                  _footerNotices(
+                    t,
+                    repo,
+                    orgId,
+                    noThresholdCount: noThresholdCount,
+                    mirrorUnified: mirrorUnified,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  KuraFilter _f(String label, int count, String key) => KuraFilter(
+        label: label,
+        count: count,
+        selected: _filter == key,
+        onTap: () => setState(() => _filter = key),
+      );
+
+  // ---------------- Encabezado ----------------
+  Widget _header(BrandTokens t, DataRepository repo, String? orgId,
+      {required List sites, required bool centerMode}) {
+    final showSelector = !centerMode && sites.length > 1;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              InkWell(
+                onTap: () => context.go('/insumos'),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.arrow_back, size: 17, color: t.textSecondary),
+                    const SizedBox(width: 6),
+                    Text('Insumos',
+                        style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: t.textSecondary)),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text('Inventario',
+                  style: TextStyle(
+                      fontSize: 28,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -0.02 * 28,
+                      color: t.textPrimary)),
+            ],
+          ),
+        ),
+        if (showSelector) ...[
+          const SizedBox(width: 20),
+          _siteSelector(t, sites),
+        ],
+      ],
+    );
+  }
+
+  Widget _siteSelector(BrandTokens t, List sites) {
+    final current = sites.firstWhere((s) => s.id == _siteId,
+        orElse: () => sites.first);
+    return Container(
+      decoration: BoxDecoration(
+        color: t.surface,
+        border: Border.all(color: t.border),
+        borderRadius: AppRadii.pillR,
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String>(
+          value: _siteId,
+          isDense: true,
+          icon: Icon(Icons.expand_more, size: 13, color: t.textSecondary),
+          borderRadius: AppRadii.mdR,
+          selectedItemBuilder: (_) => [
+            for (final _ in sites)
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.place, size: 15, color: t.brandPrimary),
+                  const SizedBox(width: 9),
+                  Text(current.name,
+                      style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: t.textPrimary)),
+                ],
+              ),
+          ],
+          items: [
+            for (final s in sites)
+              DropdownMenuItem<String>(
+                value: s.id as String,
+                child: Text(s.name as String,
+                    style: const TextStyle(fontSize: 13)),
+              ),
+          ],
+          onChanged: (v) => setState(() => _siteId = v),
+        ),
+      ),
+    );
+  }
+
+  Widget _cardBox(BrandTokens t,
+          {required Widget child, required EdgeInsets padding}) =>
+      Container(
+        decoration: BoxDecoration(
+          color: t.surface,
+          border: Border.all(color: t.border),
+          borderRadius: AppRadii.mdR,
+        ),
+        padding: padding,
+        child: child,
+      );
+
+  // ---------------- Tabla ----------------
+  Widget _table(BrandTokens t, DataRepository repo, List<InventoryItem> shown,
+      int Function(InventoryItem) oh, int totalPz, double totalValue) {
+    KuraCellStatus stockStatus(InventoryItem it, int h) {
+      if (h <= 0) return KuraCellStatus.danger;
+      // Sin umbral NO se pinta de aviso: no tiene contra qué compararse.
+      if (it.reorderThreshold != null && h <= it.reorderThreshold!) {
+        return KuraCellStatus.warning;
+      }
+      return KuraCellStatus.success;
+    }
+
+    return KuraDataTable(
+      initialSortColumn: 0,
+      columns: const [
+        KuraColumn(label: 'Artículo', fraction: 0.30, sortable: true),
+        KuraColumn(label: 'Origen', fraction: 0.13, sortable: true),
+        KuraColumn(
+            label: 'Existencia', fraction: 0.11, numeric: true, sortable: true),
+        KuraColumn(label: 'Umbral', fraction: 0.09, numeric: true),
+        KuraColumn(label: 'Costo', fraction: 0.10, numeric: true, sortable: true),
+        KuraColumn(label: 'Precio', fraction: 0.10, numeric: true),
+        KuraColumn(label: 'Valor', fraction: 0.10, numeric: true, sortable: true),
+        KuraColumn(label: '', fraction: 0.07, numeric: true),
+      ],
+      rows: [
+        for (final it in shown)
+          KuraRow(
+            id: it.id,
+            cells: _rowCells(t, repo, it, oh(it), stockStatus(it, oh(it))),
+          ),
+      ],
+      totals: [
+        KuraCell.custom(
+          sortValue: null,
+          build: (t) => Text('${shown.length} artículos',
+              style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: t.textSecondary)),
+        ),
+        null,
+        KuraCell.custom(
+          build: (t) => Text('${_grouped(totalPz)} pz',
+              textAlign: TextAlign.right,
+              style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w800,
+                  color: t.textPrimary)),
+        ),
+        null,
+        null,
+        null,
+        KuraCell.custom(
+          build: (t) => Text(moneyMXN(_cents(totalValue) ?? 0),
+              textAlign: TextAlign.right,
+              style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w800,
+                  color: t.textPrimary)),
+        ),
+        null,
+      ],
+    );
+  }
+
+  List<KuraCell> _rowCells(BrandTokens t, DataRepository repo, InventoryItem it,
+      int h, KuraCellStatus status) {
+    final valueCents =
+        it.unitCost == null ? null : ((it.unitCost! * h) * 100).round();
+    final low = it.reorderThreshold != null && h <= it.reorderThreshold!;
+    return [
+      // Artículo — cuadro 30×30 + nombre + proveedor · SKU, tappable → detalle.
+      KuraCell.custom(
+        sortValue: it.name.toLowerCase(),
+        build: (t) => InkWell(
+          onTap: () => _openItem(repo, it),
+          child: Row(
+            children: [
+              _thumb(t, it),
+              const SizedBox(width: 11),
+              Flexible(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(it.name,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: t.textPrimary)),
+                    if (_subline(it).isNotEmpty)
+                      Text(_subline(it),
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                              fontSize: 11, color: t.textDisabled)),
+                  ],
+                ),
               ),
             ],
-          );
-        },
+          ),
+        ),
       ),
-      floatingActionButton: repoAsync.valueOrNull != null &&
-              repoAsync.value!.premiumInsumosFor(user?.organizationId)
-          ? KuraPrimaryFab(
-              onPressed: () => _addItem(repoAsync.value!, user?.organizationId),
-              icon: Icons.add,
-              label: 'Agregar',
-            )
-          : null,
+      // Origen.
+      it.isExternal
+          ? KuraCell.pill('Externo', muted: true)
+          : KuraCell.pill('Tienda Kura+'),
+      // Existencia.
+      KuraCell.number(h, unit: 'pz', status: status),
+      // Umbral.
+      KuraCell.custom(
+        sortValue: it.reorderThreshold ?? -1,
+        build: (t) => Text(
+          it.reorderThreshold?.toString() ?? 'sin fijar',
+          textAlign: TextAlign.right,
+          style: it.reorderThreshold == null
+              ? TextStyle(
+                  fontSize: 12,
+                  fontStyle: FontStyle.italic,
+                  color: t.textDisabled)
+              : TextStyle(fontSize: 13, color: t.textSecondary),
+        ),
+      ),
+      // Costo.
+      KuraCell.money(_cents(it.unitCost)),
+      // Precio (textSecondary).
+      KuraCell.custom(
+        sortValue: it.unitPrice ?? -1,
+        build: (t) => Text(moneyOrDash(_cents(it.unitPrice)),
+            textAlign: TextAlign.right,
+            style: TextStyle(fontSize: 13, color: t.textSecondary)),
+      ),
+      // Valor (w700).
+      KuraCell.custom(
+        sortValue: (it.unitCost ?? 0) * h,
+        build: (t) => Text(moneyOrDash(valueCents),
+            textAlign: TextAlign.right,
+            style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: t.textPrimary)),
+      ),
+      // Acción rápida.
+      KuraCell.custom(
+        build: (t) => Align(
+          alignment: Alignment.centerRight,
+          child: InkWell(
+            onTap: low
+                ? () => _movementDialog(repo, it,
+                    sign: 1,
+                    title: 'Entrada / reabasto',
+                    reasons: const [
+                      InventoryReason.compra,
+                      InventoryReason.devolucion
+                    ])
+                : () => _movementDialog(repo, it,
+                    sign: -1,
+                    title: 'Salida',
+                    reasons: const [
+                      InventoryReason.consumo,
+                      InventoryReason.merma
+                    ]),
+            child: Text(low ? 'Entrada' : 'Salida',
+                style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: t.brandPrimary)),
+          ),
+        ),
+      ),
+    ];
+  }
+
+  String _subline(InventoryItem it) {
+    final sku = (it.notes ?? '').startsWith('SKU: ')
+        ? it.notes!.substring(5).trim()
+        : '';
+    return [
+      if (it.supplier != null && it.supplier!.isNotEmpty) it.supplier!,
+      if (sku.isNotEmpty) sku,
+    ].join(' · ');
+  }
+
+  Widget _thumb(BrandTokens t, InventoryItem it) => ClipRRect(
+        borderRadius: BorderRadius.circular(7),
+        child: Container(
+          width: 30,
+          height: 30,
+          color: t.chipBg,
+          alignment: Alignment.center,
+          child: it.imageUrl == null
+              ? Icon(
+                  it.isExternal
+                      ? Icons.inventory_2_outlined
+                      : Icons.medical_services_outlined,
+                  size: 16,
+                  color: t.brandPrimary)
+              : Image.network(it.imageUrl!,
+                  fit: BoxFit.contain,
+                  errorBuilder: (_, __, ___) => Icon(
+                      Icons.image_not_supported_outlined,
+                      size: 16,
+                      color: t.brandPrimary)),
+        ),
+      );
+
+  // ---------------- Avisos al pie ----------------
+  Widget _footerNotices(BrandTokens t, DataRepository repo, String? orgId,
+      {required int noThresholdCount, required bool mirrorUnified}) {
+    final cards = <Widget>[
+      if (noThresholdCount > 0)
+        _noThresholdNotice(t, repo, orgId, noThresholdCount),
+      if (mirrorUnified) _shopifyNotice(t, repo, orgId),
+    ];
+    if (cards.isEmpty) return const SizedBox.shrink();
+    return LayoutBuilder(
+      builder: (context, c) {
+        final narrow = c.maxWidth < 640 || cards.length == 1;
+        final w = narrow ? c.maxWidth : (c.maxWidth - 16) / 2;
+        return Wrap(
+          spacing: 16,
+          runSpacing: 16,
+          children: [for (final card in cards) SizedBox(width: w, child: card)],
+        );
+      },
+    );
+  }
+
+  /// Fuga silenciosa: sin umbral, el artículo NUNCA entra a Reabasto aunque se
+  /// agote. Tono aviso (cálido), con los colores del canvas.
+  Widget _noThresholdNotice(
+      BrandTokens t, DataRepository repo, String? orgId, int count) {
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFFBF3),
+        border: Border.all(color: const Color(0xFFF2DCB0)),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 15),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                    '$count artículo${count == 1 ? '' : 's'} '
+                    '${count == 1 ? 'no tiene' : 'no tienen'} umbral fijado',
+                    style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF8A5A0B))),
+                const SizedBox(height: 3),
+                const Text(
+                    'Sin umbral nunca aparecen en Reabasto, aunque se agoten.',
+                    style: TextStyle(fontSize: 11, color: Color(0xFFA9812F))),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          TextButton(
+            onPressed: () => _batchThreshold(repo, orgId),
+            style: TextButton.styleFrom(
+              backgroundColor: const Color(0xFF8A5A0B),
+              foregroundColor: Colors.white,
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8)),
+            ),
+            child: const Text('Fijarlo en lote',
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Estado de Shopify. NOTA: hoy no hay marca de tiempo real del último sync
+  /// (no la expone el repo) → texto genérico de respaldo. Pendiente en el doc:
+  /// exponer synced_at para decir "hace N min".
+  Widget _shopifyNotice(BrandTokens t, DataRepository repo, String? orgId) {
+    return _cardBox(
+      t,
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 15),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Sincronizado con Shopify',
+                    style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: t.textPrimary)),
+                const SizedBox(height: 3),
+                Text('El stock es el mismo para todo el centro.',
+                    style: TextStyle(fontSize: 11, color: t.textSecondary)),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          InkWell(
+            onTap: _syncing ? null : () => _syncShopify(repo, orgId),
+            child: _syncing
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2))
+                : Text('Sincronizar',
+                    style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: t.brandPrimary)),
+          ),
+        ],
+      ),
     );
   }
 
@@ -586,8 +1145,6 @@ class _InventarioScreenState extends ConsumerState<InventarioScreen> {
     if (mounted) setState(() {});
   }
 
-  /// Editar costo y precio del insumo (solo admin). El precio es el que se cobra
-  /// al paciente; al cambiar el costo se sugiere costo +30% (editable).
   /// Fija el umbral de reorden en LOTE para el sitio actual. Recupera al centro
   /// que cargó su inventario sin umbral (por CSV) y hoy no ve nada en Reabasto,
   /// sin tener que re-dar de alta cada artículo.
@@ -835,77 +1392,10 @@ class _InventarioScreenState extends ConsumerState<InventarioScreen> {
   }
 }
 
-class _PremiumLocked extends StatelessWidget {
-  const _PremiumLocked();
-  @override
-  Widget build(BuildContext context) => const Center(
-        child: Padding(
-          padding: EdgeInsets.all(32),
-          child: Text('El inventario es una función premium.',
-              textAlign: TextAlign.center),
-        ),
-      );
-}
-
-class _ItemTile extends StatelessWidget {
-  final InventoryItem item;
-  final int onHand;
-  final VoidCallback onTap;
-  const _ItemTile({required this.item, required this.onHand, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    final low = item.reorderThreshold != null && onHand <= item.reorderThreshold!;
-    final stockColor = onHand <= 0
-        ? KuraColors.danger
-        : (low ? KuraColors.warning : KuraColors.success);
-    return Card(
-      margin: EdgeInsets.zero,
-      child: ListTile(
-        onTap: onTap,
-        leading: ClipRRect(
-          borderRadius: BorderRadius.circular(6),
-          child: Container(
-            width: 44,
-            height: 44,
-            color: KuraColors.chipBg,
-            child: item.imageUrl == null
-                ? Icon(item.isExternal ? Icons.inventory_2_outlined : Icons.medical_services_outlined,
-                    size: 20)
-                : Image.network(item.imageUrl!,
-                    fit: BoxFit.contain,
-                    errorBuilder: (_, __, ___) =>
-                        const Icon(Icons.image_not_supported_outlined, size: 20)),
-          ),
-        ),
-        title: Text(item.name,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
-        subtitle: Text(
-          [
-            item.isExternal ? 'Externo' : 'Tienda Kura+',
-            if (item.supplier != null && item.supplier!.isNotEmpty) item.supplier!,
-            if (item.unitCost != null) 'Costo ${_money(item.unitCost, item.currency)}',
-            if (item.unitPrice != null) 'Precio ${_money(item.unitPrice, item.currency)}',
-          ].join(' · '),
-          style: const TextStyle(fontSize: 11),
-        ),
-        trailing: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            Text('$onHand',
-                style: TextStyle(
-                    fontSize: 20, fontWeight: FontWeight.w800, color: stockColor)),
-            Text(low ? 'Reordenar' : 'en stock',
-                style: TextStyle(fontSize: 10, color: stockColor)),
-          ],
-        ),
-      ),
-    );
-  }
-}
+/// Agrupador de miles local (para totales de la tabla en piezas).
+String _grouped(int n) => n
+    .toString()
+    .replaceAllMapped(RegExp(r'\B(?=(\d{3})+(?!\d))'), (m) => ',');
 
 class _ItemDetailSheet extends StatelessWidget {
   final DataRepository repo;
@@ -922,6 +1412,9 @@ class _ItemDetailSheet extends StatelessWidget {
     required this.onAjuste,
     this.onEditPrices,
   });
+
+  String _money(double? v, [String? cur]) =>
+      v == null ? '—' : '\$${v.toStringAsFixed(2)} ${cur ?? 'MXN'}';
 
   @override
   Widget build(BuildContext context) {
@@ -1035,8 +1528,8 @@ class _ItemDetailSheet extends StatelessWidget {
                                 style: TextStyle(
                                     fontWeight: FontWeight.w800,
                                     color: pos
-                                        ? KuraColors.success
-                                        : KuraColors.danger)),
+                                        ? BrandTokens.of(context).statusSuccess
+                                        : BrandTokens.of(context).statusDanger)),
                             const SizedBox(width: 12),
                             Expanded(
                               child: Column(
@@ -1062,100 +1555,4 @@ class _ItemDetailSheet extends StatelessWidget {
       ),
     );
   }
-}
-
-/// Resumen del inventario (mini-dashboard): total de artículos, cuántos bajo su
-/// umbral y el valor del inventario. El admin puede fijar el alcance (por sitio
-/// o por centro).
-class _InvSummary extends StatelessWidget {
-  final int total;
-  final int low;
-  final double value;
-  final String scope; // 'site' | 'center'
-  final bool canEditScope;
-  final bool mirrorUnified; // inventario unificado por espejo Shopify
-  final ValueChanged<String> onScope;
-  const _InvSummary({
-    required this.total,
-    required this.low,
-    required this.value,
-    required this.scope,
-    required this.canEditScope,
-    required this.mirrorUnified,
-    required this.onScope,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      margin: const EdgeInsets.fromLTRB(12, 12, 12, 4),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          children: [
-            Row(
-              children: [
-                _kpi(context, '$total', 'Artículos', KuraColors.primary),
-                _kpi(context, '$low', 'Reordenar',
-                    low > 0 ? KuraColors.warning : KuraColors.success),
-                _kpi(context, _money(value), 'Valor', KuraColors.darkText),
-              ],
-            ),
-            if (mirrorUnified) ...[
-              const Divider(height: 16),
-              Row(
-                children: [
-                  const Icon(Icons.sync, size: 16, color: KuraColors.primary),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'Inventario unificado por el espejo de Shopify: al '
-                      'sincronizar, el stock queda disponible para todos los '
-                      'usuarios del centro.',
-                      style: TextStyle(
-                          fontSize: 12,
-                          color: KuraColors.darkText.withValues(alpha: 0.7)),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-            if (canEditScope) ...[
-              const Divider(height: 16),
-              Row(
-                children: [
-                  const Icon(Icons.tune, size: 16),
-                  const SizedBox(width: 8),
-                  const Text('Inventario:', style: TextStyle(fontSize: 13)),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: SegmentedButton<String>(
-                      style: const ButtonStyle(visualDensity: VisualDensity.compact),
-                      segments: const [
-                        ButtonSegment(value: 'site', label: Text('Por sitio')),
-                        ButtonSegment(value: 'center', label: Text('Por centro')),
-                      ],
-                      selected: {scope},
-                      onSelectionChanged: (s) => onScope(s.first),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _kpi(BuildContext context, String v, String label, Color color) => Expanded(
-        child: Column(
-          children: [
-            Text(v,
-                style: TextStyle(
-                    fontSize: 18, fontWeight: FontWeight.w800, color: color)),
-            Text(label, style: Theme.of(context).textTheme.bodySmall),
-          ],
-        ),
-      );
 }

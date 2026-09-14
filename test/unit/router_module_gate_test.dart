@@ -7,47 +7,116 @@ import 'package:kuratracker/models/module_key.dart';
 /// nav gatean un módulo resolviendo la ruta con [ModuleKey.forRoute], que solo
 /// atrapa la ruta del módulo y sus hijas (`m.route` y `m.route/...`). Una
 /// pantalla de módulo colocada en una ruta de PRIMER NIVEL fuera de ese prefijo
-/// queda sin gate: le pasó a `/admin` y a `/ekare-import` (este último abría el
-/// importador de eKare desde cualquier centro, violando la regla de producto).
+/// queda sin gate: le pasó a `/admin` y a `/ekare-import`.
 ///
-/// Este test recorre TODAS las rutas del router y exige que cada una la cubra
-/// forRoute (pertenece a un módulo) o esté en la allowlist de rutas que
-/// legítimamente NO son de módulo (públicas/auth, gateadas por rol, o por la
-/// lógica especial de prevención). Si mañana alguien agrega la pantalla de un
-/// módulo en una ruta huérfana, este test se pone rojo antes del deploy.
+/// Este test recorre TODAS las rutas del router. Para las hijas (path relativo) NO
+/// basta con que sean relativas: se resuelve su ruta COMPLETA contra el padre en el
+/// árbol y se le aplica la MISMA regla que a una de primer nivel. Así una hija que
+/// cuelga de un padre sin gate SÍ falla (ver el caso negativo abajo).
 void main() {
-  test('toda ruta del router la cubre forRoute o está en la allowlist no-módulo',
-      () {
-    final src = File('lib/core/router/app_router.dart').readAsStringSync();
-    final paths = RegExp(r"path:\s*'([^']*)'")
-        .allMatches(src)
-        .map((m) => m.group(1)!)
-        .toList();
-    expect(paths, isNotEmpty,
-        reason: 'No se extrajo ninguna ruta del router.');
+  // Rutas que NO pertenecen a un módulo configurable y por eso forRoute devuelve
+  // null a propósito: públicas/auth + dashboard; gateadas por ROL
+  // (admin/platform/caregiver); y prevención hospitalaria (redirect propio).
+  const ungated = <String>[
+    '/login', '/demo', '/pago-', '/reset-password',
+    '/admin', '/platform', '/caregiver',
+    '/hospital', '/prevention-agenda',
+  ];
+  bool isUngatedOk(String p) =>
+      p == '/' ||
+      ungated.any((u) => p == u || p.startsWith('$u/') || p.startsWith(u));
 
-    // Rutas que NO pertenecen a un módulo configurable y por eso forRoute
-    // devuelve null a propósito: públicas/auth + dashboard; gateadas por ROL
-    // (admin/platform/caregiver); y las de prevención hospitalaria que el
-    // redirect gatea con lógica propia (needsPrevention), no por forRoute.
-    const ungated = <String>[
-      '/login', '/demo', '/pago-', '/reset-password',
-      '/admin', '/platform', '/caregiver',
-      '/hospital', '/prevention-agenda',
-    ];
-    bool isUngatedOk(String p) =>
-        p == '/' || ungated.any((u) => p == u || p.startsWith('$u/') || p.startsWith(u));
+  bool covered(String fullPath) =>
+      ModuleKeyX.forRoute(fullPath) != null || isUngatedOk(fullPath);
+
+  test('toda ruta (resuelta contra su padre) la cubre forRoute o la allowlist', () {
+    final src = File('lib/core/router/app_router.dart').readAsStringSync();
+    final paths = resolveFullPaths(src);
+    expect(paths, isNotEmpty, reason: 'No se extrajo ninguna ruta del router.');
+    // Sanidad: las hijas nuevas de /admin quedaron resueltas a ruta completa.
+    expect(paths, contains('/admin/protocolo-kura'));
 
     for (final p in paths) {
-      final covered = ModuleKeyX.forRoute(p) != null;
       expect(
-        covered || isUngatedOk(p),
+        covered(p),
         isTrue,
-        reason: 'La ruta "$p" no la cubre ModuleKey.forRoute ni está en la '
-            'allowlist de rutas no-módulo. Si es la pantalla de un módulo, '
-            'muévela BAJO la ruta del módulo (p.ej. /import-export/...) para que '
-            'herede el gate; es el hueco que tuvieron /admin y /ekare-import.',
+        reason: 'La ruta "$p" (ya resuelta a ruta completa) no la cubre '
+            'ModuleKey.forRoute ni la allowlist. Si es la pantalla de un módulo, '
+            'muévela BAJO la ruta del módulo para que herede el gate.',
       );
     }
   });
+
+  test('caso negativo: una hija relativa colgada de un padre SIN gate falla', () {
+    // /orphan-parent no es módulo ni allowlist → su hija resuelta tampoco.
+    const synthetic = '''
+      GoRoute(path: '/orphan-parent', builder: x, routes: [
+        GoRoute(path: 'huerfana', builder: x),
+      ]),
+    ''';
+    final paths = resolveFullPaths(synthetic);
+    expect(paths, contains('/orphan-parent/huerfana'),
+        reason: 'El resolvedor debe componer la ruta completa de la hija.');
+    expect(covered('/orphan-parent/huerfana'), isFalse,
+        reason: 'Una hija de un padre sin gate NO debe pasar como cubierta.');
+    // Y con la regla vieja (relativa = siempre OK) esto habría pasado por error:
+    expect('huerfana'.startsWith('/'), isFalse);
+  });
 }
+
+/// Resuelve cada `path:` del router a su ruta COMPLETA, componiendo las hijas
+/// relativas con el prefijo del padre (la nidificación se sigue por el bloque
+/// `routes: [ … ]`). Los `path:` absolutos se devuelven tal cual (una hija absoluta
+/// ignora al padre, como en go_router).
+List<String> resolveFullPaths(String rawSrc) {
+  final src = _stripComments(rawSrc);
+  final out = <String>[];
+  final parents = <String>['']; // pila de prefijos padre
+  final popAt = <int>[]; // profundidad de corchetes a la que se hace pop
+  var depth = 0;
+  var lastPath = '';
+  final pathRe = RegExp(r"path:\s*'([^']*)'");
+  final routesRe = RegExp(r'routes:\s*\[');
+  var i = 0;
+  while (i < src.length) {
+    final mp = pathRe.matchAsPrefix(src, i);
+    if (mp != null) {
+      final p = mp.group(1)!;
+      out.add(_joinPath(parents.last, p));
+      lastPath = p;
+      i = mp.end;
+      continue;
+    }
+    final mr = routesRe.matchAsPrefix(src, i);
+    if (mr != null) {
+      // El '[' del bloque routes abre un nivel: sus hijas cuelgan de lastPath.
+      parents.add(_joinPath(parents.last, lastPath));
+      popAt.add(depth + 1); // profundidad una vez consumido este '['
+      lastPath = '';
+      i = mr.end - 1; // dejar el '[' para el conteo normal
+      continue;
+    }
+    final c = src[i];
+    if (c == '[') {
+      depth++;
+    } else if (c == ']') {
+      if (popAt.isNotEmpty && depth == popAt.last) {
+        parents.removeLast();
+        popAt.removeLast();
+      }
+      depth--;
+    }
+    i++;
+  }
+  return out;
+}
+
+String _joinPath(String parent, String p) {
+  if (p.startsWith('/')) return p; // absoluta: ignora el padre
+  if (parent.isEmpty || parent == '/') return '/$p';
+  return '$parent/$p';
+}
+
+String _stripComments(String s) => s
+    .replaceAll(RegExp(r'/\*.*?\*/', dotAll: true), '')
+    .replaceAll(RegExp(r'//[^\n]*'), '');

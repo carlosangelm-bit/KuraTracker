@@ -1,10 +1,12 @@
-// Regresión (escritorio, ≥900px, NavigationRail): el lanzador flotante del Tour
+// Regresión (escritorio, ≥900px, KuraNavRail): el lanzador flotante del Tour
 // NO debe empalmarse con el rail ni robarle toques. Esta clase de bug ya mordió
 // dos veces (candado /admin, inicial del avatar): un guard estructural.
 //
-// El anclaje viejo `left: 88` caía ENCIMA del NavigationRail (que en español
-// mide ~140px), así que un toque en la zona baja del rail podía pegarle al
-// lanzador. Aquí se monta el shell real + TourScope a 1200×800 y se afirma:
+// El anclaje viejo `left: 88` caía ENCIMA del rail, así que un toque en la zona
+// baja del rail podía pegarle al lanzador; hoy va abajo-DERECHA. Tras la etapa 5
+// el rail clínico de escritorio es el KuraNavRail (240px), aún más ancho que el
+// NavigationRail viejo, así que el anclaje a la derecha importa más todavía. Aquí
+// se monta el shell real + TourScope a 1200×800 y se afirma:
 //   1. el rect del lanzador NO intersecta el rect del rail;
 //   2. tocar cada destino del rail navega y deja el tour en running == false;
 //   3. tocar espacio vacío del rail tampoco arranca el tour.
@@ -17,9 +19,11 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:kuratracker/core/providers/session_provider.dart';
 import 'package:kuratracker/core/router/app_router.dart';
 import 'package:kuratracker/core/router/app_shell.dart';
+import 'package:kuratracker/core/nav/kura_nav_rail.dart';
 import 'package:kuratracker/features/tour/tour_controller.dart';
 import 'package:kuratracker/features/tour/tour_scope.dart';
 import 'package:kuratracker/models/app_user.dart';
+import 'package:kuratracker/models/module_key.dart';
 
 class _FakeSessionController extends SessionController {
   _FakeSessionController(AppUser user) {
@@ -74,6 +78,15 @@ void main() {
     final container = ProviderContainer(overrides: [
       sessionProvider.overrideWith((ref) => _FakeSessionController(_clin)),
       routerProvider.overrideWithValue(router),
+      // Test de LAYOUT (no de licencia): con el AND por licencia (Fase 1 §4), la
+      // sesión falsa sobre 'org-demo' —sin derechos sembrados— daría un nav vacío
+      // y el rail no se montaría. Se fija un conjunto no vacío para restaurar la
+      // precondición (un rail con destinos) que este test necesita.
+      enabledModulesProvider.overrideWithValue(const {
+        ModuleKey.patients,
+        ModuleKey.agenda,
+        ModuleKey.reports,
+      }),
     ]);
     addTearDown(container.dispose);
 
@@ -91,8 +104,8 @@ void main() {
     container.read(tourProvider.notifier).stop();
     await _settle(t);
 
-    final rail = find.byType(NavigationRail);
-    expect(rail, findsOneWidget, reason: 'a 1200px debe haber NavigationRail');
+    final rail = find.byType(KuraNavRail);
+    expect(rail, findsOneWidget, reason: 'a 1200px debe haber KuraNavRail');
     final launcher = find.byIcon(Icons.play_circle_outline);
     expect(launcher, findsOneWidget, reason: 'el lanzador del Tour debe mostrarse tras Saltar');
 

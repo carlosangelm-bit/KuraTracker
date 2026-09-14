@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../providers/session_provider.dart';
+import 'nav_redirect.dart';
 import '../../models/app_user.dart';
 import '../../models/module_key.dart';
 import '../../features/auth/demo_persona_screen.dart';
@@ -34,6 +35,16 @@ import '../../features/referrals/referral_create_screen.dart';
 import '../../features/reports/reports_screen.dart';
 import '../../features/agenda/agenda_screen.dart';
 import '../../features/admin/admin_home_screen.dart';
+import '../../features/admin/protocol_kura_screen.dart';
+import '../../features/admin/protocol_product_rules_screen.dart';
+import '../../features/admin/acuity_session_type_screen.dart';
+import '../../features/admin/acuity_visit_type_map_screen.dart';
+import '../../features/admin/patient_cleanup_screen.dart';
+import '../../features/admin/scale_toggles_screen.dart';
+import '../../features/admin/recommendations_reference_screen.dart';
+import '../../features/admin/data_disclosures_screen.dart';
+import '../../services/data_repository.dart';
+import '../widgets/kura_error_state.dart';
 import '../../features/import_export/import_export_screen.dart';
 import '../../features/import_export/ekare_import_screen.dart';
 import '../../features/platform/platform_home_screen.dart';
@@ -63,6 +74,49 @@ class _RouterRefreshNotifier extends ChangeNotifier {
 /// El router se construye una sola vez (Provider), y se suscribe via
 /// ref.listen a cambios de sesion para disparar sus redirects sin perder
 /// el estado de navegacion en cada rebuild de widgets.
+/// Builder para una pantalla hija de /admin que necesita el DataRepository (async)
+/// y el centro en sesión. Resuelve el repo con su estado de carga/error y arma la
+/// pantalla; así cada ruta hija se declara en una línea sin repetir el `.when`.
+Widget Function(BuildContext, GoRouterState) _adminChild(
+    Widget Function(DataRepository repo, String? organizationId) build) {
+  return (context, state) => Consumer(
+        builder: (ctx, ref, _) {
+          final repoAsync = ref.watch(dataRepositoryProvider);
+          final org = ref.watch(sessionProvider).user?.organizationId;
+          return repoAsync.when(
+            loading: () =>
+                const Scaffold(body: Center(child: CircularProgressIndicator())),
+            error: (e, _) => Scaffold(
+              appBar: AppBar(),
+              body: Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: KuraErrorState(
+                    title: 'No pudimos cargar esta pantalla',
+                    reassurance:
+                        'Puede ser tu conexión. Tus datos están a salvo.',
+                    detail: '$e',
+                    onRetry: () => ref.invalidate(dataRepositoryProvider),
+                  ),
+                ),
+              ),
+            ),
+            data: (repo) => build(repo, org),
+          );
+        },
+      );
+}
+
+/// Ruta clínica de PRIMER NIVEL (un destino del riel). Con el riel único, moverse entre
+/// estos destinos es cambiar de PANEL, igual que entre las secciones de /admin y
+/// /platform: sin animación (NoTransitionPage). Las rutas PROFUNDAS —detalle de paciente,
+/// expediente, captura— NO usan esto: conservan la transición por omisión, porque ahí sí
+/// estás navegando hacia ADENTRO y el movimiento lo comunica (§ etapa 5, simetría a).
+GoRoute _topLevel(String path, Widget child) => GoRoute(
+      path: path,
+      pageBuilder: (context, state) => NoTransitionPage(child: child),
+    );
+
 final routerProvider = Provider<GoRouter>((ref) {
   final refreshNotifier = _RouterRefreshNotifier();
   ref.listen(sessionProvider, (previous, next) {
@@ -100,105 +154,74 @@ final routerProvider = Provider<GoRouter>((ref) {
       if (!isDemoMode && ref.read(passwordRecoveryProvider)) {
         return '/reset-password';
       }
-      if (!loggedIn && !goingToLogin && !goingToDemo) {
-        // En demo, la landing es la selección de perfil; en prod, el login.
-        return isDemoMode ? '/demo' : '/login';
-      }
-
-      // El master (administrador de plataforma) no tiene datos clinicos
-      // propios (dashboard/pacientes/reportes quedarian vacios para el,
-      // ver regla de oro en 0012_master_role.sql): al iniciar sesion se le
-      // manda directo a su area de trabajo real, '/platform'.
+      // El master no tiene datos clínicos propios (0012); el CUIDADOR (Fase 3) solo
+      // ve /caregiver; enfermería (0045) es clínica restringida. Los flags de rol se
+      // computan aquí y alimentan la decisión de auth/rol (función pura, misma lógica
+      // que se prueba: resolveNavRedirect).
       final isMaster = session.user?.role == AppRole.master;
-      // El CUIDADOR (Fase 3) es un rol restringido: su única área es
-      // '/caregiver' (monitoreo de los pacientes que el centro le asignó, solo
-      // lectura + sus tareas). No ve el dashboard clínico ni el resto de la nav.
-      // RESTRICCIÓN → cuidador EXCLUSIVO (punto 6 §0): encerrar en /caregiver
-      // solo a quien no tiene ningún rol más amplio.
       final isCaregiver = session.user?.isCaregiverOnly ?? false;
-      // Enfermería (0045): personal clínico restringido — observa, reporta y
-      // ejecuta, pero NO diagnostica ni cambia protocolo. Se le bloquean las
-      // rutas de escritura de diagnóstico/protocolo (abajo). RESTRICCIÓN →
-      // enfermería SIN nada más amplio (punto 6 §0): un {clinico,enfermeria} NO
-      // debe quedar bloqueado, porque su rol clínico sí diagnostica.
       final isNurse = session.user?.isRestrictedNurse ?? false;
-      if (loggedIn && (goingToLogin || goingToDemo)) {
-        if (isMaster) return '/platform';
-        if (isCaregiver) return '/caregiver';
-        return '/';
-      }
+      final isAdmin = session.user?.isAdmin ?? false;
+
+      // Auth + rol + /platform + /admin + compra: el ?from= (enlace profundo en frío)
+      // gana ANTES que los retornos por rol, así un master/cuidador que entró a una
+      // ruta profunda no la pierde (la pasada siguiente reajusta si no le toca).
+      final roleRedirect = resolveNavRedirect(
+        loggedIn: loggedIn,
+        isDemoMode: isDemoMode,
+        goingToLogin: goingToLogin,
+        goingToDemo: goingToDemo,
+        matchedLocation: state.matchedLocation,
+        uriString: state.uri.toString(),
+        fromParam: state.uri.queryParameters['from'],
+        isMaster: isMaster,
+        isCaregiver: isCaregiver,
+        isAdmin: isAdmin,
+      );
+      if (roleRedirect != null) return roleRedirect;
 
       final location = state.matchedLocation;
-      if (loggedIn && isMaster) {
-        // Si el master cae en cualquier ruta clinica (tecleada a mano,
-        // bookmark antiguo, etc.) se le redirige a su area real: esas
-        // pantallas no tienen datos utiles para el (misma regla de oro).
-        final isClinicalRoute =
-            location == '/' || location.startsWith('/patients') || location == '/reports';
-        if (isClinicalRoute) return '/platform';
-      } else if (loggedIn && isCaregiver) {
-        // El cuidador solo puede estar en su área; cualquier otra ruta lo
-        // regresa a '/caregiver' (defensa de UX; la RLS 0042 ya le niega el
-        // resto de los datos). El asistente de ayuda es un overlay flotante, no
-        // una ruta, así que no lo afecta este redirect.
-        if (!location.startsWith('/caregiver')) return '/caregiver';
-      } else if (loggedIn && location.startsWith('/caregiver')) {
-        // Un no-cuidador que teclee '/caregiver' no tiene nada ahí.
-        return '/';
-      } else if (loggedIn && location.startsWith('/platform')) {
-        // Hardening (no es hueco de datos: la RLS is_master() de 0012 ya le
-        // niega todo a un no-master; esto solo pule la UX): un admin/clinico
-        // que teclee '/platform' a mano no debe quedarse ahi -- se le manda
-        // a su dashboard normal.
-        return '/';
-      }
 
       // Enfermería: bloquear rutas de ESCRITURA de diagnóstico/protocolo (la
       // RLS 0045 ya se lo niega; esto pule la UX y evita pantallas de captura).
       // Puede: leer expediente, ficha de riesgo (reporte Braden), eventos
       // adversos (reporte) y agenda de prevención (ejecución).
-      // Compra de insumos: SOLO admin del centro (y master). Enfermería y
-      // clínico NO compran. Registrar CONSUMO clínico (/insumos/consumo) sí es
-      // parte del trabajo, así que no se bloquea. Dos capas (router + guarda en
-      // pantalla) porque en web una ruta por URL no es un candado.
-      final isAdmin = session.user?.isAdmin ?? false;
-      final canPurchase = isAdmin || isMaster;
-      if (loggedIn && !canPurchase) {
-        const purchaseRoutes = {
-          '/insumos/tienda',
-          '/insumos/inventario',
-          '/insumos/reabasto',
-          '/insumos/mapeo',
-        };
-        if (purchaseRoutes.contains(location)) return '/insumos';
-      }
+      // (La compra de insumos y /admin ya se gatearon en resolveNavRedirect.)
 
-      // /admin: SOLO admin del centro (y master). Mismo criterio que la compra
-      // de insumos. En web una URL no es candado (punto 1 auditoría 1-sep): un
-      // clinico tecleando /admin abría el panel completo. Dos capas: este
-      // redirect + guarda de rol dentro de AdminHomeScreen.
-      if (loggedIn && !canPurchase && location.startsWith('/admin')) {
+      // Rutas de ESCRITURA clínica (crear/editar). Se GATEA LA RUTA, no solo el
+      // guardado: un centro en modo lectura (prueba vencida/impago) o enfermería
+      // restringida no debe poder abrir el formulario, trabajar y enterarse al final.
+      final isClinicalWriteRoute = location == '/patients/new' ||
+          location.endsWith('/edit') ||
+          location.contains('/consultation/new') ||
+          (location.contains('/wound/') && location.endsWith('/capture')) ||
+          (location.contains('/wound/') && location.contains('/plan/')) ||
+          location.endsWith('/follow-up/new') ||
+          location.contains('/follow-up/draft/') ||
+          location.endsWith('/comorbidities') ||
+          location.endsWith('/diagnoses') ||
+          location.endsWith('/referrals/new');
+      // Rebota al detalle del paciente si se puede inferir, si no al inicio; ahí la
+      // banda del shell explica el motivo (y ofrece Licencias al admin).
+      String bounceFromWrite() {
+        final segs = location.split('/').where((s) => s.isNotEmpty).toList();
+        if (segs.length >= 2 && segs[0] == 'patients') return '/patients/${segs[1]}';
         return '/';
       }
 
-      if (loggedIn && isNurse) {
-        final blocked = location == '/patients/new' ||
-            location.endsWith('/edit') ||
-            location.contains('/consultation/new') ||
-            (location.contains('/wound/') && location.endsWith('/capture')) ||
-            (location.contains('/wound/') && location.contains('/plan/')) ||
-            location.endsWith('/follow-up/new') ||
-            location.contains('/follow-up/draft/') ||
-            location.endsWith('/comorbidities') ||
-            location.endsWith('/diagnoses') ||
-            location.endsWith('/referrals/new');
-        if (blocked) {
-          // Regresar al detalle del paciente si se puede inferir, si no al inicio.
-          final segs = location.split('/').where((s) => s.isNotEmpty).toList();
-          if (segs.length >= 2 && segs[0] == 'patients') {
-            return '/patients/${segs[1]}';
-          }
-          return '/';
+      if (loggedIn && isNurse && isClinicalWriteRoute) {
+        return bounceFromWrite();
+      }
+
+      // Centro en modo LECTURA (prueba terminada / pago vencido / cancelado): lee su
+      // expediente, no escribe. Mismo criterio que el candado del repositorio
+      // (clinicalReadOnlyReason ≠ null solo cuando HAY derecho clínico y no es
+      // escribible; sin derecho no rebota, para no romper fixtures/edge).
+      if (loggedIn && !isMaster && isClinicalWriteRoute) {
+        final repo = ref.read(dataRepositoryProvider).valueOrNull;
+        if (repo != null &&
+            repo.clinicalReadOnlyReason(session.user?.organizationId) != null) {
+          return bounceFromWrite();
         }
       }
 
@@ -237,11 +260,8 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (context, state, child) =>
             AppShell(currentPath: state.matchedLocation, child: child),
         routes: [
-          GoRoute(path: '/', builder: (context, state) => const DashboardScreen()),
-          GoRoute(
-            path: '/patients',
-            builder: (context, state) => const PatientsListScreen(),
-          ),
+          _topLevel('/', const DashboardScreen()),
+          _topLevel('/patients', const PatientsListScreen()),
           GoRoute(
             path: '/patients/new',
             builder: (context, state) => const PatientFormScreen(),
@@ -370,9 +390,9 @@ final routerProvider = Provider<GoRouter>((ref) {
               consultationId: state.pathParameters['consultationId']!,
             ),
           ),
-          GoRoute(path: '/reports', builder: (context, state) => const ReportsScreen()),
-          GoRoute(path: '/insumos', builder: (context, state) => const InsumosHomeScreen()),
-          GoRoute(path: '/comercial', builder: (context, state) => const ComercialScreen()),
+          _topLevel('/reports', const ReportsScreen()),
+          _topLevel('/insumos', const InsumosHomeScreen()),
+          _topLevel('/comercial', const ComercialScreen()),
           GoRoute(
               path: '/insumos/tienda',
               builder: (context, state) => const TiendaScreen()),
@@ -388,17 +408,13 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
               path: '/insumos/reabasto',
               builder: (context, state) => const ReabastoScreen()),
-          GoRoute(path: '/agenda', builder: (context, state) => const AgendaScreen()),
-          GoRoute(path: '/risk', builder: (context, state) => const RiskBoardScreen()),
-          GoRoute(
-              path: '/prevention-agenda',
-              builder: (context, state) => const PreventionAgendaScreen()),
+          _topLevel('/agenda', const AgendaScreen()),
+          _topLevel('/risk', const RiskBoardScreen()),
+          _topLevel('/prevention-agenda', const PreventionAgendaScreen()),
           GoRoute(
               path: '/hospital',
               builder: (context, state) => const HospitalDashboardScreen()),
-          GoRoute(
-              path: '/vac',
-              builder: (context, state) => const VacTherapiesScreen()),
+          _topLevel('/vac', const VacTherapiesScreen()),
           GoRoute(
             path: '/vac/:therapyId',
             builder: (context, state) => VacTherapyDetailScreen(
@@ -417,9 +433,7 @@ final routerProvider = Provider<GoRouter>((ref) {
               therapyId: state.pathParameters['therapyId']!,
             ),
           ),
-          GoRoute(
-              path: '/caregiver',
-              builder: (context, state) => const CaregiverHomeScreen()),
+          _topLevel('/caregiver', const CaregiverHomeScreen()),
           GoRoute(
             path: '/caregiver/patient/:patientId',
             builder: (context, state) => CaregiverPatientScreen(
@@ -432,15 +446,99 @@ final routerProvider = Provider<GoRouter>((ref) {
               patientId: state.pathParameters['patientId']!,
             ),
           ),
-          GoRoute(path: '/admin', builder: (context, state) => const AdminHomeScreen()),
+          // /admin: canónico + ShellRoute anidado. El canónico es un route APARTE (sin
+          // hijos) para que solo dispare en /admin a secas — anidar las secciones bajo un
+          // padre CON redirect hacía que el redirect (matchedLocation == '/admin')
+          // capturara también a las hijas. El riel vive en el shell (AdminSectionsShell)
+          // y PERSISTE entre secciones; cada sección es solo su cuerpo, con
+          // NoTransitionPage (cambiar de sección no anima ni recarga la pantalla).
+          GoRoute(
+            path: '/admin',
+            redirect: (context, state) => '/admin/usuarios',
+          ),
+          ShellRoute(
+            builder: (context, state, child) => AdminSectionsShell(
+                currentRoute: state.matchedLocation, child: child),
+            routes: [
+              for (final s in const [
+                'usuarios',
+                'personal',
+                'sitios',
+                'configuracion',
+                'marca',
+                'licencias',
+              ])
+                GoRoute(
+                  path: '/admin/$s',
+                  pageBuilder: (context, state) =>
+                      NoTransitionPage(child: AdminSectionBody(section: s)),
+                ),
+            ],
+          ),
+          // Las 8 pantallas hijas profundas de Administración (FUERA del shell de
+          // secciones: son pantallas completas). El gate por rol lo da el redirect global.
+          GoRoute(
+              path: '/admin/protocolo-kura',
+              builder: _adminChild((repo, org) =>
+                  ProtocolKuraScreen(repo: repo, organizationId: org))),
+          GoRoute(
+              path: '/admin/productos-protocolo',
+              builder: _adminChild((repo, org) =>
+                  ProtocolProductRulesScreen(repo: repo, organizationId: org))),
+          GoRoute(
+              path: '/admin/tipo-cita-sesiones',
+              builder: _adminChild((repo, org) =>
+                  AcuitySessionTypeScreen(repo: repo, organizationId: org))),
+          GoRoute(
+              path: '/admin/tipos-consulta',
+              builder: _adminChild((repo, org) =>
+                  AcuityVisitTypeMapScreen(repo: repo, organizationId: org))),
+          GoRoute(
+              path: '/admin/depurar-expedientes',
+              builder: _adminChild((repo, org) =>
+                  PatientCleanupScreen(repo: repo, organizationId: org))),
+          GoRoute(
+              path: '/admin/escalas-protocolo',
+              builder: _adminChild((repo, org) =>
+                  ScaleTogglesScreen(repo: repo, organizationId: org))),
+          GoRoute(
+              path: '/admin/fuente-recomendaciones',
+              builder: (context, state) =>
+                  const RecommendationsReferenceScreen()),
+          GoRoute(
+              path: '/admin/divulgaciones',
+              builder: (context, state) => const DataDisclosuresScreen()),
+          // /platform: canónico (childless, canoniza a Centros) + ShellRoute anidado. El
+          // riel vive en el shell (PlatformSectionsShell) y persiste; cada sección es su
+          // cuerpo, con NoTransitionPage (cambiar de sección no anima ni recarga). El
+          // centro seleccionado vive en un provider, así sobrevive el cambio de sección.
           GoRoute(
             path: '/platform',
-            builder: (context, state) => const PlatformHomeScreen(),
+            redirect: (context, state) => '/platform/centros',
           ),
-          GoRoute(
-            path: '/import-export',
-            builder: (context, state) => const ImportExportScreen(),
+          ShellRoute(
+            builder: (context, state, child) => PlatformSectionsShell(
+                currentRoute: state.matchedLocation, child: child),
+            routes: [
+              for (final s in const [
+                'centros',
+                'usuarios',
+                'personal',
+                'sitios',
+                'catalogo',
+                'marca',
+                'modulos',
+                'solicitudes',
+                'licencia',
+              ])
+                GoRoute(
+                  path: '/platform/$s',
+                  pageBuilder: (context, state) =>
+                      NoTransitionPage(child: PlatformSectionBody(section: s)),
+                ),
+            ],
           ),
+          _topLevel('/import-export', const ImportExportScreen()),
           GoRoute(
             // Hija de /import-export para que ModuleKey.forRoute la atrape (via
             // el prefijo de la ruta del módulo) y herede el gate del módulo. Como

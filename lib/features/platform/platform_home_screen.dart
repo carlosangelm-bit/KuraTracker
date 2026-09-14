@@ -6,10 +6,12 @@ import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/theme/kura_theme.dart';
-import '../../core/layout/responsive.dart';
 import '../../core/providers/session_provider.dart';
-import '../../core/router/app_shell.dart' show UserMenuButton, centerTypeColor;
+import '../../core/router/app_shell.dart' show centerTypeColor, KuraAccountMenu;
 import '../../core/widgets/kura_primary_fab.dart';
+import '../../core/nav/kura_nav_destinations.dart';
+import '../../core/nav/kura_nav_rail.dart';
+import 'derechos/center_license_panel.dart';
 import '../../models/app_user.dart';
 import '../../models/center_type.dart';
 import '../../models/module_key.dart';
@@ -38,54 +40,29 @@ import '../admin/admin_home_screen.dart'
 /// de paciente es accesible desde aqui ni desde el DataRepository que
 /// consume (listAllPatients/etc. no se llaman en ningun punto de este
 /// archivo).
-class PlatformHomeScreen extends ConsumerStatefulWidget {
-  const PlatformHomeScreen({super.key});
+/// Centro seleccionado en /platform: vive en un provider (no en el State de una
+/// pantalla), así PERSISTE al cambiar de sección dentro del shell.
+final _platformOrgProvider = StateProvider<String?>((ref) => null);
+
+/// SHELL de /platform: la barra superior (con las acciones del master) y el riel
+/// único (KuraNavRail). Vive en un ShellRoute ANIDADO; el cuerpo de la sección llega
+/// como [child] y cambia sin reconstruir el riel.
+class PlatformSectionsShell extends ConsumerStatefulWidget {
+  final Widget child;
+  final String currentRoute; // /platform/<section>
+  const PlatformSectionsShell(
+      {super.key, required this.child, required this.currentRoute});
 
   @override
-  ConsumerState<PlatformHomeScreen> createState() => _PlatformHomeScreenState();
+  ConsumerState<PlatformSectionsShell> createState() =>
+      _PlatformSectionsShellState();
 }
 
-class _PlatformHomeScreenState extends ConsumerState<PlatformHomeScreen>
-    with SingleTickerProviderStateMixin {
-  int _tab = 0;
-  // Mismo patron de TabController explicito que AdminHomeScreen (ver
-  // comentario extenso alli sobre por que NO se usa
-  // DefaultTabController: TabBar en AppBar.bottom queda como hermano,
-  // no ancestro/descendiente, de un DefaultTabController que solo
-  // envuelve el body).
-  late final TabController _tabController = TabController(length: 7, vsync: this)
-    ..addListener(() {
-      if (_tabController.indexIsChanging) return;
-      if (_tabController.index != _tab) {
-        setState(() => _tab = _tabController.index);
-      }
-    });
-
-  // Organizacion (centro) actualmente seleccionada en el selector. Vive
-  // en el estado de esta pantalla (no en DataRepository ni en la
-  // sesion): es una eleccion de navegacion efimera del master, no un
-  // dato persistente ni parte de su perfil.
-  String? _selectedOrgId;
-
-  @override
-  void dispose() {
-    _tabController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _openCreateOrganizationDialog(DataRepository repo) async {
-    final createdId = await showDialog<String>(
-      context: context,
-      // builder: (dialogCtx) => ... / Navigator.pop(dialogCtx, ...): el
-      // context propio del dialogo, nunca el externo de esta pantalla
-      // (ver bug "pantalla en blanco" ya corregido en admin_home_screen
-      // / ShellRoute anidado -- misma convencion aplicada aqui).
-      builder: (dialogCtx) => _OrganizationFormDialog(repo: repo),
-    );
-    if (createdId != null && mounted) {
-      setState(() => _selectedOrgId = createdId);
-    }
-  }
+class _PlatformSectionsShellState extends ConsumerState<PlatformSectionsShell> {
+  // Colapso MANUAL del riel. null = seguir el ancho (auto); true/false = elección
+  // del usuario. Vive en el State del shell (persiste en el ShellRoute), así que la
+  // elección sobrevive a los cambios de sección.
+  bool? _userCollapsed;
 
   /// Descarga el CSV con TODOS los parámetros clínicos del motor (umbrales,
   /// bandas de compresión y mapeos por grado) con su procedencia. Solo
@@ -227,131 +204,289 @@ class _PlatformHomeScreenState extends ConsumerState<PlatformHomeScreen>
     }
   }
 
+  void _showBillingAnomalies(DataRepository? repo) {
+    if (repo == null) return;
+    final open = repo.listBillingAnomalies(status: 'open');
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Anomalías de facturación'),
+        content: SizedBox(
+          width: 440,
+          child: open.isEmpty
+              ? const Text('Sin anomalías abiertas.')
+              : Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    for (final a in open)
+                      ListTile(
+                        dense: true,
+                        leading: const Icon(Icons.warning_amber_rounded),
+                        title: Text((a['kind'] as String?) ?? 'anomalía'),
+                        subtitle: Text(
+                          '${a['detail'] ?? ''}\n'
+                          'vista ${a['seen_count'] ?? 1}×, últ. ${a['last_seen_at'] ?? ''}',
+                        ),
+                      ),
+                  ],
+                ),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx), child: const Text('Cerrar')),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final repoAsync = ref.watch(dataRepositoryProvider);
+    // Riel abierto ≥1200 px por defecto (§2.1/§2.2 del canvas); el botón de
+    // colapsar/expandir manda por encima del ancho una vez que el usuario lo toca.
+    final autoCollapsed = MediaQuery.of(context).size.width < 1200;
+    final collapsed = _userCollapsed ?? autoCollapsed;
+    final navs = platformNavDestinations();
+    final plataforma = navs.first; // "Plataforma" con sus 9 secciones
+    final user = ref.watch(sessionProvider).user;
 
-    // Desktop: secciones como rail lateral (maestro) + contenido (detalle);
-    // móvil conserva el TabBar horizontal.
-    final wide = MediaQuery.of(context).size.width >= Breakpoints.twoPane;
+    // Los iconos de acción que vivían en la barra superior (importar/exportar
+    // parámetros clínicos y las anomalías de facturación) se mudan al área de
+    // acciones del encabezado de contenido. La identidad NO se muda: se elimina — el
+    // pie del riel ya dice quién eres y en qué centro, así que un avatar en la esquina
+    // duplicaría. Por eso ya no va UserMenuButton.
+    final actions = <Widget>[
+      IconButton(
+        icon: const Icon(Icons.download_outlined),
+        tooltip: 'Descargar parámetros clínicos (CSV)',
+        onPressed: _downloadClinicalParams,
+      ),
+      IconButton(
+        icon: const Icon(Icons.upload_outlined),
+        tooltip: 'Cargar parámetros clínicos (CSV)',
+        onPressed: _uploadClinicalParams,
+      ),
+      // Anomalías de facturación ABIERTAS: señal que llega (no un log). Solo el
+      // master las ve (RLS). El badge muestra el conteo; al tocar, el detalle.
+      Builder(builder: (_) {
+        final count = repoAsync.valueOrNull?.openBillingAnomaliesCount() ?? 0;
+        return Badge(
+          isLabelVisible: count > 0,
+          label: Text('$count'),
+          child: IconButton(
+            icon: const Icon(Icons.report_gmailerrorred_outlined),
+            tooltip: count > 0
+                ? '$count anomalía(s) de facturación abierta(s)'
+                : 'Anomalías de facturación',
+            onPressed: () => _showBillingAnomalies(repoAsync.valueOrNull),
+          ),
+        );
+      }),
+    ];
+
+    // SIN AppBar: el encabezado va DENTRO del área de contenido (canvas). "Plataforma"
+    // (la sección padre) sale una sola vez, en ese encabezado; en angosto lleva el
+    // menú Sección › Subsección ▾.
+    final content = Column(
+      children: [
+        KuraContentHeader(
+          section: plataforma,
+          currentRoute: widget.currentRoute,
+          collapsed: collapsed,
+          actions: actions,
+        ),
+        const Divider(height: 1),
+        Expanded(child: widget.child),
+      ],
+    );
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Plataforma'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.download_outlined),
-            tooltip: 'Descargar parámetros clínicos (CSV)',
-            onPressed: _downloadClinicalParams,
+      body: Row(
+        children: [
+          KuraNavRail(
+            destinations: navs,
+            currentRoute: widget.currentRoute,
+            collapsed: collapsed,
+            // El encabezado del riel lleva el NOMBRE DEL PRODUCTO, no el de la
+            // sección: si no, "Plataforma" saldría tres veces.
+            brandName: 'KuraTracker',
+            userName: user?.fullName,
+            centerName: 'Consola del master',
+            onToggleCollapse: () =>
+                setState(() => _userCollapsed = !collapsed),
+            // El pie del riel es el menú de cuenta (cerrar sesión, etc.).
+            accountMenuBuilder: (ctx, child) => KuraAccountMenu(child: child),
           ),
-          IconButton(
-            icon: const Icon(Icons.upload_outlined),
-            tooltip: 'Cargar parámetros clínicos (CSV)',
-            onPressed: _uploadClinicalParams,
-          ),
-          const UserMenuButton(),
+          const VerticalDivider(width: 1),
+          Expanded(child: content),
         ],
-        bottom: wide
-            ? null
-            : TabBar(
-                controller: _tabController,
-                tabs: const [
-                  Tab(text: 'Organizaciones'),
-                  Tab(text: 'Usuarios'),
-                  Tab(text: 'Personal sanitario'),
-                  Tab(text: 'Sitios'),
-                  Tab(text: 'Catálogo'),
-                  Tab(text: 'Marca'),
-                  Tab(text: 'Módulos'),
-                ],
-                onTap: (i) => setState(() => _tab = i),
-              ),
       ),
-      body: repoAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, st) => Center(child: Text('Error: $e')),
-        data: (repo) {
-          final organizations = repo.listOrganizations();
-          // Si la organizacion previamente seleccionada ya no existe
-          // (p.ej. se elimino), o aun no hay ninguna seleccionada pero
-          // ya hay organizaciones creadas, se cae al primer centro de
-          // la lista para que las pestanas de gestion no queden vacias
-          // sin explicacion.
-          if (_selectedOrgId != null &&
-              organizations.every((o) => o.id != _selectedOrgId)) {
-            _selectedOrgId = null;
-          }
-          if (_selectedOrgId == null && organizations.isNotEmpty) {
-            _selectedOrgId = organizations.first.id;
-          }
+    );
+  }
+}
 
-          // Acota el ancho en desktop para que la gestión no se estire.
-          final Widget body;
-          if (_tab == 0) {
-            body = _OrganizationsTab(
-              repo: repo,
-              organizations: organizations,
-              selectedOrgId: _selectedOrgId,
-              onSelect: (id) => setState(() => _selectedOrgId = id),
-              onCreate: () => _openCreateOrganizationDialog(repo),
-              onChanged: () => setState(() {}),
-            );
-          } else if (organizations.isEmpty) {
-            body = const _NoOrganizationsState();
-          } else {
-            body = Column(
-              children: [
-                _OrganizationSelectorBar(
-                  organizations: organizations,
-                  selectedOrgId: _selectedOrgId,
-                  onChanged: (id) => setState(() => _selectedOrgId = id),
-                ),
-                const Divider(height: 1),
-                Expanded(
-                  child: switch (_tab) {
-                    1 => UsersTab(
-                        repo: repo,
-                        organizationId: _selectedOrgId,
-                        currentUserId: ref.watch(sessionProvider).user?.id,
-                      ),
-                    2 => StaffTab(repo: repo, organizationId: _selectedOrgId),
-                    3 => SitesTab(repo: repo, organizationId: _selectedOrgId),
-                    4 => NoteCatalogTab(repo: repo, organizationId: _selectedOrgId),
-                    5 => BrandingTab(repo: repo, organizationId: _selectedOrgId),
-                    _ => _ModulesTab(
-                        repo: repo,
-                        organizationId: _selectedOrgId,
-                        updatedBy: ref.watch(sessionProvider).user?.id,
-                      ),
-                  },
-                ),
-              ],
-            );
-          }
-          if (!wide) return PageMaxWidth(maxWidth: 1100, child: body);
-          return Row(
-            children: [
-              SectionRail(
-                selectedIndex: _tab,
-                onSelected: (i) => setState(() {
-                  _tab = i;
-                  _tabController.index = i;
-                }),
-                destinations: const [
-                  (Icons.business_outlined, 'Centros'),
-                  (Icons.people_outline, 'Usuarios'),
-                  (Icons.medical_services_outlined, 'Personal'),
-                  (Icons.location_on_outlined, 'Sitios'),
-                  (Icons.list_alt_outlined, 'Catálogo'),
-                  (Icons.palette_outlined, 'Marca'),
-                  (Icons.tune_outlined, 'Módulos'),
-                ],
-              ),
-              const VerticalDivider(width: 1),
-              Expanded(child: body),
-            ],
-          );
-        },
-      ),
+/// CUERPO de una sección de /platform (sin riel). Lo construye cada ruta de sección
+/// con NoTransitionPage: cambiar de sección es cambiar de panel, no navegar. El centro
+/// seleccionado vive en [_platformOrgProvider] (persiste entre secciones). Centros y
+/// Solicitudes son GLOBALES (sin selector); el resto opera sobre el centro elegido.
+class PlatformSectionBody extends ConsumerStatefulWidget {
+  final String section;
+  const PlatformSectionBody({super.key, required this.section});
+
+  @override
+  ConsumerState<PlatformSectionBody> createState() => _PlatformSectionBodyState();
+}
+
+class _PlatformSectionBodyState extends ConsumerState<PlatformSectionBody> {
+  static const _knownSections = {
+    'centros', 'usuarios', 'personal', 'sitios', 'catalogo', 'marca',
+    'modulos', 'solicitudes', 'licencia',
+  };
+
+  void _selectOrg(String? id) =>
+      ref.read(_platformOrgProvider.notifier).state = id;
+
+  @override
+  Widget build(BuildContext context) {
+    final repoAsync = ref.watch(dataRepositoryProvider);
+    final user = ref.watch(sessionProvider).user;
+    final section =
+        _knownSections.contains(widget.section) ? widget.section : 'centros';
+    return repoAsync.when(
+      loading: () => const Center(child: CircularProgressIndicator()),
+      error: (e, st) => Center(child: Text('Error: $e')),
+      data: (repo) {
+        final orgs = repo.listOrganizations();
+        // El centro seleccionado del provider si sigue existiendo; si no, el primero.
+        // No se ESCRIBE durante el build (solo el selector escribe).
+        final raw = ref.watch(_platformOrgProvider);
+        final selected = (raw != null && orgs.any((o) => o.id == raw))
+            ? raw
+            : (orgs.isNotEmpty ? orgs.first.id : null);
+        return _sectionBody(repo, orgs, section, user, selected);
+      },
+    );
+  }
+
+  Widget _sectionBody(DataRepository repo, List<Organization> orgs, String section,
+      dynamic user, String? selected) {
+    switch (section) {
+      case 'centros':
+        return _OrganizationsTab(
+          repo: repo,
+          organizations: orgs,
+          selectedOrgId: selected,
+          onSelect: _selectOrg,
+          onCreate: () => _openCreateOrganizationDialog(repo),
+          onChanged: () => setState(() {}),
+        );
+      case 'solicitudes':
+        return _LicenseRequestsTab(
+          repo: repo,
+          currentUserId: user?.id,
+          onChanged: () => setState(() {}),
+        );
+    }
+    if (orgs.isEmpty) return const _NoOrganizationsState();
+    final perCenter = switch (section) {
+      'usuarios' => UsersTab(
+          repo: repo, organizationId: selected, currentUserId: user?.id),
+      'personal' => StaffTab(repo: repo, organizationId: selected),
+      'sitios' => SitesTab(repo: repo, organizationId: selected),
+      'catalogo' => NoteCatalogTab(repo: repo, organizationId: selected),
+      'marca' => BrandingTab(repo: repo, organizationId: selected),
+      'modulos' => _ModulesTab(
+          repo: repo, organizationId: selected, updatedBy: user?.id),
+      'licencia' => CenterLicensePanel(
+          repo: repo, organizationId: selected, user: user),
+      _ => const SizedBox.shrink(),
+    };
+    return Column(
+      children: [
+        _OrganizationSelectorBar(
+          organizations: orgs,
+          selectedOrgId: selected,
+          onChanged: _selectOrg,
+        ),
+        const Divider(height: 1),
+        Expanded(child: perCenter),
+      ],
+    );
+  }
+
+  Future<void> _openCreateOrganizationDialog(DataRepository repo) async {
+    final createdId = await showDialog<String>(
+      context: context,
+      builder: (dialogCtx) => _OrganizationFormDialog(repo: repo),
+    );
+    if (createdId != null && mounted) _selectOrg(createdId);
+  }
+}
+
+/// Solicitudes de licencia pendientes (compra por solicitud, interino). Cierra
+/// el embudo: sin esto, el «Solicitar más» del admin escribía una fila que nadie
+/// veía. Atender NO otorga el derecho (eso es en Módulos/org_entitlements o el
+/// webhook): solo marca la solicitud como vista.
+class _LicenseRequestsTab extends StatelessWidget {
+  final DataRepository repo;
+  final String? currentUserId;
+  final VoidCallback onChanged;
+  const _LicenseRequestsTab({
+    required this.repo,
+    required this.currentUserId,
+    required this.onChanged,
+  });
+
+  String _kindLabel(String k) => switch (k) {
+        'seat_clinico' => 'Asientos clínicos',
+        'protocolo' => 'Licencias Protocolo Kura+',
+        'module' => 'Módulo',
+        _ => 'Otro',
+      };
+
+  @override
+  Widget build(BuildContext context) {
+    final open = repo.listLicenseRequests(status: 'open');
+    if (open.isEmpty) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(24),
+          child: Text('Sin solicitudes de licencia pendientes.'),
+        ),
+      );
+    }
+    return ListView.separated(
+      padding: const EdgeInsets.all(16),
+      itemCount: open.length,
+      separatorBuilder: (_, __) => const SizedBox(height: 8),
+      itemBuilder: (context, i) {
+        final r = open[i];
+        final org = repo.organizationById(r['organization_id'] as String?);
+        final qty = r['requested_quantity'];
+        final detail = [
+          if ((r['note'] as String?)?.trim().isNotEmpty ?? false) r['note'],
+          if ((r['detail'] as String?)?.trim().isNotEmpty ?? false) r['detail'],
+        ].whereType<String>().join(' · ');
+        return Card(
+          child: ListTile(
+            leading: const Icon(Icons.request_page_outlined),
+            title: Text(
+              '${org?.name ?? 'Centro'} · ${_kindLabel(r['kind'] as String)}'
+              '${qty != null ? ' ×$qty' : ''}',
+              style: const TextStyle(fontWeight: FontWeight.w700),
+            ),
+            subtitle: detail.isEmpty ? null : Text(detail),
+            trailing: FilledButton(
+              onPressed: () async {
+                await repo.markLicenseRequestHandled(r['id'] as String,
+                    byProfileId: currentUserId);
+                onChanged();
+              },
+              child: const Text('Atender'),
+            ),
+          ),
+        );
+      },
     );
   }
 }
@@ -493,9 +628,14 @@ class _OrganizationsTab extends StatelessWidget {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             const Text('Activo', style: TextStyle(fontSize: 10)),
+                            // shrinkWrap: sin el relleno de 48 px del área de toque,
+                            // 'Activo' + el switch caben en la fila del ListTile (antes
+                            // se desbordaba 7 px por abajo).
                             Switch(
                               value: o.isActive,
                               activeColor: KuraColors.primary,
+                              materialTapTargetSize:
+                                  MaterialTapTargetSize.shrinkWrap,
                               onChanged: (v) async {
                                 await repo.setOrganizationActive(o.id, v);
                                 onChanged();
@@ -932,12 +1072,22 @@ class _OrganizationFormDialogState extends State<_OrganizationFormDialog> {
   // define la superficie de permisos (módulos + RLS hospitalaria).
   CenterType? _centerType;
   bool _isTest = false;
+  // Fundador OPCIONAL: si se llena, se crea el admin del centro en el mismo paso
+  // (si no, el centro de prueba nace sin nadie adentro y hay que agregarlo a mano).
+  final _founderNameCtrl = TextEditingController();
+  final _founderEmailCtrl = TextEditingController();
+  bool _founderClinical = false;
+  // Días de la prueba (30 por defecto; 0 = ya vencida, para verificar el read-only).
+  final _trialDaysCtrl = TextEditingController(text: '30');
   bool _saving = false;
   String? _error;
 
   @override
   void dispose() {
     _nameCtrl.dispose();
+    _founderNameCtrl.dispose();
+    _founderEmailCtrl.dispose();
+    _trialDaysCtrl.dispose();
     super.dispose();
   }
 
@@ -952,9 +1102,63 @@ class _OrganizationFormDialogState extends State<_OrganizationFormDialog> {
       _error = null;
     });
     try {
-      final created = await widget.repo.createOrganization(
+      // Un centro nuevo nace como PRUEBA (N días de todo, luego solo lectura). La
+      // consola del master es el primer llamante de create_trial_organization, no su
+      // dueño: el alta pública lo llamará igual. createOrganization (INSERT pelón,
+      // sin derechos → centro inservible) queda superado.
+      final trialDays = int.tryParse(_trialDaysCtrl.text.trim()) ?? 30;
+      final created = await widget.repo.createTrialOrganization(
           _nameCtrl.text.trim(), _centerType!,
-          isTest: _isTest);
+          isTest: _isTest, trialDays: trialDays);
+
+      // Fundador opcional: si se dio correo, se crea el ADMIN del centro en el mismo
+      // paso — sin esto, el centro de prueba nace sin nadie adentro. El primer
+      // usuario debe ser admin (createUserWithLogin lo exige).
+      CreatedUser? founder;
+      final founderEmail = _founderEmailCtrl.text.trim();
+      if (founderEmail.isNotEmpty) {
+        founder = await widget.repo.createUserWithLogin(
+          email: founderEmail,
+          fullName: _founderNameCtrl.text.trim().isEmpty
+              ? founderEmail
+              : _founderNameCtrl.text.trim(),
+          roles: {
+            AppRole.admin,
+            if (_founderClinical) AppRole.clinico,
+          },
+          organizationId: created.id,
+        );
+      }
+
+      if (!mounted) return;
+      // Si se creó fundador con contraseña temporal (SMTP no configurado), mostrarla
+      // al master antes de cerrar — es la única forma de entregársela al prospecto.
+      if (founder?.tempPassword != null) {
+        await showDialog<void>(
+          context: context,
+          builder: (dctx) => AlertDialog(
+            title: const Text('Centro de prueba creado'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Admin: ${founder!.email}'),
+                const SizedBox(height: 4),
+                SelectableText('Contraseña temporal: ${founder.tempPassword}'),
+                const SizedBox(height: 8),
+                Text('Prueba de $trialDays días. Entrégale estas credenciales al '
+                    'prospecto (no hay correo de invitación configurado).',
+                    style: const TextStyle(fontSize: 11)),
+              ],
+            ),
+            actions: [
+              TextButton(
+                  onPressed: () => Navigator.pop(dctx),
+                  child: const Text('Entendido')),
+            ],
+          ),
+        );
+      }
       // dialogCtx propio (ver convencion documentada en la pantalla):
       // nunca el context externo del ShellRoute anidado.
       if (mounted) Navigator.pop(context, created.id);
@@ -1019,6 +1223,50 @@ class _OrganizationFormDialogState extends State<_OrganizationFormDialog> {
                 title: const Text('Centro de pruebas'),
                 subtitle: const Text('No productivo; se excluye de KPIs/listados.',
                     style: TextStyle(fontSize: 11)),
+              ),
+              const SizedBox(height: 8),
+              TextFormField(
+                controller: _trialDaysCtrl,
+                keyboardType: TextInputType.number,
+                enabled: !_saving,
+                decoration: const InputDecoration(
+                  labelText: 'Días de prueba',
+                  helperText: '30 por defecto · 0 = ya vencida (queda en solo lectura)',
+                ),
+              ),
+              const SizedBox(height: 12),
+              const Align(
+                alignment: Alignment.centerLeft,
+                child: Text('Administrador fundador (opcional)',
+                    style: TextStyle(fontWeight: FontWeight.w600)),
+              ),
+              const Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                    'Si lo dejas vacío, el centro nace sin nadie adentro y tendrás que '
+                    'agregar el usuario después.',
+                    style: TextStyle(fontSize: 11)),
+              ),
+              TextFormField(
+                controller: _founderNameCtrl,
+                enabled: !_saving,
+                decoration: const InputDecoration(labelText: 'Nombre del admin'),
+              ),
+              TextFormField(
+                controller: _founderEmailCtrl,
+                enabled: !_saving,
+                keyboardType: TextInputType.emailAddress,
+                decoration: const InputDecoration(labelText: 'Correo del admin'),
+              ),
+              CheckboxListTile(
+                value: _founderClinical,
+                onChanged: _saving
+                    ? null
+                    : (v) => setState(() => _founderClinical = v ?? false),
+                contentPadding: EdgeInsets.zero,
+                dense: true,
+                controlAffinity: ListTileControlAffinity.leading,
+                title: const Text('El admin también es clínico'),
               ),
               if (_error != null) ...[
                 const SizedBox(height: 12),

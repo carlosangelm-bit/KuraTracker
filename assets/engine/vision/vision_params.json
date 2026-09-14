@@ -1,0 +1,142 @@
+{
+  "_README": "Parametros del motor de visión de heridas (lib/engine/vision). Todos los umbrales del motor viven aqui, no en el codigo. Validados sobre imagenes sinteticas (test/engine/vision); AJUSTAR con fotos reales antes de uso clinico. version = identificador que viaja en wound_measurements.vision_meta.",
+  "version": "vision_v1",
+  "tag_detector": {
+    "detect_max_side": 1000,
+    "tile_size": 4,
+    "min_contrast": 40,
+    "min_component_area": 60,
+    "max_component_area_frac": 0.2,
+    "min_side_px": 8,
+    "max_aspect": 2.5,
+    "min_hull_fill": 0.8,
+    "max_hamming": 4,
+    "min_decode_contrast": 30,
+    "refine_samples": 16
+  },
+  "rectify": {
+    "target_px_per_mm": 4.0,
+    "max_side_px": 1400,
+    "max_margin_mm": 120.0,
+    "_note": "La imagen rectificada (vista cenital) cubre la foto completa recortada a tarjeta +- max_margin_mm; si excede max_side_px se baja la resolucion y el motor reporta el mm/px real."
+  },
+  "illumination": {
+    "enabled": true,
+    "white_percentile": 90.0,
+    "black_percentile": 5.0,
+    "target_white": 235.0,
+    "min_dynamic_range": 40.0,
+    "strong_cast_ratio": 1.3,
+    "_note": "Normalizacion de color y exposicion usando la PROPIA tarjeta como referencia neutra (papel blanco + tinta negra de los marcadores): out = (in - negro)/(blanco - negro) * target_white por canal (von Kries). SIN esto, el clasificador de tejido —que usa umbrales de tono/brillo absolutos— se rompe con la luz de la sala: medido en sintetico, con lampara calida el esfacelo pasa de 30% a 0% y el area cae ~30% porque la segmentacion pierde parte del lecho. Con la correccion, los 6 escenarios de luz probados quedan dentro de +-0.5% de area y +-1 punto de tejido. LIMITES: es diagonal (no corrige la respuesta espectral de la camara, para eso harian falta parches cromaticos medidos con espectrofotometro); no corrige iluminacion NO uniforme (tarjeta a la sombra + herida al sol); y NO aplica en modo disco, que carece de referencia neutra. strong_cast_ratio = max(ganancia)/min(ganancia) por encima del cual se avisa que la luz tenia un cast fuerte (aunque ya se corrigio)."
+  },
+  "quality": {
+    "planarity_max_side_error_pct": 5.0,
+    "circle_diameter_tol_pct": 3.0,
+    "overexposed_max_fraction": 0.02,
+    "overexposed_threshold_255": 250,
+    "min_tag_side_px": 28,
+    "disc_tilt_min_ratio": 0.9,
+    "_note": "planarity: lados de cada tag rectificados vs size_mm. circle: desvio del diametro del circulo de 12.7 mm. overexposed: fraccion de pixeles quemados dentro de la caja de la herida. min_tag_side_px: proxy de distancia (tag mas chico = camara lejos). disc_tilt_min_ratio: eje menor/mayor del disco de respaldo (perspectiva no corregida)."
+  },
+  "segmentation": {
+    "work_max_side_px": 480,
+    "seed_patch_radius_px": 3,
+    "ring_width_px": 6,
+    "iterations": 4,
+    "sub_clusters": 3,
+    "close_radius_px": 2,
+    "open_radius_px": 1,
+    "sensitivity_default": 0.5,
+    "sensitivity_span": 0.6,
+    "stage_a_delta_e": 18.0,
+    "roi_expand": 1.5,
+    "roi_pad_px": 12,
+    "roi_band_frac": 0.08,
+    "prototype_classes": [
+      "granulacion",
+      "esfacelo",
+      "necrosis"
+    ],
+    "contour_epsilon_px": 1.0,
+    "bg_tissue_reject_delta_e": 25.0,
+    "_note": "Etapa A: crecimiento desde cada semilla por similitud Lab (stage_a_delta_e). ROI = caja de la etapa A expandida (roi_expand) + roi_pad_px. Etapa B (iterativa): prototipos de herida = parches semilla + k-means (sub_clusters) + prototipos de tejido listados en prototype_classes; fondo = banda exterior del ROI (roi_band_frac) en la 1a iteracion y luego todo lo que queda fuera de la region dilatada ring_width_px. Un pixel es herida si dist_herida * escala < dist_fondo, con escala = 1 + (sensibilidad-0.5)*2*sensitivity_span. bg_tissue_reject_delta_e: en la 1a iteracion se QUITAN del modelo de fondo los pixeles cuya distancia Lab a algun prototipo de tejido sea menor que este umbral. Sin esto, una herida ALARGADA (ulcera venosa, dehiscencia lineal) llega a la banda exterior del ROI, envenena el modelo de fondo y el motor pierde sus extremos: medido, hasta -30% de area y el esfacelo entero. roi_expand se subio de 0.8 a 1.5 por la misma razon. 0 desactiva el filtro."
+  },
+  "tissue": {
+    "rules": [
+      {
+        "class": "necrosis",
+        "v_max": 0.3
+      },
+      {
+        "class": "necrosis",
+        "v_max": 0.45,
+        "s_max": 0.35
+      },
+      {
+        "class": "esfacelo",
+        "h_min": 30,
+        "h_max": 80,
+        "s_min": 0.22,
+        "v_min": 0.35
+      },
+      {
+        "class": "granulacion",
+        "h_min": 335,
+        "h_max": 25,
+        "s_min": 0.35,
+        "v_min": 0.25
+      },
+      {
+        "class": "epitelizacion",
+        "h_min": 300,
+        "h_max": 30,
+        "s_max": 0.35,
+        "v_min": 0.55
+      }
+    ],
+    "prototypes_lab": {
+      "granulacion": [
+        42,
+        48,
+        25
+      ],
+      "esfacelo": [
+        75,
+        5,
+        48
+      ],
+      "necrosis": [
+        15,
+        4,
+        3
+      ],
+      "epitelizacion": [
+        78,
+        24,
+        6
+      ]
+    },
+    "specular_v_min": 0.88,
+    "specular_s_max": 0.18,
+    "specular_warn_fraction": 0.1,
+    "_note": "Las reglas se evaluan en orden sobre HSV (H en grados, S y V en 0-1); h_min > h_max = arco que cruza 0/360. Un pixel que no cumple ninguna regla va al prototipo Lab mas cercano. Los prototipos tambien sirven como semillas de color en la segmentacion (prototype_classes). AJUSTAR con fotos etiquetadas por el equipo clinico (Maria). specular_v_min/s_max: un brillo especular (tejido humedo, flash, luz rasante) es CLARO y DESATURADO, que es exactamente la firma de la epitelizacion; sin filtrarlo el motor lee los reflejos como cicatrizacion (medido: 0% -> 62% de epitelizacion falsa con reflejos cubriendo la mitad de la herida). Esos pixeles se marcan NO EVALUABLES y se excluyen del reparto: los porcentajes suman 100 sobre el tejido que SI se ve, y la fraccion no evaluable se reporta aparte. Verificado que no toca la epitelizacion real. specular_warn_fraction: a partir de que fraccion se avisa al clinico."
+  },
+  "fallback_disc": {
+    "diameter_mm": 19.0,
+    "hue_min": 80,
+    "hue_max": 170,
+    "s_min": 0.35,
+    "v_min": 0.2,
+    "min_area_px": 200,
+    "fill_min": 0.8,
+    "aspect_min": 0.8,
+    "_note": "Disco adhesivo VERDE saturado de diametro conocido (19 mm por defecto; ajustar al insumo real). Solo da escala, NO corrige perspectiva: la foto debe ser cenital. Verde porque no aparece en piel ni en tejido de herida."
+  },
+  "enclosing_trace": {
+    "skin_band_mm": 6.0,
+    "min_skin_delta_e": 18.0,
+    "seed_percentile": 70.0,
+    "touch_frac": 0.02,
+    "_note": "Trazo ENVOLVENTE: el clinico rodea la herida POR FUERA y el motor busca el borde real dentro del lazo. El trazo NO es la medida, es la region de busqueda. skin_band_mm = ancho de la banda por fuera del lazo que se toma como PIEL SANA garantizada (el clinico afirma que la herida esta dentro). seed_percentile/min_skin_delta_e = como se elige la semilla de herida dentro del lazo (lo que menos se parece a esa piel). touch_frac = fraccion de la herida que puede tocar el trazo antes de avisar que pudo quedar lesion FUERA del lazo. Medido en sintetico: el area del trazo crudo sobreestima +38% a +210% segun el margen; refinada queda en -0.1% con dispersion +-0.0% entre trazos distintos. Todos los errores grandes (hasta -70%, trazo metido DENTRO de la herida) quedaron avisados por touchesTrace."
+  }
+}

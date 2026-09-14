@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../core/widgets/kura_module_lock.dart';
+
 import '../../core/theme/kura_theme.dart';
 import '../../engine/models/kura_engine_enums.dart';
 import '../../models/inventory.dart';
@@ -90,6 +92,15 @@ class _ProtocolProductRulesScreenState
 
   @override
   Widget build(BuildContext context) {
+    // Segunda capa del candado (además del botón): con URL propia, un admin
+    // sin el módulo entraría tecleando la ruta. Se bloquea al construir.
+    if (!widget.repo.premiumAdminFor(widget.organizationId)) {
+      return adminModuleLockedScaffold(context,
+          repo: widget.repo,
+          organizationId: widget.organizationId,
+          title: 'Productos del protocolo',
+          description: 'Vincula cada paso con el producto que usa tu centro y en qué cantidad.');
+    }
     final allRules = orgId == null
         ? <ProtocolProductRule>[]
         : repo.listProtocolProductRules(orgId);

@@ -90,6 +90,13 @@ class AppUser {
   /// oficina sin rol clínico no diagnostica ni firma notas).
   bool get canDiagnose => hasRole(AppRole.clinico);
 
+  /// Consume ASIENTO CLÍNICO. Es una pregunta DISTINTA a canDiagnose: definir
+  /// planes es autoridad clínica (excluye enfermería); consumir asiento es USAR
+  /// el módulo clínico, y enfermería sí lo usa. Compone las dos: clínico-capaz
+  /// (canDiagnose, con el relleno admin) O enfermería. Espejo del servidor
+  /// public.consumes_clinical_seat; no confundir con canDiagnose.
+  bool get consumesClinicalSeat => canDiagnose || isNurse;
+
   /// Enfermería RESTRINGIDA: tiene el rol enfermería y NADA que conceda algo más
   /// amplio (diagnóstico/admin/master). Es la forma correcta para una RESTRICCIÓN
   /// (p. ej. bloquear rutas de escritura): un {clinico,enfermeria} NO debe quedar

@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 
+import '../../core/config/app_config.dart';
 import '../../core/providers/session_provider.dart';
 import '../../core/theme/kura_theme.dart';
 import '../../core/utils/image_pick_error.dart';
@@ -30,6 +31,7 @@ import '../../models/consent.dart';
 import '../consents/consents_screen.dart';
 import '../wound_capture/widgets/bed_composition_sliders.dart';
 import '../wound_capture/widgets/undermining_tunneling_editor.dart';
+import '../wound_capture/widgets/wound_vision_screen.dart';
 
 /// Formulario de "Registrar seguimiento" (visita visit_type='seguimiento'
 /// ligada a una herida existente).
@@ -123,6 +125,17 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
   double _necrosis = 0;
   double _epitelizacion = 0;
   bool _capturedBeforeDebridement = true;
+
+  // Medición por foto (motor de visión, lib/engine/vision; migración 0108).
+  // 'manual' salvo que el clínico aplique una medición de "Medir con foto".
+  String _measurementSource = 'manual';
+  double? _areaPlanimetricCm2;
+  Map<String, dynamic>? _visionMeta;
+  bool _visionEdited = false;
+  bool get _isVisionMeasured => _measurementSource.startsWith('vision_');
+  void _markVisionEdited() {
+    if (_isVisionMeasured) _visionEdited = true;
+  }
 
   // ---- Evaluacion clinica (reevaluacion integral) ----
   String _edema = 'ninguno';
@@ -394,6 +407,89 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
     super.dispose();
   }
 
+  // Correcciones del clínico al motor (capa E): al APLICAR viajan aquí y se
+  // persisten con el wound_measurement_id ya creado, en el guardado.
+  List<Map<String, dynamic>> _pendingCorrections = [];
+
+  /// Persiste correcciones del clínico (dataset). Best-effort: nunca rompe el
+  /// guardado. measurementId null = sesión abandonada (fila sin medición).
+  /// Si alguna fila rebota (RLS o red) NO se traga en silencio: queda en el log
+  /// y se avisa con un SnackBar discreto, para que el clínico se entere en la
+  /// misma sesión y no cuando abramos la tabla la semana siguiente.
+  Future<void> _persistCorrections(List<Map<String, dynamic>> rows,
+      {String? measurementId}) async {
+    if (rows.isEmpty) return;
+    final repo = ref.read(dataRepositoryProvider).valueOrNull;
+    final user = ref.read(sessionProvider).user;
+    if (repo == null || user == null) return;
+    final messenger = ScaffoldMessenger.of(context);
+    var failed = 0;
+    for (final row in rows) {
+      try {
+        await repo.addVisionCorrection({
+          ...row,
+          'wound_id': widget.woundId,
+          if (measurementId != null) 'wound_measurement_id': measurementId,
+          'created_by': user.id,
+          'created_by_role': user.role.name,
+        });
+      } catch (e) {
+        failed++;
+        debugPrint('Corrección de visión no guardada (wound_id=${widget.woundId}): $e');
+      }
+    }
+    if (failed > 0 && mounted) {
+      messenger.showSnackBar(SnackBar(
+        content: Text(failed == rows.length
+            ? 'No se pudo guardar la corrección del motor (permiso o conexión). No quedó registrada.'
+            : 'No se pudieron guardar $failed de ${rows.length} correcciones del motor.'),
+        backgroundColor: Colors.orange.shade800,
+        duration: const Duration(seconds: 5),
+      ));
+    }
+  }
+
+  /// «Medir con foto»: corre el motor de visión sobre la foto "después de
+  /// limpiar" (o la de medición) y pre-llena largo, ancho y composición del
+  /// lecho. El clínico revisa y edita; el origen queda en measurement_source.
+  Future<void> _measureWithPhoto() async {
+    final bytes = _photoAfterCleaningBytes ?? _photoWithMeasurementBytes;
+    if (bytes == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Primero toma la foto de la herida con la tarjeta de calibración, con su borde LARGO paralelo al eje cabeza-pies del paciente, para poder medirla.'),
+      ));
+      return;
+    }
+    final applied = await WoundVisionScreen.open(
+      context,
+      bytes,
+      // Sesión abandonada con correcciones: se guardan sin measurement_id.
+      onKeepOrphanCorrections: (rows) => _persistCorrections(rows),
+    );
+    if (applied == null || !mounted) return;
+    final r = applied.result;
+    _pendingCorrections = applied.corrections; // se persisten al guardar la medición
+    setState(() {
+      _lengthCtrl.text = applied.lengthCm.toStringAsFixed(1);
+      _widthCtrl.text = applied.widthCm.toStringAsFixed(1);
+      _granulacion = r.tissue.granulacion;
+      _esfacelo = r.tissue.esfacelo;
+      _necrosis = r.tissue.necrosis;
+      _epitelizacion = r.tissue.epitelizacion;
+      _measurementSource = r.measurementSource;
+      _areaPlanimetricCm2 = r.measurement.areaCm2;
+      _visionMeta = r.toVisionMeta();
+      _visionEdited = false;
+      _syncVolumeField();
+    });
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(
+        'Medidas de la foto aplicadas (${applied.modeLabel}): '
+        '${applied.lengthCm.toStringAsFixed(1)} × ${applied.widthCm.toStringAsFixed(1)} cm. Revisa y ajusta si hace falta.',
+      ),
+    ));
+  }
+
   /// Mantiene _volumeCtrl sincronizado con el auto-calculo de Kundin
   /// mientras el clinico no lo haya sobrescrito a mano (_volumeAutoFollowing).
   /// Se llama tras cualquier cambio de largo/ancho/profundidad
@@ -469,35 +565,11 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
                     required: const [ConsentType.fotografia],
                     actionLabel: 'la toma de fotografía del seguimiento',
                   ),
-                Text('Fecha de la visita', style: _sectionStyle(context)),
-                const SizedBox(height: 8),
-                OutlinedButton.icon(
-                  icon: const Icon(Icons.calendar_today, size: 16),
-                  label: Text(DateFormat('dd/MM/yyyy').format(_visitDate)),
-                  onPressed: () async {
-                    final picked = await showDatePicker(
-                      context: context,
-                      initialDate: _visitDate,
-                      firstDate: DateTime(2020),
-                      lastDate: DateTime.now().add(const Duration(days: 1)),
-                    );
-                    if (picked != null) setState(() => _visitDate = picked);
-                  },
-                ),
-
-                // -----------------------------------------------------------------
-                // PASO 1: Composicion del lecho + limpieza (se captura ANTES de
-                // curar/desbridar) -> justo aqui, INMEDIATAMENTE antes de este
-                // paso, se pide la 1a foto de seguimiento (despues de limpiar,
-                // sin medicion). El orden refleja la secuencia real del
-                // Protocolo de Fotografias y Medicion: limpiar -> fotografiar
-                // sin medir -> evaluar el lecho -> medir -> fotografiar con
-                // medicion.
-                // -----------------------------------------------------------------
-                const SizedBox(height: 20),
-                if (repo != null && wound != null) _phase0Profile(repo, wound),
-                _phaseHeader(1, 'Procedimiento físico',
-                    'Limpiar → fotografiar la herida → medir'),
+                // Fotografía al INICIO del flujo (en consulta es lo primero que se
+                // toma). El gating se conserva: el banner de consentimiento va
+                // arriba y guardar sigue exigiendo el consentimiento de fotografía
+                // (canSave). La nota §1.2 recuerda que la foto va después de limpiar
+                // y antes de medir (la medición sigue más abajo).
                 Text('Fotografía de la herida', style: _sectionStyle(context)),
                 const SizedBox(height: 4),
                 const Text(
@@ -514,12 +586,82 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
                   savedPath: _savedPhotoAfterCleaningPath,
                   onPick: () => _pickPhotoSource(withMeasurement: false),
                 ),
+                const SizedBox(height: 24),
+                Text('Fecha de la visita', style: _sectionStyle(context)),
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.calendar_today, size: 16),
+                  label: Text(DateFormat('dd/MM/yyyy').format(_visitDate)),
+                  onPressed: () async {
+                    final picked = await showDatePicker(
+                      context: context,
+                      initialDate: _visitDate,
+                      firstDate: DateTime(2020),
+                      lastDate: DateTime.now().add(const Duration(days: 1)),
+                    );
+                    if (picked != null) setState(() => _visitDate = picked);
+                  },
+                ),
+
+                // Protocolo de Fotografías y Medición (secuencia física real):
+                // limpiar → fotografiar SIN medir → evaluar el lecho → medir →
+                // (2ª foto con medición). La 1ª foto se movió al INICIO del flujo
+                // (arriba, tras el banner de consentimiento): en consulta es lo
+                // primero que se toma. Su nota §1.2 recuerda que va después de
+                // limpiar. La secuencia se conserva: la foto sigue ANTES de medir,
+                // y la composición del lecho en Fase 2.
+                const SizedBox(height: 20),
+                if (repo != null && wound != null) _phase0Profile(repo, wound),
+                _phaseHeader(1, 'Procedimiento físico',
+                    'Limpiar → fotografiar (foto al inicio del flujo) → medir'),
 
                 // Medición 2D/3D/manual → inmediatamente después, la 2ª foto
                 // (con medición). La composición del lecho se evalúa en la
                 // Fase 2 (después de medir), por el protocolo de fotografía.
                 const SizedBox(height: 24),
                 Text('Medición', style: _sectionStyle(context)),
+                const SizedBox(height: 12),
+                // Medición por foto (motor de visión on-device): propone largo,
+                // ancho y composición del lecho a partir de la foto con tarjeta.
+                // Gateado por VISION_ENABLED (apagado por defecto): sin el flag no
+                // se ofrece la medición automática (la captura manual sigue igual).
+                if (AppConfig.visionEnabled) ...[
+                  Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: (_photoAfterCleaningBytes == null && _photoWithMeasurementBytes == null)
+                            ? null
+                            : _measureWithPhoto,
+                        icon: const Icon(Icons.straighten, size: 18),
+                        label: Text(_isVisionMeasured ? 'Volver a medir con foto' : 'Medir con foto'),
+                      ),
+                    ),
+                    if (_isVisionMeasured) ...[
+                      const SizedBox(width: 8),
+                      TextButton(
+                        onPressed: () => setState(() {
+                          _measurementSource = 'manual';
+                          _areaPlanimetricCm2 = null;
+                          _visionMeta = null;
+                          _visionEdited = false;
+                        }),
+                        child: const Text('Quitar origen foto'),
+                      ),
+                    ],
+                  ],
+                ),
+                if (_isVisionMeasured)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: Text(
+                      'Largo, ancho y lecho propuestos por el motor de visión'
+                      '${_areaPlanimetricCm2 == null ? '' : ' · área por planimetría ${_areaPlanimetricCm2!.toStringAsFixed(2)} cm²'}'
+                      '${_visionEdited ? ' · editado a mano' : ''}. Apoyo a la decisión clínica — no sustituye el juicio clínico.',
+                      style: TextStyle(fontSize: 11, color: KuraColors.darkText.withOpacity(0.6)),
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 12),
                 Row(
                   children: [
@@ -528,7 +670,10 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
                         controller: _lengthCtrl,
                         keyboardType: const TextInputType.numberWithOptions(decimal: true),
                         decoration: const InputDecoration(labelText: 'Largo (cm) *'),
-                        onChanged: (_) => setState(_syncVolumeField),
+                        onChanged: (_) => setState(() {
+                          _markVisionEdited();
+                          _syncVolumeField();
+                        }),
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -537,7 +682,10 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
                         controller: _widthCtrl,
                         keyboardType: const TextInputType.numberWithOptions(decimal: true),
                         decoration: const InputDecoration(labelText: 'Ancho (cm) *'),
-                        onChanged: (_) => setState(_syncVolumeField),
+                        onChanged: (_) => setState(() {
+                          _markVisionEdited();
+                          _syncVolumeField();
+                        }),
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -659,10 +807,22 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
                   esfacelo: _esfacelo,
                   necrosis: _necrosis,
                   epitelizacion: _epitelizacion,
-                  onGranulacionChanged: (v) => setState(() => _granulacion = v),
-                  onEsfaceloChanged: (v) => setState(() => _esfacelo = v),
-                  onNecrosisChanged: (v) => setState(() => _necrosis = v),
-                  onEpitelizacionChanged: (v) => setState(() => _epitelizacion = v),
+                  onGranulacionChanged: (v) => setState(() {
+                    _markVisionEdited();
+                    _granulacion = v;
+                  }),
+                  onEsfaceloChanged: (v) => setState(() {
+                    _markVisionEdited();
+                    _esfacelo = v;
+                  }),
+                  onNecrosisChanged: (v) => setState(() {
+                    _markVisionEdited();
+                    _necrosis = v;
+                  }),
+                  onEpitelizacionChanged: (v) => setState(() {
+                    _markVisionEdited();
+                    _epitelizacion = v;
+                  }),
                   capturedBeforeDebridement: _capturedBeforeDebridement,
                   onCapturedBeforeDebridementChanged: (v) =>
                       setState(() => _capturedBeforeDebridement = v),
@@ -2070,6 +2230,10 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
         'depth': _depthCtrl.text,
         'volume': _volumeCtrl.text,
         'volume_auto_following': _volumeAutoFollowing,
+        'measurement_source': _measurementSource,
+        'area_planimetric_cm2': _areaPlanimetricCm2,
+        'vision_meta': _visionMeta,
+        'vision_edited': _visionEdited,
         'manual_measurement': _manualMeasurementCtrl.text,
         'tunneling': _tunneling,
         'undermining': _undermining,
@@ -2134,6 +2298,10 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
     _depthCtrl.text = txt(s['depth'], _depthCtrl.text);
     _volumeCtrl.text = txt(s['volume'], _volumeCtrl.text);
     _volumeAutoFollowing = s['volume_auto_following'] as bool? ?? _volumeAutoFollowing;
+    _measurementSource = s['measurement_source'] as String? ?? _measurementSource;
+    _areaPlanimetricCm2 = s['area_planimetric_cm2'] is num ? (s['area_planimetric_cm2'] as num).toDouble() : null;
+    _visionMeta = (s['vision_meta'] as Map?)?.cast<String, dynamic>();
+    _visionEdited = s['vision_edited'] as bool? ?? _visionEdited;
     _manualMeasurementCtrl.text = txt(s['manual_measurement'], _manualMeasurementCtrl.text);
     _tunneling = s['tunneling'] as bool? ?? _tunneling;
     _undermining = s['undermining'] as bool? ?? _undermining;
@@ -2625,7 +2793,16 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
         'manual_measurement_note': _manualMeasurementCtrl.text.trim().isEmpty
             ? null
             : _manualMeasurementCtrl.text.trim(),
+        // Origen de la medición (0108): manual o motor de visión.
+        'measurement_source': _measurementSource,
+        'area_planimetric_cm2': _areaPlanimetricCm2,
+        'vision_meta': _visionMeta == null ? null : {..._visionMeta!, 'edited': _visionEdited},
       });
+
+      // Correcciones del clínico (capa E): ya con el wound_measurement_id.
+      // Best-effort dentro de _persistCorrections: no rompe el guardado.
+      await _persistCorrections(_pendingCorrections, measurementId: measurement.id);
+      _pendingCorrections = [];
 
       await repo.createAssessment({
         'consultation_id': consultationId,

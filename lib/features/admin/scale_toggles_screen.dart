@@ -3,12 +3,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/providers/session_provider.dart';
 import '../../core/theme/kura_theme.dart';
+import '../../core/widgets/kura_error_state.dart';
 import '../../services/data_repository.dart';
 
 /// Config del ADMIN: qué escalas del módulo de hospitalización participan en el
 /// protocolo del centro (0085). Las apagadas no se ofrecen en "Escalas a
 /// realizar" aunque el triage las dispararía. Braden (tamizaje) siempre aplica y
 /// no se lista aquí.
+///
+/// Guarda AL INSTANTE (como sus hermanas): cada cambio persiste solo, sin botón
+/// "Guardar" que se pueda perder al salir.
 class ScaleTogglesScreen extends ConsumerStatefulWidget {
   final DataRepository repo;
   final String? organizationId;
@@ -24,7 +28,6 @@ class ScaleTogglesScreen extends ConsumerStatefulWidget {
 class _ScaleTogglesScreenState extends ConsumerState<ScaleTogglesScreen> {
   late Set<String> _enabled;
   bool _initialized = false;
-  bool _saving = false;
 
   void _initFrom(List<String> allIds) {
     if (_initialized) return;
@@ -34,27 +37,26 @@ class _ScaleTogglesScreenState extends ConsumerState<ScaleTogglesScreen> {
     _initialized = true;
   }
 
-  Future<void> _save(List<String> allIds) async {
+  /// Persiste al instante el estado actual. Todas encendidas → null (semántica
+  /// "todas", incluye futuras escalas).
+  Future<void> _persist(List<String> allIds) async {
     if (widget.organizationId == null) return;
-    setState(() => _saving = true);
+    final all =
+        _enabled.length == allIds.length && allIds.every(_enabled.contains);
     try {
-      // Todas encendidas → null (semántica "todas", incluye futuras escalas).
-      final all = _enabled.length == allIds.length &&
-          allIds.every(_enabled.contains);
       await widget.repo
           .setEnabledScales(widget.organizationId!, all ? null : _enabled.toList());
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Escalas del protocolo guardadas ✅')));
-      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
             content: Text('$e'.replaceFirst('Exception: ', ''))));
       }
-    } finally {
-      if (mounted) setState(() => _saving = false);
     }
+  }
+
+  void _set(List<String> allIds, void Function() mutate) {
+    setState(mutate);
+    _persist(allIds);
   }
 
   @override
@@ -64,7 +66,19 @@ class _ScaleTogglesScreenState extends ConsumerState<ScaleTogglesScreen> {
       appBar: AppBar(title: const Text('Escalas del protocolo')),
       body: catalog.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('Error: $e')),
+        error: (e, _) => Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: KuraErrorState(
+              title: 'No pudimos cargar las escalas',
+              reassurance:
+                  'Puede ser tu conexión. Tu configuración está a salvo: no se '
+                  'perdió ni se guardó a medias.',
+              detail: '$e',
+              onRetry: () => ref.invalidate(scaleApplicabilityProvider),
+            ),
+          ),
+        ),
         data: (cat) {
           final scales = cat.scales;
           final allIds = [for (final s in scales) s.scaleId];
@@ -75,7 +89,8 @@ class _ScaleTogglesScreenState extends ConsumerState<ScaleTogglesScreen> {
               Text(
                 'Elige qué escalas participan en el protocolo de tu centro. Las '
                 'que apagues no se ofrecerán al valorar, aunque el triage las '
-                'sugeriría. Braden (tamizaje) siempre aplica.',
+                'sugeriría. Braden (tamizaje) siempre aplica. Los cambios se '
+                'guardan solos.',
                 style: TextStyle(
                     fontSize: 12,
                     color: KuraColors.darkText.withValues(alpha: 0.6)),
@@ -84,15 +99,12 @@ class _ScaleTogglesScreenState extends ConsumerState<ScaleTogglesScreen> {
               Row(
                 children: [
                   TextButton(
-                    onPressed: _saving
-                        ? null
-                        : () => setState(() => _enabled = allIds.toSet()),
+                    onPressed: () =>
+                        _set(allIds, () => _enabled = allIds.toSet()),
                     child: const Text('Todas'),
                   ),
                   TextButton(
-                    onPressed: _saving
-                        ? null
-                        : () => setState(() => _enabled = {}),
+                    onPressed: () => _set(allIds, () => _enabled = {}),
                     child: const Text('Ninguna'),
                   ),
                 ],
@@ -102,27 +114,14 @@ class _ScaleTogglesScreenState extends ConsumerState<ScaleTogglesScreen> {
                   dense: true,
                   title: Text(s.label, style: const TextStyle(fontSize: 14)),
                   value: _enabled.contains(s.scaleId),
-                  onChanged: _saving
-                      ? null
-                      : (v) => setState(() {
-                            if (v) {
-                              _enabled.add(s.scaleId);
-                            } else {
-                              _enabled.remove(s.scaleId);
-                            }
-                          }),
+                  onChanged: (v) => _set(allIds, () {
+                    if (v) {
+                      _enabled.add(s.scaleId);
+                    } else {
+                      _enabled.remove(s.scaleId);
+                    }
+                  }),
                 ),
-              const SizedBox(height: 16),
-              FilledButton.icon(
-                icon: _saving
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2))
-                    : const Icon(Icons.save_outlined),
-                label: Text(_saving ? 'Guardando…' : 'Guardar'),
-                onPressed: _saving ? null : () => _save(allIds),
-              ),
             ],
           );
         },

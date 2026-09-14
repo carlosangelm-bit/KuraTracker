@@ -8,7 +8,7 @@ import '../../core/theme/kura_theme.dart';
 import '../../core/layout/responsive.dart';
 import '../../core/providers/session_provider.dart';
 import '../../core/router/app_shell.dart'
-    show UserMenuButton, kFloatingNavBarHeight;
+    show KuraScreen, kFloatingNavBarHeight;
 import '../../core/widgets/kura_primary_fab.dart';
 import '../../models/commercial.dart';
 import '../../models/inventory.dart';
@@ -65,11 +65,9 @@ class _ComercialScreenState extends ConsumerState<ComercialScreen>
       error: (e, st) => Scaffold(body: Center(child: Text('Error: $e'))),
       data: (repo) {
         final orgId = user?.organizationId;
-        if (!repo.premiumInsumosFor(orgId)) {
-          return Scaffold(
-            appBar: AppBar(
-                title: const Text('Comercial'),
-                actions: const [UserMenuButton()]),
+        if (!repo.premiumComercialFor(orgId)) {
+          return KuraScreen(
+            title: 'Comercial',
             body: const Center(
                 child: Padding(
                     padding: EdgeInsets.all(32),
@@ -86,25 +84,22 @@ class _ComercialScreenState extends ConsumerState<ComercialScreen>
               4 => const _FacturacionTab(),
               _ => _ResumenTab(repo: repo, orgId: orgId, onOpenSection: _go),
             };
-        return Scaffold(
-          appBar: AppBar(
-            title: const Text('Comercial'),
-            actions: const [UserMenuButton()],
-            bottom: wide
-                ? null
-                : TabBar(
-                    controller: _tabController,
-                    isScrollable: true,
-                    onTap: _go,
-                    tabs: const [
-                      Tab(text: 'Resumen'),
-                      Tab(text: 'Cobros'),
-                      Tab(text: 'Conciliación'),
-                      Tab(text: 'Servicios'),
-                      Tab(text: 'Facturación'),
-                    ],
-                  ),
-          ),
+        return KuraScreen(
+          title: 'Comercial',
+          belowHeader: wide
+              ? null
+              : TabBar(
+                  controller: _tabController,
+                  isScrollable: true,
+                  onTap: _go,
+                  tabs: const [
+                    Tab(text: 'Resumen'),
+                    Tab(text: 'Cobros'),
+                    Tab(text: 'Conciliación'),
+                    Tab(text: 'Servicios'),
+                    Tab(text: 'Facturación'),
+                  ],
+                ),
           body: wide
               ? Row(
                   children: [

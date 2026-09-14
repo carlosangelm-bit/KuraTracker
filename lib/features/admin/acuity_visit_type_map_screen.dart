@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+
+import '../../core/widgets/kura_module_lock.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/theme/kura_theme.dart';
@@ -60,6 +62,15 @@ class _AcuityVisitTypeMapScreenState
 
   @override
   Widget build(BuildContext context) {
+    // Segunda capa del candado (además del botón): con URL propia, un admin
+    // sin el módulo entraría tecleando la ruta. Se bloquea al construir.
+    if (!widget.repo.premiumAdminFor(widget.organizationId)) {
+      return adminModuleLockedScaffold(context,
+          repo: widget.repo,
+          organizationId: widget.organizationId,
+          title: 'Tipos de consulta (Acuity)',
+          description: 'Mapea los tipos de cita de Acuity a valoración o seguimiento.');
+    }
     return Scaffold(
       appBar: AppBar(title: const Text('Tipos de consulta (Acuity)')),
       body: FutureBuilder<List<dynamic>>(

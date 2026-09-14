@@ -1,0 +1,62 @@
+{
+  "_README": "Geometria fisica REAL de la tarjeta WoundCalibrate, fuente de verdad de la tarjeta impresa para el motor on-device (lib/engine/vision) Y default de make_print_card.py (--spec). Origen en la esquina superior-izquierda, X a la derecha, Y hacia ABAJO, mm. Mientras is_placeholder sea true, el motor marca la calibracion como 'tarjeta provisional' y las medidas NO son confiables: reemplazar por los valores MEDIDOS del impreso real (tags, circulo, tamano) y poner is_placeholder=false.",
+  "is_placeholder": true,
+  "card_family": "tag36h11",
+  "card_size_mm": {
+    "width": 40.0,
+    "height": 40.0
+  },
+  "tags": [
+    {
+      "id": 0,
+      "center_mm": [
+        8.0,
+        8.0
+      ],
+      "size_mm": 8.0
+    },
+    {
+      "id": 1,
+      "center_mm": [
+        32.0,
+        8.0
+      ],
+      "size_mm": 8.0
+    },
+    {
+      "id": 2,
+      "center_mm": [
+        32.0,
+        32.0
+      ],
+      "size_mm": 8.0
+    },
+    {
+      "id": 3,
+      "center_mm": [
+        8.0,
+        32.0
+      ],
+      "size_mm": 8.0
+    }
+  ],
+  "reference_circle": {
+    "diameter_mm": 9.6,
+    "center_mm": [
+      20.0,
+      20.0
+    ],
+    "check_mode": "solid"
+  },
+  "ruler": {
+    "origin_mm": [
+      10.0,
+      37.0
+    ],
+    "direction": [
+      1.0,
+      0.0
+    ],
+    "length_mm": 20.0
+  }
+}

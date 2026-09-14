@@ -1,0 +1,106 @@
+/// Estado de licencias de un centro para el panel del admin (`AdminHomeScreen`).
+/// Se calcula en el repo desde org_entitlements + membresías + perfiles (mismo
+/// criterio que las funciones del servidor consumed_clinical_seats/admin_slots,
+/// que son la fuente de verdad del TOPE; esto es la vista para MOSTRAR).
+library;
+
+/// Techo del autoservicio: hasta aquí el admin puede comprar solo; por encima,
+/// "Solicitar más licencias" (formulario a la plataforma).
+const int kSelfServiceSeatCeiling = 5;
+
+enum LicenseState {
+  /// Contadores con holgura.
+  holgado,
+
+  /// 0 asientos clínicos disponibles: "Agregar licencias" pasa a acción principal.
+  lleno,
+
+  /// En el techo del autoservicio: ya no se compra solo → "Solicitar más".
+  techoAutoservicio,
+
+  /// Suscripción vencida (past_due): banda de gracia; se cierra el alta, no la consulta.
+  impago,
+}
+
+/// Un contador "usado de contratado". [contracted] < 0 = sin límite / no aplica.
+class LicenseCounter {
+  final int used;
+  final int contracted;
+  const LicenseCounter({required this.used, required this.contracted});
+
+  bool get unlimited => contracted < 0;
+  int get available => unlimited ? -1 : (contracted - used);
+  bool get full => !unlimited && available <= 0;
+}
+
+class LicenseSummary {
+  /// Asientos clínicos (rol clínico, no exentos) usados vs. contratados.
+  final LicenseCounter clinicalSeats;
+
+  /// Cupos administrativos (solo-admin, no exentos) usados vs. incluidos
+  /// (3 con module:admin, 0 sin él).
+  final LicenseCounter adminSlots;
+
+  /// Cuidadores activos: no consumen licencia (se muestra explícito).
+  final int caregivers;
+
+  /// Protocolo Kura+: asignadas (perfiles con premium_enabled) vs. compradas
+  /// (seat:protocolo). purchased < 0 = el centro no tiene el add-on.
+  final LicenseCounter protocolo;
+
+  /// Plan del centro ('prueba' | 'basico'). El gratuito se retiró (0126).
+  final String plan;
+
+  /// Suscripción vencida (algún derecho en past_due).
+  final bool pastDue;
+
+  /// Pacientes creados (contador informativo; ya no hay tope de plan gratuito).
+  final int patientsUsed;
+
+  /// Administrativos puros que NO caben en los cupos incluidos (3 con module:admin,
+  /// 0 sin él) y por eso consumen un asiento CLÍNICO. Es el desbordamiento que el
+  /// invariante de demanda (§6) exige contar: [clinicalSeats.used] YA lo incluye
+  /// (demanda = clínicos + max(0, admin − cupos_incluidos)). Se expone aparte solo
+  /// para que el panel lo explique con texto; `adminSlots` sigue mostrando el conteo
+  /// crudo de administrativos por separado.
+  final int adminSeatOverflow;
+
+  /// El centro está en plan 'prueba' y esta YA venció por tiempo: sigue LEYENDO el
+  /// expediente pero no ESCRIBE (canReadModule sí, canWriteModule no). Dispara el
+  /// estado "prueba vencida" del panel. false en una prueba vigente o un plan de pago.
+  final bool trialExpired;
+
+  const LicenseSummary({
+    required this.clinicalSeats,
+    required this.adminSlots,
+    required this.caregivers,
+    required this.protocolo,
+    required this.plan,
+    required this.pastDue,
+    required this.patientsUsed,
+    this.adminSeatOverflow = 0,
+    this.trialExpired = false,
+  });
+
+  // El add-on Protocolo Kura+ se tiene solo si se contrató cantidad ≥ 1.
+  // `protocolo.contracted` = cantidad comprada, con `?? -1` para "sin derecho"
+  // (ver data_repository), así que -1 (sin derecho) y 0 (derecho con 0 asientos)
+  // significan NO tener el add-on. El `>= 0` anterior era una tautología (siempre
+  // verdadero para un conteo finito): la rama "Add-on no contratado" era código
+  // muerto y un centro con seat:protocolo=0 se veía como si lo tuviera.
+  bool get hasProtocoloAddon => protocolo.contracted > 0;
+  // isFreePlan se retiró: el plan gratuito con tope lo reemplaza la prueba (0126).
+
+  /// Estado del panel. Precedencia: impago manda sobre todo (se cobra primero).
+  /// Con holgura → holgado. LLENO (0 disponibles): si está en el techo del
+  /// autoservicio (≥5 asientos contratados) ya no se compra solo → techoAutoservicio;
+  /// si no, lleno (aún cabe autoservicio). "4 de 5" es holgado; "5 de 5" es el techo.
+  LicenseState get state {
+    if (pastDue) return LicenseState.impago;
+    if (!clinicalSeats.full) return LicenseState.holgado;
+    if (clinicalSeats.contracted >= kSelfServiceSeatCeiling) {
+      return LicenseState.techoAutoservicio;
+    }
+    return LicenseState.lleno;
+  }
+}

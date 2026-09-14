@@ -9,6 +9,10 @@ import 'package:go_router/go_router.dart';
 import '../design/tokens.dart';
 import '../providers/session_provider.dart';
 import '../widgets/kura_glass_card.dart';
+import '../nav/kura_nav_destinations.dart';
+import '../nav/kura_nav_rail.dart';
+import '../nav/nav_destination.dart';
+import 'shell_nav_visibility.dart';
 import '../../models/app_user.dart';
 import '../../models/center_type.dart';
 import '../../models/module_key.dart';
@@ -22,106 +26,45 @@ import '../name_format.dart';
 /// `MediaQuery.of(context).padding.bottom` del body.
 const double kFloatingNavBarHeight = 64;
 
-/// Shell de navegacion principal: NavigationRail en pantallas anchas,
-/// BottomNavigationBar en moviles. Los items disponibles dependen del rol
-/// (admin ve gestion de personal/sitios; clinico ve solo lo operativo).
-class AppShell extends ConsumerWidget {
+/// Shell de navegacion principal de las rutas clínicas. Pinta el riel único
+/// [KuraNavRail] en escritorio (TRES bandas de ancho) y la barra flotante en móvil,
+/// AMBOS derivados de la MISMA declaración [kuraNavDestinations] — ya no hay una
+/// segunda lista de destinos (`_itemsFor`) que sincronizar a mano. Ésa duplicación
+/// costó la regresión del hospital viendo /agenda; §5 etapa 5 la retira.
+///
+/// Tres bandas (§2): ancho ≥ 1200 → riel ABIERTO; 900–1199 → riel COLAPSADO;
+/// < 900 → sin riel, con la barra inferior flotante (los tres desde la declaración).
+/// En /platform y /admin NO pinta su navegación (esas pantallas traen su propio
+/// KuraNavRail); ver [appShellShowsOwnNav].
+class AppShell extends ConsumerStatefulWidget {
   final Widget child;
   final String currentPath;
 
   const AppShell({super.key, required this.child, required this.currentPath});
 
-  List<_NavItem> _itemsFor(
-      AppUser? user, Set<ModuleKey> modules, CenterType centerType) {
-    // El master (administrador de plataforma) es exclusivamente
-    // estructural (organizations/sites/staff/note_option_catalog, ver
-    // 0012_master_role.sql): no tiene pacientes/reportes propios, asi
-    // que se le oculta esa navegacion clinica por completo (mostrarla
-    // solo lo llevaria a pantallas vacias sin ningun proposito) y en su
-    // lugar ve unicamente su area de Plataforma.
-    if (user?.role == AppRole.master) {
-      return const [
-        _NavItem('/platform', Icons.hub_outlined, Icons.hub, 'Plataforma'),
-        _NavItem('/import-export', Icons.sync_alt_outlined, Icons.sync_alt, 'Importar expedientes'),
-      ];
-    }
+  @override
+  ConsumerState<AppShell> createState() => _AppShellState();
+}
 
-    // El cuidador (Fase 3) tiene una sola área: su monitoreo (pacientes
-    // asignados, solo lectura, + sus tareas preventivas). RESTRICCIÓN → cuidador
-    // EXCLUSIVO (punto 6 §0): la nav reducida es solo para quien no tiene nada
-    // más amplio.
-    if (user?.isCaregiverOnly ?? false) {
-      return const [
-        _NavItem('/caregiver', Icons.monitor_heart_outlined, Icons.monitor_heart, 'Monitoreo'),
-      ];
-    }
+class _AppShellState extends ConsumerState<AppShell> {
+  // Colapso MANUAL del riel de escritorio. null = seguir el ancho (auto); en cuanto
+  // el usuario toca el chevron, su elección manda por encima del ancho. Vive en el
+  // State para sobrevivir a los rebuilds del shell.
+  bool? _userCollapsed;
 
-    // Inicio siempre visible. Los demás items clínicos se muestran solo si su
-    // módulo está habilitado para el centro/sitio/usuario (Fase 2). Apagar un
-    // módulo solo lo oculta; sus datos permanecen.
-    final items = <_NavItem>[
-      const _NavItem('/', Icons.dashboard_outlined, Icons.dashboard, 'Inicio'),
-    ];
-    if (modules.contains(ModuleKey.patients)) {
-      items.add(const _NavItem('/patients', Icons.people_outline, Icons.people, 'Pacientes'));
-    }
-    // Agenda: en HOSPITAL el eje es la RONDA de prevención (tareas que siguen al
-    // paciente, no citas externas). La agenda de citas (modelo Acuity) es propia
-    // de la clínica de heridas, así que en hospital la pestaña de agenda enruta a
-    // las rondas de prevención en vez de a /agenda (que saldría "no configurada").
-    if (centerType == CenterType.hospital) {
-      if (modules.contains(ModuleKey.prevention)) {
-        items.add(const _NavItem(
-            '/prevention-agenda', Icons.checklist_outlined, Icons.checklist, 'Rondas'));
-      }
-    } else if (modules.contains(ModuleKey.agenda)) {
-      items.add(const _NavItem('/agenda', Icons.event_outlined, Icons.event, 'Agenda'));
-    }
-    if (modules.contains(ModuleKey.prevention)) {
-      items.add(const _NavItem('/risk', Icons.shield_outlined, Icons.shield, 'Prevención'));
-    }
-    if (modules.contains(ModuleKey.vac)) {
-      items.add(const _NavItem('/vac', Icons.healing_outlined, Icons.healing, 'VAC'));
-    }
-    if (modules.contains(ModuleKey.reports)) {
-      items.add(const _NavItem('/reports', Icons.description_outlined, Icons.description, 'Reportes'));
-    }
-    if (modules.contains(ModuleKey.insumos)) {
-      items.add(const _NavItem(
-          '/insumos', Icons.medical_services_outlined, Icons.medical_services, 'Insumos'));
-    }
-    if (modules.contains(ModuleKey.comercial)) {
-      items.add(const _NavItem(
-          '/comercial', Icons.point_of_sale_outlined, Icons.point_of_sale, 'Comercial'));
-    }
-    if (user?.role == AppRole.admin) {
-      items.add(const _NavItem(
-          '/admin', Icons.admin_panel_settings_outlined, Icons.admin_panel_settings, 'Administración'));
-    }
-    if (modules.contains(ModuleKey.ekare)) {
-      items.add(const _NavItem('/import-export', Icons.sync_alt_outlined, Icons.sync_alt, 'Importar expedientes'));
-    }
-    return items;
-  }
-
-  int _indexFor(String path, List<_NavItem> items) {
-    return _indexForOrNull(path, items) ?? 0;
-  }
-
-  /// Como [_indexFor] pero devuelve null si la ruta no corresponde a ningún
-  /// item (para poder resaltar "Más" en la barra móvil).
-  int? _indexForOrNull(String path, List<_NavItem> items) {
+  /// Índice del destino cuya ruta corresponde a [path] dentro de [items] (o null si
+  /// ninguno: sirve para resaltar "Más" en la barra móvil). Un destino de ruta `r`
+  /// captura `r` y sus rutas hijas `r/…` (salvo `/`, que solo se captura exacto).
+  int? _indexOf(List<NavDestination> items, String path) {
     for (var i = 0; i < items.length; i++) {
-      if (path == items[i].path ||
-          (items[i].path != '/' && path.startsWith(items[i].path))) {
-        return i;
-      }
+      final r = items[i].route;
+      if (path == r || (r != '/' && path.startsWith(r))) return i;
     }
     return null;
   }
 
-  /// Menú "Más" (móvil): el resto de las secciones que no caben abajo.
-  void _showMoreMenu(BuildContext context, List<_NavItem> overflow) {
+  /// Menú "Más" (móvil): el resto de los destinos que no caben abajo.
+  void _showMoreMenu(BuildContext context, List<NavDestination> overflow) {
     final t = BrandTokens.of(context);
     showModalBottomSheet<void>(
       context: context,
@@ -130,13 +73,13 @@ class AppShell extends ConsumerWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            for (final i in overflow)
+            for (final d in overflow)
               ListTile(
-                leading: Icon(i.selectedIcon, color: t.brandPrimary),
-                title: Text(i.label),
+                leading: Icon(d.icon, color: t.brandPrimary),
+                title: Text(d.label),
                 onTap: () {
                   Navigator.of(ctx).pop();
-                  context.go(i.path);
+                  context.go(d.route);
                 },
               ),
           ],
@@ -146,109 +89,108 @@ class AppShell extends ConsumerWidget {
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final session = ref.watch(sessionProvider);
     final modules = ref.watch(enabledModulesProvider);
-    final items = _itemsFor(session.user, modules, session.activeCenterType);
-    final selectedIndex = _indexFor(currentPath, items);
-    final isWide = MediaQuery.of(context).size.width >= 900;
-    // La barra flotante solo se muestra en pantallas de NIVEL SUPERIOR (las
-    // pestañas). En pantallas "profundas" (detalle de paciente, formularios,
-    // captura, seguimiento…) se oculta: son flujos con botón de regresar y, al
-    // vivir en el mismo Scaffold-shell con extendBody, la barra taparía sus
-    // botones inferiores. Así ningún botón queda cubierto en ninguna pantalla.
-    final isTopLevel = items.any((i) => i.path == currentPath);
+    final user = session.user;
+    final currentPath = widget.currentPath;
+    final child = widget.child;
     final t = BrandTokens.of(context);
 
-    final destinationsRail = items
-        .map((i) => NavigationRailDestination(
-              icon: Icon(i.icon),
-              selectedIcon: Icon(i.selectedIcon),
-              label: Text(i.label),
-            ))
-        .toList();
+    // ÚNICA fuente de destinos (§5 etapa 5): la declaración. Reemplaza _itemsFor.
+    // El cuidador exclusivo y el master salen de aquí, no de una rama especial.
+    final navs = kuraNavDestinations(
+      moduleEnabled: (k) => modules.any((m) => m.dbValue == k),
+      isAdmin: user?.isAdmin ?? false,
+      isMaster: user?.isMaster ?? false,
+      centerType: session.activeCenterType,
+      isCaregiverOnly: user?.isCaregiverOnly ?? false,
+    );
+    final visibleTop = navs.where((d) => d.isVisible).toList();
 
-    void onSelect(int index) => context.go(items[index].path);
+    final width = MediaQuery.of(context).size.width;
+    // En /platform y /admin AppShell no pinta su navegación: esas pantallas traen su
+    // propio KuraNavRail (evita dos rieles y doble marca de activo).
+    final showOwnNav = appShellShowsOwnNav(currentPath);
+    // La barra inferior solo se muestra en pantallas de NIVEL SUPERIOR (los destinos).
+    // En pantallas "profundas" (detalle, formularios, captura…) se oculta: son flujos
+    // con botón de regresar y, con extendBody, la barra taparía sus botones. El riel de
+    // escritorio SÍ se mantiene en profundas (como antes), con el destino padre activo.
+    final isTopLevel = visibleTop.any((d) => navRouteIsActive(d, currentPath));
 
-    // --- Barra inferior (MÓVIL): solo los indispensables + "Más" ---
-    // Se dejan abajo Inicio, Pacientes y Agenda/Rondas; el resto de los módulos
-    // (Prevención, VAC, Reportes, Insumos, Comercial, Administración, eKare) va
-    // a un menú "Más". Solo se usa el menú si hay primarios que anclar y ≥2 en
-    // el resto (roles con pocos items —master/cuidador— muestran todo directo).
-    const primaryPaths = ['/', '/patients', '/agenda', '/prevention-agenda'];
-    final primary =
-        items.where((i) => primaryPaths.contains(i.path)).toList();
-    final overflow =
-        items.where((i) => !primaryPaths.contains(i.path)).toList();
-    final useMore = primary.isNotEmpty && overflow.length >= 2;
-    final mobileItems = useMore ? primary : items;
+    // --- Riel de escritorio (KuraNavRail): TRES bandas -----------------------
+    // ≥1200 abierto; 900–1199 colapsado; <900 no hay riel (barra inferior). Requiere
+    // ≥2 destinos: KuraNavRail (como NavigationRail/Bar) no tiene sentido con uno solo
+    // —un cuidador tiene una sola pantalla y queda sin riel y sin barra, y está bien.
+    final showRail = width >= 900 && showOwnNav && visibleTop.length >= 2;
+    final autoCollapsed = width < 1200;
+    final collapsed = _userCollapsed ?? autoCollapsed;
+
+    // --- Barra inferior (MÓVIL): primarios + "Más", desde la MISMA declaración ---
+    // Los primarios (isPrimary: Inicio, Pacientes, Agenda/Rondas) anclan abajo; el
+    // resto va al menú "Más". Solo se usa "Más" si hay primarios que anclar y ≥2 en el
+    // resto (roles con pocos destinos muestran todo directo).
+    final split = navBottomBarSplit(navs);
+    final useMore = split.primary.isNotEmpty && split.overflow.length >= 2;
+    final mobileItems = useMore ? split.primary : visibleTop;
     final mobileDestinations = <NavigationDestination>[
-      for (final i in mobileItems)
+      for (final d in mobileItems)
         NavigationDestination(
-            icon: Icon(i.icon),
-            selectedIcon: Icon(i.selectedIcon),
-            label: i.label),
+            icon: Icon(d.icon), selectedIcon: Icon(d.icon), label: d.label),
       if (useMore)
         const NavigationDestination(
-            icon: Icon(Icons.menu),
-            selectedIcon: Icon(Icons.menu),
-            label: 'Más'),
+            icon: Icon(Icons.menu), selectedIcon: Icon(Icons.menu), label: 'Más'),
     ];
-    final mobileIdx = _indexForOrNull(currentPath, mobileItems);
-    final mobileSelectedIndex =
-        mobileIdx ?? (useMore ? mobileItems.length : 0);
+    final mobileIdx = _indexOf(mobileItems, currentPath);
+    final mobileSelectedIndex = mobileIdx ?? (useMore ? mobileItems.length : 0);
     void mobileOnSelect(int index) {
       if (useMore && index == mobileItems.length) {
-        _showMoreMenu(context, overflow);
+        _showMoreMenu(context, split.overflow);
       } else {
-        context.go(mobileItems[index].path);
+        context.go(mobileItems[index].route);
       }
     }
 
     return Scaffold(
-      // El contenido pasa por DEBAJO de la barra flotante (para que el vidrio
-      // lo refracte). Las pantallas scrolleables compensan con padding inferior
-      // (ver kFloatingNavBarHeight / MediaQuery.padding.bottom).
+      // El contenido pasa por DEBAJO de la barra flotante (para que el vidrio lo
+      // refracte). Las pantallas scrolleables compensan con padding inferior (ver
+      // kFloatingNavBarHeight / MediaQuery.padding.bottom).
       extendBody: true,
-      // Sin AppBar del shell: UNA sola barra por pantalla. Cada pantalla de
-      // nivel superior ya trae su propio AppBar con su titulo e incluye el
-      // avatar/menu de usuario en sus acciones ([UserMenuButton]); el dashboard
-      // lo lleva en su encabezado. En escritorio el menu vive en el
-      // NavigationRail. Esto elimina la doble barra en movil.
+      // Sin AppBar del shell: UNA sola barra por pantalla. Cada pantalla de nivel
+      // superior trae su propio AppBar con su título y su acceso a cuenta; en el riel
+      // de escritorio, la cuenta vive en el pie (KuraAccountMenu vía accountMenuBuilder).
       appBar: null,
       body: _SyncBanner(
-        child: isWide
-          ? Row(
-              children: [
-                NavigationRail(
-                  selectedIndex: selectedIndex,
-                  onDestinationSelected: onSelect,
-                  labelType: NavigationRailLabelType.all,
-                  leading: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    child: _brandTitle(context, ref, session, compact: true),
+        child: showRail
+            ? Row(
+                children: [
+                  KuraNavRail(
+                    destinations: navs,
+                    currentRoute: currentPath,
+                    collapsed: collapsed,
+                    brandName: 'KuraTracker',
+                    userName: user?.fullName,
+                    onToggleCollapse: () =>
+                        setState(() => _userCollapsed = !collapsed),
+                    // El pie del riel es el menú de cuenta (cerrar sesión, cambiar de
+                    // centro, ayuda): identidad = control, como en /admin y /platform.
+                    accountMenuBuilder: (ctx, child) =>
+                        KuraAccountMenu(child: child),
                   ),
-                  trailing: Expanded(
-                    child: Align(
-                      alignment: Alignment.bottomCenter,
-                      child: Padding(
-                        padding: const EdgeInsets.only(bottom: 16),
-                        child: _userMenu(context, ref, session, vertical: true),
-                      ),
-                    ),
-                  ),
-                  destinations: destinationsRail,
-                ),
-                const VerticalDivider(width: 1),
-                Expanded(child: child),
-              ],
-            )
-          : child,
+                  const VerticalDivider(width: 1),
+                  Expanded(child: child),
+                ],
+              )
+            : child,
       ),
-      // Barra de navegacion FLOTANTE estilo "liquid glass": no pegada a los
-      // bordes (margen + esquinas casi pildora), acabado de vidrio consistente
-      // con KuraGlassCard y sombra en capas para verse despegada del fondo.
-      bottomNavigationBar: (isWide || !isTopLevel)
+      // Barra de navegacion FLOTANTE estilo "liquid glass": no pegada a los bordes
+      // (margen + esquinas casi pildora), acabado de vidrio consistente con
+      // KuraGlassCard. Solo en móvil (<900), en pantallas de nivel superior, con ≥2
+      // destinos y donde AppShell pinta su nav.
+      bottomNavigationBar: (width >= 900 ||
+              !isTopLevel ||
+              mobileDestinations.length < 2 ||
+              !showOwnNav)
           ? null
           : SafeArea(
               top: false,
@@ -294,88 +236,6 @@ class AppShell extends ConsumerWidget {
                 ),
               ),
             ),
-    );
-  }
-
-  Widget _brandTitle(BuildContext context, WidgetRef ref, SessionState session,
-      {bool compact = false}) {
-    final t = BrandTokens.of(context);
-    final canSwitch = session.canSwitchCenter;
-    final row = Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
-          padding: const EdgeInsets.all(6),
-          decoration: BoxDecoration(
-            color: t.brandPrimary,
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: const Icon(Icons.healing, color: Colors.white, size: 20),
-        ),
-        if (!compact) ...[
-          const SizedBox(width: 8),
-          Text('KuraTracker',
-              style: TextStyle(fontWeight: FontWeight.w800, color: t.textPrimary)),
-        ],
-        // Indicador de que el ícono es un switcher cuando hay varios centros.
-        if (canSwitch)
-          Icon(Icons.unfold_more, size: 16, color: t.textSecondary),
-      ],
-    );
-    if (!canSwitch) return row;
-    return InkWell(
-      borderRadius: BorderRadius.circular(10),
-      onTap: () => showCenterSwitcher(context, ref),
-      child: Padding(padding: const EdgeInsets.all(4), child: row),
-    );
-  }
-
-  Widget _userMenu(BuildContext context, WidgetRef ref, SessionState session,
-      {bool vertical = false}) {
-    final user = session.user;
-    if (user == null) return const SizedBox.shrink();
-    final t = BrandTokens.of(context);
-    return PopupMenuButton<String>(
-      tooltip: user.fullName,
-      onSelected: (value) {
-        if (value == 'logout') {
-          ref.read(sessionProvider.notifier).logout();
-          // El destino depende del modo: en la DEMO la landing es el selector de
-          // perfiles, no el login de producción (ahí no hay credenciales válidas y
-          // el visitante queda en un callejón sin salida, además de perder el
-          // acceso al botón "Reiniciar demo", que vive en esa pantalla).
-          context.go(AppConfig.isSupabaseConfigured ? '/login' : '/demo');
-        } else if (value == 'switch') {
-          showCenterSwitcher(context, ref);
-        } else if (value == 'help') {
-          openSupportAssistant(ref);
-        } else if (value == 'reset_demo') {
-          showResetDemoDialog(context, ref);
-        }
-      },
-      itemBuilder: (context) => [
-        PopupMenuItem(
-          enabled: false,
-          child: Text(user.fullName, style: const TextStyle(fontWeight: FontWeight.w700)),
-        ),
-        PopupMenuItem(enabled: false, child: Text(user.role.label)),
-        const PopupMenuDivider(),
-        if (AppConfig.isSupabaseConfigured)
-          const PopupMenuItem(value: 'help', child: Text('Asistente de ayuda')),
-        if (session.canSwitchCenter)
-          const PopupMenuItem(value: 'switch', child: Text('Cambiar de centro')),
-        if (!AppConfig.isSupabaseConfigured)
-          const PopupMenuItem(
-              value: 'reset_demo', child: Text('Reiniciar demo')),
-        const PopupMenuItem(value: 'logout', child: Text('Cerrar sesión')),
-      ],
-      child: CircleAvatar(
-        backgroundColor: t.brandPrimary.withOpacity(0.15),
-        child: Text(
-          avatarInitial(user.fullName),
-          style: TextStyle(color: t.brandPrimary, fontWeight: FontWeight.w800),
-        ),
-      ),
     );
   }
 }
@@ -447,18 +307,6 @@ Future<void> showCenterSwitcher(BuildContext context, WidgetRef ref) async {
   );
 }
 
-class _NavItem {
-  final String path;
-  final IconData icon;
-  final IconData selectedIcon;
-  final String label;
-  const _NavItem(this.path, this.icon, this.selectedIcon, this.label);
-}
-
-/// Menú de usuario (avatar + cerrar sesión) para los AppBar de las pantallas.
-/// Al quitar el AppBar del shell (una sola barra por pantalla), cada pantalla
-/// de nivel superior lo incluye en sus `actions` para conservar el acceso a
-/// cerrar sesión en móvil.
 /// Banda superior que avisa cuántas escrituras quedaron sin sincronizar
 /// (offline-first, Fase 1). Solo aparece cuando hay pendientes; permite forzar
 /// la sincronización. En modo demo/local no aparece (no hay cola).
@@ -480,8 +328,13 @@ class _SyncBanner extends ConsumerWidget {
         photosFailed == null) {
       return child;
     }
+    final orgId = ref.watch(sessionProvider).user?.organizationId;
+    final readOnlyReason = repo.clinicalReadOnlyReason(orgId);
+    final isAdmin = ref.watch(sessionProvider).user?.isAdmin ?? false;
     return Column(
       children: [
+        if (readOnlyReason != null)
+          _ReadOnlyBand(reason: readOnlyReason, showCta: isAdmin),
         AnimatedBuilder(
           animation: Listenable.merge(
               [writesPending, photosPending, writesFailed, photosFailed]),
@@ -645,51 +498,195 @@ class _SyncBanner extends ConsumerWidget {
   }
 }
 
-class UserMenuButton extends ConsumerWidget {
-  const UserMenuButton({super.key});
+/// Banda de MODO LECTURA: el centro puede leer su expediente pero no escribir
+/// (pago vencido, prueba terminada, suscripción no vigente). Explica el motivo —un
+/// expediente que se lee pero no se escribe sin explicación se reporta como app
+/// rota— y, para el admin, ofrece el atajo a Licencias.
+class _ReadOnlyBand extends StatelessWidget {
+  final String reason;
+  final bool showCta;
+  const _ReadOnlyBand({required this.reason, required this.showCta});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.orange.shade100,
+      child: SafeArea(
+        bottom: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 6, 8, 6),
+          child: Row(
+            children: [
+              Icon(Icons.lock_outline, size: 16, color: Colors.orange.shade800),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(reason,
+                    style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.orange.shade900)),
+              ),
+              if (showCta)
+                TextButton(
+                  onPressed: () => context.go('/admin'),
+                  child: const Text('Licencias'),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Menú de cuenta (cerrar sesión, cambiar de centro, ayuda, reiniciar demo)
+/// desplegado desde un [child] cualquiera: el avatar de la barra ([UserMenuButton])
+/// o el pie del riel de navegación (identidad = control). Reúne en un solo lugar lo
+/// que cuelga de la cuenta, para que ningún punto de la app pinte identidad sin dar
+/// acceso a cerrar sesión.
+class KuraAccountMenu extends ConsumerWidget {
+  final Widget child;
+  const KuraAccountMenu({super.key, required this.child});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final session = ref.watch(sessionProvider);
     final user = session.user;
+    if (user == null) return child;
+    return PopupMenuButton<String>(
+      tooltip: user.fullName,
+      onSelected: (value) {
+        if (value == 'logout') {
+          ref.read(sessionProvider.notifier).logout();
+          // El destino depende del modo: en la DEMO la landing es el selector
+          // de perfiles, no el login de producción (ahí no hay credenciales
+          // válidas y el visitante queda en un callejón sin salida, además de
+          // perder el acceso al botón "Reiniciar demo", que vive en esa pantalla).
+          context.go(AppConfig.isSupabaseConfigured ? '/login' : '/demo');
+        } else if (value == 'switch') {
+          showCenterSwitcher(context, ref);
+        } else if (value == 'help') {
+          openSupportAssistant(ref);
+        } else if (value == 'reset_demo') {
+          showResetDemoDialog(context, ref);
+        }
+      },
+      itemBuilder: (context) => [
+        PopupMenuItem(
+          enabled: false,
+          child: Text(user.fullName,
+              style: const TextStyle(fontWeight: FontWeight.w700)),
+        ),
+        PopupMenuItem(enabled: false, child: Text(user.role.label)),
+        const PopupMenuDivider(),
+        if (AppConfig.isSupabaseConfigured)
+          const PopupMenuItem(value: 'help', child: Text('Asistente de ayuda')),
+        if (session.canSwitchCenter)
+          const PopupMenuItem(value: 'switch', child: Text('Cambiar de centro')),
+        if (!AppConfig.isSupabaseConfigured)
+          const PopupMenuItem(
+              value: 'reset_demo', child: Text('Reiniciar demo')),
+        const PopupMenuItem(value: 'logout', child: Text('Cerrar sesión')),
+      ],
+      child: child,
+    );
+  }
+}
+
+/// Encabezado de una PANTALLA CLÍNICA de primer nivel, DENTRO del contenido (sin AppBar):
+/// hermano del de /admin y /platform (KuraContentHeader). Contexto = el centro activo
+/// (11px), título = el nombre de la pantalla (28px w800, una sola vez), acciones a la
+/// derecha. La cuenta va aquí SOLO cuando no hay riel (móvil, o un rol con un solo
+/// destino como el cuidador); cuando hay riel, la cuenta vive en su pie, como en /admin.
+class KuraPageHeader extends ConsumerWidget {
+  final String title;
+  final List<Widget> actions;
+  const KuraPageHeader({super.key, required this.title, this.actions = const []});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final session = ref.watch(sessionProvider);
+    final user = session.user;
+    final orgId = user?.organizationId;
+    final repo = ref.watch(dataRepositoryProvider).valueOrNull;
+    final centerName =
+        (orgId != null ? repo?.organizationById(orgId)?.name : null) ??
+            session.activeCenterType.label;
+    // Hay riel cuando la ventana es ANCHA **y** el usuario tiene ≥2 destinos visibles
+    // (NavigationRail/KuraNavRail exigen dos). Se deriva de la MISMA declaración que el
+    // riel (kuraNavDestinations, misma condición que AppShell.showRail), no de una
+    // bandera aparte: así el CUIDADOR —un solo destino, sin riel ni en ancho— recibe la
+    // cuenta en el encabezado. "Angosto" no basta: era la regresión de la etapa 5.
+    final modules = ref.watch(enabledModulesProvider);
+    final visibleCount = kuraNavDestinations(
+      moduleEnabled: (k) => modules.any((m) => m.dbValue == k),
+      isAdmin: user?.isAdmin ?? false,
+      isMaster: user?.isMaster ?? false,
+      centerType: session.activeCenterType,
+      isCaregiverOnly: user?.isCaregiverOnly ?? false,
+    ).where((d) => d.isVisible).length;
+    final hasRail =
+        MediaQuery.of(context).size.width >= 900 && visibleCount >= 2;
+    return KuraContentHeader.flat(
+      title: title,
+      context: centerName,
+      actions: [
+        ...actions,
+        // Sin riel (móvil, o el cuidador con un solo destino aun en ancho), la cuenta
+        // (cerrar sesión, cambiar de centro) va en el encabezado. Con riel, en su pie.
+        if (!hasRail) const UserMenuButton(),
+      ],
+    );
+  }
+}
+
+/// Andamiaje de una PANTALLA CLÍNICA de primer nivel SIN AppBar: el encabezado
+/// (KuraPageHeader) vive DENTRO del contenido, como en /admin y /platform. Reemplaza el
+/// `Scaffold(appBar: AppBar(title:…, actions:[UserMenuButton()]))` de la pantalla; el
+/// cuerpo, el FAB y su ubicación se conservan. El nombre de la pantalla sale una sola vez.
+class KuraScreen extends StatelessWidget {
+  final String title;
+  final List<Widget> actions;
+  final Widget body;
+  final Widget? floatingActionButton;
+  final FloatingActionButtonLocation? floatingActionButtonLocation;
+  final Widget? belowHeader; // p. ej. un TabBar, que va bajo el encabezado
+  const KuraScreen({
+    super.key,
+    required this.title,
+    required this.body,
+    this.actions = const [],
+    this.floatingActionButton,
+    this.floatingActionButtonLocation,
+    this.belowHeader,
+  });
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+        floatingActionButton: floatingActionButton,
+        floatingActionButtonLocation: floatingActionButtonLocation,
+        body: Column(
+          children: [
+            KuraPageHeader(title: title, actions: actions),
+            const Divider(height: 1),
+            if (belowHeader != null) belowHeader!,
+            Expanded(child: body),
+          ],
+        ),
+      );
+}
+
+class UserMenuButton extends ConsumerWidget {
+  const UserMenuButton({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final user = ref.watch(sessionProvider).user;
     if (user == null) return const SizedBox.shrink();
     final t = BrandTokens.of(context);
     return Padding(
       padding: const EdgeInsets.only(right: 8),
-      child: PopupMenuButton<String>(
-        tooltip: user.fullName,
-        onSelected: (value) {
-          if (value == 'logout') {
-            ref.read(sessionProvider.notifier).logout();
-            // El destino depende del modo: en la DEMO la landing es el selector
-            // de perfiles, no el login de producción (ahí no hay credenciales
-            // válidas y el visitante queda en un callejón sin salida, además de
-            // perder el acceso al botón "Reiniciar demo", que vive en esa pantalla).
-            context.go(AppConfig.isSupabaseConfigured ? '/login' : '/demo');
-          } else if (value == 'switch') {
-            showCenterSwitcher(context, ref);
-          } else if (value == 'help') {
-            openSupportAssistant(ref);
-          } else if (value == 'reset_demo') {
-            showResetDemoDialog(context, ref);
-          }
-        },
-        itemBuilder: (context) => [
-          PopupMenuItem(
-            enabled: false,
-            child: Text(user.fullName, style: const TextStyle(fontWeight: FontWeight.w700)),
-          ),
-          PopupMenuItem(enabled: false, child: Text(user.role.label)),
-          const PopupMenuDivider(),
-          if (AppConfig.isSupabaseConfigured)
-            const PopupMenuItem(value: 'help', child: Text('Asistente de ayuda')),
-          if (session.canSwitchCenter)
-            const PopupMenuItem(value: 'switch', child: Text('Cambiar de centro')),
-          if (!AppConfig.isSupabaseConfigured)
-            const PopupMenuItem(
-                value: 'reset_demo', child: Text('Reiniciar demo')),
-          const PopupMenuItem(value: 'logout', child: Text('Cerrar sesión')),
-        ],
+      child: KuraAccountMenu(
         child: CircleAvatar(
           radius: 16,
           backgroundColor: t.brandPrimary.withOpacity(0.15),

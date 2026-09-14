@@ -7,7 +7,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/providers/session_provider.dart';
 import '../../core/theme/kura_theme.dart';
 import '../../models/center_type.dart';
-import '../../core/router/app_shell.dart' show kFloatingNavBarHeight, UserMenuButton;
+import '../../core/router/app_shell.dart' show kFloatingNavBarHeight, KuraScreen;
 import '../../core/widgets/kura_primary_fab.dart';
 import '../../engine/models/kura_engine_enums.dart';
 import '../../engine/sheehan_decision_style.dart';
@@ -121,11 +121,27 @@ class PatientsListScreenState extends ConsumerState<PatientsListScreen> {
     return result;
   }
 
+  /// Modo lectura (pago vencido/prueba terminada): bloquea crear valoración/
+  /// seguimiento desde las tarjetas de la lista. La banda del shell explica el motivo.
+  bool _blockedWrite() {
+    final repo = ref.read(dataRepositoryProvider).valueOrNull;
+    final org = ref.read(sessionProvider).user?.organizationId;
+    if (repo != null && !repo.centerCanWriteClinical(org)) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content:
+              Text('Modo lectura: crea o edita solo con la suscripción vigente.')));
+      return true;
+    }
+    return false;
+  }
+
   Future<void> _goToValoracion(String patientId) async {
+    if (_blockedWrite()) return;
     context.go('/patients/$patientId/consultation/new?visitType=valoracion');
   }
 
   Future<void> _goToSeguimiento(DataRepository repo, String patientId) async {
+    if (_blockedWrite()) return;
     final summary = PatientWoundSummary.compute(repo, patientId);
     if (!summary.hasActiveWounds) return;
     if (summary.activeCount == 1) {
@@ -147,35 +163,31 @@ class PatientsListScreenState extends ConsumerState<PatientsListScreen> {
     final repoAsync = ref.watch(dataRepositoryProvider);
     final user = session.user;
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Pacientes'),
-        actions: [
-          // Depurar expedientes (0086): solo admin/master. Archiva pacientes
-          // que ya no se atienden (p. ej. import histórico de Acuity).
-          if ((user?.role == AppRole.admin || user?.role == AppRole.master) &&
-              repoAsync.valueOrNull != null)
-            IconButton(
-              tooltip: 'Depurar expedientes',
-              icon: const Icon(Icons.cleaning_services_outlined),
-              onPressed: () => Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => PatientCleanupScreen(
-                    repo: repoAsync.value!,
-                    organizationId: user?.organizationId,
-                  ),
+    return KuraScreen(
+      title: 'Pacientes',
+      actions: [
+        // Depurar expedientes (0086): solo admin/master. Archiva pacientes
+        // que ya no se atienden (p. ej. import histórico de Acuity).
+        if ((user?.role == AppRole.admin || user?.role == AppRole.master) &&
+            repoAsync.valueOrNull != null)
+          IconButton(
+            tooltip: 'Depurar expedientes',
+            icon: const Icon(Icons.cleaning_services_outlined),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => PatientCleanupScreen(
+                  repo: repoAsync.value!,
+                  organizationId: user?.organizationId,
                 ),
               ),
             ),
-          if (_prefsLoaded)
-            _ViewModeToggle(
-              value: _prefs.viewMode,
-              onChanged: (mode) => _updatePrefs((p) => p.copyWith(viewMode: mode)),
-            ),
-          const SizedBox(width: 4),
-          const UserMenuButton(),
-        ],
-      ),
+          ),
+        if (_prefsLoaded)
+          _ViewModeToggle(
+            value: _prefs.viewMode,
+            onChanged: (mode) => _updatePrefs((p) => p.copyWith(viewMode: mode)),
+          ),
+      ],
       body: !_prefsLoaded
           ? const Center(child: CircularProgressIndicator())
           : repoAsync.when(
@@ -331,11 +343,17 @@ class PatientsListScreenState extends ConsumerState<PatientsListScreen> {
                 );
               },
             ),
-      floatingActionButton: KuraPrimaryFab(
-        onPressed: () => context.go('/patients/new'),
-        icon: Icons.person_add,
-        label: 'Nuevo paciente',
-      ),
+      // Alta de paciente = escritura clínica: se oculta si el centro está en modo
+      // lectura (pago vencido/prueba terminada). La banda del shell explica el motivo.
+      floatingActionButton: (repoAsync.valueOrNull
+                  ?.centerCanWriteClinical(session.user?.organizationId) ??
+              true)
+          ? KuraPrimaryFab(
+              onPressed: () => context.go('/patients/new'),
+              icon: Icons.person_add,
+              label: 'Nuevo paciente',
+            )
+          : null,
     );
   }
 }

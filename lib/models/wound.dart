@@ -288,6 +288,20 @@ class WoundMeasurement {
   // Nota de medicion manual (hisopo/regla) para socavamiento, tunelizacion,
   // heridas circunferenciales o de geometria irregular.
   final String? manualMeasurementNote;
+  // Origen de largo/ancho/composición (migración 0108): 'manual' (regla e
+  // hisopo, valor por defecto), 'vision_card' (motor de visión con tarjeta
+  // WoundCalibrate), 'vision_disc' (disco de referencia, sin corrección de
+  // perspectiva) o 'vision_manual_trace' (contorno trazado por el clínico
+  // sobre la foto calibrada). El clínico siempre puede editar los valores
+  // propuestos; visionMeta.edited lo registra.
+  final String measurementSource;
+  // Área por PLANIMETRÍA (conteo de píxeles calibrados) cuando la medición
+  // vino del motor de visión. Se guarda APARTE de areaCm2 (estimado por
+  // elipse) para no mover el modelo pronóstico, calibrado con el estimado.
+  final double? areaPlanimetricCm2;
+  // Trazabilidad del motor de visión: versión, modo, mm/px, compuertas de
+  // calidad, contorno y medidas crudas (ver WoundVisionResult.toVisionMeta).
+  final Map<String, dynamic>? visionMeta;
 
   const WoundMeasurement({
     required this.id,
@@ -310,7 +324,12 @@ class WoundMeasurement {
     this.volumeCm3,
     this.volumeManual = false,
     this.manualMeasurementNote,
+    this.measurementSource = 'manual',
+    this.areaPlanimetricCm2,
+    this.visionMeta,
   });
+
+  bool get isVisionMeasured => measurementSource.startsWith('vision_');
 
   double get bedCompositionSum =>
       granulationPct + sloughPct + necrosisPct + epithelializationPct;
@@ -342,6 +361,9 @@ class WoundMeasurement {
         volumeCm3: (json['volume_cm3'] as num?)?.toDouble(),
         volumeManual: json['volume_manual'] as bool? ?? false,
         manualMeasurementNote: json['manual_measurement_note'] as String?,
+        measurementSource: json['measurement_source'] as String? ?? 'manual',
+        areaPlanimetricCm2: (json['area_planimetric_cm2'] as num?)?.toDouble(),
+        visionMeta: (json['vision_meta'] as Map?)?.cast<String, dynamic>(),
       );
 
   Map<String, dynamic> toJson() => {
@@ -365,6 +387,9 @@ class WoundMeasurement {
         'volume_cm3': volumeCm3,
         'volume_manual': volumeManual,
         'manual_measurement_note': manualMeasurementNote,
+        'measurement_source': measurementSource,
+        'area_planimetric_cm2': areaPlanimetricCm2,
+        'vision_meta': visionMeta,
       };
 }
 
