@@ -42,6 +42,10 @@ final _gatedScreens =
 /// es justamente lo que fuerza a enumerar una sexta pantalla gateada.
 const _nonGatedAdminFiles = <String>{
   'admin_home_screen.dart',
+  // Usuarios menciona premiumAdminFor solo para el mensaje del asiento admin (un
+  // usuario solo-administrativo consume asiento clínico sin el módulo). NO es una
+  // pantalla gateada: no se bloquea tras module:admin. Etapa 1: se sacó a su archivo.
+  'users_screen.dart',
   'license_panel.dart',
   'license_plan_builder_screen.dart',
 };
