@@ -14,11 +14,11 @@ import '../../core/widgets/kura_data_table.dart';
 import '../../core/widgets/kura_empty_state.dart';
 import '../../core/widgets/kura_error_state.dart';
 import '../../core/widgets/kura_module_lock.dart';
-import '../../core/widgets/kura_stat.dart';
 import '../../models/inventory.dart';
 import '../../services/csv_download.dart';
 import '../../services/data_repository.dart';
 import 'consumo_meaning.dart';
+import 'inventory_stat_row.dart';
 import 'product_picker.dart';
 import 'purchase_guard.dart';
 
@@ -269,7 +269,8 @@ class _InventarioScreenState extends ConsumerState<InventarioScreen> {
   /// cifra NUNCA va sola: siempre sale con su línea de comparación (acuerdo del
   /// canvas). `pct` es null cuando el mes anterior no tuvo consumo (no hay contra
   /// qué comparar).
-  ({int current, String meaning}) _consumo(DataRepository repo, String siteId) {
+  ({int current, int prev, String prevLabel}) _consumo(
+      DataRepository repo, String siteId) {
     final consumos = repo
         .listInventoryMovements(siteId: siteId)
         .where((m) => m.reason == InventoryReason.consumo);
@@ -277,15 +278,12 @@ class _InventarioScreenState extends ConsumerState<InventarioScreen> {
     int inMonth(int y, int mo) => consumos
         .where((m) => m.createdAt.year == y && m.createdAt.month == mo)
         .fold(0, (a, m) => a + m.delta.abs());
-    final current = inMonth(now.year, now.month);
     final prevDate = DateTime(now.year, now.month - 1, 1);
-    final prev = inMonth(prevDate.year, prevDate.month);
-    final meaning = consumoMeaning(
-      current: current,
-      prev: prev,
+    return (
+      current: inMonth(now.year, now.month),
+      prev: inMonth(prevDate.year, prevDate.month),
       prevLabel: spanishMonth(prevDate.month),
     );
-    return (current: current, meaning: meaning);
   }
 
   @override
@@ -475,32 +473,15 @@ class _InventarioScreenState extends ConsumerState<InventarioScreen> {
                   _header(t, repo, orgId, sites: sites, centerMode: centerMode),
                   const SizedBox(height: 24),
                   // Fila de cifras.
-                  _statRow(t, [
-                    KuraStat(
-                      label: 'Artículos',
-                      value: '${items.length}',
-                      meaning: 'en esta sede',
-                    ),
-                    KuraStat(
-                      label: 'Por reordenar',
-                      value: '$reorderCount',
-                      meaning: 'bajo su umbral · $outCount agotados',
-                      tone: reorderCount > 0
-                          ? KuraStatTone.warning
-                          : KuraStatTone.normal,
-                    ),
-                    KuraStat(
-                      label: 'Valor a costo',
-                      value: pesosFromCents(_cents(invValuePesos) ?? 0),
-                      meaning: 'MXN · existencia × costo',
-                    ),
-                    KuraStat(
-                      label: 'Consumo del mes',
-                      value: '${consumo.current}',
-                      unit: 'pz',
-                      meaning: consumo.meaning,
-                    ),
-                  ]),
+                  InventoryStatRow(
+                    articleCount: items.length,
+                    reorderCount: reorderCount,
+                    outCount: outCount,
+                    valueCents: _cents(invValuePesos) ?? 0,
+                    consumoCurrent: consumo.current,
+                    consumoPrev: consumo.prev,
+                    prevMonthLabel: consumo.prevLabel,
+                  ),
                   const SizedBox(height: 20),
                   // Barra de acciones.
                   _cardBox(
@@ -669,21 +650,6 @@ class _InventarioScreenState extends ConsumerState<InventarioScreen> {
       ),
     );
   }
-
-  Widget _statRow(BrandTokens t, List<Widget> stats) => LayoutBuilder(
-        builder: (context, c) {
-          // Cuatro en fila en ancho cómodo; se envuelven en dos si no caben.
-          final narrow = c.maxWidth < 720;
-          final w = narrow
-              ? (c.maxWidth - 16) / 2
-              : (c.maxWidth - 3 * 16) / 4;
-          return Wrap(
-            spacing: 16,
-            runSpacing: 16,
-            children: [for (final s in stats) SizedBox(width: w, child: s)],
-          );
-        },
-      );
 
   Widget _cardBox(BrandTokens t,
           {required Widget child, required EdgeInsets padding}) =>
