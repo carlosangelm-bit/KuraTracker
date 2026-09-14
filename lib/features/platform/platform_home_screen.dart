@@ -7,7 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/theme/kura_theme.dart';
 import '../../core/providers/session_provider.dart';
-import '../../core/router/app_shell.dart' show centerTypeColor;
+import '../../core/router/app_shell.dart' show centerTypeColor, KuraAccountMenu;
 import '../../core/widgets/kura_primary_fab.dart';
 import '../../core/nav/kura_nav_destinations.dart';
 import '../../core/nav/kura_nav_rail.dart';
@@ -314,6 +314,8 @@ class _PlatformSectionsShellState extends ConsumerState<PlatformSectionsShell> {
             centerName: 'Consola del master',
             onToggleCollapse: () =>
                 setState(() => _userCollapsed = !collapsed),
+            // El pie del riel es el menú de cuenta (cerrar sesión, etc.).
+            accountMenuBuilder: (ctx, child) => KuraAccountMenu(child: child),
           ),
           const VerticalDivider(width: 1),
           Expanded(child: content),

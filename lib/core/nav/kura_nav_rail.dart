@@ -20,6 +20,12 @@ class KuraNavRail extends StatefulWidget {
   final VoidCallback? onToggleCollapse;
   final VoidCallback? onSearch;
 
+  /// Envuelve el pie del riel (avatar + nombre + centro) con el MENÚ DE CUENTA:
+  /// la identidad es un control, no adorno. Lo provee el shell (tiene el ref);
+  /// el riel se mantiene puro. Si es null, el pie se pinta inerte (fixtures/prueba
+  /// del componente aislado). En colapsado envuelve el avatar del pie.
+  final Widget Function(BuildContext context, Widget child)? accountMenuBuilder;
+
   const KuraNavRail({
     super.key,
     required this.destinations,
@@ -30,6 +36,7 @@ class KuraNavRail extends StatefulWidget {
     this.centerName,
     this.onToggleCollapse,
     this.onSearch,
+    this.accountMenuBuilder,
   });
 
   @override
@@ -47,6 +54,13 @@ class _KuraNavRailState extends State<KuraNavRail> {
   String? get centerName => widget.centerName;
   VoidCallback? get onToggleCollapse => widget.onToggleCollapse;
   VoidCallback? get onSearch => widget.onSearch;
+  Widget Function(BuildContext, Widget)? get accountMenuBuilder =>
+      widget.accountMenuBuilder;
+
+  /// Envuelve [child] con el menú de cuenta si el shell lo proveyó; si no, lo
+  /// devuelve inerte.
+  Widget _account(BuildContext context, Widget child) =>
+      accountMenuBuilder?.call(context, child) ?? child;
 
   void _go(BuildContext context, String route) => context.go(route);
 
@@ -81,7 +95,7 @@ class _KuraNavRailState extends State<KuraNavRail> {
               children: [for (final d in v) _destOpen(context, t, d)],
             ),
           ),
-          _footer(t),
+          _footer(context, t),
         ],
       ),
     );
@@ -237,50 +251,55 @@ class _KuraNavRailState extends State<KuraNavRail> {
     return active ? KeyedSubtree(key: _activeKey(c.route), child: w) : w;
   }
 
-  Widget _footer(BrandTokens t) => Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          border: Border(top: BorderSide(color: t.border)),
+  // El pie es el MENÚ DE CUENTA: identidad + control. Toda la fila abre el menú
+  // (cerrar sesión, etc.). El ▾ lo señala como control. Envuelto por [_account].
+  Widget _footer(BuildContext context, BrandTokens t) {
+    final row = Row(
+      children: [
+        Container(
+          width: 28,
+          height: 28,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(color: t.chipBg, shape: BoxShape.circle),
+          child: Text(
+            (userName ?? '?').characters.first.toUpperCase(),
+            style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: t.brandPrimary),
+          ),
         ),
-        child: Row(
-          children: [
-            Container(
-              width: 28,
-              height: 28,
-              alignment: Alignment.center,
-              decoration:
-                  BoxDecoration(color: t.chipBg, shape: BoxShape.circle),
-              child: Text(
-                (userName ?? '?').characters.first.toUpperCase(),
-                style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                    color: t.brandPrimary),
-              ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(userName ?? '—',
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                          color: t.textPrimary)),
-                  if (centerName != null)
-                    Text(centerName!,
-                        overflow: TextOverflow.ellipsis,
-                        style:
-                            TextStyle(fontSize: 11, color: t.textSecondary)),
-                ],
-              ),
-            ),
-          ],
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(userName ?? '—',
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: t.textPrimary)),
+              if (centerName != null)
+                Text(centerName!,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 11, color: t.textSecondary)),
+            ],
+          ),
         ),
-      );
+        Icon(Icons.expand_less, size: 18, color: t.textSecondary),
+      ],
+    );
+    return Container(
+      key: const ValueKey('rail-account'),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        border: Border(top: BorderSide(color: t.border)),
+      ),
+      child: _account(context, row),
+    );
+  }
 
   // --------------------------------------------------------------- Colapsado
   Widget _collapsed(BuildContext context, BrandTokens t, List<NavDestination> v) {
@@ -311,8 +330,35 @@ class _KuraNavRailState extends State<KuraNavRail> {
             constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
             icon: Icon(Icons.chevron_right, size: 20, color: t.textSecondary),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
+          // Pie colapsado: el avatar cumple la misma función que el pie abierto —
+          // abre el menú de cuenta (cerrar sesión, etc.).
+          _footerCollapsed(context, t),
+          const SizedBox(height: 10),
         ],
+      ),
+    );
+  }
+
+  Widget _footerCollapsed(BuildContext context, BrandTokens t) {
+    final avatar = Container(
+      width: 34,
+      height: 34,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(color: t.chipBg, shape: BoxShape.circle),
+      child: Text(
+        (userName ?? '?').characters.first.toUpperCase(),
+        style: TextStyle(
+            fontSize: 13, fontWeight: FontWeight.w700, color: t.brandPrimary),
+      ),
+    );
+    return Tooltip(
+      message: userName ?? 'Cuenta',
+      child: SizedBox(
+        key: const ValueKey('rail-account'),
+        width: 44,
+        height: 44,
+        child: Center(child: _account(context, avatar)),
       ),
     );
   }
