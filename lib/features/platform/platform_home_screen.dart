@@ -6,10 +6,11 @@ import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/theme/kura_theme.dart';
-import '../../core/layout/responsive.dart';
 import '../../core/providers/session_provider.dart';
 import '../../core/router/app_shell.dart' show UserMenuButton, centerTypeColor;
 import '../../core/widgets/kura_primary_fab.dart';
+import '../../core/nav/kura_nav_destinations.dart';
+import '../../core/nav/kura_nav_rail.dart';
 import 'derechos/center_license_panel.dart';
 import '../../models/app_user.dart';
 import '../../models/center_type.dart';
@@ -40,38 +41,74 @@ import '../admin/admin_home_screen.dart'
 /// consume (listAllPatients/etc. no se llaman en ningun punto de este
 /// archivo).
 class PlatformHomeScreen extends ConsumerStatefulWidget {
-  const PlatformHomeScreen({super.key});
+  /// Sección activa, derivada de la URL (/platform/<section>), nunca de un entero.
+  final String section;
+  const PlatformHomeScreen({super.key, this.section = 'centros'});
 
   @override
   ConsumerState<PlatformHomeScreen> createState() => _PlatformHomeScreenState();
 }
 
-class _PlatformHomeScreenState extends ConsumerState<PlatformHomeScreen>
-    with SingleTickerProviderStateMixin {
-  int _tab = 0;
-  // Mismo patron de TabController explicito que AdminHomeScreen (ver
-  // comentario extenso alli sobre por que NO se usa
-  // DefaultTabController: TabBar en AppBar.bottom queda como hermano,
-  // no ancestro/descendiente, de un DefaultTabController que solo
-  // envuelve el body).
-  late final TabController _tabController = TabController(length: 9, vsync: this)
-    ..addListener(() {
-      if (_tabController.indexIsChanging) return;
-      if (_tabController.index != _tab) {
-        setState(() => _tab = _tabController.index);
-      }
-    });
-
+class _PlatformHomeScreenState extends ConsumerState<PlatformHomeScreen> {
   // Organizacion (centro) actualmente seleccionada en el selector. Vive
   // en el estado de esta pantalla (no en DataRepository ni en la
   // sesion): es una eleccion de navegacion efimera del master, no un
   // dato persistente ni parte de su perfil.
   String? _selectedOrgId;
 
-  @override
-  void dispose() {
-    _tabController.dispose();
-    super.dispose();
+  // Las nueve secciones de Plataforma, por su segmento de URL.
+  static const _knownSections = {
+    'centros', 'usuarios', 'personal', 'sitios', 'catalogo', 'marca',
+    'modulos', 'solicitudes', 'licencia',
+  };
+
+  /// El cuerpo de la sección activa. Centros y Solicitudes son GLOBALES (sin
+  /// selector de centro); el resto opera sobre el centro seleccionado.
+  Widget _sectionBody(
+      DataRepository repo, List<Organization> orgs, String section, dynamic user) {
+    switch (section) {
+      case 'centros':
+        return _OrganizationsTab(
+          repo: repo,
+          organizations: orgs,
+          selectedOrgId: _selectedOrgId,
+          onSelect: (id) => setState(() => _selectedOrgId = id),
+          onCreate: () => _openCreateOrganizationDialog(repo),
+          onChanged: () => setState(() {}),
+        );
+      case 'solicitudes':
+        return _LicenseRequestsTab(
+          repo: repo,
+          currentUserId: user?.id,
+          onChanged: () => setState(() {}),
+        );
+    }
+    // Secciones por centro: exigen un centro seleccionado.
+    if (orgs.isEmpty) return const _NoOrganizationsState();
+    final perCenter = switch (section) {
+      'usuarios' => UsersTab(
+          repo: repo, organizationId: _selectedOrgId, currentUserId: user?.id),
+      'personal' => StaffTab(repo: repo, organizationId: _selectedOrgId),
+      'sitios' => SitesTab(repo: repo, organizationId: _selectedOrgId),
+      'catalogo' => NoteCatalogTab(repo: repo, organizationId: _selectedOrgId),
+      'marca' => BrandingTab(repo: repo, organizationId: _selectedOrgId),
+      'modulos' => _ModulesTab(
+          repo: repo, organizationId: _selectedOrgId, updatedBy: user?.id),
+      'licencia' => CenterLicensePanel(
+          repo: repo, organizationId: _selectedOrgId, user: user),
+      _ => const SizedBox.shrink(),
+    };
+    return Column(
+      children: [
+        _OrganizationSelectorBar(
+          organizations: orgs,
+          selectedOrgId: _selectedOrgId,
+          onChanged: (id) => setState(() => _selectedOrgId = id),
+        ),
+        const Divider(height: 1),
+        Expanded(child: perCenter),
+      ],
+    );
   }
 
   Future<void> _openCreateOrganizationDialog(DataRepository repo) async {
@@ -268,9 +305,14 @@ class _PlatformHomeScreenState extends ConsumerState<PlatformHomeScreen>
   Widget build(BuildContext context) {
     final repoAsync = ref.watch(dataRepositoryProvider);
 
-    // Desktop: secciones como rail lateral (maestro) + contenido (detalle);
-    // móvil conserva el TabBar horizontal.
-    final wide = MediaQuery.of(context).size.width >= Breakpoints.twoPane;
+    final section =
+        _knownSections.contains(widget.section) ? widget.section : 'centros';
+    // Riel abierto ≥1200 px, colapsado por debajo (§2.1/§2.2 del canvas).
+    final open = MediaQuery.of(context).size.width >= 1200;
+    final navs = platformNavDestinations();
+    final plataforma = navs.first; // "Plataforma" con sus 9 secciones
+    final currentRoute = '/platform/$section';
+    final user = ref.watch(sessionProvider).user;
     return Scaffold(
       appBar: AppBar(
         title: const Text('Plataforma'),
@@ -303,23 +345,6 @@ class _PlatformHomeScreenState extends ConsumerState<PlatformHomeScreen>
           }),
           const UserMenuButton(),
         ],
-        bottom: wide
-            ? null
-            : TabBar(
-                controller: _tabController,
-                tabs: const [
-                  Tab(text: 'Organizaciones'),
-                  Tab(text: 'Usuarios'),
-                  Tab(text: 'Personal sanitario'),
-                  Tab(text: 'Sitios'),
-                  Tab(text: 'Catálogo'),
-                  Tab(text: 'Marca'),
-                  Tab(text: 'Módulos'),
-                  Tab(text: 'Solicitudes'),
-                  Tab(text: 'Licencia'),
-                ],
-                onTap: (i) => setState(() => _tab = i),
-              ),
       ),
       body: repoAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
@@ -339,84 +364,37 @@ class _PlatformHomeScreenState extends ConsumerState<PlatformHomeScreen>
             _selectedOrgId = organizations.first.id;
           }
 
-          // Acota el ancho en desktop para que la gestión no se estire.
-          final Widget body;
-          if (_tab == 0) {
-            body = _OrganizationsTab(
-              repo: repo,
-              organizations: organizations,
-              selectedOrgId: _selectedOrgId,
-              onSelect: (id) => setState(() => _selectedOrgId = id),
-              onCreate: () => _openCreateOrganizationDialog(repo),
-              onChanged: () => setState(() {}),
-            );
-          } else if (_tab == 7) {
-            // Solicitudes de licencia: GLOBAL (todas las orgs), sin selector.
-            body = _LicenseRequestsTab(
-              repo: repo,
-              currentUserId: ref.watch(sessionProvider).user?.id,
-              onChanged: () => setState(() {}),
-            );
-          } else if (organizations.isEmpty) {
-            body = const _NoOrganizationsState();
-          } else {
-            body = Column(
-              children: [
-                _OrganizationSelectorBar(
-                  organizations: organizations,
-                  selectedOrgId: _selectedOrgId,
-                  onChanged: (id) => setState(() => _selectedOrgId = id),
-                ),
-                const Divider(height: 1),
-                Expanded(
-                  child: switch (_tab) {
-                    1 => UsersTab(
-                        repo: repo,
-                        organizationId: _selectedOrgId,
-                        currentUserId: ref.watch(sessionProvider).user?.id,
+          // UN solo riel (KuraNavRail) + contenido; la sección sale de la URL, no de
+          // un entero. Colapsado (<1200) muestra iconos + el menú del encabezado.
+          final content = _sectionBody(repo, organizations, section, user);
+          final withHeader = open
+              ? content
+              : Column(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: KuraSectionMenu(
+                            section: plataforma, currentRoute: currentRoute),
                       ),
-                    2 => StaffTab(repo: repo, organizationId: _selectedOrgId),
-                    3 => SitesTab(repo: repo, organizationId: _selectedOrgId),
-                    4 => NoteCatalogTab(repo: repo, organizationId: _selectedOrgId),
-                    5 => BrandingTab(repo: repo, organizationId: _selectedOrgId),
-                    8 => CenterLicensePanel(
-                        repo: repo,
-                        organizationId: _selectedOrgId,
-                        user: ref.watch(sessionProvider).user,
-                      ),
-                    _ => _ModulesTab(
-                        repo: repo,
-                        organizationId: _selectedOrgId,
-                        updatedBy: ref.watch(sessionProvider).user?.id,
-                      ),
-                  },
-                ),
-              ],
-            );
-          }
-          if (!wide) return PageMaxWidth(maxWidth: 1100, child: body);
+                    ),
+                    const Divider(height: 1),
+                    Expanded(child: content),
+                  ],
+                );
           return Row(
             children: [
-              SectionRail(
-                selectedIndex: _tab,
-                onSelected: (i) => setState(() {
-                  _tab = i;
-                  _tabController.index = i;
-                }),
-                destinations: const [
-                  (Icons.business_outlined, 'Centros'),
-                  (Icons.people_outline, 'Usuarios'),
-                  (Icons.medical_services_outlined, 'Personal'),
-                  (Icons.location_on_outlined, 'Sitios'),
-                  (Icons.list_alt_outlined, 'Catálogo'),
-                  (Icons.palette_outlined, 'Marca'),
-                  (Icons.tune_outlined, 'Módulos'),
-                  (Icons.request_page_outlined, 'Solicitudes'),
-                  (Icons.workspace_premium_outlined, 'Licencia'),
-                ],
+              KuraNavRail(
+                destinations: navs,
+                currentRoute: currentRoute,
+                collapsed: !open,
+                brandName: 'Plataforma',
+                userName: user?.fullName,
+                centerName: 'Consola del master',
               ),
               const VerticalDivider(width: 1),
-              Expanded(child: body),
+              Expanded(child: withHeader),
             ],
           );
         },

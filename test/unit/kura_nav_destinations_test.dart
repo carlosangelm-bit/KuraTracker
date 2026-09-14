@@ -19,25 +19,28 @@ void main() {
   final n = moduleKeys.length;
 
   test('la declaración real cumple las guardias en TODAS las permutaciones', () {
-    // Producto: isAdmin ∈ {true,false} × todas las combinaciones de módulos (2^n).
+    // Producto: isAdmin × isMaster × todas las combinaciones de módulos (2^n).
     for (final isAdmin in [true, false]) {
-      for (var mask = 0; mask < (1 << n); mask++) {
-        final enabled = <String>{
-          for (var i = 0; i < n; i++)
-            if (mask & (1 << i) != 0) moduleKeys[i],
-        };
-        final decl = kuraNavDestinations(
-          moduleEnabled: (k) => enabled.contains(k),
-          isAdmin: isAdmin,
-        );
-        expect(
-          () {
-            assertSingleLevel(decl);
-            assertRoutesValid(decl);
-          },
-          returnsNormally,
-          reason: 'isAdmin=$isAdmin, módulos=$enabled',
-        );
+      for (final isMaster in [true, false]) {
+        for (var mask = 0; mask < (1 << n); mask++) {
+          final enabled = <String>{
+            for (var i = 0; i < n; i++)
+              if (mask & (1 << i) != 0) moduleKeys[i],
+          };
+          final decl = kuraNavDestinations(
+            moduleEnabled: (k) => enabled.contains(k),
+            isAdmin: isAdmin,
+            isMaster: isMaster,
+          );
+          expect(
+            () {
+              assertSingleLevel(decl);
+              assertRoutesValid(decl);
+            },
+            returnsNormally,
+            reason: 'isAdmin=$isAdmin, isMaster=$isMaster, módulos=$enabled',
+          );
+        }
       }
     }
   });
