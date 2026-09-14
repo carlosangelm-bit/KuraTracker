@@ -447,12 +447,38 @@ final routerProvider = Provider<GoRouter>((ref) {
           ),
           GoRoute(
             path: '/admin',
-            builder: (context, state) => const AdminHomeScreen(),
-            // Las 8 pantallas hijas de Administración, ahora con URL/shell/historial
-            // (antes Navigator.push las dejaba fuera). Al ser hijas de '/admin', el
-            // redirect de rol de arriba (location.startsWith('/admin')) rechaza a
-            // quien no es admin/master también aquí — sin candado, no basta el botón.
+            // Cada sección con su URL propia (§5 etapa 3): /admin canoniza a Usuarios;
+            // la sección activa se deriva de la URL, no de _tab. El redirect de rol
+            // (location.startsWith('/admin')) sigue rechazando a no-admin/master.
+            redirect: (context, state) =>
+                state.matchedLocation == '/admin' ? '/admin/usuarios' : null,
             routes: [
+              // Las seis secciones → AdminHomeScreen con su sección.
+              GoRoute(
+                  path: 'usuarios',
+                  builder: (context, state) =>
+                      const AdminHomeScreen(section: 'usuarios')),
+              GoRoute(
+                  path: 'personal',
+                  builder: (context, state) =>
+                      const AdminHomeScreen(section: 'personal')),
+              GoRoute(
+                  path: 'sitios',
+                  builder: (context, state) =>
+                      const AdminHomeScreen(section: 'sitios')),
+              GoRoute(
+                  path: 'configuracion',
+                  builder: (context, state) =>
+                      const AdminHomeScreen(section: 'configuracion')),
+              GoRoute(
+                  path: 'marca',
+                  builder: (context, state) =>
+                      const AdminHomeScreen(section: 'marca')),
+              GoRoute(
+                  path: 'licencias',
+                  builder: (context, state) =>
+                      const AdminHomeScreen(section: 'licencias')),
+              // Las 8 pantallas hijas profundas de Administración (URL/shell/historial).
               GoRoute(
                   path: 'protocolo-kura',
                   builder: _adminChild((repo, org) =>
