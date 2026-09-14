@@ -593,6 +593,74 @@ class KuraAccountMenu extends ConsumerWidget {
   }
 }
 
+/// Encabezado de una PANTALLA CLÍNICA de primer nivel, DENTRO del contenido (sin AppBar):
+/// hermano del de /admin y /platform (KuraContentHeader). Contexto = el centro activo
+/// (11px), título = el nombre de la pantalla (28px w800, una sola vez), acciones a la
+/// derecha. La cuenta NO va aquí en escritorio —vive en el pie del riel, como en /admin—;
+/// en MÓVIL (sin riel) se añade UserMenuButton para no perder el acceso a cerrar sesión.
+class KuraPageHeader extends ConsumerWidget {
+  final String title;
+  final List<Widget> actions;
+  const KuraPageHeader({super.key, required this.title, this.actions = const []});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final session = ref.watch(sessionProvider);
+    final orgId = session.user?.organizationId;
+    final repo = ref.watch(dataRepositoryProvider).valueOrNull;
+    final centerName =
+        (orgId != null ? repo?.organizationById(orgId)?.name : null) ??
+            session.activeCenterType.label;
+    final wide = MediaQuery.of(context).size.width >= 900;
+    return KuraContentHeader.flat(
+      title: title,
+      context: centerName,
+      actions: [
+        ...actions,
+        // Móvil: no hay riel, así que la cuenta (cerrar sesión, cambiar de centro) va
+        // en el encabezado. En escritorio la cuenta vive en el pie del riel.
+        if (!wide) const UserMenuButton(),
+      ],
+    );
+  }
+}
+
+/// Andamiaje de una PANTALLA CLÍNICA de primer nivel SIN AppBar: el encabezado
+/// (KuraPageHeader) vive DENTRO del contenido, como en /admin y /platform. Reemplaza el
+/// `Scaffold(appBar: AppBar(title:…, actions:[UserMenuButton()]))` de la pantalla; el
+/// cuerpo, el FAB y su ubicación se conservan. El nombre de la pantalla sale una sola vez.
+class KuraScreen extends StatelessWidget {
+  final String title;
+  final List<Widget> actions;
+  final Widget body;
+  final Widget? floatingActionButton;
+  final FloatingActionButtonLocation? floatingActionButtonLocation;
+  final Widget? belowHeader; // p. ej. un TabBar, que va bajo el encabezado
+  const KuraScreen({
+    super.key,
+    required this.title,
+    required this.body,
+    this.actions = const [],
+    this.floatingActionButton,
+    this.floatingActionButtonLocation,
+    this.belowHeader,
+  });
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+        floatingActionButton: floatingActionButton,
+        floatingActionButtonLocation: floatingActionButtonLocation,
+        body: Column(
+          children: [
+            KuraPageHeader(title: title, actions: actions),
+            const Divider(height: 1),
+            if (belowHeader != null) belowHeader!,
+            Expanded(child: body),
+          ],
+        ),
+      );
+}
+
 class UserMenuButton extends ConsumerWidget {
   const UserMenuButton({super.key});
 

@@ -11,7 +11,7 @@ import 'package:intl/intl.dart';
 import '../../core/design/tokens.dart';
 import '../../core/theme/kura_theme.dart';
 import '../../core/providers/session_provider.dart';
-import '../../core/router/app_shell.dart' show UserMenuButton;
+import '../../core/router/app_shell.dart' show KuraScreen;
 import '../../core/widgets/kura_primary_fab.dart';
 import '../../models/appointment.dart';
 import '../../models/manual_appointment.dart';
@@ -188,11 +188,8 @@ class _AgendaScreenState extends ConsumerState<AgendaScreen> {
             .toList()
         : const <TreatmentProgramSession>[];
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(isAdmin ? 'Agenda del centro' : 'Mi agenda'),
-        actions: const [UserMenuButton()],
-      ),
+    return KuraScreen(
+      title: isAdmin ? 'Agenda del centro' : 'Mi agenda',
       body: !service.isAvailable
           ? const _AgendaUnavailable()
           : StreamBuilder<List<Appointment>>(
@@ -1967,7 +1964,10 @@ class _ManualAgendaState extends ConsumerState<_ManualAgenda> {
   Widget build(BuildContext context) {
     final repo = ref.watch(dataRepositoryProvider).valueOrNull;
     if (repo == null) {
-      return Scaffold(appBar: _bar(), body: const Center(child: CircularProgressIndicator()));
+      return KuraScreen(
+        title: widget.isAdmin ? 'Agenda del centro' : 'Mi agenda',
+        body: const Center(child: CircularProgressIndicator()),
+      );
     }
 
     final all = repo
@@ -2027,8 +2027,8 @@ class _ManualAgendaState extends ConsumerState<_ManualAgenda> {
             .where((s) => !_dayStart(s.scheduledAt).isBefore(today))
             .toList();
 
-    return Scaffold(
-      appBar: _bar(),
+    return KuraScreen(
+      title: widget.isAdmin ? 'Agenda del centro' : 'Mi agenda',
       floatingActionButton: widget.organizationId == null
           ? null
           : KuraPrimaryFab(
@@ -2437,11 +2437,6 @@ class _ManualAgendaState extends ConsumerState<_ManualAgenda> {
       ),
     );
   }
-
-  AppBar _bar() => AppBar(
-        title: Text(widget.isAdmin ? 'Agenda del centro' : 'Mi agenda'),
-        actions: const [UserMenuButton()],
-      );
 
   Widget _kuradorDropdown(List<MapEntry<String, String>> opts) => Container(
         padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -3142,11 +3137,8 @@ class _AgendaModeSetup extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final service = ref.watch(acuityServiceProvider);
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Agenda'),
-        actions: const [UserMenuButton()],
-      ),
+    return KuraScreen(
+      title: 'Agenda',
       body: Center(
         child: Padding(
           padding: const EdgeInsets.all(32),

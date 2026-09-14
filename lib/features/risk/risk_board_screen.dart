@@ -4,7 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/theme/kura_theme.dart';
 import '../../core/providers/session_provider.dart';
-import '../../core/router/app_shell.dart' show UserMenuButton;
+import '../../core/router/app_shell.dart' show KuraScreen;
 import '../../engine/risk/braden_scale.dart';
 import '../../engine/risk/prevention_risk_engine.dart';
 import '../../models/app_user.dart';
@@ -119,24 +119,21 @@ class _RiskBoardScreenState extends ConsumerState<RiskBoardScreen> {
     final isHospital = repoAsync.valueOrNull?.centerTypeFor(user?.organizationId) ==
         CenterType.hospital;
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Prevención'),
-        actions: [
-          if (isHospital)
-            IconButton(
-              tooltip: 'Dashboard del centro',
-              icon: const Icon(Icons.insights_outlined),
-              onPressed: () => context.go('/hospital'),
-            ),
+    return KuraScreen(
+      title: 'Prevención',
+      actions: [
+        if (isHospital)
           IconButton(
-            tooltip: 'Agenda de tareas preventivas',
-            icon: const Icon(Icons.checklist_outlined),
-            onPressed: () => context.go('/prevention-agenda'),
+            tooltip: 'Dashboard del centro',
+            icon: const Icon(Icons.insights_outlined),
+            onPressed: () => context.go('/hospital'),
           ),
-          const UserMenuButton(),
-        ],
-      ),
+        IconButton(
+          tooltip: 'Agenda de tareas preventivas',
+          icon: const Icon(Icons.checklist_outlined),
+          onPressed: () => context.go('/prevention-agenda'),
+        ),
+      ],
       body: repoAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, st) => Center(child: Text('Error: $e')),

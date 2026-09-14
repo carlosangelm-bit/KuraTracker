@@ -416,32 +416,80 @@ class _KuraNavRailState extends State<KuraNavRail> {
 /// ESTE encabezado y no de una franja aparte. La identidad NO va aquí: el pie del riel
 /// ya dice quién eres y en qué centro (no se duplica un avatar en la esquina).
 class KuraContentHeader extends StatelessWidget {
-  final NavDestination section; // padre: Administración / Plataforma
-  final String currentRoute;
+  // Modo SECCIÓN (/admin, /platform): la sección padre + la subsección activa.
+  final NavDestination? section; // padre: Administración / Plataforma
+  final String? currentRoute;
   final bool collapsed; // angosto → menú de sección en vez de la miga estática
   final List<Widget> actions;
+  // Modo PLANO (pantallas clínicas de primer nivel): título directo + contexto (el
+  // centro), sin sección ni menú. Mismo layout y misma llave 'content-header-title'.
+  final String? flatTitle;
+  final String? flatContext;
+
   const KuraContentHeader({
     super.key,
-    required this.section,
-    required this.currentRoute,
+    required NavDestination this.section,
+    required String this.currentRoute,
     required this.collapsed,
     this.actions = const [],
-  });
+  })  : flatTitle = null,
+        flatContext = null;
+
+  /// Encabezado de una pantalla PLANA (sin sección): el nombre de la pantalla en 28px
+  /// w800, con un contexto opcional en 11px encima (típicamente el centro activo). Es el
+  /// mismo encabezado de /admin y /platform, para las clínicas que no anidan secciones.
+  const KuraContentHeader.flat({
+    super.key,
+    required String title,
+    String? context,
+    this.actions = const [],
+  })  : flatTitle = title,
+        flatContext = context,
+        section = null,
+        currentRoute = null,
+        collapsed = false;
 
   @override
   Widget build(BuildContext context) {
     final t = BrandTokens.of(context);
-    final children = section.children.where((c) => c.isVisible).toList();
+
+    // Modo plano: contexto (11px) + título (28px), sin sección ni menú de sección.
+    if (section == null) {
+      final left = Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (flatContext != null && flatContext!.isNotEmpty) ...[
+            Text(flatContext!,
+                style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: t.textSecondary)),
+            const SizedBox(height: 2),
+          ],
+          Text(flatTitle ?? '',
+              key: const ValueKey('content-header-title'),
+              style: TextStyle(
+                  fontSize: 28,
+                  fontWeight: FontWeight.w800,
+                  height: 1.1,
+                  color: t.textPrimary)),
+        ],
+      );
+      return _frame(t, left);
+    }
+
+    final children = section!.children.where((c) => c.isVisible).toList();
     final active = children.where((c) => c.route == currentRoute);
-    final title = active.isEmpty ? section.label : active.first.label;
+    final title = active.isEmpty ? section!.label : active.first.label;
 
     final Widget left = collapsed
-        ? KuraSectionMenu(section: section, currentRoute: currentRoute)
+        ? KuraSectionMenu(section: section!, currentRoute: currentRoute!)
         : Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(section.label,
+              Text(section!.label,
                   style: TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.w600,
@@ -459,20 +507,22 @@ class KuraContentHeader extends StatelessWidget {
             ],
           );
 
-    return Container(
-      color: t.surface,
-      padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 18),
-      child: Row(
-        children: [
-          Expanded(
-            child: Align(alignment: Alignment.centerLeft, child: left),
-          ),
-          if (actions.isNotEmpty)
-            Row(mainAxisSize: MainAxisSize.min, children: actions),
-        ],
-      ),
-    );
+    return _frame(t, left);
   }
+
+  Widget _frame(BrandTokens t, Widget left) => Container(
+        color: t.surface,
+        padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 18),
+        child: Row(
+          children: [
+            Expanded(
+              child: Align(alignment: Alignment.centerLeft, child: left),
+            ),
+            if (actions.isNotEmpty)
+              Row(mainAxisSize: MainAxisSize.min, children: actions),
+          ],
+        ),
+      );
 }
 
 /// Menú del ENCABEZADO del contenido en estado colapsado (§2.2): dice la sección

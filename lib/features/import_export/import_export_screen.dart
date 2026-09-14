@@ -5,7 +5,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/providers/session_provider.dart';
 import '../../core/theme/kura_theme.dart';
-import '../../core/router/app_shell.dart' show UserMenuButton;
+import '../../core/router/app_shell.dart' show KuraScreen;
 import '../../services/data_repository.dart';
 import '../../services/csv_download.dart';
 import '../../models/consultation.dart' show VisitTypeLabel;
@@ -137,11 +137,8 @@ class _ImportExportScreenState extends ConsumerState<ImportExportScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Importación y exportación de expedientes'),
-        actions: const [UserMenuButton()],
-      ),
+    return KuraScreen(
+      title: 'Importación y exportación de expedientes',
       body: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 720),
