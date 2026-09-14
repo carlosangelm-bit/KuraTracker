@@ -4,7 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/design/tokens.dart';
 import '../../core/providers/session_provider.dart';
-import '../../core/router/app_shell.dart' show UserMenuButton;
+import '../../core/router/app_shell.dart' show KuraScreen;
 import '../../models/preventive_task.dart';
 import '../../services/data_repository.dart';
 
@@ -26,11 +26,8 @@ class _PreventionAgendaScreenState
     final repoAsync = ref.watch(dataRepositoryProvider);
     final user = ref.watch(sessionProvider).user;
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Agenda de prevención'),
-        actions: const [UserMenuButton()],
-      ),
+    return KuraScreen(
+      title: 'Agenda de prevención',
       body: repoAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, st) => Center(child: Text('Error: $e')),

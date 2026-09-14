@@ -4,7 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/design/tokens.dart';
 import '../../core/providers/session_provider.dart';
-import '../../core/router/app_shell.dart' show UserMenuButton;
+import '../../core/router/app_shell.dart' show KuraScreen;
 import '../../services/data_repository.dart';
 import '../prevention_agenda/prevention_agenda_screen.dart' show PreventiveTasksView;
 import 'caregiver_patient_screen.dart' show CaregiverPatientMonitor;
@@ -41,15 +41,12 @@ class _CaregiverHomeScreenState extends ConsumerState<CaregiverHomeScreen> {
           final pid = patientIds.first;
           return DefaultTabController(
             length: 2,
-            child: Scaffold(
-              appBar: AppBar(
-                title: const Text('Monitoreo'),
-                actions: const [UserMenuButton()],
-                bottom: const TabBar(tabs: [
-                  Tab(text: 'Tareas'),
-                  Tab(text: 'Paciente'),
-                ]),
-              ),
+            child: KuraScreen(
+              title: 'Monitoreo',
+              belowHeader: const TabBar(tabs: [
+                Tab(text: 'Tareas'),
+                Tab(text: 'Paciente'),
+              ]),
               body: TabBarView(
                 children: [
                   PreventiveTasksView(
@@ -70,15 +67,12 @@ class _CaregiverHomeScreenState extends ConsumerState<CaregiverHomeScreen> {
         // Varios (o ninguno) pacientes → tareas + lista de pacientes.
         return DefaultTabController(
           length: 2,
-          child: Scaffold(
-            appBar: AppBar(
-              title: const Text('Monitoreo del cuidador'),
-              actions: const [UserMenuButton()],
-              bottom: const TabBar(tabs: [
-                Tab(text: 'Mis tareas'),
-                Tab(text: 'Pacientes'),
-              ]),
-            ),
+          child: KuraScreen(
+            title: 'Monitoreo del cuidador',
+            belowHeader: const TabBar(tabs: [
+              Tab(text: 'Mis tareas'),
+              Tab(text: 'Pacientes'),
+            ]),
             body: TabBarView(
               children: [
                 PreventiveTasksView(

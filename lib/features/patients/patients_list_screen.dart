@@ -7,7 +7,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/providers/session_provider.dart';
 import '../../core/theme/kura_theme.dart';
 import '../../models/center_type.dart';
-import '../../core/router/app_shell.dart' show kFloatingNavBarHeight, UserMenuButton;
+import '../../core/router/app_shell.dart' show kFloatingNavBarHeight, KuraScreen;
 import '../../core/widgets/kura_primary_fab.dart';
 import '../../engine/models/kura_engine_enums.dart';
 import '../../engine/sheehan_decision_style.dart';
@@ -163,35 +163,31 @@ class PatientsListScreenState extends ConsumerState<PatientsListScreen> {
     final repoAsync = ref.watch(dataRepositoryProvider);
     final user = session.user;
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Pacientes'),
-        actions: [
-          // Depurar expedientes (0086): solo admin/master. Archiva pacientes
-          // que ya no se atienden (p. ej. import histórico de Acuity).
-          if ((user?.role == AppRole.admin || user?.role == AppRole.master) &&
-              repoAsync.valueOrNull != null)
-            IconButton(
-              tooltip: 'Depurar expedientes',
-              icon: const Icon(Icons.cleaning_services_outlined),
-              onPressed: () => Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => PatientCleanupScreen(
-                    repo: repoAsync.value!,
-                    organizationId: user?.organizationId,
-                  ),
+    return KuraScreen(
+      title: 'Pacientes',
+      actions: [
+        // Depurar expedientes (0086): solo admin/master. Archiva pacientes
+        // que ya no se atienden (p. ej. import histórico de Acuity).
+        if ((user?.role == AppRole.admin || user?.role == AppRole.master) &&
+            repoAsync.valueOrNull != null)
+          IconButton(
+            tooltip: 'Depurar expedientes',
+            icon: const Icon(Icons.cleaning_services_outlined),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => PatientCleanupScreen(
+                  repo: repoAsync.value!,
+                  organizationId: user?.organizationId,
                 ),
               ),
             ),
-          if (_prefsLoaded)
-            _ViewModeToggle(
-              value: _prefs.viewMode,
-              onChanged: (mode) => _updatePrefs((p) => p.copyWith(viewMode: mode)),
-            ),
-          const SizedBox(width: 4),
-          const UserMenuButton(),
-        ],
-      ),
+          ),
+        if (_prefsLoaded)
+          _ViewModeToggle(
+            value: _prefs.viewMode,
+            onChanged: (mode) => _updatePrefs((p) => p.copyWith(viewMode: mode)),
+          ),
+      ],
       body: !_prefsLoaded
           ? const Center(child: CircularProgressIndicator())
           : repoAsync.when(
