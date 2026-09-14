@@ -287,3 +287,16 @@ anterior esté verificada contra la app servida.
 No se diseñó el alta de cliente de punta a punta (crear centro + admin + módulos +
 asientos en un paso). Queda para después; la bitácora de §2.4 es lo que hace que
 agregarla luego no pierda historia.
+
+---
+
+## 9. Pendientes
+
+- **La tabla de Módulos del panel de Licencia (§5.2) no cabe por debajo de ~1200 px.**
+  Con sus ocho columnas, por debajo de ese ancho se parten los encabezados
+  ("ORIGE/N", "INTERR/UPTOR", "A man/o", "Permane/nte") y se corta el importe
+  ("$1,200.0"). Salió a la luz cuando el riel único (navegación etapa 2) le devolvió
+  espacio al contenido, pero es de ESTA consola, no de navegación. Necesita prioridad
+  de columnas (esconder/colapsar las menos críticas en angosto) o un desplazamiento
+  horizontal propio del `KuraDataTable`. Se resuelve cuando se retome esta pantalla, no
+  en navegación.

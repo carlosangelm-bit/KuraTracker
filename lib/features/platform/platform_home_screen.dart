@@ -389,7 +389,10 @@ class _PlatformHomeScreenState extends ConsumerState<PlatformHomeScreen> {
                 destinations: navs,
                 currentRoute: currentRoute,
                 collapsed: !open,
-                brandName: 'Plataforma',
+                // El encabezado del riel lleva el NOMBRE DEL PRODUCTO, no el de la
+                // sección: si no, "Plataforma" saldría tres veces (barra superior,
+                // encabezado del riel y destino).
+                brandName: 'KuraTracker',
                 userName: user?.fullName,
                 centerName: 'Consola del master',
               ),
