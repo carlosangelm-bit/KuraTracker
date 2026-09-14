@@ -77,6 +77,12 @@ class BrandTokens extends ThemeExtension<BrandTokens> {
   final Color statusWarning;
   final Color statusSuccess;
   final Color statusNeutral;
+  // Texto sobre tinte de estado: statusWarning/statusSuccess no tienen contraste
+  // suficiente como TEXTO sobre blanco (son rellenos). Estos son los tonos oscuros
+  // legibles del semáforo. Clínicos → iguales en las tres marcas. NUNCA a mano en
+  // un widget (mismo error que chipBg): salen de aquí.
+  final Color statusWarningText;
+  final Color statusSuccessText;
 
   const BrandTokens({
     required this.brandPrimary,
@@ -99,6 +105,8 @@ class BrandTokens extends ThemeExtension<BrandTokens> {
     required this.statusWarning,
     required this.statusSuccess,
     required this.statusNeutral,
+    required this.statusWarningText,
+    required this.statusSuccessText,
   });
 
   /// Única marca implementada por ahora: Kura.
@@ -126,6 +134,8 @@ class BrandTokens extends ThemeExtension<BrandTokens> {
     statusWarning: KuraPalette.statusWarning,
     statusSuccess: KuraPalette.statusSuccess,
     statusNeutral: Color(0xFF9E968E),
+    statusWarningText: Color(0xFF8A6111),
+    statusSuccessText: Color(0xFF116B44),
   );
 
   /// Marca HOSPITAL (azul). Misma estructura que [kura]; solo cambian los
@@ -153,6 +163,8 @@ class BrandTokens extends ThemeExtension<BrandTokens> {
     statusWarning: KuraPalette.statusWarning,
     statusSuccess: KuraPalette.statusSuccess,
     statusNeutral: Color(0xFF9AA1B0),
+    statusWarningText: Color(0xFF8A6111),
+    statusSuccessText: Color(0xFF116B44),
   );
 
   /// Marca CUIDADORES (rosa). BORRADOR de color (0xFFDB2777, pink-600),
@@ -178,6 +190,8 @@ class BrandTokens extends ThemeExtension<BrandTokens> {
     statusWarning: KuraPalette.statusWarning,
     statusSuccess: KuraPalette.statusSuccess,
     statusNeutral: Color(0xFFAE9AA4),
+    statusWarningText: Color(0xFF8A6111),
+    statusSuccessText: Color(0xFF116B44),
   );
 
   /// Tokens de la marca que corresponde al tipo de centro activo.
@@ -219,6 +233,8 @@ class BrandTokens extends ThemeExtension<BrandTokens> {
     Color? statusWarning,
     Color? statusSuccess,
     Color? statusNeutral,
+    Color? statusWarningText,
+    Color? statusSuccessText,
   }) {
     return BrandTokens(
       brandPrimary: brandPrimary ?? this.brandPrimary,
@@ -241,6 +257,8 @@ class BrandTokens extends ThemeExtension<BrandTokens> {
       statusWarning: statusWarning ?? this.statusWarning,
       statusSuccess: statusSuccess ?? this.statusSuccess,
       statusNeutral: statusNeutral ?? this.statusNeutral,
+      statusWarningText: statusWarningText ?? this.statusWarningText,
+      statusSuccessText: statusSuccessText ?? this.statusSuccessText,
     );
   }
 
@@ -268,6 +286,10 @@ class BrandTokens extends ThemeExtension<BrandTokens> {
       statusWarning: Color.lerp(statusWarning, other.statusWarning, t)!,
       statusSuccess: Color.lerp(statusSuccess, other.statusSuccess, t)!,
       statusNeutral: Color.lerp(statusNeutral, other.statusNeutral, t)!,
+      statusWarningText:
+          Color.lerp(statusWarningText, other.statusWarningText, t)!,
+      statusSuccessText:
+          Color.lerp(statusSuccessText, other.statusSuccessText, t)!,
     );
   }
 }

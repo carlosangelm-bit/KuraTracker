@@ -15,6 +15,7 @@ import '../models/center_type.dart';
 import '../models/clinical_amendment.dart';
 import '../models/module_key.dart';
 import '../models/module_setting.dart';
+import '../models/org_entitlement.dart';
 import '../models/preventive_task.dart';
 import '../models/consent.dart';
 import '../models/consultation.dart';
@@ -992,6 +993,158 @@ class DataRepository {
       }
     }
     return null;
+  }
+
+  // ---------------- Consola master · Derechos (0132) ----------------
+  // La UI de /platform opera DERECHOS vía estas RPC (nunca un insert/update directo
+  // a org_entitlements). Cada una traduce el código de error del servidor al
+  // español para la UI.
+
+  /// Traduce el código de error de las RPC master_* a un mensaje en español y lo
+  /// relanza. SIEMPRE lanza (nunca retorna).
+  Never _throwGrantError(Object e) {
+    final msg = e is PostgrestException ? e.message : '$e';
+    if (msg.contains('GRANT_STRIPE_OWNED')) {
+      throw Exception(
+          'Ese derecho lo gobierna Stripe: cámbialo en la suscripción, no aquí.');
+    }
+    if (msg.contains('GRANT_BELOW_DEMAND')) {
+      final n = RegExp(r'(\d+)').firstMatch(msg)?.group(1);
+      throw Exception(n == null
+          ? 'El centro ya usa más asientos; no puedes bajar el tope por debajo.'
+          : 'El centro ya usa $n asientos; no puedes bajar el tope por debajo.');
+    }
+    if (msg.contains('MASTER_ONLY')) {
+      throw Exception('Solo el master puede otorgar derechos.');
+    }
+    if (msg.contains('GRANT_NO_EXPIRY')) {
+      throw Exception(
+          'Falta la fecha de vigencia (o marca "Permanente" a propósito).');
+    }
+    if (msg.contains('GRANT_AMBIGUOUS_EXPIRY')) {
+      throw Exception(
+          'No puede ser permanente y tener fecha a la vez: elige una.');
+    }
+    if (msg.contains('ent_master_grant_shape')) {
+      throw Exception('El motivo debe tener al menos 10 caracteres.');
+    }
+    // Otros (p. ej. el trigger de "último capaz de definir planes" de 0111/0112):
+    // el mensaje se propaga tal cual, sin la envoltura "Exception:".
+    throw Exception(msg.replaceFirst('Exception: ', ''));
+  }
+
+  /// Otorga o enmienda un derecho a mano (RPC `master_grant_entitlement`).
+  Future<void> masterGrantEntitlement({
+    required String organizationId,
+    required String kind,
+    required String key,
+    int? quantity,
+    required String grantType,
+    required String reason,
+    DateTime? until,
+    required bool permanent,
+  }) async {
+    final store = _store;
+    if (store is! SupabaseDataStore) {
+      throw Exception('Otorgar derechos solo está disponible en modo Supabase.');
+    }
+    try {
+      await store.callRpc('master_grant_entitlement', {
+        'p_org': organizationId,
+        'p_kind': kind,
+        'p_key': key,
+        'p_quantity': quantity,
+        'p_grant_type': grantType,
+        'p_reason': reason,
+        'p_until': until?.toUtc().toIso8601String(),
+        'p_permanent': permanent,
+      });
+    } catch (e) {
+      _throwGrantError(e);
+    }
+    await store.refreshCollection(Collections.orgEntitlements);
+  }
+
+  /// Revoca un derecho otorgado a mano (RPC `master_revoke_entitlement`). No borra:
+  /// pone status='canceled' y deja rastro en la bitácora.
+  Future<void> masterRevokeEntitlement({
+    required String organizationId,
+    required String kind,
+    required String key,
+    required String reason,
+  }) async {
+    final store = _store;
+    if (store is! SupabaseDataStore) {
+      throw Exception('Revocar derechos solo está disponible en modo Supabase.');
+    }
+    try {
+      await store.callRpc('master_revoke_entitlement', {
+        'p_org': organizationId,
+        'p_kind': kind,
+        'p_key': key,
+        'p_reason': reason,
+      });
+    } catch (e) {
+      _throwGrantError(e);
+    }
+    await store.refreshCollection(Collections.orgEntitlements);
+  }
+
+  /// Activa/desactiva una cuenta (RPC `master_set_profile_active`). Los triggers de
+  /// 0111/0112 (último capaz de definir planes) siguen mandando: su mensaje se
+  /// propaga tal cual.
+  Future<void> masterSetProfileActive(String profileId, bool active) async {
+    final store = _store;
+    if (store is! SupabaseDataStore) {
+      throw Exception('Solo disponible en modo Supabase.');
+    }
+    try {
+      await store.callRpc('master_set_profile_active', {
+        'p_profile': profileId,
+        'p_active': active,
+      });
+    } catch (e) {
+      _throwGrantError(e);
+    }
+    await store.refreshCollection(Collections.profiles);
+  }
+
+  /// Derechos del centro con sus campos de otorgamiento, para el panel.
+  List<OrgEntitlement> entitlementsFor(String organizationId) => _store
+      .getAll(Collections.orgEntitlements)
+      .where((e) => e['organization_id'] == organizationId)
+      .map(OrgEntitlement.fromJson)
+      .toList();
+
+  /// Todos los derechos con source='master', de todos los centros, ordenados por
+  /// vencimiento: los VENCIDOS primero, luego por vencimiento ascendente, los
+  /// PERMANENTES al final.
+  List<ManualGrant> manualGrants() {
+    final grants = _store
+        .getAll(Collections.orgEntitlements)
+        .map(OrgEntitlement.fromJson)
+        .where((e) => e.source == 'master')
+        .map((e) => ManualGrant(
+              entitlement: e,
+              organizationName: organizationById(e.organizationId)?.name ?? '—',
+            ))
+        .toList();
+    grants.sort((a, b) {
+      // Permanentes al final.
+      if (a.isPermanent != b.isPermanent) return a.isPermanent ? 1 : -1;
+      if (a.isPermanent && b.isPermanent) {
+        return a.organizationName
+            .toLowerCase()
+            .compareTo(b.organizationName.toLowerCase());
+      }
+      // Por vencimiento ascendente → los vencidos (fecha pasada) quedan arriba.
+      final ae = a.currentPeriodEnd, be = b.currentPeriodEnd;
+      if (ae == null && be == null) return 0;
+      if (ae == null) return 1;
+      if (be == null) return -1;
+      return ae.compareTo(be);
+    });
+    return grants;
   }
 
   /// Precio unitario en CENTAVOS (IVA incl.) de un concepto en un intervalo, leído
