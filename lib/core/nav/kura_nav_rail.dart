@@ -10,7 +10,7 @@ import 'nav_destination.dart';
 /// `context.go`; la pantalla activa se deriva de [currentRoute], nunca de un entero.
 /// Todo color desde [BrandTokens] (se usa igual en morado, azul y rosa); el alias
 /// legado de color (siempre morado) queda prohibido en el chrome.
-class KuraNavRail extends StatelessWidget {
+class KuraNavRail extends StatefulWidget {
   final List<NavDestination> destinations;
   final String currentRoute;
   final bool collapsed;
@@ -31,6 +31,22 @@ class KuraNavRail extends StatelessWidget {
     this.onToggleCollapse,
     this.onSearch,
   });
+
+  @override
+  State<KuraNavRail> createState() => _KuraNavRailState();
+}
+
+// Stateful a propósito: cuando el riel vive en un ShellRoute que envuelve las
+// secciones, su State PERSISTE entre navegaciones de sección (no se reconstruye).
+class _KuraNavRailState extends State<KuraNavRail> {
+  List<NavDestination> get destinations => widget.destinations;
+  String get currentRoute => widget.currentRoute;
+  bool get collapsed => widget.collapsed;
+  String get brandName => widget.brandName;
+  String? get userName => widget.userName;
+  String? get centerName => widget.centerName;
+  VoidCallback? get onToggleCollapse => widget.onToggleCollapse;
+  VoidCallback? get onSearch => widget.onSearch;
 
   void _go(BuildContext context, String route) => context.go(route);
 

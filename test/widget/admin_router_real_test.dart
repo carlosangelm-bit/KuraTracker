@@ -11,9 +11,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:go_router/go_router.dart';
+
 import 'package:kuratracker/core/design/tokens.dart';
+import 'package:kuratracker/core/nav/kura_nav_rail.dart';
 import 'package:kuratracker/core/providers/session_provider.dart';
 import 'package:kuratracker/core/router/app_router.dart';
+import 'package:kuratracker/features/admin/admin_home_screen.dart';
 import 'package:kuratracker/models/app_user.dart';
 import 'package:kuratracker/models/module_key.dart';
 import 'package:kuratracker/services/data_repository.dart';
@@ -22,6 +26,31 @@ class _FakeSessionController extends SessionController {
   _FakeSessionController(AppUser user) {
     state = SessionState(user: user);
   }
+}
+
+/// Monta la app sobre el ROUTER REAL con una sesión de admin. Devuelve el router.
+Future<GoRouter> _mountReal(WidgetTester t) async {
+  final repo = await DataRepository.instance();
+  final container = ProviderContainer(overrides: [
+    sessionProvider.overrideWith((ref) => _FakeSessionController(_admin)),
+    dataRepositoryProvider.overrideWith((ref) => repo),
+    enabledModulesProvider.overrideWithValue(const {
+      ModuleKey.patients,
+      ModuleKey.agenda,
+      ModuleKey.reports,
+    }),
+  ]);
+  addTearDown(container.dispose);
+  final router = container.read(routerProvider);
+  await t.pumpWidget(UncontrolledProviderScope(
+    container: container,
+    child: MaterialApp.router(
+      theme: ThemeData(extensions: <ThemeExtension<dynamic>>[BrandTokens.kura]),
+      routerConfig: router,
+    ),
+  ));
+  await t.pumpAndSettle();
+  return router;
 }
 
 const _admin = AppUser(
@@ -46,27 +75,7 @@ void main() {
     addTearDown(t.view.resetPhysicalSize);
     addTearDown(t.view.resetDevicePixelRatio);
 
-    final repo = await DataRepository.instance();
-    final container = ProviderContainer(overrides: [
-      sessionProvider.overrideWith((ref) => _FakeSessionController(_admin)),
-      dataRepositoryProvider.overrideWith((ref) => repo),
-      enabledModulesProvider.overrideWithValue(const {
-        ModuleKey.patients,
-        ModuleKey.agenda,
-        ModuleKey.reports,
-      }),
-    ]);
-    addTearDown(container.dispose);
-
-    final router = container.read(routerProvider); // EL ROUTER REAL
-    await t.pumpWidget(UncontrolledProviderScope(
-      container: container,
-      child: MaterialApp.router(
-        theme: ThemeData(extensions: <ThemeExtension<dynamic>>[BrandTokens.kura]),
-        routerConfig: router,
-      ),
-    ));
-    await t.pumpAndSettle();
+    final router = await _mountReal(t);
 
     for (final s in _sections) {
       router.go('/admin/$s');
@@ -85,5 +94,37 @@ void main() {
         reason: 'la sección montada no es $s',
       );
     }
+  });
+
+  testWidgets('cambiar de sección NO reconstruye el riel ni anima la página',
+      (t) async {
+    t.view.physicalSize = const Size(1400, 1000);
+    t.view.devicePixelRatio = 1.0;
+    addTearDown(t.view.resetPhysicalSize);
+    addTearDown(t.view.resetDevicePixelRatio);
+
+    final router = await _mountReal(t);
+
+    router.go('/admin/usuarios');
+    await t.pumpAndSettle();
+    final railState1 = t.state(find.byType(KuraNavRail));
+    // La sección usa NoTransitionPage → su ruta no declara transición.
+    expect(
+      ModalRoute.of(t.element(find.byType(AdminSectionBody)))?.transitionDuration,
+      Duration.zero,
+      reason: 'la página de sección declara transición',
+    );
+
+    router.go('/admin/licencias');
+    await t.pumpAndSettle();
+    final railState2 = t.state(find.byType(KuraNavRail));
+
+    // El State del riel es el MISMO objeto: no se reconstruyó (vive en el shell).
+    expect(identical(railState1, railState2), isTrue,
+        reason: 'el riel se reconstruyó al cambiar de sección');
+    expect(
+      ModalRoute.of(t.element(find.byType(AdminSectionBody)))?.transitionDuration,
+      Duration.zero,
+    );
   });
 }
