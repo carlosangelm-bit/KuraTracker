@@ -445,43 +445,37 @@ final routerProvider = Provider<GoRouter>((ref) {
               patientId: state.pathParameters['patientId']!,
             ),
           ),
-          // /admin: cada sección con su URL propia (§5 etapa 3). Igual que /platform, el
-          // canónico es un route APARTE (sin hijos) para que solo dispare en /admin a
-          // secas. Anidar las secciones bajo un padre con redirect hacía que el
-          // redirect (matchedLocation == '/admin') capturara TAMBIÉN a las hijas → toda
-          // /admin/<sección> terminaba en /admin/usuarios. Se aplanan a rutas absolutas
-          // hermanas; el gate de rol es el redirect global (location.startsWith('/admin')).
+          // /admin: canónico + ShellRoute anidado. El canónico es un route APARTE (sin
+          // hijos) para que solo dispare en /admin a secas — anidar las secciones bajo un
+          // padre CON redirect hacía que el redirect (matchedLocation == '/admin')
+          // capturara también a las hijas. El riel vive en el shell (AdminSectionsShell)
+          // y PERSISTE entre secciones; cada sección es solo su cuerpo, con
+          // NoTransitionPage (cambiar de sección no anima ni recarga la pantalla).
           GoRoute(
             path: '/admin',
             redirect: (context, state) => '/admin/usuarios',
           ),
-          // Las seis secciones → AdminHomeScreen con su sección.
-          GoRoute(
-              path: '/admin/usuarios',
-              builder: (context, state) =>
-                  const AdminHomeScreen(section: 'usuarios')),
-          GoRoute(
-              path: '/admin/personal',
-              builder: (context, state) =>
-                  const AdminHomeScreen(section: 'personal')),
-          GoRoute(
-              path: '/admin/sitios',
-              builder: (context, state) =>
-                  const AdminHomeScreen(section: 'sitios')),
-          GoRoute(
-              path: '/admin/configuracion',
-              builder: (context, state) =>
-                  const AdminHomeScreen(section: 'configuracion')),
-          GoRoute(
-              path: '/admin/marca',
-              builder: (context, state) =>
-                  const AdminHomeScreen(section: 'marca')),
-          GoRoute(
-              path: '/admin/licencias',
-              builder: (context, state) =>
-                  const AdminHomeScreen(section: 'licencias')),
-          // Las 8 pantallas hijas profundas de Administración (rutas absolutas ahora que
-          // /admin ya no anida). El gate por rol lo da el redirect global.
+          ShellRoute(
+            builder: (context, state, child) => AdminSectionsShell(
+                currentRoute: state.matchedLocation, child: child),
+            routes: [
+              for (final s in const [
+                'usuarios',
+                'personal',
+                'sitios',
+                'configuracion',
+                'marca',
+                'licencias',
+              ])
+                GoRoute(
+                  path: '/admin/$s',
+                  pageBuilder: (context, state) =>
+                      NoTransitionPage(child: AdminSectionBody(section: s)),
+                ),
+            ],
+          ),
+          // Las 8 pantallas hijas profundas de Administración (FUERA del shell de
+          // secciones: son pantallas completas). El gate por rol lo da el redirect global.
           GoRoute(
               path: '/admin/protocolo-kura',
               builder: _adminChild((repo, org) =>
@@ -513,18 +507,35 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
               path: '/admin/divulgaciones',
               builder: (context, state) => const DataDisclosuresScreen()),
-          // /platform: cada sección con su URL propia (§5 etapa 2). Entrar en frío a
-          // /platform/<sección> llega a la sección correcta; /platform (a secas)
-          // canoniza a Centros. La pantalla activa se deriva de la URL, no de _tab.
+          // /platform: canónico (childless, canoniza a Centros) + ShellRoute anidado. El
+          // riel vive en el shell (PlatformSectionsShell) y persiste; cada sección es su
+          // cuerpo, con NoTransitionPage (cambiar de sección no anima ni recarga). El
+          // centro seleccionado vive en un provider, así sobrevive el cambio de sección.
           GoRoute(
             path: '/platform',
-            redirect: (context, state) =>
-                state.matchedLocation == '/platform' ? '/platform/centros' : null,
+            redirect: (context, state) => '/platform/centros',
           ),
-          GoRoute(
-            path: '/platform/:section',
-            builder: (context, state) => PlatformHomeScreen(
-                section: state.pathParameters['section'] ?? 'centros'),
+          ShellRoute(
+            builder: (context, state, child) => PlatformSectionsShell(
+                currentRoute: state.matchedLocation, child: child),
+            routes: [
+              for (final s in const [
+                'centros',
+                'usuarios',
+                'personal',
+                'sitios',
+                'catalogo',
+                'marca',
+                'modulos',
+                'solicitudes',
+                'licencia',
+              ])
+                GoRoute(
+                  path: '/platform/$s',
+                  pageBuilder: (context, state) =>
+                      NoTransitionPage(child: PlatformSectionBody(section: s)),
+                ),
+            ],
           ),
           GoRoute(
             path: '/import-export',

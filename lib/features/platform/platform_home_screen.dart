@@ -40,91 +40,25 @@ import '../admin/admin_home_screen.dart'
 /// de paciente es accesible desde aqui ni desde el DataRepository que
 /// consume (listAllPatients/etc. no se llaman en ningun punto de este
 /// archivo).
-class PlatformHomeScreen extends ConsumerStatefulWidget {
-  /// Sección activa, derivada de la URL (/platform/<section>), nunca de un entero.
-  final String section;
-  const PlatformHomeScreen({super.key, this.section = 'centros'});
+/// Centro seleccionado en /platform: vive en un provider (no en el State de una
+/// pantalla), así PERSISTE al cambiar de sección dentro del shell.
+final _platformOrgProvider = StateProvider<String?>((ref) => null);
+
+/// SHELL de /platform: la barra superior (con las acciones del master) y el riel
+/// único (KuraNavRail). Vive en un ShellRoute ANIDADO; el cuerpo de la sección llega
+/// como [child] y cambia sin reconstruir el riel.
+class PlatformSectionsShell extends ConsumerStatefulWidget {
+  final Widget child;
+  final String currentRoute; // /platform/<section>
+  const PlatformSectionsShell(
+      {super.key, required this.child, required this.currentRoute});
 
   @override
-  ConsumerState<PlatformHomeScreen> createState() => _PlatformHomeScreenState();
+  ConsumerState<PlatformSectionsShell> createState() =>
+      _PlatformSectionsShellState();
 }
 
-class _PlatformHomeScreenState extends ConsumerState<PlatformHomeScreen> {
-  // Organizacion (centro) actualmente seleccionada en el selector. Vive
-  // en el estado de esta pantalla (no en DataRepository ni en la
-  // sesion): es una eleccion de navegacion efimera del master, no un
-  // dato persistente ni parte de su perfil.
-  String? _selectedOrgId;
-
-  // Las nueve secciones de Plataforma, por su segmento de URL.
-  static const _knownSections = {
-    'centros', 'usuarios', 'personal', 'sitios', 'catalogo', 'marca',
-    'modulos', 'solicitudes', 'licencia',
-  };
-
-  /// El cuerpo de la sección activa. Centros y Solicitudes son GLOBALES (sin
-  /// selector de centro); el resto opera sobre el centro seleccionado.
-  Widget _sectionBody(
-      DataRepository repo, List<Organization> orgs, String section, dynamic user) {
-    switch (section) {
-      case 'centros':
-        return _OrganizationsTab(
-          repo: repo,
-          organizations: orgs,
-          selectedOrgId: _selectedOrgId,
-          onSelect: (id) => setState(() => _selectedOrgId = id),
-          onCreate: () => _openCreateOrganizationDialog(repo),
-          onChanged: () => setState(() {}),
-        );
-      case 'solicitudes':
-        return _LicenseRequestsTab(
-          repo: repo,
-          currentUserId: user?.id,
-          onChanged: () => setState(() {}),
-        );
-    }
-    // Secciones por centro: exigen un centro seleccionado.
-    if (orgs.isEmpty) return const _NoOrganizationsState();
-    final perCenter = switch (section) {
-      'usuarios' => UsersTab(
-          repo: repo, organizationId: _selectedOrgId, currentUserId: user?.id),
-      'personal' => StaffTab(repo: repo, organizationId: _selectedOrgId),
-      'sitios' => SitesTab(repo: repo, organizationId: _selectedOrgId),
-      'catalogo' => NoteCatalogTab(repo: repo, organizationId: _selectedOrgId),
-      'marca' => BrandingTab(repo: repo, organizationId: _selectedOrgId),
-      'modulos' => _ModulesTab(
-          repo: repo, organizationId: _selectedOrgId, updatedBy: user?.id),
-      'licencia' => CenterLicensePanel(
-          repo: repo, organizationId: _selectedOrgId, user: user),
-      _ => const SizedBox.shrink(),
-    };
-    return Column(
-      children: [
-        _OrganizationSelectorBar(
-          organizations: orgs,
-          selectedOrgId: _selectedOrgId,
-          onChanged: (id) => setState(() => _selectedOrgId = id),
-        ),
-        const Divider(height: 1),
-        Expanded(child: perCenter),
-      ],
-    );
-  }
-
-  Future<void> _openCreateOrganizationDialog(DataRepository repo) async {
-    final createdId = await showDialog<String>(
-      context: context,
-      // builder: (dialogCtx) => ... / Navigator.pop(dialogCtx, ...): el
-      // context propio del dialogo, nunca el externo de esta pantalla
-      // (ver bug "pantalla en blanco" ya corregido en admin_home_screen
-      // / ShellRoute anidado -- misma convencion aplicada aqui).
-      builder: (dialogCtx) => _OrganizationFormDialog(repo: repo),
-    );
-    if (createdId != null && mounted) {
-      setState(() => _selectedOrgId = createdId);
-    }
-  }
-
+class _PlatformSectionsShellState extends ConsumerState<PlatformSectionsShell> {
   /// Descarga el CSV con TODOS los parámetros clínicos del motor (umbrales,
   /// bandas de compresión y mapeos por grado) con su procedencia. Solo
   /// accesible desde la Plataforma (rol master). Lee los mismos assets que
@@ -304,15 +238,27 @@ class _PlatformHomeScreenState extends ConsumerState<PlatformHomeScreen> {
   @override
   Widget build(BuildContext context) {
     final repoAsync = ref.watch(dataRepositoryProvider);
-
-    final section =
-        _knownSections.contains(widget.section) ? widget.section : 'centros';
     // Riel abierto ≥1200 px, colapsado por debajo (§2.1/§2.2 del canvas).
     final open = MediaQuery.of(context).size.width >= 1200;
     final navs = platformNavDestinations();
     final plataforma = navs.first; // "Plataforma" con sus 9 secciones
-    final currentRoute = '/platform/$section';
     final user = ref.watch(sessionProvider).user;
+    final withHeader = open
+        ? widget.child
+        : Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.all(12),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: KuraSectionMenu(
+                      section: plataforma, currentRoute: widget.currentRoute),
+                ),
+              ),
+              const Divider(height: 1),
+              Expanded(child: widget.child),
+            ],
+          );
     return Scaffold(
       appBar: AppBar(
         title: const Text('Plataforma'),
@@ -346,63 +292,121 @@ class _PlatformHomeScreenState extends ConsumerState<PlatformHomeScreen> {
           const UserMenuButton(),
         ],
       ),
-      body: repoAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, st) => Center(child: Text('Error: $e')),
-        data: (repo) {
-          final organizations = repo.listOrganizations();
-          // Si la organizacion previamente seleccionada ya no existe
-          // (p.ej. se elimino), o aun no hay ninguna seleccionada pero
-          // ya hay organizaciones creadas, se cae al primer centro de
-          // la lista para que las pestanas de gestion no queden vacias
-          // sin explicacion.
-          if (_selectedOrgId != null &&
-              organizations.every((o) => o.id != _selectedOrgId)) {
-            _selectedOrgId = null;
-          }
-          if (_selectedOrgId == null && organizations.isNotEmpty) {
-            _selectedOrgId = organizations.first.id;
-          }
-
-          // UN solo riel (KuraNavRail) + contenido; la sección sale de la URL, no de
-          // un entero. Colapsado (<1200) muestra iconos + el menú del encabezado.
-          final content = _sectionBody(repo, organizations, section, user);
-          final withHeader = open
-              ? content
-              : Column(
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: Align(
-                        alignment: Alignment.centerLeft,
-                        child: KuraSectionMenu(
-                            section: plataforma, currentRoute: currentRoute),
-                      ),
-                    ),
-                    const Divider(height: 1),
-                    Expanded(child: content),
-                  ],
-                );
-          return Row(
-            children: [
-              KuraNavRail(
-                destinations: navs,
-                currentRoute: currentRoute,
-                collapsed: !open,
-                // El encabezado del riel lleva el NOMBRE DEL PRODUCTO, no el de la
-                // sección: si no, "Plataforma" saldría tres veces (barra superior,
-                // encabezado del riel y destino).
-                brandName: 'KuraTracker',
-                userName: user?.fullName,
-                centerName: 'Consola del master',
-              ),
-              const VerticalDivider(width: 1),
-              Expanded(child: withHeader),
-            ],
-          );
-        },
+      body: Row(
+        children: [
+          KuraNavRail(
+            destinations: navs,
+            currentRoute: widget.currentRoute,
+            collapsed: !open,
+            // El encabezado del riel lleva el NOMBRE DEL PRODUCTO, no el de la
+            // sección: si no, "Plataforma" saldría tres veces.
+            brandName: 'KuraTracker',
+            userName: user?.fullName,
+            centerName: 'Consola del master',
+          ),
+          const VerticalDivider(width: 1),
+          Expanded(child: withHeader),
+        ],
       ),
     );
+  }
+}
+
+/// CUERPO de una sección de /platform (sin riel). Lo construye cada ruta de sección
+/// con NoTransitionPage: cambiar de sección es cambiar de panel, no navegar. El centro
+/// seleccionado vive en [_platformOrgProvider] (persiste entre secciones). Centros y
+/// Solicitudes son GLOBALES (sin selector); el resto opera sobre el centro elegido.
+class PlatformSectionBody extends ConsumerStatefulWidget {
+  final String section;
+  const PlatformSectionBody({super.key, required this.section});
+
+  @override
+  ConsumerState<PlatformSectionBody> createState() => _PlatformSectionBodyState();
+}
+
+class _PlatformSectionBodyState extends ConsumerState<PlatformSectionBody> {
+  static const _knownSections = {
+    'centros', 'usuarios', 'personal', 'sitios', 'catalogo', 'marca',
+    'modulos', 'solicitudes', 'licencia',
+  };
+
+  void _selectOrg(String? id) =>
+      ref.read(_platformOrgProvider.notifier).state = id;
+
+  @override
+  Widget build(BuildContext context) {
+    final repoAsync = ref.watch(dataRepositoryProvider);
+    final user = ref.watch(sessionProvider).user;
+    final section =
+        _knownSections.contains(widget.section) ? widget.section : 'centros';
+    return repoAsync.when(
+      loading: () => const Center(child: CircularProgressIndicator()),
+      error: (e, st) => Center(child: Text('Error: $e')),
+      data: (repo) {
+        final orgs = repo.listOrganizations();
+        // El centro seleccionado del provider si sigue existiendo; si no, el primero.
+        // No se ESCRIBE durante el build (solo el selector escribe).
+        final raw = ref.watch(_platformOrgProvider);
+        final selected = (raw != null && orgs.any((o) => o.id == raw))
+            ? raw
+            : (orgs.isNotEmpty ? orgs.first.id : null);
+        return _sectionBody(repo, orgs, section, user, selected);
+      },
+    );
+  }
+
+  Widget _sectionBody(DataRepository repo, List<Organization> orgs, String section,
+      dynamic user, String? selected) {
+    switch (section) {
+      case 'centros':
+        return _OrganizationsTab(
+          repo: repo,
+          organizations: orgs,
+          selectedOrgId: selected,
+          onSelect: _selectOrg,
+          onCreate: () => _openCreateOrganizationDialog(repo),
+          onChanged: () => setState(() {}),
+        );
+      case 'solicitudes':
+        return _LicenseRequestsTab(
+          repo: repo,
+          currentUserId: user?.id,
+          onChanged: () => setState(() {}),
+        );
+    }
+    if (orgs.isEmpty) return const _NoOrganizationsState();
+    final perCenter = switch (section) {
+      'usuarios' => UsersTab(
+          repo: repo, organizationId: selected, currentUserId: user?.id),
+      'personal' => StaffTab(repo: repo, organizationId: selected),
+      'sitios' => SitesTab(repo: repo, organizationId: selected),
+      'catalogo' => NoteCatalogTab(repo: repo, organizationId: selected),
+      'marca' => BrandingTab(repo: repo, organizationId: selected),
+      'modulos' => _ModulesTab(
+          repo: repo, organizationId: selected, updatedBy: user?.id),
+      'licencia' => CenterLicensePanel(
+          repo: repo, organizationId: selected, user: user),
+      _ => const SizedBox.shrink(),
+    };
+    return Column(
+      children: [
+        _OrganizationSelectorBar(
+          organizations: orgs,
+          selectedOrgId: selected,
+          onChanged: _selectOrg,
+        ),
+        const Divider(height: 1),
+        Expanded(child: perCenter),
+      ],
+    );
+  }
+
+  Future<void> _openCreateOrganizationDialog(DataRepository repo) async {
+    final createdId = await showDialog<String>(
+      context: context,
+      builder: (dialogCtx) => _OrganizationFormDialog(repo: repo),
+    );
+    if (createdId != null && mounted) _selectOrg(createdId);
   }
 }
 

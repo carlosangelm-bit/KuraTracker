@@ -40,33 +40,18 @@ import '../../services/photo_upload_service.dart';
 
 /// Panel de administración: gestión de personal sanitario, sitios y
 /// activación de usuarios / función premium (sección 4).
-class AdminHomeScreen extends ConsumerStatefulWidget {
-  /// Sección activa, derivada de la URL (/admin/<section>), nunca de un entero.
-  final String section;
-  const AdminHomeScreen({super.key, this.section = 'usuarios'});
+/// SHELL de las secciones de Administración: pinta el riel único (KuraNavRail) y, en
+/// colapsado, el menú del encabezado; el cuerpo de la sección llega como [child].
+/// Vive en un ShellRoute ANIDADO, así que cambiar de sección NO reconstruye el riel —
+/// solo cambia el child. Se ve como cambiar de panel, no como cargar otra página.
+class AdminSectionsShell extends ConsumerWidget {
+  final Widget child;
+  final String currentRoute; // /admin/<section>
+  const AdminSectionsShell(
+      {super.key, required this.child, required this.currentRoute});
 
   @override
-  ConsumerState<AdminHomeScreen> createState() => _AdminHomeScreenState();
-}
-
-class _AdminHomeScreenState extends ConsumerState<AdminHomeScreen> {
-  // Las seis secciones de Administración, por su segmento de URL.
-  static const _knownSections = {
-    'usuarios', 'personal', 'sitios', 'configuracion', 'marca', 'licencias',
-  };
-
-  @override
-  Widget build(BuildContext context) {
-    final repoAsync = ref.watch(dataRepositoryProvider);
-    // organizationId del admin en sesion: se pasa explicitamente a cada tab
-    // para que las altas (staff/sitio/concepto de catalogo) queden
-    // correctamente acotadas al centro del admin (columnas not null en
-    // Supabase, ver 0011_organizations.sql), en vez de derivarlo de forma
-    // implicita dentro de cada dialogo.
-    final organizationId = ref.watch(sessionProvider).user?.organizationId;
-    // Id del usuario en sesion: la pestana de Usuarios lo usa para impedir que
-    // el admin se cambie el rol o se desactive a si mismo (auto-bloqueo).
-    final currentUserId = ref.watch(sessionProvider).user?.id;
+  Widget build(BuildContext context, WidgetRef ref) {
     // Guarda de rol (2ª capa; el redirect del router es la 1ª). En web una URL
     // no es candado: solo admin del centro y master ven Administración. Un
     // clinico que llegue aquí por cualquier ruta no ve nada administrativo.
@@ -76,13 +61,10 @@ class _AdminHomeScreenState extends ConsumerState<AdminHomeScreen> {
         body: Center(child: Text('No tienes acceso a esta sección.')),
       );
     }
-
-    final section =
-        _knownSections.contains(widget.section) ? widget.section : 'usuarios';
     // Riel abierto ≥1200 px, colapsado por debajo (§2.1/§2.2).
     final open = MediaQuery.of(context).size.width >= 1200;
-    // UN solo riel (KuraNavRail): la MISMA declaración de la app, con los destinos
-    // clínicos de primer nivel y Administración anidando sus seis secciones.
+    // UN solo riel: la MISMA declaración de la app, con los destinos clínicos de
+    // primer nivel y Administración anidando sus seis secciones.
     final modules = ref.watch(enabledModulesProvider);
     final navs = kuraNavDestinations(
       moduleEnabled: (k) => modules.any((m) => m.dbValue == k),
@@ -92,89 +74,98 @@ class _AdminHomeScreenState extends ConsumerState<AdminHomeScreen> {
       centerType: ref.watch(sessionProvider).activeCenterType,
     );
     final admin = navs.firstWhere((d) => d.route == '/admin');
-    final currentRoute = '/admin/$section';
 
+    final withHeader = open
+        ? child
+        : Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.all(12),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: KuraSectionMenu(
+                      section: admin, currentRoute: currentRoute),
+                ),
+              ),
+              const Divider(height: 1),
+              Expanded(child: child),
+            ],
+          );
     return Scaffold(
       appBar: AppBar(
         title: const Text('Administración'),
         actions: const [UserMenuButton()],
       ),
-      body: repoAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, st) => Center(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: KuraErrorState(
-              title: 'No pudimos cargar la administración',
-              reassurance:
-                  'Puede ser tu conexión. Tus datos están a salvo: nada se '
-                  'perdió ni se guardó a medias.',
-              detail: '$e',
-              onRetry: () => ref.invalidate(dataRepositoryProvider),
-            ),
+      body: Row(
+        children: [
+          KuraNavRail(
+            destinations: navs,
+            currentRoute: currentRoute,
+            collapsed: !open,
+            brandName: 'KuraTracker',
+            userName: sessionUser?.fullName,
+            centerName: 'Administración',
           ),
-        ),
-        data: (repo) {
-          final content = _sectionBody(
-              repo, section, organizationId, currentUserId, sessionUser);
-          final withHeader = open
-              ? content
-              : Column(
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: Align(
-                        alignment: Alignment.centerLeft,
-                        child: KuraSectionMenu(
-                            section: admin, currentRoute: currentRoute),
-                      ),
-                    ),
-                    const Divider(height: 1),
-                    Expanded(child: content),
-                  ],
-                );
-          return Row(
-            children: [
-              KuraNavRail(
-                destinations: navs,
-                currentRoute: currentRoute,
-                collapsed: !open,
-                brandName: 'KuraTracker',
-                userName: sessionUser?.fullName,
-                centerName: 'Administración',
-              ),
-              const VerticalDivider(width: 1),
-              Expanded(child: withHeader),
-            ],
-          );
-        },
+          const VerticalDivider(width: 1),
+          Expanded(child: withHeader),
+        ],
       ),
     );
   }
+}
 
-  /// El cuerpo de la sección activa. Mismos widgets que las viejas pestañas.
-  Widget _sectionBody(DataRepository repo, String section,
-      String? organizationId, String? currentUserId, AppUser? sessionUser) {
-    switch (section) {
-      case 'personal':
-        return StaffTab(repo: repo, organizationId: organizationId);
-      case 'sitios':
-        return SitesTab(repo: repo, organizationId: organizationId);
-      case 'configuracion':
-        return NoteCatalogTab(repo: repo, organizationId: organizationId);
-      case 'marca':
-        return repo.premiumAdminFor(organizationId)
-            ? BrandingTab(repo: repo, organizationId: organizationId)
-            : const _AdminModuleLocked('La personalización de marca');
-      case 'licencias':
-        return LicensePanel(
-            repo: repo, organizationId: organizationId, user: sessionUser);
-      default:
-        return UsersTab(
-            repo: repo,
-            organizationId: organizationId,
-            currentUserId: currentUserId);
-    }
+/// El CUERPO de una sección de Administración (solo el panel, sin riel). Lo construye
+/// cada ruta de sección con NoTransitionPage — cambiar de sección no navega, cambia el
+/// panel dentro del mismo shell.
+class AdminSectionBody extends ConsumerWidget {
+  final String section;
+  const AdminSectionBody({super.key, required this.section});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final repoAsync = ref.watch(dataRepositoryProvider);
+    final sessionUser = ref.watch(sessionProvider).user;
+    // organizationId/currentUserId del admin en sesión, acotan las altas al centro.
+    final organizationId = sessionUser?.organizationId;
+    final currentUserId = sessionUser?.id;
+    return repoAsync.when(
+      loading: () => const Center(child: CircularProgressIndicator()),
+      error: (e, st) => Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: KuraErrorState(
+            title: 'No pudimos cargar la administración',
+            reassurance:
+                'Puede ser tu conexión. Tus datos están a salvo: nada se '
+                'perdió ni se guardó a medias.',
+            detail: '$e',
+            onRetry: () => ref.invalidate(dataRepositoryProvider),
+          ),
+        ),
+      ),
+      data: (repo) {
+        switch (section) {
+          case 'personal':
+            return StaffTab(repo: repo, organizationId: organizationId);
+          case 'sitios':
+            return SitesTab(repo: repo, organizationId: organizationId);
+          case 'configuracion':
+            return NoteCatalogTab(repo: repo, organizationId: organizationId);
+          case 'marca':
+            return repo.premiumAdminFor(organizationId)
+                ? BrandingTab(repo: repo, organizationId: organizationId)
+                : const _AdminModuleLocked('La personalización de marca');
+          case 'licencias':
+            return LicensePanel(
+                repo: repo, organizationId: organizationId, user: sessionUser);
+          default:
+            return UsersTab(
+                repo: repo,
+                organizationId: organizationId,
+                currentUserId: currentUserId);
+        }
+      },
+    );
   }
 }
 
