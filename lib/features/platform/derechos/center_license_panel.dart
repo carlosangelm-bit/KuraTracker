@@ -43,13 +43,6 @@ class _CenterLicensePanelState extends State<CenterLicensePanel> {
     (key: 'protocolo', label: 'Protocolo Kura+'),
   ];
 
-  OrgEntitlement? _ent(List<OrgEntitlement> ents, String kind, String key) {
-    for (final e in ents) {
-      if (e.kind == kind && e.key == key) return e;
-    }
-    return null;
-  }
-
   String _nameFor(String? profileId) {
     if (profileId == null) return '—';
     for (final u in repo.listUsers()) {
@@ -86,13 +79,11 @@ class _CenterLicensePanelState extends State<CenterLicensePanel> {
     // Filas de Módulos con su acuerdo derecho×interruptor (lógica en center_license_data).
     final moduleRows = moduleLicenseRows(repo, orgId);
     final rightsActive = moduleRows.where((r) => r.hasRight).length;
-    final disagreements = moduleRows
-        .where((r) =>
-            r.agreement.kind == ModuleAgreementCase.rightOff ||
-            r.agreement.kind == ModuleAgreementCase.onWithoutRight)
-        .length;
+    // Desacuerdos: excluye seatDerived (Clínico) — su falta de asientos ya se cuenta
+    // en el grupo Asientos.
+    final disagreements = disagreementCount(moduleRows);
 
-    final summary = repo.licenseSummaryFor(orgId);
+    final seatRows = seatLicenseRows(repo, orgId);
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(28, 24, 28, 40),
@@ -124,7 +115,7 @@ class _CenterLicensePanelState extends State<CenterLicensePanel> {
         const SizedBox(height: 22),
         _sectionTitle(t, 'Asientos'),
         const SizedBox(height: 10),
-        _card(t, _seatsTable(t, ents, summary)),
+        _card(t, _seatsTable(t, seatRows)),
         const SizedBox(height: 22),
         _sectionTitle(t, 'Qué paga y qué no'),
         const SizedBox(height: 10),
@@ -264,13 +255,13 @@ class _CenterLicensePanelState extends State<CenterLicensePanel> {
   Widget _modulesTable(BrandTokens t, List<ModuleLicenseRow> rows) {
     return KuraDataTable(
       columns: const [
-        KuraColumn(label: 'Módulo', fraction: 0.16),
-        KuraColumn(label: 'Origen', fraction: 0.09),
+        KuraColumn(label: 'Módulo', fraction: 0.24),
+        KuraColumn(label: 'Origen', fraction: 0.08),
         KuraColumn(label: 'Tipo', fraction: 0.10),
-        KuraColumn(label: 'Otorgó', fraction: 0.12),
-        KuraColumn(label: 'Vigencia', fraction: 0.11),
-        KuraColumn(label: 'Interruptor', fraction: 0.10),
-        KuraColumn(label: 'Estado', fraction: 0.22),
+        KuraColumn(label: 'Otorgó', fraction: 0.11),
+        KuraColumn(label: 'Vigencia', fraction: 0.10),
+        KuraColumn(label: 'Interruptor', fraction: 0.09),
+        KuraColumn(label: 'Estado', fraction: 0.18),
         KuraColumn(label: 'Importe', fraction: 0.10, numeric: true),
       ],
       rows: [
@@ -318,11 +309,11 @@ class _CenterLicensePanelState extends State<CenterLicensePanel> {
                         fontSize: 13,
                         fontWeight: FontWeight.w600,
                         color: t.textPrimary)),
-                if (reason != null)
-                  Text(reason,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(fontSize: 11, color: t.textSecondary)),
+                // Motivo como línea COMPLETA, sin ellipsis: la fila crece para mostrarlo.
+                if (reason != null) ...[
+                  const SizedBox(height: 2),
+                  ModuleReasonText(reason),
+                ],
               ],
             ),
           ),
@@ -331,39 +322,34 @@ class _CenterLicensePanelState extends State<CenterLicensePanel> {
     );
   }
 
-  Widget _seatsTable(
-      BrandTokens t, List<OrgEntitlement> ents, dynamic summary) {
+  Widget _seatsTable(BrandTokens t, List<SeatLicenseRow> rows) {
     return KuraDataTable(
       columns: const [
-        KuraColumn(label: 'Asiento', fraction: 0.20),
-        KuraColumn(label: 'Origen', fraction: 0.10),
-        KuraColumn(label: 'Tipo', fraction: 0.12),
-        KuraColumn(label: 'Otorgó', fraction: 0.14),
-        KuraColumn(label: 'Vigencia', fraction: 0.13),
-        KuraColumn(label: 'Uso', fraction: 0.21),
+        KuraColumn(label: 'Asiento', fraction: 0.18),
+        KuraColumn(label: 'Origen', fraction: 0.09),
+        KuraColumn(label: 'Tipo', fraction: 0.11),
+        KuraColumn(label: 'Otorgó', fraction: 0.12),
+        KuraColumn(label: 'Vigencia', fraction: 0.11),
+        KuraColumn(label: 'Uso', fraction: 0.15),
+        KuraColumn(label: 'Estado', fraction: 0.14),
         KuraColumn(label: 'Importe', fraction: 0.10, numeric: true),
       ],
       rows: [
-        for (final s in _seats)
-          () {
-            final e = _ent(ents, 'seat', s.key);
-            final counter =
-                s.key == 'clinico' ? summary.clinicalSeats : summary.protocolo;
-            final used = counter.used as int;
-            final contracted = (e?.quantity) ?? (counter.contracted as int);
-            return KuraRow(id: s.key, cells: [
-              KuraCell.identity(name: s.label, icon: Icons.event_seat_outlined),
-              KuraCell.pill(_origen(e), muted: e == null),
-              _mutedText(t, grantTypeLabel(e?.grantType)),
-              _mutedText(t, _nameFor(e?.grantedBy)),
-              _mutedText(t, _vigencia(e)),
-              e == null
-                  ? _mutedText(t, '—')
-                  : KuraCell.progress(
-                      used: used, total: contracted < 0 ? 0 : contracted),
-              KuraCell.money(repo.unitAmountCents('seat', s.key, 'month')),
-            ]);
-          }(),
+        for (final r in rows)
+          KuraRow(id: r.key, cells: [
+            KuraCell.identity(name: r.label, icon: Icons.event_seat_outlined),
+            KuraCell.pill(_origen(r.ent), muted: r.ent == null),
+            _mutedText(t, grantTypeLabel(r.ent?.grantType)),
+            _mutedText(t, _nameFor(r.ent?.grantedBy)),
+            _mutedText(t, _vigencia(r.ent)),
+            r.ent == null
+                ? _mutedText(t, '—')
+                : KuraCell.progress(
+                    used: r.used, total: r.contracted < 0 ? 0 : r.contracted),
+            // Estado coherente con Módulos: cantidad 0 → ámbar "Derecho sin asientos".
+            KuraCell.custom(build: (t) => ModuleAgreementLabel(r.agreement)),
+            KuraCell.money(r.amountCents),
+          ]),
       ],
     );
   }

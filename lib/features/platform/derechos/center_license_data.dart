@@ -35,6 +35,7 @@ class ModuleLicenseRow {
   final bool hasRight;
   final bool hasSwitch; // tiene interruptor propio (module_settings)
   final bool switchOn;
+  final bool seatDerived; // su "encendido" se deriva de los asientos (clínico)
   final ModuleAgreement agreement;
   final int? amountCents;
 
@@ -45,10 +46,21 @@ class ModuleLicenseRow {
     required this.hasRight,
     required this.hasSwitch,
     required this.switchOn,
+    required this.seatDerived,
     required this.agreement,
     required this.amountCents,
   });
 }
+
+/// Cuenta de DESACUERDOS (derecho ≠ interruptor) para la cifra del panel. Excluye
+/// las filas seatDerived: su "desacuerdo" (Clínico sin asientos) ya se cuenta como
+/// falta de asientos en el grupo Asientos; contarlo aquí sería doble.
+int disagreementCount(List<ModuleLicenseRow> rows) => rows
+    .where((r) =>
+        !r.seatDerived &&
+        (r.agreement.kind == ModuleAgreementCase.rightOff ||
+            r.agreement.kind == ModuleAgreementCase.onWithoutRight))
+    .length;
 
 /// Descriptor de un módulo de pago del panel.
 /// - [switchKey] != null: interruptor propio = module_settings de ese ModuleKey.
@@ -61,11 +73,15 @@ class _ModuleDesc {
   final String label;
   final ModuleKey? switchKey;
   final bool seatDerived;
-  // Copy propio para el caso rojo (encendido sin derecho). module:clinico habla de
-  // ASIENTOS, no de interruptor, porque su "encendido" se deriva de los asientos.
-  final String? onWithoutRightMessage;
+  // Copy propio para los dos casos de desacuerdo. module:clinico habla de ASIENTOS,
+  // no de interruptor, porque su "encendido" se deriva de los asientos.
+  final String? onWithoutRightMessage; // caso rojo: encendido sin derecho
+  final String? rightOffMessage; // caso ámbar: con derecho, apagado
   const _ModuleDesc(this.key, this.label,
-      {this.switchKey, this.seatDerived = false, this.onWithoutRightMessage});
+      {this.switchKey,
+      this.seatDerived = false,
+      this.onWithoutRightMessage,
+      this.rightOffMessage});
 }
 
 const _moduleDescriptors = <_ModuleDesc>[
@@ -74,7 +90,8 @@ const _moduleDescriptors = <_ModuleDesc>[
   _ModuleDesc('clinico', 'Clínico (expediente)',
       seatDerived: true,
       onWithoutRightMessage:
-          'Con asientos activos pero sin el derecho clínico: nadie ve el expediente.'),
+          'Con asientos activos pero sin el derecho clínico: nadie ve el expediente.',
+      rightOffMessage: 'Sin asientos clínicos: nadie puede usar el expediente.'),
   _ModuleDesc('admin', 'Administración avanzada'),
   _ModuleDesc('insumos', 'Insumos', switchKey: ModuleKey.insumos),
   _ModuleDesc('comercial', 'Comercial', switchKey: ModuleKey.comercial),
@@ -125,12 +142,90 @@ List<ModuleLicenseRow> moduleLicenseRows(DataRepository repo, String orgId) {
           hasRight: hasRight,
           hasSwitch: hasSwitch,
           switchOn: switchOn,
+          seatDerived: d.seatDerived,
           agreement: moduleAgreement(
             hasRight: hasRight,
             switchOn: switchOn,
             onWithoutRightMessage: d.onWithoutRightMessage,
+            rightOffMessage: d.rightOffMessage,
           ),
           amountCents: repo.unitAmountCents('module', d.key, 'month'),
+        );
+      }(),
+  ];
+}
+
+/// Una fila del grupo Asientos. Su "acuerdo" es coherente con Módulos: un derecho de
+/// asiento ACTIVO pero con cantidad 0 no habilita nada → ámbar "Derecho sin
+/// asientos" (misma regla que usa hasSeatEntitlement / el interruptor derivado del
+/// Clínico), no un derecho normal.
+class SeatLicenseRow {
+  final String key;
+  final String label;
+  final OrgEntitlement? ent;
+  final bool hasAsientos; // activo y cantidad >= 1
+  final int used;
+  final int contracted;
+  final ModuleAgreement agreement;
+  final int? amountCents;
+
+  const SeatLicenseRow({
+    required this.key,
+    required this.label,
+    required this.ent,
+    required this.hasAsientos,
+    required this.used,
+    required this.contracted,
+    required this.agreement,
+    required this.amountCents,
+  });
+}
+
+const _seatDescriptors = <({String key, String label})>[
+  (key: 'clinico', label: 'Asientos clínicos'),
+  (key: 'protocolo', label: 'Protocolo Kura+'),
+];
+
+List<SeatLicenseRow> seatLicenseRows(DataRepository repo, String orgId) {
+  final ents = repo.entitlementsFor(orgId);
+  final summary = repo.licenseSummaryFor(orgId);
+  OrgEntitlement? seatOf(String key) {
+    for (final e in ents) {
+      if (e.kind == 'seat' && e.key == key) return e;
+    }
+    return null;
+  }
+
+  return [
+    for (final d in _seatDescriptors)
+      () {
+        final e = seatOf(d.key);
+        final active = e != null && e.status == 'active';
+        final qty = e?.quantity ?? 0;
+        final hasAsientos = active && qty >= 1;
+        final counter =
+            d.key == 'clinico' ? summary.clinicalSeats : summary.protocolo;
+        final ModuleAgreement agreement;
+        if (!active) {
+          agreement =
+              const ModuleAgreement(ModuleAgreementCase.noRight, 'Sin derecho');
+        } else if (qty >= 1) {
+          agreement =
+              const ModuleAgreement(ModuleAgreementCase.normal, 'Activo');
+        } else {
+          // Derecho ACTIVO con cantidad 0: no habilita nada. Ámbar, como Módulos.
+          agreement = const ModuleAgreement(
+              ModuleAgreementCase.rightOff, 'Derecho sin asientos');
+        }
+        return SeatLicenseRow(
+          key: d.key,
+          label: d.label,
+          ent: e,
+          hasAsientos: hasAsientos,
+          used: counter.used,
+          contracted: e?.quantity ?? counter.contracted,
+          agreement: agreement,
+          amountCents: repo.unitAmountCents('seat', d.key, 'month'),
         );
       }(),
   ];
