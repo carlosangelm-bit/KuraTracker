@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../models/center_type.dart';
 import '../../models/module_key.dart';
 import 'nav_destination.dart';
 
@@ -14,6 +15,7 @@ List<NavDestination> kuraNavDestinations({
   required bool Function(String moduleKey) moduleEnabled,
   required bool isAdmin,
   required bool isMaster,
+  required CenterType centerType,
 }) {
   NavDestination mod(ModuleKey m, IconData icon) => NavDestination(
         label: m.label,
@@ -22,22 +24,41 @@ List<NavDestination> kuraNavDestinations({
         visibleWhen: () => moduleEnabled(m.dbValue),
       );
 
+  // Agenda: en HOSPITAL el eje es la RONDA de prevención (tareas que siguen al
+  // paciente), no las citas: enruta a /prevention-agenda con etiqueta "Rondas",
+  // gateada por prevención. En los demás tipos, la agenda de citas (/agenda), gateada
+  // por agenda. Copiado de app_shell.dart:68-79 — sin esta rama, un hospital caía en
+  // /agenda "no configurada".
+  final NavDestination agendaSlot = centerType == CenterType.hospital
+      ? NavDestination(
+          label: 'Rondas',
+          icon: Icons.checklist_outlined,
+          route: '/prevention-agenda',
+          visibleWhen: () => moduleEnabled(ModuleKey.prevention.dbValue),
+        )
+      : NavDestination(
+          label: 'Agenda',
+          icon: Icons.calendar_today_outlined,
+          route: '/agenda',
+          visibleWhen: () => moduleEnabled(ModuleKey.agenda.dbValue),
+        );
+
   return [
     // Inicio (dashboard): destino clínico de primer nivel salvo para el master, que
-    // no tiene datos clínicos propios (0012).
+    // no tiene datos clínicos propios (0012). app_shell.dart:63 (siempre, no-master).
     NavDestination(
       label: 'Inicio',
       icon: Icons.dashboard_outlined,
       route: '/',
       visibleWhen: () => !isMaster,
     ),
-    mod(ModuleKey.patients, Icons.people_outline),
-    mod(ModuleKey.agenda, Icons.calendar_today_outlined),
-    mod(ModuleKey.prevention, Icons.shield_outlined),
-    mod(ModuleKey.reports, Icons.bar_chart_outlined),
-    mod(ModuleKey.insumos, Icons.inventory_2_outlined),
-    mod(ModuleKey.comercial, Icons.sell_outlined),
-    mod(ModuleKey.vac, Icons.healing_outlined),
+    mod(ModuleKey.patients, Icons.people_outline), // app_shell.dart:65
+    agendaSlot, // app_shell.dart:68-79
+    mod(ModuleKey.prevention, Icons.shield_outlined), // app_shell.dart:80 (/risk)
+    mod(ModuleKey.vac, Icons.healing_outlined), // app_shell.dart:83
+    mod(ModuleKey.reports, Icons.bar_chart_outlined), // app_shell.dart:86
+    mod(ModuleKey.insumos, Icons.medical_services_outlined), // app_shell.dart:89
+    mod(ModuleKey.comercial, Icons.point_of_sale_outlined), // app_shell.dart:93
     // Importar expedientes: módulo clínico Y destino del master (antes vivía en la
     // tira externa de /platform). Visible si el módulo está encendido o si es master.
     NavDestination(
@@ -138,6 +159,9 @@ List<NavDestination> platformNavDestinations() {
     moduleEnabled: (_) => false,
     isAdmin: false,
     isMaster: true,
+    // El master no tiene tipo de centro propio; los módulos van ocultos igual, así que
+    // la rama de agenda no afecta su riel.
+    centerType: CenterType.clinicaHeridas,
   ).where((d) => d.isVisible).toList();
   final plataforma = visible.firstWhere((d) => d.route == '/platform');
   final rest = visible.where((d) => d.route != '/platform');

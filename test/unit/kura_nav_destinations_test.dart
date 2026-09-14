@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:kuratracker/core/nav/kura_nav_destinations.dart';
 import 'package:kuratracker/core/nav/nav_destination.dart';
+import 'package:kuratracker/models/center_type.dart';
 import 'package:kuratracker/models/module_key.dart';
 
 /// Las guardias (assertSingleLevel / assertRoutesValid) solo servían contra fixtures;
@@ -19,27 +20,31 @@ void main() {
   final n = moduleKeys.length;
 
   test('la declaración real cumple las guardias en TODAS las permutaciones', () {
-    // Producto: isAdmin × isMaster × todas las combinaciones de módulos (2^n).
+    // Producto: isAdmin × isMaster × centerType × todas las combinaciones de módulos.
     for (final isAdmin in [true, false]) {
       for (final isMaster in [true, false]) {
-        for (var mask = 0; mask < (1 << n); mask++) {
-          final enabled = <String>{
-            for (var i = 0; i < n; i++)
-              if (mask & (1 << i) != 0) moduleKeys[i],
-          };
-          final decl = kuraNavDestinations(
-            moduleEnabled: (k) => enabled.contains(k),
-            isAdmin: isAdmin,
-            isMaster: isMaster,
-          );
-          expect(
-            () {
-              assertSingleLevel(decl);
-              assertRoutesValid(decl);
-            },
-            returnsNormally,
-            reason: 'isAdmin=$isAdmin, isMaster=$isMaster, módulos=$enabled',
-          );
+        for (final centerType in CenterType.values) {
+          for (var mask = 0; mask < (1 << n); mask++) {
+            final enabled = <String>{
+              for (var i = 0; i < n; i++)
+                if (mask & (1 << i) != 0) moduleKeys[i],
+            };
+            final decl = kuraNavDestinations(
+              moduleEnabled: (k) => enabled.contains(k),
+              isAdmin: isAdmin,
+              isMaster: isMaster,
+              centerType: centerType,
+            );
+            expect(
+              () {
+                assertSingleLevel(decl);
+                assertRoutesValid(decl);
+              },
+              returnsNormally,
+              reason: 'isAdmin=$isAdmin, isMaster=$isMaster, '
+                  'centerType=$centerType, módulos=$enabled',
+            );
+          }
         }
       }
     }
