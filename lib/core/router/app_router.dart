@@ -455,27 +455,25 @@ final routerProvider = Provider<GoRouter>((ref) {
             path: '/admin',
             redirect: (context, state) => '/admin/usuarios',
           ),
-          // [EXPERIMENTO task-3 — REVERTIR] Riel DEVUELTO al interior de la pantalla:
-          // cada sección es una GoRoute con builder (MaterialPage ANIMADA) que monta el
-          // AdminSectionsShell completo — el riel vuelve a vivir dentro de la página.
-          // Debe poner en ROJO las dos aserciones de admin_router_real_test: (a) el State
-          // del riel ya no es idéntico entre secciones (se reconstruye) y (b) la página
-          // declara transición (transitionDuration != Duration.zero).
-          for (final s in const [
-            'usuarios',
-            'personal',
-            'sitios',
-            'configuracion',
-            'marca',
-            'licencias',
-          ])
-            GoRoute(
-              path: '/admin/$s',
-              builder: (context, state) => AdminSectionsShell(
-                currentRoute: state.matchedLocation,
-                child: AdminSectionBody(section: s),
-              ),
-            ),
+          ShellRoute(
+            builder: (context, state, child) => AdminSectionsShell(
+                currentRoute: state.matchedLocation, child: child),
+            routes: [
+              for (final s in const [
+                'usuarios',
+                'personal',
+                'sitios',
+                'configuracion',
+                'marca',
+                'licencias',
+              ])
+                GoRoute(
+                  path: '/admin/$s',
+                  pageBuilder: (context, state) =>
+                      NoTransitionPage(child: AdminSectionBody(section: s)),
+                ),
+            ],
+          ),
           // Las 8 pantallas hijas profundas de Administración (FUERA del shell de
           // secciones: son pantallas completas). El gate por rol lo da el redirect global.
           GoRoute(
