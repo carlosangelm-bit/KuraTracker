@@ -10,7 +10,8 @@ import '../../core/design/tokens.dart';
 import '../../core/layout/responsive.dart';
 import '../../services/demo/demo_lead_service.dart';
 import '../../core/providers/session_provider.dart';
-import '../../core/router/app_shell.dart' show kFloatingNavBarHeight, UserMenuButton;
+import '../../core/router/app_shell.dart'
+    show kFloatingNavBarHeight, UserMenuButton, hasNavRail;
 import '../../core/widgets/kura_glass_card.dart';
 import '../../core/widgets/kura_primary_fab.dart';
 import '../../engine/models/kura_engine_enums.dart';
@@ -283,11 +284,16 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
               ],
             ),
           ),
-          const SizedBox(width: 8),
-          const Padding(
-            padding: EdgeInsets.only(top: 2),
-            child: UserMenuButton(),
-          ),
+          // La cuenta va aquí SOLO cuando no hay riel (móvil, o un rol sin riel): con
+          // riel (≥900 y ≥2 destinos) vive en su pie, y repetirla aquí duplicaba el menú
+          // de cuenta en Inicio. Misma fuente única que KuraPageHeader y AppShell.showRail.
+          if (!hasNavRail(ref, context)) ...[
+            const SizedBox(width: 8),
+            const Padding(
+              padding: EdgeInsets.only(top: 2),
+              child: UserMenuButton(),
+            ),
+          ],
         ],
       ),
     ];

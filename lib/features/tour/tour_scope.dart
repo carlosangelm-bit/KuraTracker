@@ -137,18 +137,26 @@ class _TourScopeState extends ConsumerState<TourScope> {
 
   /// Ancla el lanzador flotante (Tour en demo / Ayuda en prod) SIN empalmarse
   /// con la navegación ni con el FAB "Nuevo paciente" (bottom-right):
-  ///  - Escritorio (≥900): abajo-DERECHA, elevado por encima del FAB. El anclaje
-  ///    viejo (`left: 88`) caía ENCIMA del NavigationRail, que en español mide
-  ///    ~140px (más que los 88 supuestos), robándole toques al rail.
+  ///  - Escritorio (≥900): abajo-DERECHA, POR ENCIMA de la huella del FAB. El FAB
+  ///    (KuraPrimaryFab) se ELEVA su huella completa (`kFloatingNavBarHeight + 12 +
+  ///    safe-area`) y se sienta en endFloat (16px), así que en escritorio ocupa hasta
+  ///    ~140px desde abajo; un `bottom` fijo de 84 caía ENCIMA (lo reportado). El
+  ///    lanzador libera esa huella derivándola de las MISMAS constantes, no de un número
+  ///    suelto — así no se traslapa en ninguna anchura ni con el FAB extendido.
   ///  - Móvil (<900): abajo-izquierda, elevado sobre la barra flotante (el FAB
   ///    vive en bottom-right, así que la izquierda queda libre).
   Positioned _floatingLauncher(BuildContext context, Widget child) {
     final mq = MediaQuery.of(context);
     final wide = mq.size.width >= 900;
+    // Elevación que el FAB se aplica a sí mismo (KuraPrimaryFab): misma fórmula.
+    final fabLift = mq.viewPadding.bottom + kFloatingNavBarHeight + 12;
+    // Huella visible del FAB por encima de esa elevación: margen endFloat + alto del
+    // FAB extendido (Material) + una separación. El lanzador se coloca sobre ella.
+    const fabFootprint = 16.0 + 48.0 + 12.0;
     return Positioned(
       left: wide ? null : 16,
       right: wide ? 16 : null,
-      bottom: wide ? 84 : mq.viewPadding.bottom + kFloatingNavBarHeight + 12,
+      bottom: wide ? fabLift + fabFootprint : fabLift,
       child: child,
     );
   }
