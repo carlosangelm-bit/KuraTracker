@@ -596,8 +596,8 @@ class KuraAccountMenu extends ConsumerWidget {
 /// Encabezado de una PANTALLA CLÍNICA de primer nivel, DENTRO del contenido (sin AppBar):
 /// hermano del de /admin y /platform (KuraContentHeader). Contexto = el centro activo
 /// (11px), título = el nombre de la pantalla (28px w800, una sola vez), acciones a la
-/// derecha. La cuenta NO va aquí en escritorio —vive en el pie del riel, como en /admin—;
-/// en MÓVIL (sin riel) se añade UserMenuButton para no perder el acceso a cerrar sesión.
+/// derecha. La cuenta va aquí SOLO cuando no hay riel (móvil, o un rol con un solo
+/// destino como el cuidador); cuando hay riel, la cuenta vive en su pie, como en /admin.
 class KuraPageHeader extends ConsumerWidget {
   final String title;
   final List<Widget> actions;
@@ -606,20 +606,35 @@ class KuraPageHeader extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final session = ref.watch(sessionProvider);
-    final orgId = session.user?.organizationId;
+    final user = session.user;
+    final orgId = user?.organizationId;
     final repo = ref.watch(dataRepositoryProvider).valueOrNull;
     final centerName =
         (orgId != null ? repo?.organizationById(orgId)?.name : null) ??
             session.activeCenterType.label;
-    final wide = MediaQuery.of(context).size.width >= 900;
+    // Hay riel cuando la ventana es ANCHA **y** el usuario tiene ≥2 destinos visibles
+    // (NavigationRail/KuraNavRail exigen dos). Se deriva de la MISMA declaración que el
+    // riel (kuraNavDestinations, misma condición que AppShell.showRail), no de una
+    // bandera aparte: así el CUIDADOR —un solo destino, sin riel ni en ancho— recibe la
+    // cuenta en el encabezado. "Angosto" no basta: era la regresión de la etapa 5.
+    final modules = ref.watch(enabledModulesProvider);
+    final visibleCount = kuraNavDestinations(
+      moduleEnabled: (k) => modules.any((m) => m.dbValue == k),
+      isAdmin: user?.isAdmin ?? false,
+      isMaster: user?.isMaster ?? false,
+      centerType: session.activeCenterType,
+      isCaregiverOnly: user?.isCaregiverOnly ?? false,
+    ).where((d) => d.isVisible).length;
+    final hasRail =
+        MediaQuery.of(context).size.width >= 900 && visibleCount >= 2;
     return KuraContentHeader.flat(
       title: title,
       context: centerName,
       actions: [
         ...actions,
-        // Móvil: no hay riel, así que la cuenta (cerrar sesión, cambiar de centro) va
-        // en el encabezado. En escritorio la cuenta vive en el pie del riel.
-        if (!wide) const UserMenuButton(),
+        // Sin riel (móvil, o el cuidador con un solo destino aun en ancho), la cuenta
+        // (cerrar sesión, cambiar de centro) va en el encabezado. Con riel, en su pie.
+        if (!hasRail) const UserMenuButton(),
       ],
     );
   }
