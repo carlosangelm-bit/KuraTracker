@@ -119,10 +119,10 @@ class _AppShellState extends ConsumerState<AppShell> {
     final isTopLevel = visibleTop.any((d) => navRouteIsActive(d, currentPath));
 
     // --- Riel de escritorio (KuraNavRail): TRES bandas -----------------------
-    // ≥1200 abierto; 900–1199 colapsado; <900 no hay riel (barra inferior). Requiere
-    // ≥2 destinos: KuraNavRail (como NavigationRail/Bar) no tiene sentido con uno solo
-    // —un cuidador tiene una sola pantalla y queda sin riel y sin barra, y está bien.
-    final showRail = width >= 900 && showOwnNav && visibleTop.length >= 2;
+    // ≥1200 abierto; 900–1199 colapsado; <900 no hay riel (barra inferior). La regla
+    // "hay riel" (ancho ≥900 Y ≥2 destinos) vive en [hasNavRail], fuente única; aquí se
+    // compone con el factor de ruta (showOwnNav es false en /admin y /platform).
+    final showRail = showOwnNav && hasNavRail(ref, context);
     final autoCollapsed = width < 1200;
     final collapsed = _userCollapsed ?? autoCollapsed;
 
@@ -593,6 +593,26 @@ class KuraAccountMenu extends ConsumerWidget {
   }
 }
 
+/// ¿Hay riel de navegación de escritorio para el usuario en sesión? El riel existe
+/// cuando la ventana es ANCHA (≥900) **y** el usuario tiene ≥2 destinos visibles
+/// (NavigationRail/KuraNavRail exigen dos). ÚNICA fuente de esta regla, derivada de la
+/// declaración [kuraNavDestinations]: la usan [AppShell] (showRail), [KuraPageHeader] y el
+/// tablero para decidir dónde va la cuenta, sin copiar la condición del ancho suelta. NO
+/// incluye el factor de ruta (showOwnNav): /admin y /platform lo componen aparte.
+bool hasNavRail(WidgetRef ref, BuildContext context) {
+  final session = ref.watch(sessionProvider);
+  final user = session.user;
+  final modules = ref.watch(enabledModulesProvider);
+  final visibleCount = kuraNavDestinations(
+    moduleEnabled: (k) => modules.any((m) => m.dbValue == k),
+    isAdmin: user?.isAdmin ?? false,
+    isMaster: user?.isMaster ?? false,
+    centerType: session.activeCenterType,
+    isCaregiverOnly: user?.isCaregiverOnly ?? false,
+  ).where((d) => d.isVisible).length;
+  return MediaQuery.of(context).size.width >= 900 && visibleCount >= 2;
+}
+
 /// Encabezado de una PANTALLA CLÍNICA de primer nivel, DENTRO del contenido (sin AppBar):
 /// hermano del de /admin y /platform (KuraContentHeader). Contexto = el centro activo
 /// (11px), título = el nombre de la pantalla (28px w800, una sola vez), acciones a la
@@ -612,21 +632,9 @@ class KuraPageHeader extends ConsumerWidget {
     final centerName =
         (orgId != null ? repo?.organizationById(orgId)?.name : null) ??
             session.activeCenterType.label;
-    // Hay riel cuando la ventana es ANCHA **y** el usuario tiene ≥2 destinos visibles
-    // (NavigationRail/KuraNavRail exigen dos). Se deriva de la MISMA declaración que el
-    // riel (kuraNavDestinations, misma condición que AppShell.showRail), no de una
-    // bandera aparte: así el CUIDADOR —un solo destino, sin riel ni en ancho— recibe la
-    // cuenta en el encabezado. "Angosto" no basta: era la regresión de la etapa 5.
-    final modules = ref.watch(enabledModulesProvider);
-    final visibleCount = kuraNavDestinations(
-      moduleEnabled: (k) => modules.any((m) => m.dbValue == k),
-      isAdmin: user?.isAdmin ?? false,
-      isMaster: user?.isMaster ?? false,
-      centerType: session.activeCenterType,
-      isCaregiverOnly: user?.isCaregiverOnly ?? false,
-    ).where((d) => d.isVisible).length;
-    final hasRail =
-        MediaQuery.of(context).size.width >= 900 && visibleCount >= 2;
+    // Hay riel (fuente única [hasNavRail]): ancho ≥900 Y ≥2 destinos visibles. Así el
+    // CUIDADOR —un solo destino, sin riel ni en ancho— recibe la cuenta en el encabezado.
+    final hasRail = hasNavRail(ref, context);
     return KuraContentHeader.flat(
       title: title,
       context: centerName,
