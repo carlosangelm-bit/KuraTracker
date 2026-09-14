@@ -24,7 +24,6 @@ import '../../core/name_format.dart';
 import '../../core/config/app_config.dart';
 import '../../core/providers/session_provider.dart';
 import '../../core/utils/caregiver_login.dart';
-import '../../core/router/app_shell.dart' show KuraAccountMenu;
 import '../../core/widgets/kura_primary_fab.dart';
 import '../../core/nav/kura_nav_rail.dart';
 import '../../core/nav/kura_nav_destinations.dart';
@@ -117,9 +116,8 @@ class _AdminSectionsShellState extends ConsumerState<AdminSectionsShell> {
             centerName: 'Administración',
             onToggleCollapse: () =>
                 setState(() => _userCollapsed = !collapsed),
-            // El pie del riel es el menú de cuenta (cerrar sesión, etc.): al quitar
-            // el AppBar se fue el UserMenuButton, así que la identidad ES el control.
-            accountMenuBuilder: (ctx, child) => KuraAccountMenu(child: child),
+            // [EXPERIMENTO rojo — REVERTIR] Pie inerte (sin accountMenuBuilder): sin
+            // control de cuenta ni acceso a cerrar sesión → prueba en rojo.
           ),
           const VerticalDivider(width: 1),
           Expanded(child: content),
