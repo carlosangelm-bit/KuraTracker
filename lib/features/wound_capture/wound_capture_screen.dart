@@ -1071,7 +1071,6 @@ class _WoundCaptureScreenState extends ConsumerState<WoundCaptureScreen> {
                 contentPadding: EdgeInsets.zero,
                 title: const Text('Dolor *'),
                 value: formState.pain,
-                activeColor: KuraColors.primary,
                 onChanged: (v) => update(() => formState.pain = v),
               ),
               if (formState.pain) ...[
@@ -1508,7 +1507,6 @@ class _WoundCaptureScreenState extends ConsumerState<WoundCaptureScreen> {
                 // para casos donde la deteccion automatica no coincide con
                 // el criterio clinico (p. ej. ubicacion no capturada aun).
                 value: formState.esExtremidadInferior,
-                activeColor: KuraColors.primary,
                 onChanged: (v) => update(() => formState.esExtremidadInferior = v),
               ),
               if (formState.esExtremidadInferior)

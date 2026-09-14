@@ -268,7 +268,7 @@ class _StaffTabState extends State<StaffTab> {
                   'Usa el botón "Nuevo" para dar de alta al primero.',
             )
           : ListView.separated(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 88),
+              padding: EdgeInsets.fromLTRB(16, 16, 16, kuraListBottomInset(context)),
               itemCount: staff.length,
               separatorBuilder: (_, __) => const SizedBox(height: 8),
               itemBuilder: (context, i) {
@@ -314,7 +314,6 @@ class _StaffTabState extends State<StaffTab> {
                         ),
                         Switch(
                           value: s.isActive,
-                          activeColor: KuraColors.primary,
                           onChanged: (v) async {
                             await widget.repo.setStaffActive(s.id, v);
                             setState(() {});
@@ -588,7 +587,7 @@ class _SitesTabState extends State<SitesTab> {
                   '(clínica, domicilio, hospital...).',
             )
           : ListView.separated(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 88),
+              padding: EdgeInsets.fromLTRB(16, 16, 16, kuraListBottomInset(context)),
               itemCount: sites.length,
               separatorBuilder: (_, __) => const SizedBox(height: 8),
               itemBuilder: (context, i) {
@@ -612,7 +611,6 @@ class _SitesTabState extends State<SitesTab> {
                             const Text('Activo', style: TextStyle(fontSize: 10)),
                             Switch(
                               value: s.isActive,
-                              activeColor: KuraColors.primary,
                               onChanged: (v) async {
                                 await widget.repo.setSiteActive(s.id, v);
                                 setState(() {});
@@ -1839,7 +1837,7 @@ class _BrandingTabState extends State<BrandingTab> {
     if (!_loaded) return const Center(child: CircularProgressIndicator());
     final color = _parse(_colorCtrl.text) ?? KuraColors.primary;
     return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 88),
+      padding: EdgeInsets.fromLTRB(16, 16, 16, kuraListBottomInset(context)),
       children: [
         const Text('Marca del centro para reportes',
             style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),

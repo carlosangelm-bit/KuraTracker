@@ -846,7 +846,6 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
                   contentPadding: EdgeInsets.zero,
                   title: const Text('Dolor'),
                   value: _pain,
-                  activeColor: KuraColors.primary,
                   onChanged: (v) => setState(() => _pain = v),
                 ),
                 if (_pain) ...[
@@ -1685,7 +1684,6 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
               title: const Text('No revascularizable (Doppler/angiólogo)',
                   style: TextStyle(fontSize: 13)),
               value: _effectiveNoRevasc(wound),
-              activeColor: KuraColors.primary,
               onChanged: (v) => setState(() {
                 _noRevascOverride = v;
                 _engineOutput = null;

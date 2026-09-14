@@ -600,7 +600,7 @@ class _OrganizationsTab extends StatelessWidget {
             child: organizations.isEmpty
           ? const _NoOrganizationsState()
           : ListView.separated(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 88),
+              padding: EdgeInsets.fromLTRB(16, 16, 16, kuraListBottomInset(context)),
               itemCount: organizations.length,
               separatorBuilder: (_, __) => const SizedBox(height: 8),
               itemBuilder: (context, i) {
@@ -634,7 +634,6 @@ class _OrganizationsTab extends StatelessWidget {
                             // se desbordaba 7 px por abajo).
                             Switch(
                               value: o.isActive,
-                              activeColor: KuraColors.primary,
                               materialTapTargetSize:
                                   MaterialTapTargetSize.shrinkWrap,
                               onChanged: (v) async {
@@ -740,7 +739,7 @@ class _ModulesTabState extends State<_ModulesTab> {
         (_scope == _ModuleScope.usuario && scopeProfileId != null);
 
     return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 88),
+      padding: EdgeInsets.fromLTRB(16, 16, 16, kuraListBottomInset(context)),
       children: [
         Text('Módulos de ${org.name}',
             style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
@@ -1037,7 +1036,6 @@ class _MembershipsDialogState extends State<_MembershipsDialog> {
                           ),
                         Switch(
                           value: isMember,
-                          activeColor: KuraColors.primary,
                           onChanged: _busy
                               ? null
                               : (v) => _toggle(u, v, existing: m),

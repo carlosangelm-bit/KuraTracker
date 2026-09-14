@@ -7,6 +7,7 @@ import '../../core/providers/session_provider.dart';
 import '../../core/router/app_shell.dart' show KuraScreen;
 import '../../models/preventive_task.dart';
 import '../../services/data_repository.dart';
+import '../../core/widgets/kura_primary_fab.dart';
 
 /// Agenda de prevención (Fase 3): las actividades preventivas como TAREAS con
 /// fecha y estado, en formato día/semana (como la agenda de citas). El personal
@@ -324,7 +325,7 @@ class _PreventiveTasksViewState extends State<PreventiveTasksView> {
                   ),
                 )
               : ListView(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 88),
+                  padding: EdgeInsets.fromLTRB(16, 8, 16, kuraListBottomInset(context)),
                   children: [
                     if (pending.isEmpty)
                       Padding(

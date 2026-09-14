@@ -1463,7 +1463,7 @@ class _ConciliacionTabState extends ConsumerState<_ConciliacionTab> {
     final org = repo.organizationById(widget.orgId);
     return Scaffold(
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 88),
+        padding: EdgeInsets.fromLTRB(16, 12, 16, kuraListBottomInset(context)),
         children: [
           _TerminalConfigCard(
             repo: repo,
