@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../providers/session_provider.dart';
+import 'nav_redirect.dart';
 import '../../models/app_user.dart';
 import '../../models/module_key.dart';
 import '../../features/auth/demo_persona_screen.dart';
@@ -143,103 +144,39 @@ final routerProvider = Provider<GoRouter>((ref) {
       if (!isDemoMode && ref.read(passwordRecoveryProvider)) {
         return '/reset-password';
       }
-      if (!loggedIn && !goingToLogin && !goingToDemo) {
-        // En demo, la landing es la selección de perfil; en prod, el login.
-        if (isDemoMode) return '/demo';
-        // Enlace profundo en frío: guarda el destino pretendido para restaurarlo al
-        // resolver la sesión (antes se perdía → caías en '/'). No se guardan destinos
-        // triviales ni de auth.
-        final from = state.uri.toString();
-        final keep = from != '/' &&
-            !from.startsWith('/login') &&
-            !from.startsWith('/demo');
-        return keep ? '/login?from=${Uri.encodeComponent(from)}' : '/login';
-      }
-
-      // El master (administrador de plataforma) no tiene datos clinicos
-      // propios (dashboard/pacientes/reportes quedarian vacios para el,
-      // ver regla de oro en 0012_master_role.sql): al iniciar sesion se le
-      // manda directo a su area de trabajo real, '/platform'.
+      // El master no tiene datos clínicos propios (0012); el CUIDADOR (Fase 3) solo
+      // ve /caregiver; enfermería (0045) es clínica restringida. Los flags de rol se
+      // computan aquí y alimentan la decisión de auth/rol (función pura, misma lógica
+      // que se prueba: resolveNavRedirect).
       final isMaster = session.user?.role == AppRole.master;
-      // El CUIDADOR (Fase 3) es un rol restringido: su única área es
-      // '/caregiver' (monitoreo de los pacientes que el centro le asignó, solo
-      // lectura + sus tareas). No ve el dashboard clínico ni el resto de la nav.
-      // RESTRICCIÓN → cuidador EXCLUSIVO (punto 6 §0): encerrar en /caregiver
-      // solo a quien no tiene ningún rol más amplio.
       final isCaregiver = session.user?.isCaregiverOnly ?? false;
-      // Enfermería (0045): personal clínico restringido — observa, reporta y
-      // ejecuta, pero NO diagnostica ni cambia protocolo. Se le bloquean las
-      // rutas de escritura de diagnóstico/protocolo (abajo). RESTRICCIÓN →
-      // enfermería SIN nada más amplio (punto 6 §0): un {clinico,enfermeria} NO
-      // debe quedar bloqueado, porque su rol clínico sí diagnostica.
       final isNurse = session.user?.isRestrictedNurse ?? false;
-      if (loggedIn && (goingToLogin || goingToDemo)) {
-        if (isMaster) return '/platform';
-        if (isCaregiver) return '/caregiver';
-        // Restaura el destino pretendido guardado en ?from= (enlace profundo en
-        // frío). Si no aplica al rol, la siguiente pasada del redirect lo reajusta.
-        final from = state.uri.queryParameters['from'];
-        if (from != null &&
-            from.isNotEmpty &&
-            !from.startsWith('/login') &&
-            !from.startsWith('/demo')) {
-          return from;
-        }
-        return '/';
-      }
+      final isAdmin = session.user?.isAdmin ?? false;
+
+      // Auth + rol + /platform + /admin + compra: el ?from= (enlace profundo en frío)
+      // gana ANTES que los retornos por rol, así un master/cuidador que entró a una
+      // ruta profunda no la pierde (la pasada siguiente reajusta si no le toca).
+      final roleRedirect = resolveNavRedirect(
+        loggedIn: loggedIn,
+        isDemoMode: isDemoMode,
+        goingToLogin: goingToLogin,
+        goingToDemo: goingToDemo,
+        matchedLocation: state.matchedLocation,
+        uriString: state.uri.toString(),
+        fromParam: state.uri.queryParameters['from'],
+        isMaster: isMaster,
+        isCaregiver: isCaregiver,
+        isAdmin: isAdmin,
+      );
+      if (roleRedirect != null) return roleRedirect;
 
       final location = state.matchedLocation;
-      if (loggedIn && isMaster) {
-        // Si el master cae en cualquier ruta clinica (tecleada a mano,
-        // bookmark antiguo, etc.) se le redirige a su area real: esas
-        // pantallas no tienen datos utiles para el (misma regla de oro).
-        final isClinicalRoute =
-            location == '/' || location.startsWith('/patients') || location == '/reports';
-        if (isClinicalRoute) return '/platform';
-      } else if (loggedIn && isCaregiver) {
-        // El cuidador solo puede estar en su área; cualquier otra ruta lo
-        // regresa a '/caregiver' (defensa de UX; la RLS 0042 ya le niega el
-        // resto de los datos). El asistente de ayuda es un overlay flotante, no
-        // una ruta, así que no lo afecta este redirect.
-        if (!location.startsWith('/caregiver')) return '/caregiver';
-      } else if (loggedIn && location.startsWith('/caregiver')) {
-        // Un no-cuidador que teclee '/caregiver' no tiene nada ahí.
-        return '/';
-      } else if (loggedIn && location.startsWith('/platform')) {
-        // Hardening (no es hueco de datos: la RLS is_master() de 0012 ya le
-        // niega todo a un no-master; esto solo pule la UX): un admin/clinico
-        // que teclee '/platform' a mano no debe quedarse ahi -- se le manda
-        // a su dashboard normal.
-        return '/';
-      }
 
       // Enfermería: bloquear rutas de ESCRITURA de diagnóstico/protocolo (la
       // RLS 0045 ya se lo niega; esto pule la UX y evita pantallas de captura).
       // Puede: leer expediente, ficha de riesgo (reporte Braden), eventos
       // adversos (reporte) y agenda de prevención (ejecución).
-      // Compra de insumos: SOLO admin del centro (y master). Enfermería y
-      // clínico NO compran. Registrar CONSUMO clínico (/insumos/consumo) sí es
-      // parte del trabajo, así que no se bloquea. Dos capas (router + guarda en
-      // pantalla) porque en web una ruta por URL no es un candado.
-      final isAdmin = session.user?.isAdmin ?? false;
-      final canPurchase = isAdmin || isMaster;
-      if (loggedIn && !canPurchase) {
-        const purchaseRoutes = {
-          '/insumos/tienda',
-          '/insumos/inventario',
-          '/insumos/reabasto',
-          '/insumos/mapeo',
-        };
-        if (purchaseRoutes.contains(location)) return '/insumos';
-      }
-
-      // /admin: SOLO admin del centro (y master). Mismo criterio que la compra
-      // de insumos. En web una URL no es candado (punto 1 auditoría 1-sep): un
-      // clinico tecleando /admin abría el panel completo. Dos capas: este
-      // redirect + guarda de rol dentro de AdminHomeScreen.
-      if (loggedIn && !canPurchase && location.startsWith('/admin')) {
-        return '/';
-      }
+      // (La compra de insumos y /admin ya se gatearon en resolveNavRedirect.)
 
       // Rutas de ESCRITURA clínica (crear/editar). Se GATEA LA RUTA, no solo el
       // guardado: un centro en modo lectura (prueba vencida/impago) o enfermería
