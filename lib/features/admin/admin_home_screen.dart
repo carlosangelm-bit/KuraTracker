@@ -88,6 +88,8 @@ class _AdminHomeScreenState extends ConsumerState<AdminHomeScreen> {
       moduleEnabled: (k) => modules.any((m) => m.dbValue == k),
       isAdmin: true,
       isMaster: false,
+      // Tipo de centro activo: define la rama de agenda (hospital → Rondas).
+      centerType: ref.watch(sessionProvider).activeCenterType,
     );
     final admin = navs.firstWhere((d) => d.route == '/admin');
     final currentRoute = '/admin/$section';
