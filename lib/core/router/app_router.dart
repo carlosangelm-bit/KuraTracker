@@ -107,6 +107,16 @@ Widget Function(BuildContext, GoRouterState) _adminChild(
       );
 }
 
+/// Ruta clínica de PRIMER NIVEL (un destino del riel). Con el riel único, moverse entre
+/// estos destinos es cambiar de PANEL, igual que entre las secciones de /admin y
+/// /platform: sin animación (NoTransitionPage). Las rutas PROFUNDAS —detalle de paciente,
+/// expediente, captura— NO usan esto: conservan la transición por omisión, porque ahí sí
+/// estás navegando hacia ADENTRO y el movimiento lo comunica (§ etapa 5, simetría a).
+GoRoute _topLevel(String path, Widget child) => GoRoute(
+      path: path,
+      pageBuilder: (context, state) => NoTransitionPage(child: child),
+    );
+
 final routerProvider = Provider<GoRouter>((ref) {
   final refreshNotifier = _RouterRefreshNotifier();
   ref.listen(sessionProvider, (previous, next) {
@@ -250,11 +260,8 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (context, state, child) =>
             AppShell(currentPath: state.matchedLocation, child: child),
         routes: [
-          GoRoute(path: '/', builder: (context, state) => const DashboardScreen()),
-          GoRoute(
-            path: '/patients',
-            builder: (context, state) => const PatientsListScreen(),
-          ),
+          _topLevel('/', const DashboardScreen()),
+          _topLevel('/patients', const PatientsListScreen()),
           GoRoute(
             path: '/patients/new',
             builder: (context, state) => const PatientFormScreen(),
@@ -383,9 +390,9 @@ final routerProvider = Provider<GoRouter>((ref) {
               consultationId: state.pathParameters['consultationId']!,
             ),
           ),
-          GoRoute(path: '/reports', builder: (context, state) => const ReportsScreen()),
-          GoRoute(path: '/insumos', builder: (context, state) => const InsumosHomeScreen()),
-          GoRoute(path: '/comercial', builder: (context, state) => const ComercialScreen()),
+          _topLevel('/reports', const ReportsScreen()),
+          _topLevel('/insumos', const InsumosHomeScreen()),
+          _topLevel('/comercial', const ComercialScreen()),
           GoRoute(
               path: '/insumos/tienda',
               builder: (context, state) => const TiendaScreen()),
@@ -401,17 +408,13 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
               path: '/insumos/reabasto',
               builder: (context, state) => const ReabastoScreen()),
-          GoRoute(path: '/agenda', builder: (context, state) => const AgendaScreen()),
-          GoRoute(path: '/risk', builder: (context, state) => const RiskBoardScreen()),
-          GoRoute(
-              path: '/prevention-agenda',
-              builder: (context, state) => const PreventionAgendaScreen()),
+          _topLevel('/agenda', const AgendaScreen()),
+          _topLevel('/risk', const RiskBoardScreen()),
+          _topLevel('/prevention-agenda', const PreventionAgendaScreen()),
           GoRoute(
               path: '/hospital',
               builder: (context, state) => const HospitalDashboardScreen()),
-          GoRoute(
-              path: '/vac',
-              builder: (context, state) => const VacTherapiesScreen()),
+          _topLevel('/vac', const VacTherapiesScreen()),
           GoRoute(
             path: '/vac/:therapyId',
             builder: (context, state) => VacTherapyDetailScreen(
@@ -430,9 +433,7 @@ final routerProvider = Provider<GoRouter>((ref) {
               therapyId: state.pathParameters['therapyId']!,
             ),
           ),
-          GoRoute(
-              path: '/caregiver',
-              builder: (context, state) => const CaregiverHomeScreen()),
+          _topLevel('/caregiver', const CaregiverHomeScreen()),
           GoRoute(
             path: '/caregiver/patient/:patientId',
             builder: (context, state) => CaregiverPatientScreen(
@@ -537,10 +538,7 @@ final routerProvider = Provider<GoRouter>((ref) {
                 ),
             ],
           ),
-          GoRoute(
-            path: '/import-export',
-            builder: (context, state) => const ImportExportScreen(),
-          ),
+          _topLevel('/import-export', const ImportExportScreen()),
           GoRoute(
             // Hija de /import-export para que ModuleKey.forRoute la atrape (via
             // el prefijo de la ruta del módulo) y herede el gate del módulo. Como
