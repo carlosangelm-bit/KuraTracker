@@ -13,6 +13,7 @@ import 'nav_destination.dart';
 List<NavDestination> kuraNavDestinations({
   required bool Function(String moduleKey) moduleEnabled,
   required bool isAdmin,
+  required bool isMaster,
 }) {
   NavDestination mod(ModuleKey m, IconData icon) => NavDestination(
         label: m.label,
@@ -62,5 +63,60 @@ List<NavDestination> kuraNavDestinations({
             route: '/admin/licencias'),
       ],
     ),
+    // Plataforma: la consola del master. Nueve secciones, cada una con su ruta
+    // propia (§5 etapa 2). Sustituye al riel doble + `_tab`/switch de /platform.
+    NavDestination(
+      label: 'Plataforma',
+      icon: Icons.hub_outlined,
+      route: '/platform',
+      visibleWhen: () => isMaster,
+      children: const [
+        NavDestination(
+            label: 'Centros',
+            icon: Icons.business_outlined,
+            route: '/platform/centros'),
+        NavDestination(
+            label: 'Usuarios',
+            icon: Icons.people_outline,
+            route: '/platform/usuarios'),
+        NavDestination(
+            label: 'Personal',
+            icon: Icons.medical_services_outlined,
+            route: '/platform/personal'),
+        NavDestination(
+            label: 'Sitios',
+            icon: Icons.location_on_outlined,
+            route: '/platform/sitios'),
+        NavDestination(
+            label: 'Catálogo',
+            icon: Icons.list_alt_outlined,
+            route: '/platform/catalogo'),
+        NavDestination(
+            label: 'Marca',
+            icon: Icons.palette_outlined,
+            route: '/platform/marca'),
+        NavDestination(
+            label: 'Módulos',
+            icon: Icons.tune_outlined,
+            route: '/platform/modulos'),
+        NavDestination(
+            label: 'Solicitudes',
+            icon: Icons.request_page_outlined,
+            route: '/platform/solicitudes'),
+        NavDestination(
+            label: 'Licencia',
+            icon: Icons.workspace_premium_outlined,
+            route: '/platform/licencia'),
+      ],
+    ),
   ];
 }
+
+/// Las secciones del master, listas para el riel de /platform: la declaración
+/// filtrada a "Plataforma" (y sus nueve hijos). Fuente única — la misma
+/// declaración de [kuraNavDestinations].
+List<NavDestination> platformNavDestinations() => kuraNavDestinations(
+      moduleEnabled: (_) => false,
+      isAdmin: false,
+      isMaster: true,
+    ).where((d) => d.route == '/platform').toList();

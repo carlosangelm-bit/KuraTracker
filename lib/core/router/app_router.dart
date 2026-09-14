@@ -549,9 +549,18 @@ final routerProvider = Provider<GoRouter>((ref) {
                   builder: (context, state) => const DataDisclosuresScreen()),
             ],
           ),
+          // /platform: cada sección con su URL propia (§5 etapa 2). Entrar en frío a
+          // /platform/<sección> llega a la sección correcta; /platform (a secas)
+          // canoniza a Centros. La pantalla activa se deriva de la URL, no de _tab.
           GoRoute(
             path: '/platform',
-            builder: (context, state) => const PlatformHomeScreen(),
+            redirect: (context, state) =>
+                state.matchedLocation == '/platform' ? '/platform/centros' : null,
+          ),
+          GoRoute(
+            path: '/platform/:section',
+            builder: (context, state) => PlatformHomeScreen(
+                section: state.pathParameters['section'] ?? 'centros'),
           ),
           GoRoute(
             path: '/import-export',
