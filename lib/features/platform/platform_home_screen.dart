@@ -23,8 +23,9 @@ import '../../services/data_repository.dart';
 import '../../services/clinical_params_csv.dart';
 import '../../services/csv_download.dart';
 import '../admin/admin_home_screen.dart'
-    show StaffTab, SitesTab, NoteCatalogTab, BrandingTab;
+    show SitesTab, NoteCatalogTab, BrandingTab;
 import '../admin/users_screen.dart' show UsersScreen;
+import '../admin/staff_screen.dart' show StaffScreen;
 
 /// Area de "Plataforma": pantalla exclusiva del rol `master`
 /// (administrador de plataforma, ver 0012_master_role.sql). A diferencia
@@ -392,7 +393,7 @@ class _PlatformSectionBodyState extends ConsumerState<PlatformSectionBody> {
     final perCenter = switch (section) {
       'usuarios' => UsersScreen(
           repo: repo, organizationId: selected, currentUserId: user?.id),
-      'personal' => StaffTab(repo: repo, organizationId: selected),
+      'personal' => StaffScreen(repo: repo, organizationId: selected),
       'sitios' => SitesTab(repo: repo, organizationId: selected),
       'catalogo' => NoteCatalogTab(repo: repo, organizationId: selected),
       'marca' => BrandingTab(repo: repo, organizationId: selected),
