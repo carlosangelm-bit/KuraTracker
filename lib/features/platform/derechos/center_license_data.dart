@@ -61,13 +61,20 @@ class _ModuleDesc {
   final String label;
   final ModuleKey? switchKey;
   final bool seatDerived;
-  const _ModuleDesc(this.key, this.label, {this.switchKey, this.seatDerived = false});
+  // Copy propio para el caso rojo (encendido sin derecho). module:clinico habla de
+  // ASIENTOS, no de interruptor, porque su "encendido" se deriva de los asientos.
+  final String? onWithoutRightMessage;
+  const _ModuleDesc(this.key, this.label,
+      {this.switchKey, this.seatDerived = false, this.onWithoutRightMessage});
 }
 
 const _moduleDescriptors = <_ModuleDesc>[
   // module:clinico PRIMERO: es el derecho que exigen 0115 y canWriteModule para todo
   // el expediente; 0119 lo deriva de los asientos.
-  _ModuleDesc('clinico', 'Clínico (expediente)', seatDerived: true),
+  _ModuleDesc('clinico', 'Clínico (expediente)',
+      seatDerived: true,
+      onWithoutRightMessage:
+          'Con asientos activos pero sin el derecho clínico: nadie ve el expediente.'),
   _ModuleDesc('admin', 'Administración avanzada'),
   _ModuleDesc('insumos', 'Insumos', switchKey: ModuleKey.insumos),
   _ModuleDesc('comercial', 'Comercial', switchKey: ModuleKey.comercial),
@@ -118,7 +125,11 @@ List<ModuleLicenseRow> moduleLicenseRows(DataRepository repo, String orgId) {
           hasRight: hasRight,
           hasSwitch: hasSwitch,
           switchOn: switchOn,
-          agreement: moduleAgreement(hasRight: hasRight, switchOn: switchOn),
+          agreement: moduleAgreement(
+            hasRight: hasRight,
+            switchOn: switchOn,
+            onWithoutRightMessage: d.onWithoutRightMessage,
+          ),
           amountCents: repo.unitAmountCents('module', d.key, 'month'),
         );
       }(),

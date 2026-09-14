@@ -52,8 +52,11 @@ void main() {
     expect(clin.hasRight, isFalse); // canceled ≠ active
     expect(clin.switchOn, isTrue); // hay asientos → "encendido"
     expect(clin.agreement.kind, ModuleAgreementCase.onWithoutRight);
+    // Copy propio de Clínico: habla de ASIENTOS, no de interruptor.
     expect(clin.agreement.message,
-        'Encendido en el centro, pero sin derecho: nadie lo ve.');
+        'Con asientos activos pero sin el derecho clínico: nadie ve el expediente.');
+    expect(clin.agreement.message.toLowerCase(), contains('asiento'));
+    expect(clin.agreement.message.toLowerCase(), isNot(contains('interruptor')));
   });
 
   test('seat:clinico activo + module:clinico activo → normal (no rojo falso)',
