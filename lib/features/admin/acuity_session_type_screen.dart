@@ -118,7 +118,10 @@ class _AcuitySessionTypeScreenState
                 )
               else ...[
                 DropdownButtonFormField<String>(
-                  initialValue: _selectedSiteId,
+                  // value:, NO initialValue: — el CI compila con Flutter 3.27.1, donde
+                  // DropdownButtonFormField usa value (ver CLAUDE.md). Un quick-fix local
+                  // (3.44) lo había volteado y rompió el analyze del CI.
+                  value: _selectedSiteId,
                   isExpanded: true,
                   decoration: const InputDecoration(
                       labelText: 'Sitio', isDense: true),
