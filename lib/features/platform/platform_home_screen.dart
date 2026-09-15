@@ -7,7 +7,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/theme/kura_theme.dart';
 import '../../core/providers/session_provider.dart';
-import '../../core/router/app_shell.dart' show KuraAccountMenu;
+import '../../core/config/app_config.dart';
+import '../../core/router/app_shell.dart' show KuraAccountMenu, hasNavRail;
+import '../support/support_launcher.dart';
 import '../../core/widgets/kura_primary_fab.dart';
 import '../../core/nav/kura_nav_destinations.dart';
 import '../../core/nav/kura_nav_rail.dart';
@@ -253,6 +255,9 @@ class _PlatformSectionsShellState extends ConsumerState<PlatformSectionsShell> {
     // colapsar/expandir manda por encima del ancho una vez que el usuario lo toca.
     final autoCollapsed = MediaQuery.of(context).size.width < 1200;
     final collapsed = _userCollapsed ?? autoCollapsed;
+    // La consola del master SIEMPRE pinta un riel: aquí siempre hay riel, así que
+    // TourScope no duplica el flotante de Ayuda.
+    publishRailPresent(ref, true, mounted: () => mounted);
     final navs = platformNavDestinations();
     final plataforma = navs.first; // "Plataforma" con sus 9 secciones
     final user = ref.watch(sessionProvider).user;
@@ -303,7 +308,8 @@ class _PlatformSectionsShellState extends ConsumerState<PlatformSectionsShell> {
           // La acción principal de la sección (a ≥900) precede a las del master (CSV,
           // anomalías): es la más llamativa del encabezado.
           actions: [
-            ...sectionHeaderActions(context, ref, widget.currentRoute),
+            ...sectionHeaderActions(ref, widget.currentRoute,
+                hasRail: hasNavRail(ref, context)),
             ...actions,
           ],
         ),
@@ -327,6 +333,9 @@ class _PlatformSectionsShellState extends ConsumerState<PlatformSectionsShell> {
                 setState(() => _userCollapsed = !collapsed),
             // El pie del riel es el menú de cuenta (cerrar sesión, etc.).
             accountMenuBuilder: (ctx, child) => KuraAccountMenu(child: child),
+            onHelp: AppConfig.isSupabaseConfigured
+                ? () => openSupportAssistant(ref)
+                : null,
           ),
           const VerticalDivider(width: 1),
           Expanded(child: content),
