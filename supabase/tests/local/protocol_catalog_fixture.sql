@@ -28,9 +28,15 @@ create table if not exists public.organizations (
   name text not null
 );
 
--- inventory_items: solo lo que 0076 referencia por FK (inventory_item_id).
+-- inventory_items: lo que 0076 referencia por FK y lo que 0139 lee (org, site, name).
 create table if not exists public.inventory_items (
-  id uuid primary key default gen_random_uuid()
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid,
+  site_id uuid,
+  name text,
+  unit_cost numeric(10, 2),
+  currency text default 'MXN',
+  is_active boolean not null default true
 );
 
 -- org_entitlements con la forma de 0113 (kind/key/status).
@@ -161,4 +167,19 @@ insert into public.organizations (id, name) values
 insert into public.org_entitlements (organization_id, kind, key, status, source, current_period_end) values
   ('77777777-7777-7777-7777-777777777777', 'module', 'clinico', 'active', 'master', now() - interval '1 day'),
   ('88888888-8888-8888-8888-888888888888', 'module', 'clinico', 'active', 'master', null)
+  on conflict do nothing;
+
+-- Centro que CONSUME el protocolo Kura+ (seat:protocolo vigente, cupo>=1) SIN protocol:author
+-- (para el test 2.d: recibe su régimen del catálogo pero no puede LEER el catálogo). Con un
+-- admin y un insumo en su inventario, al que apuntará la regla de catálogo del test.
+insert into public.organizations (id, name) values
+  ('99999999-9999-9999-9999-999999999999', 'Centro que CONSUME Kura+') on conflict do nothing;
+insert into public.profiles (id, roles, role, organization_id) values
+  ('9a000000-0000-0000-0000-000000000000', array['admin']::public.user_role[], 'admin', '99999999-9999-9999-9999-999999999999')
+  on conflict do nothing;
+insert into public.org_entitlements (organization_id, kind, key, quantity, status, source, current_period_end) values
+  ('99999999-9999-9999-9999-999999999999', 'seat', 'protocolo', 1, 'active', 'master', null)
+  on conflict do nothing;
+insert into public.inventory_items (id, organization_id, site_id, name) values
+  ('c0000000-0000-0000-0000-000000000001', '99999999-9999-9999-9999-999999999999', null, 'Apósito del consumidor')
   on conflict do nothing;
