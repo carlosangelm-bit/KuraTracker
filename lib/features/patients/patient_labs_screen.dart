@@ -4,7 +4,9 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
 import '../../core/theme/kura_theme.dart';
+import '../../core/nav/section_action.dart' show SectionAction, SectionActionButton;
 import '../../core/providers/session_provider.dart';
+import '../../core/router/app_shell.dart' show hasNavRail;
 import '../../core/widgets/kura_primary_fab.dart';
 import '../../engine/labs/lab_domain_scoring.dart';
 import '../../models/patient_lab.dart';
@@ -35,6 +37,17 @@ class _PatientLabsScreenState extends ConsumerState<PatientLabsScreen> {
   Widget build(BuildContext context) {
     final repoAsync = ref.watch(dataRepositoryProvider);
     final user = ref.watch(sessionProvider).user;
+    // CON riel (hasNavRail): la acción sube al encabezado — aquí el AppBar, que es el
+    // encabezado de esta subpantalla con retroceso — y desaparece el FAB. SIN riel se
+    // queda el FAB al pulgar. Misma regla del §3.
+    final rail = hasNavRail(ref, context);
+    final addAction = SectionAction(
+      sectionKey: 'labs',
+      label: 'Registrar labs',
+      icon: Icons.add,
+      onPressed: () =>
+          _add(repoAsync.valueOrNull, user?.organizationId, user?.id),
+    );
     return Scaffold(
       appBar: AppBar(
         leading: IconButton(
@@ -44,6 +57,14 @@ class _PatientLabsScreenState extends ConsumerState<PatientLabsScreen> {
               : context.go('/patients/${widget.patientId}'),
         ),
         title: const Text('Laboratorios'),
+        actions: rail
+            ? [
+                Padding(
+                  padding: const EdgeInsets.only(right: 12),
+                  child: SectionActionButton(addAction),
+                ),
+              ]
+            : null,
       ),
       body: repoAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
@@ -51,7 +72,8 @@ class _PatientLabsScreenState extends ConsumerState<PatientLabsScreen> {
         data: (repo) {
           final labs = repo.listPatientLabs(widget.patientId);
           return ListView(
-            padding: EdgeInsets.fromLTRB(16, 16, 16, kuraListBottomInset(context)),
+            padding: EdgeInsets.fromLTRB(
+                16, 16, 16, rail ? 16 : kuraListBottomInset(context)),
             children: [
               Text(
                 'El laboratorio más reciente alimenta el motor de cicatrización '
@@ -80,12 +102,13 @@ class _PatientLabsScreenState extends ConsumerState<PatientLabsScreen> {
           );
         },
       ),
-      floatingActionButton: KuraPrimaryFab(
-        onPressed: () => _add(repoAsync.valueOrNull, user?.organizationId,
-            user?.id),
-        icon: Icons.add,
-        label: 'Registrar labs',
-      ),
+      floatingActionButton: rail
+          ? null
+          : KuraPrimaryFab(
+              onPressed: addAction.onPressed,
+              icon: Icons.add,
+              label: 'Registrar labs',
+            ),
     );
   }
 

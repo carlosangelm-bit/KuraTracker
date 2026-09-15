@@ -11,8 +11,8 @@ import 'package:intl/intl.dart';
 import '../../core/design/tokens.dart';
 import '../../core/theme/kura_theme.dart';
 import '../../core/providers/session_provider.dart';
+import '../../core/nav/section_action.dart' show SectionAction;
 import '../../core/router/app_shell.dart' show KuraScreen;
-import '../../core/widgets/kura_primary_fab.dart';
 import '../../models/appointment.dart';
 import '../../models/manual_appointment.dart';
 import '../../models/patient.dart';
@@ -210,11 +210,12 @@ class _AgendaScreenState extends ConsumerState<AgendaScreen> {
                 return _buildContent(context, all, isAdmin, service, sessions);
               },
             ),
-      floatingActionButton: service.isAvailable
-          ? KuraPrimaryFab(
-              onPressed: () => _openScheduleSheet(context, service),
-              icon: Icons.event_available,
+      primaryAction: service.isAvailable
+          ? SectionAction(
+              sectionKey: 'agenda',
               label: 'Nueva cita',
+              icon: Icons.event_available,
+              onPressed: () => _openScheduleSheet(context, service),
             )
           : null,
     );
@@ -2029,12 +2030,13 @@ class _ManualAgendaState extends ConsumerState<_ManualAgenda> {
 
     return KuraScreen(
       title: widget.isAdmin ? 'Agenda del centro' : 'Mi agenda',
-      floatingActionButton: widget.organizationId == null
+      primaryAction: widget.organizationId == null
           ? null
-          : KuraPrimaryFab(
-              onPressed: () => _openForm(repo),
-              icon: Icons.event_available,
+          : SectionAction(
+              sectionKey: 'agenda',
               label: 'Nueva cita',
+              icon: Icons.event_available,
+              onPressed: () => _openForm(repo),
             ),
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,

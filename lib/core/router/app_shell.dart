@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 
 import '../config/app_config.dart';
 import '../../features/support/support_launcher.dart';
-import '../nav/section_action.dart' show publishRailPresent;
+import '../nav/section_action.dart'
+    show publishRailPresent, SectionAction, SectionActionButton;
+import '../widgets/kura_primary_fab.dart' show KuraPrimaryFab;
 import '../../features/auth/demo_reset_action.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -661,10 +663,23 @@ class KuraPageHeader extends ConsumerWidget {
 /// (KuraPageHeader) vive DENTRO del contenido, como en /admin y /platform. Reemplaza el
 /// `Scaffold(appBar: AppBar(title:…, actions:[UserMenuButton()]))` de la pantalla; el
 /// cuerpo, el FAB y su ubicación se conservan. El nombre de la pantalla sale una sola vez.
-class KuraScreen extends StatelessWidget {
+class KuraScreen extends ConsumerWidget {
   final String title;
   final List<Widget> actions;
   final Widget body;
+
+  /// La acción PRINCIPAL de la pantalla («crear»). KuraScreen decide dónde vive según la
+  /// misma regla del spec (§3/§5): CON riel ([hasNavRail]) sube al encabezado como botón
+  /// SÓLIDO (SectionActionButton, brandPrimary, rótulo completo) y NO hay FAB; SIN riel
+  /// (teléfono / cuidador) baja a un FAB en la zona del pulgar. Si es null no hay ni uno ni
+  /// otro — así una pantalla con FAB condicional (§8.3) pasa `condición ? acción : null` y
+  /// la condición se respeta en ambos destinos. Los `null == null` de [SectionAction]
+  /// deshabilitan el control (crear sin centro resuelto), como el FAB con onPressed null.
+  final SectionAction? primaryAction;
+
+  /// FAB CRUDO para lo que NO es «crear» (p. ej. el cierre de un pedido con su total). No
+  /// pasa por la regla de riel; se pinta tal cual. La mayoría de pantallas usan
+  /// [primaryAction]; esto es para el caso de §8.2.
   final Widget? floatingActionButton;
   final FloatingActionButtonLocation? floatingActionButtonLocation;
   final Widget? belowHeader; // p. ej. un TabBar, que va bajo el encabezado
@@ -673,24 +688,42 @@ class KuraScreen extends StatelessWidget {
     required this.title,
     required this.body,
     this.actions = const [],
+    this.primaryAction,
     this.floatingActionButton,
     this.floatingActionButtonLocation,
     this.belowHeader,
   });
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-        floatingActionButton: floatingActionButton,
-        floatingActionButtonLocation: floatingActionButtonLocation,
-        body: Column(
-          children: [
-            KuraPageHeader(title: title, actions: actions),
-            const Divider(height: 1),
-            if (belowHeader != null) belowHeader!,
-            Expanded(child: body),
-          ],
-        ),
-      );
+  Widget build(BuildContext context, WidgetRef ref) {
+    final hasRail = hasNavRail(ref, context);
+    final action = primaryAction;
+    // CON riel: botón sólido al encabezado, PRIMERO (el más llamativo, §5). SIN riel: FAB.
+    final headerActions = <Widget>[
+      if (action != null && hasRail) SectionActionButton(action),
+      ...actions,
+    ];
+    final fab = floatingActionButton ??
+        (action != null && !hasRail
+            ? KuraPrimaryFab(
+                icon: action.locked ? Icons.lock_outline : action.icon,
+                label: action.label,
+                onPressed: action.onPressed,
+              )
+            : null);
+    return Scaffold(
+      floatingActionButton: fab,
+      floatingActionButtonLocation: floatingActionButtonLocation,
+      body: Column(
+        children: [
+          KuraPageHeader(title: title, actions: headerActions),
+          const Divider(height: 1),
+          if (belowHeader != null) belowHeader!,
+          Expanded(child: body),
+        ],
+      ),
+    );
+  }
 }
 
 class UserMenuButton extends ConsumerWidget {

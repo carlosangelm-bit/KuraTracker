@@ -392,6 +392,21 @@ class _PlatformSectionBodyState extends ConsumerState<PlatformSectionBody> {
       dynamic user, String? selected) {
     switch (section) {
       case 'centros':
+        // CON riel: «Nuevo centro» al encabezado (§3), vía el provider que lee el shell
+        // (sectionKey='centros', el último segmento de la ruta). SIN riel: el FAB del tab.
+        final rail = hasNavRail(ref, context);
+        publishSectionAction(
+          ref,
+          rail
+              ? SectionAction(
+                  sectionKey: 'centros',
+                  label: 'Nuevo centro',
+                  icon: Icons.add_business_outlined,
+                  onPressed: () => _openCreateOrganizationDialog(repo),
+                )
+              : null,
+          mounted: () => mounted,
+        );
         return _OrganizationsTab(
           repo: repo,
           organizations: orgs,
@@ -399,6 +414,7 @@ class _PlatformSectionBodyState extends ConsumerState<PlatformSectionBody> {
           onSelect: _selectOrg,
           onCreate: () => _openCreateOrganizationDialog(repo),
           onChanged: () => setState(() {}),
+          showFab: !rail,
         );
       case 'solicitudes':
         return _LicenseRequestsTab(
@@ -599,6 +615,10 @@ class _OrganizationsTab extends StatelessWidget {
   final VoidCallback onCreate;
   final VoidCallback onChanged;
 
+  // CON riel la acción «Nuevo centro» sube al encabezado (la publica el shell); aquí el
+  // FAB se apaga. SIN riel se queda. §3.
+  final bool showFab;
+
   const _OrganizationsTab({
     required this.repo,
     required this.organizations,
@@ -606,6 +626,7 @@ class _OrganizationsTab extends StatelessWidget {
     required this.onSelect,
     required this.onCreate,
     required this.onChanged,
+    this.showFab = true,
   });
 
   @override
@@ -633,11 +654,13 @@ class _OrganizationsTab extends StatelessWidget {
           ),
         ],
       ),
-      floatingActionButton: KuraPrimaryFab(
-        onPressed: onCreate,
-        icon: Icons.add_business_outlined,
-        label: 'Nuevo centro',
-      ),
+      floatingActionButton: showFab
+          ? KuraPrimaryFab(
+              onPressed: onCreate,
+              icon: Icons.add_business_outlined,
+              label: 'Nuevo centro',
+            )
+          : null,
     );
   }
 }
