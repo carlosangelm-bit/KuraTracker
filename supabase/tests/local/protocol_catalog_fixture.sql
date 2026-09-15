@@ -141,3 +141,24 @@ insert into public.org_entitlements (organization_id, kind, key, status, source,
   ('55555555-5555-5555-5555-555555555555', 'module', 'protocol:author', 'active', 'master', now() - interval '1 day'),
   ('66666666-6666-6666-6666-666666666666', 'module', 'protocol:author', 'active', 'stripe', now() - interval '1 day')
   on conflict do nothing;
+
+-- module_settings + dos centros para el CAMBIO DE CONDUCTA de 1.5.b: encender un módulo
+-- exige module:clinico VIGENTE. Antes (0121) miraba solo status; ahora respeta el
+-- vencimiento (org_entitlement_vigente).
+--   77 (prueba VENCIDA: clinico master, fecha pasada) → ya NO puede encender.
+--   88 (vigente: clinico master, sin fecha)           → sí puede.
+create table if not exists public.module_settings (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id),
+  module_key text not null,
+  enabled boolean not null default false
+);
+grant select, insert, update, delete on public.module_settings to authenticated;
+insert into public.organizations (id, name) values
+  ('77777777-7777-7777-7777-777777777777', 'Prueba VENCIDA (clinico master pasado)'),
+  ('88888888-8888-8888-8888-888888888888', 'Vigente (clinico master sin fecha)')
+  on conflict do nothing;
+insert into public.org_entitlements (organization_id, kind, key, status, source, current_period_end) values
+  ('77777777-7777-7777-7777-777777777777', 'module', 'clinico', 'active', 'master', now() - interval '1 day'),
+  ('88888888-8888-8888-8888-888888888888', 'module', 'clinico', 'active', 'master', null)
+  on conflict do nothing;

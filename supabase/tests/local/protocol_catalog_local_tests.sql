@@ -82,6 +82,62 @@ begin
 end $$;
 
 -- =============================================================================
+-- TEST 6 — Cambio de conducta de 1.5.b: encender un módulo respeta el VENCIMIENTO. Un
+-- centro con prueba VENCIDA (module:clinico master, fecha pasada) ya NO puede; uno vigente sí.
+-- El trigger se dispara aunque el actor sea postgres; is_master() se lee del GUC (no master).
+-- =============================================================================
+create trigger trg_zz_enforce_module_requires_entitlement
+  before insert or update on public.module_settings
+  for each row execute function public.enforce_module_requires_entitlement();
+set test.uid = '22222222-2222-2222-2222-222222222222';  -- no master
+do $$
+begin
+  begin
+    insert into public.module_settings (organization_id, module_key, enabled)
+      values ('77777777-7777-7777-7777-777777777777', 'insumos', true);
+    raise exception 'TEST6a FAIL: la prueba VENCIDA pudo encender el módulo (hoy sí puede)';
+  exception when others then
+    if sqlerrm like '%no tiene contratado el módulo%'
+      then raise notice 'TEST6a PASS: prueba vencida NO puede encender el módulo';
+      else raise; end if;
+  end;
+  insert into public.module_settings (organization_id, module_key, enabled)
+    values ('88888888-8888-8888-8888-888888888888', 'insumos', true);
+  raise notice 'TEST6b PASS: centro vigente sí enciende el módulo';
+end $$;
+select set_config('test.uid', '', false);
+
+-- =============================================================================
+-- TEST 7 — GUARDA 1.5.d. Derivada del catálogo de Postgres (pg_proc): ninguna función que
+-- consulte la VIGENCIA de org_entitlements (menciona current_period_end o status='active')
+-- puede hacerlo FUERA de org_entitlement_vigente. Excepciones enumeradas: la propia
+-- definición + escritores/contadores (referencian status por otra razón, no por gating).
+-- Así una CUARTA definición no puede nacer en silencio.
+-- =============================================================================
+do $$
+declare rogue text;
+begin
+  select string_agg(p.proname, ', ') into rogue
+  from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public'
+    and p.prosrc ~ 'org_entitlements'
+    and (p.prosrc ~ 'current_period_end' or p.prosrc ~ 'status\s*=\s*''active''')
+    and p.prosrc !~ 'org_entitlement_vigente'
+    and p.proname not in (
+      'org_entitlement_vigente',            -- la definición ÚNICA
+      'master_grant_entitlement',           -- ESCRIBE status (RPC master)
+      'master_revoke_entitlement',          -- ESCRIBE status
+      'apply_stripe_subscription_event',    -- ESCRIBE status (webhook)
+      'consumed_seat_demand',               -- CUENTA asientos activos
+      'create_trial_organization'           -- SIEMBRA derechos de prueba
+    );
+  if rogue is not null then
+    raise exception 'GUARDA 1.5.d FAIL: vigencia re-definida fuera de org_entitlement_vigente: %', rogue;
+  end if;
+  raise notice 'GUARDA 1.5.d (TEST7) PASS: la vigencia solo vive en org_entitlement_vigente';
+end $$;
+
+-- =============================================================================
 -- TEST 4 — Guarda de deriva (15.1.d). Derivada del catálogo de Postgres, no una lista a
 -- mano: toda columna de protocol_product_rules (salvo organization_id) debe existir en
 -- protocol_catalog_rules con el MISMO tipo, y al revés.
