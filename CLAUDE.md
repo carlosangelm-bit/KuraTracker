@@ -40,6 +40,10 @@ Lo que **no** viaja con el clone y hay que tener en la máquina nueva:
   forma confiable** (google_fonts truena en const-eval): validar con `flutter analyze`
   (objetivo: **0 errores/warnings**), **no** con `flutter build`/`flutter test`. Con la 3.27.1
   vía fvm, `flutter test` sí corre local y se acaban las "pruebas CI-only".
+- **Correr la suite local EXACTAMENTE como el CI**: `fvm flutter test --exclude-tags
+  known-fail-overseg`. El flag NO es opcional: hay un caso del motor de visión etiquetado
+  `known-fail-overseg` (over-segmentación, WIP) que el CI EXCLUYE; sin el flag, `flutter test`
+  lo corre y da un rojo esperado (área ~105%) que NO es una regresión. Verde esperado: 661/661.
 - **`pubspec.lock`**: si el local NO está alineado, revertir cualquier cambio local antes de
   commitear (`git checkout -- pubspec.lock`) — el lock lo resuelve el CI con su toolchain.
 - **Arreglo-al-guardar APAGADO** (`.vscode/settings.json`, versionado). `source.fixAll` /
