@@ -4,14 +4,15 @@
 //     cuenta idénticos en Inicio (banda de riel abierto y colapsada). El tablero pasa a
 //     condicionar la cuenta con hasNavRail (la MISMA fuente que KuraPageHeader y
 //     AppShell.showRail), no una copia del ancho.
-//  2. El lanzador de Ayuda usaba bottom:84 fijo y no sabía del FAB, que se ELEVA su
-//     huella (kFloatingNavBarHeight+12) incluso en escritorio. En Inicio a 1400 tapaba
-//     «Nuevo paciente». Ahora libera esa huella derivándola de las mismas constantes.
+//  2. El lanzador de Ayuda usaba bottom:84 fijo y no sabía del FAB. Esa colisión ya no
+//     existe: tras «la acción sale de los flotantes» (§3), CON riel la acción de la
+//     pantalla vive en el ENCABEZADO (botón sólido), no en un FAB — así no hay nada
+//     flotante sobre el contenido que el lanzador pueda tapar en escritorio.
 //
 // Pruebas de INVOCACIÓN sobre el router real, cada una verificada en ROJO:
 //  - Admin de clínica a 1200px en Inicio: KuraAccountMenu aparece UNA sola vez.
-//  - Pantalla con KuraPrimaryFab (VAC) a ancho de escritorio: el lanzador de ayuda y el
-//    FAB no se traslapan.
+//  - VAC a ancho de escritorio (riel): la acción está en el encabezado, sin FAB flotante;
+//    el lanzador del Tour (demo) se mantiene.
 //
 // CI-ONLY: importar app_router arrastra todas las pantallas → google_fonts, que la
 // toolchain local (3.44) no compila. `flutter analyze` valida; corre en CI (3.27.1).
@@ -23,6 +24,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:kuratracker/core/design/tokens.dart';
 import 'package:kuratracker/core/nav/kura_nav_rail.dart';
+import 'package:kuratracker/core/nav/section_action.dart' show SectionActionButton;
 import 'package:kuratracker/core/providers/session_provider.dart';
 import 'package:kuratracker/core/router/app_router.dart';
 import 'package:kuratracker/core/router/app_shell.dart' show KuraAccountMenu;
@@ -99,7 +101,8 @@ void main() {
         reason: 'la cuenta no debe duplicarse en Inicio cuando hay riel');
   });
 
-  testWidgets('pantalla con KuraPrimaryFab a 1400px: lanzador y FAB no se traslapan',
+  testWidgets(
+      'VAC a 1400px (riel): la acción está en el encabezado, sin FAB flotante que tape',
       (t) async {
     final (router, container) = await _mount(t, w: 1400, tour: true);
     router.go('/vac');
@@ -113,16 +116,15 @@ void main() {
       await t.pump(const Duration(milliseconds: 300));
     }
 
-    final launcher = find.byIcon(Icons.play_circle_outline);
-    final fab = find.byType(FloatingActionButton);
-    expect(launcher, findsOneWidget,
-        reason: 'debe verse el lanzador tras cerrar el tour');
-    expect(fab, findsOneWidget, reason: 'la pantalla VAC trae KuraPrimaryFab');
-
-    // El lanzador (con su área táctil de 11px) NO debe intersectar el FAB.
-    final launcherRect = t.getRect(launcher).inflate(11);
-    final fabRect = t.getRect(fab);
-    expect(fabRect.overlaps(launcherRect), isFalse,
-        reason: 'el lanzador ($launcherRect) se traslapa con el FAB ($fabRect)');
+    // El lanzador del Tour (demo) SIGUE flotando: lo que se muda al riel es la Ayuda de
+    // producción, no el Tour.
+    expect(find.byIcon(Icons.play_circle_outline), findsOneWidget,
+        reason: 'el lanzador del Tour se mantiene en la demo');
+    // §3: con riel la acción de VAC sube al encabezado (botón sólido) y NO hay FAB — así
+    // ya no hay nada flotante sobre el contenido que el lanzador pueda tapar.
+    expect(find.byType(FloatingActionButton), findsNothing,
+        reason: 'con riel la acción de VAC vive en el encabezado, no en un FAB');
+    expect(find.byType(SectionActionButton), findsOneWidget,
+        reason: 'la acción de VAC está en el encabezado');
   });
 }
