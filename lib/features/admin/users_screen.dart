@@ -1,10 +1,12 @@
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/config/app_config.dart';
 import '../../core/design/tokens.dart';
+import '../../core/nav/section_action.dart';
 import '../../core/utils/caregiver_login.dart';
 import '../../core/widgets/kura_primary_fab.dart';
 import '../../models/app_user.dart';
@@ -24,7 +26,7 @@ import '../../services/data_repository.dart';
 /// Usuarios») y el KuraNavRail con la cuenta en el pie. El Scaffold aquí es solo para
 /// hospedar el KuraPrimaryFab. Todo color sale de [BrandTokens] (respeta la marca del
 /// centro: morado/azul/rosa), nunca del alias de marca fija.
-class UsersScreen extends StatefulWidget {
+class UsersScreen extends ConsumerStatefulWidget {
   final DataRepository repo;
   final String? organizationId;
   final String? currentUserId;
@@ -36,12 +38,12 @@ class UsersScreen extends StatefulWidget {
   });
 
   @override
-  State<UsersScreen> createState() => _UsersScreenState();
+  ConsumerState<UsersScreen> createState() => _UsersScreenState();
 }
 
 enum _UserStatus { todos, activos, inactivos }
 
-class _UsersScreenState extends State<UsersScreen> {
+class _UsersScreenState extends ConsumerState<UsersScreen> {
   final _searchCtrl = TextEditingController();
   String _search = '';
   AppRole? _roleFilter;
@@ -217,6 +219,23 @@ class _UsersScreenState extends State<UsersScreen> {
       ..sort((a, b) =>
           a.fullName.toLowerCase().compareTo(b.fullName.toLowerCase()));
 
+    // ≥900 px: cero flotantes. La acción principal sube al ENCABEZADO (sólida,
+    // brandPrimary) vía el provider que el shell pinta; el FAB desaparece y la lista ya
+    // no reserva su huella abajo. <900: se queda el FAB (zona del pulgar) y la reserva.
+    final wide = MediaQuery.sizeOf(context).width >= 900;
+    final canCreate = widget.organizationId != null;
+    publishSectionAction(
+      ref,
+      wide
+          ? SectionAction(
+              sectionKey: 'usuarios',
+              label: 'Nuevo usuario',
+              icon: Icons.person_add_alt_1,
+              onPressed: canCreate ? _openCreateForm : null,
+            )
+          : null,
+    );
+
     return Scaffold(
       body: Column(
         children: [
@@ -238,7 +257,8 @@ class _UsersScreenState extends State<UsersScreen> {
                         message: 'Ningún usuario coincide con los filtros.',
                       )
                     : ListView.separated(
-                        padding: EdgeInsets.fromLTRB(16, 16, 16, kuraListBottomInset(context)),
+                        padding: EdgeInsets.fromLTRB(
+                            16, 16, 16, wide ? 16 : kuraListBottomInset(context)),
                         itemCount: users.length,
                         separatorBuilder: (_, __) => const SizedBox(height: 8),
                         itemBuilder: (context, i) => _userCard(users[i]),
@@ -246,11 +266,14 @@ class _UsersScreenState extends State<UsersScreen> {
           ),
         ],
       ),
-      floatingActionButton: KuraPrimaryFab(
-        icon: Icons.person_add_alt_1,
-        label: 'Nuevo usuario',
-        onPressed: widget.organizationId == null ? null : _openCreateForm,
-      ),
+      // A ≥900 px NO hay FAB: la acción vive en el encabezado (arriba).
+      floatingActionButton: wide
+          ? null
+          : KuraPrimaryFab(
+              icon: Icons.person_add_alt_1,
+              label: 'Nuevo usuario',
+              onPressed: canCreate ? _openCreateForm : null,
+            ),
     );
   }
 
