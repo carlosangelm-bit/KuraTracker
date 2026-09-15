@@ -185,28 +185,48 @@ String centerOriginLabel(CenterOrigin o) => switch (o) {
 /// desacuerdo derecho↔interruptor. Vacío → "—", nunca una fila inventada. Deriva de las
 /// MISMAS primitivas que el panel de Licencia (entitlementsFor + disagreementCount).
 class CenterAttention {
+  /// Días desde el vencimiento pasado más reciente, si HAY un derecho activo ya vencido
+  /// (el centro está en solo lectura por tiempo). Tiene prioridad sobre "vence pronto".
+  final int? expiredDays;
   final int? expiresInDays; // vencimiento activo más próximo, si < 30 días
   final int disagreements;
-  const CenterAttention({this.expiresInDays, required this.disagreements});
-  bool get any => expiresInDays != null || disagreements > 0;
+  const CenterAttention(
+      {this.expiredDays, this.expiresInDays, required this.disagreements});
+  bool get isExpired => expiredDays != null;
+  bool get any => expiredDays != null || expiresInDays != null || disagreements > 0;
 }
 
 CenterAttention centerAttention(DataRepository repo, String orgId, {DateTime? now}) {
   final ref = now ?? DateTime.now();
-  int? soonest;
+  int? soonestFuture;
+  int? mostRecentPast; // días desde el vencimiento pasado más reciente
   for (final e in repo.entitlementsFor(orgId).where((e) => e.status == 'active')) {
     final end = e.currentPeriodEnd;
-    if (end == null || end.isBefore(ref)) continue;
-    final days = end.difference(ref).inDays;
-    if (days < 30 && (soonest == null || days < soonest)) soonest = days;
+    if (end == null) continue;
+    if (end.isBefore(ref)) {
+      // Derecho activo ya vencido → centro en solo lectura (canWriteModule exige
+      // end.isAfter(now)). No se salta: es LA condición que más pide atención.
+      final past = ref.difference(end).inDays;
+      if (mostRecentPast == null || past < mostRecentPast) mostRecentPast = past;
+    } else {
+      final days = end.difference(ref).inDays;
+      if (days < 30 && (soonestFuture == null || days < soonestFuture)) {
+        soonestFuture = days;
+      }
+    }
   }
   return CenterAttention(
-    expiresInDays: soonest,
+    expiredDays: mostRecentPast,
+    expiresInDays: soonestFuture,
     disagreements: disagreementCount(moduleLicenseRows(repo, orgId)),
   );
 }
 
+/// Prioridad: vencido → vence en <30 → desacuerdos → "—".
 String centerAttentionLabel(CenterAttention a) {
+  if (a.expiredDays != null) {
+    return a.expiredDays == 0 ? 'En solo lectura' : 'Venció hace ${a.expiredDays} d';
+  }
   if (a.expiresInDays != null) return 'Vence en ${a.expiresInDays} d';
   if (a.disagreements > 0) {
     return '${a.disagreements} desacuerdo${a.disagreements == 1 ? '' : 's'}';
