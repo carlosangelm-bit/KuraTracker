@@ -127,3 +127,71 @@ verificado a mano antes de darla por verde.
 
 Los componentes de contenido (`KuraDataTable`, `KuraStat`, `KuraActionBar`,
 `KuraModuleLock`, estados vacíos y de error) no se tocan. Esto es chrome, no contenido.
+
+---
+
+# Etapa 5 — la app clínica (decidida 14-sep-2026)
+
+Decisión de Carlos: **el riel nuevo va a todas las rutas clínicas, para todos, en un
+solo despliegue. Sin bandera de encendido.** El único centro productivo es Kura+, así
+que un despliegue por etapas no reduce riesgo y sí obliga a mantener dos navegaciones
+en paralelo durante meses.
+
+## 7. Tres bandas de ancho, no dos
+
+Es lo que más fácil se hace mal, porque hoy hay dos puntos de corte distintos en el
+código: el riel usa 1200 y AppShell usa 900.
+
+| Ancho | Qué se ve |
+|---|---|
+| ≥ 1200 | `KuraNavRail` abierto (240 px), hijos anidados |
+| 900 – 1199 | `KuraNavRail` colapsado (72 px) + menú `Sección › Subsección ▾` en el encabezado |
+| < 900 | **La barra inferior flotante de hoy, sin cambios.** Ningún riel. |
+
+La barra inferior **no se rediseña en esta etapa**. Funciona, enfermería la conoce, y
+es el flujo del teléfono junto a la cama. Se toca solo lo indispensable para que coma
+de la misma declaración (§8).
+
+## 8. Una sola declaración para las dos formas
+
+Hoy `app_shell.dart:60-104` construye **su propia lista** de destinos, con su propio
+gateo por módulo y su propia rama por tipo de centro — duplicada de
+`kuraNavDestinations`. Esa duplicación ya nos costó una regresión (el hospital viendo
+`/agenda`, que sale "no configurada").
+
+En esta etapa la lista de AppShell **desaparece**: la barra inferior se construye desde
+`kuraNavDestinations`, igual que el riel. Para eso la declaración gana un campo por
+destino que diga si es **primario** — los que hoy viven en `primaryPaths`
+(`/`, `/patients`, `/agenda`, `/prevention-agenda`); el resto va al desbordamiento de
+la barra, como hoy.
+
+**Condición de salida que quedó escrita en §5 y ahora se cumple:** al desaparecer la
+lista de AppShell, la prueba de "cierre de la clase" con su lista `moduleGated` escrita
+a mano deja de tener sentido. Se elimina y se sustituye por la prueba de §9.1, que
+compara las dos formas contra la misma fuente en vez de contra un inventario manual.
+
+## 9. Pruebas
+
+1. **Las dos formas dicen lo mismo.** Para las mismas banderas (rol, módulos, tipo de
+   centro), el conjunto de destinos del riel y el de la barra inferior —primarios más
+   desbordamiento— es **idéntico**. Esta es la prueba que reemplaza al inventario
+   manual: agregar un destino a la declaración lo pone en las dos, o cae.
+2. **La rama por tipo de centro sobrevive en la barra:** hospital → `Rondas`
+   (`/prevention-agenda`); clínica de heridas → `Agenda` (`/agenda`). Es la regresión
+   que ya tuvimos; ahora hay que probarla también del lado del teléfono.
+3. **Las tres bandas:** a 1400 el riel está abierto; a 1000, colapsado con su menú; a
+   800, no hay riel y sí barra inferior. Sobre el router real.
+4. AppShell ya no pinta riel de escritorio en **ninguna** ruta.
+
+Cada una con el criterio de siempre: romperla tiene que ponerla en rojo, verificado a
+mano antes de darla por verde.
+
+## 10. El despliegue (hecho)
+
+Se desplegó sin bandera, en un solo corte, con el plan de reversión previsto:
+
+- Respaldo antes del corte, con la hora anotada.
+- El build anterior quedó identificado para poder redesplegarlo — minutos, no un
+  revert de commits bajo presión.
+- **Fuera de horario de atención**, no a media mañana.
+- Se avisó al equipo clínico antes, no después: el cambio es visible el primer segundo.
