@@ -29,6 +29,7 @@ import '../admin/note_catalog_screen.dart' show NoteCatalogScreen;
 import '../admin/branding_screen.dart' show BrandingScreen;
 import 'trial_founder_notice.dart';
 import 'centers_view.dart';
+import '../../core/nav/section_action.dart';
 
 /// Area de "Plataforma": pantalla exclusiva del rol `master`
 /// (administrador de plataforma, ver 0012_master_role.sql). A diferencia
@@ -299,7 +300,12 @@ class _PlatformSectionsShellState extends ConsumerState<PlatformSectionsShell> {
           section: plataforma,
           currentRoute: widget.currentRoute,
           collapsed: collapsed,
-          actions: actions,
+          // La acción principal de la sección (a ≥900) precede a las del master (CSV,
+          // anomalías): es la más llamativa del encabezado.
+          actions: [
+            ...sectionHeaderActions(context, ref, widget.currentRoute),
+            ...actions,
+          ],
         ),
         const Divider(height: 1),
         Expanded(child: widget.child),

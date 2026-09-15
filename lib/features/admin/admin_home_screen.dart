@@ -7,6 +7,7 @@ import '../../core/providers/session_provider.dart';
 import '../../core/router/app_shell.dart' show KuraAccountMenu;
 import '../../core/nav/kura_nav_rail.dart';
 import '../../core/nav/kura_nav_destinations.dart';
+import '../../core/nav/section_action.dart';
 import 'license_panel.dart';
 import 'users_screen.dart';
 import 'staff_screen.dart';
@@ -77,6 +78,8 @@ class _AdminSectionsShellState extends ConsumerState<AdminSectionsShell> {
           section: admin,
           currentRoute: currentRoute,
           collapsed: collapsed,
+          // A ≥900 px la acción principal de la sección va aquí (sólida), no en un FAB.
+          actions: sectionHeaderActions(context, ref, currentRoute),
         ),
         const Divider(height: 1),
         Expanded(child: child),
