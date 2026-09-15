@@ -7,7 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/theme/kura_theme.dart';
 import '../../core/providers/session_provider.dart';
-import '../../core/router/app_shell.dart' show centerTypeColor, KuraAccountMenu;
+import '../../core/router/app_shell.dart' show KuraAccountMenu;
 import '../../core/widgets/kura_primary_fab.dart';
 import '../../core/nav/kura_nav_destinations.dart';
 import '../../core/nav/kura_nav_rail.dart';
@@ -28,6 +28,7 @@ import '../admin/sites_screen.dart' show SitesScreen;
 import '../admin/note_catalog_screen.dart' show NoteCatalogScreen;
 import '../admin/branding_screen.dart' show BrandingScreen;
 import 'trial_founder_notice.dart';
+import 'centers_view.dart';
 
 /// Area de "Plataforma": pantalla exclusiva del rol `master`
 /// (administrador de plataforma, ver 0012_master_role.sql). A diferencia
@@ -601,92 +602,19 @@ class _OrganizationsTab extends StatelessWidget {
           _ShopifyCatalogSyncCard(repo: repo),
           Expanded(
             child: organizations.isEmpty
-          ? const _NoOrganizationsState()
-          : ListView.separated(
-              padding: EdgeInsets.fromLTRB(16, 16, 16, kuraListBottomInset(context)),
-              itemCount: organizations.length,
-              separatorBuilder: (_, __) => const SizedBox(height: 8),
-              itemBuilder: (context, i) {
-                final o = organizations[i];
-                final isSelected = o.id == selectedOrgId;
-                return Card(
-                  color: isSelected ? KuraColors.primary.withOpacity(0.08) : null,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      ListTile(
-                        leading: CircleAvatar(
-                          backgroundColor: centerTypeColor(o.centerType).withOpacity(0.12),
-                          child: Icon(Icons.hub_outlined, color: centerTypeColor(o.centerType)),
-                        ),
-                        title: Text(o.name),
-                        // Tipo visible de un vistazo (un centro mal tipificado se
-                        // ve aquí en vez de descubrirse por un "no funciona") +
-                        // marca de centro de pruebas.
-                        subtitle: Text(
-                          '${o.centerType.label}'
-                          '${o.isTest ? ' · PRUEBA' : ''} · '
-                          '${o.isActive ? 'Activo' : 'Inactivo'}',
-                        ),
-                        trailing: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Text('Activo', style: TextStyle(fontSize: 10)),
-                            // shrinkWrap: sin el relleno de 48 px del área de toque,
-                            // 'Activo' + el switch caben en la fila del ListTile (antes
-                            // se desbordaba 7 px por abajo).
-                            Switch(
-                              value: o.isActive,
-                              materialTapTargetSize:
-                                  MaterialTapTargetSize.shrinkWrap,
-                              onChanged: (v) async {
-                                await repo.setOrganizationActive(o.id, v);
-                                onChanged();
-                              },
-                            ),
-                          ],
-                        ),
-                        onTap: () => onSelect(o.id),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 0, 8, 8),
-                        child: Row(
-                          children: [
-                            const Text('Tipo:', style: TextStyle(fontSize: 13)),
-                            const SizedBox(width: 8),
-                            DropdownButton<CenterType>(
-                              value: o.centerType,
-                              items: CenterType.values
-                                  .map((t) => DropdownMenuItem(
-                                        value: t,
-                                        child: Text(t.label,
-                                            style: const TextStyle(fontSize: 13)),
-                                      ))
-                                  .toList(),
-                              onChanged: (t) async {
-                                if (t == null) return;
-                                await repo.setCenterType(o.id, t);
-                                onChanged();
-                              },
-                            ),
-                            const Spacer(),
-                            TextButton.icon(
-                              icon: const Icon(Icons.group_add_outlined, size: 18),
-                              label: const Text('Miembros'),
-                              onPressed: () => showDialog<void>(
-                                context: context,
-                                builder: (dialogCtx) =>
-                                    _MembershipsDialog(repo: repo, org: o),
-                              ).then((_) => onChanged()),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
+                ? const _NoOrganizationsState()
+                : PlatformCentersView(
+                    repo: repo,
+                    organizations: organizations,
+                    selectedOrgId: selectedOrgId,
+                    onSelect: onSelect,
+                    onChanged: onChanged,
+                    onMembers: (o) => showDialog<void>(
+                      context: context,
+                      builder: (dialogCtx) =>
+                          _MembershipsDialog(repo: repo, org: o),
+                    ).then((_) => onChanged()),
                   ),
-                );
-              },
-            ),
           ),
         ],
       ),

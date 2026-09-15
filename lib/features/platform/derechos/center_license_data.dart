@@ -155,6 +155,65 @@ List<ModuleLicenseRow> moduleLicenseRows(DataRepository repo, String orgId) {
   ];
 }
 
+/// "Origen" de un centro (§5.1, columna): de dónde vienen sus derechos ACTIVOS.
+/// Vive aquí, no en la pantalla de Centros, para que Centros y Licencia no discrepen
+/// sobre el mismo centro.
+enum CenterOrigin { none, stripe, master, mixed }
+
+CenterOrigin centerOrigin(DataRepository repo, String orgId) {
+  final sources = repo
+      .entitlementsFor(orgId)
+      .where((e) => e.status == 'active')
+      .map((e) => e.source)
+      .toSet();
+  final stripe = sources.contains('stripe');
+  final master = sources.contains('master');
+  if (stripe && master) return CenterOrigin.mixed;
+  if (stripe) return CenterOrigin.stripe;
+  if (master) return CenterOrigin.master;
+  return CenterOrigin.none;
+}
+
+String centerOriginLabel(CenterOrigin o) => switch (o) {
+      CenterOrigin.stripe => 'Stripe',
+      CenterOrigin.master => 'A mano',
+      CenterOrigin.mixed => 'Mixto',
+      CenterOrigin.none => '—',
+    };
+
+/// "Requiere atención" (§5.1): el vencimiento más próximo a menos de 30 días, o un
+/// desacuerdo derecho↔interruptor. Vacío → "—", nunca una fila inventada. Deriva de las
+/// MISMAS primitivas que el panel de Licencia (entitlementsFor + disagreementCount).
+class CenterAttention {
+  final int? expiresInDays; // vencimiento activo más próximo, si < 30 días
+  final int disagreements;
+  const CenterAttention({this.expiresInDays, required this.disagreements});
+  bool get any => expiresInDays != null || disagreements > 0;
+}
+
+CenterAttention centerAttention(DataRepository repo, String orgId, {DateTime? now}) {
+  final ref = now ?? DateTime.now();
+  int? soonest;
+  for (final e in repo.entitlementsFor(orgId).where((e) => e.status == 'active')) {
+    final end = e.currentPeriodEnd;
+    if (end == null || end.isBefore(ref)) continue;
+    final days = end.difference(ref).inDays;
+    if (days < 30 && (soonest == null || days < soonest)) soonest = days;
+  }
+  return CenterAttention(
+    expiresInDays: soonest,
+    disagreements: disagreementCount(moduleLicenseRows(repo, orgId)),
+  );
+}
+
+String centerAttentionLabel(CenterAttention a) {
+  if (a.expiresInDays != null) return 'Vence en ${a.expiresInDays} d';
+  if (a.disagreements > 0) {
+    return '${a.disagreements} desacuerdo${a.disagreements == 1 ? '' : 's'}';
+  }
+  return '—';
+}
+
 /// Una fila del grupo Asientos. Su "acuerdo" es coherente con Módulos: un derecho de
 /// asiento ACTIVO pero con cantidad 0 no habilita nada → ámbar "Derecho sin
 /// asientos" (misma regla que usa hasSeatEntitlement / el interruptor derivado del
