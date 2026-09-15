@@ -50,6 +50,10 @@ const _nonGatedAdminFiles = <String>{
   // sitio en adelante exige el módulo). La pantalla NO se gatea: la lista siempre se
   // ve. Etapa 3: se sacó a su archivo.
   'sites_screen.dart',
+  // Configuración menciona premiumAdminFor solo para decidir si un tile del catálogo
+  // NAVEGA o abre el diálogo de compra. La pantalla NO se gatea: el catálogo base
+  // siempre se ve (custodia NOM-004). Cierre: se sacó a su archivo.
+  'note_catalog_screen.dart',
   'license_panel.dart',
   'license_plan_builder_screen.dart',
 };
