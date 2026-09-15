@@ -26,6 +26,11 @@ class KuraNavRail extends StatefulWidget {
   /// del componente aislado). En colapsado envuelve el avatar del pie.
   final Widget Function(BuildContext context, Widget child)? accountMenuBuilder;
 
+  /// Abre el asistente de «Ayuda» desde el pie del riel (junto al menú de cuenta, §3).
+  /// Lo provee el shell (tiene el ref). Si es null no se pinta el control (demo, donde el
+  /// asistente vive detrás de Supabase; o fixtures del componente aislado).
+  final VoidCallback? onHelp;
+
   const KuraNavRail({
     super.key,
     required this.destinations,
@@ -37,6 +42,7 @@ class KuraNavRail extends StatefulWidget {
     this.onToggleCollapse,
     this.onSearch,
     this.accountMenuBuilder,
+    this.onHelp,
   });
 
   @override
@@ -54,6 +60,7 @@ class _KuraNavRailState extends State<KuraNavRail> {
   String? get centerName => widget.centerName;
   VoidCallback? get onToggleCollapse => widget.onToggleCollapse;
   VoidCallback? get onSearch => widget.onSearch;
+  VoidCallback? get onHelp => widget.onHelp;
   Widget Function(BuildContext, Widget)? get accountMenuBuilder =>
       widget.accountMenuBuilder;
 
@@ -95,6 +102,7 @@ class _KuraNavRailState extends State<KuraNavRail> {
               children: [for (final d in v) _destOpen(context, t, d)],
             ),
           ),
+          if (onHelp != null) _helpOpen(context, t),
           _footer(context, t),
         ],
       ),
@@ -251,6 +259,35 @@ class _KuraNavRailState extends State<KuraNavRail> {
     return active ? KeyedSubtree(key: _activeKey(c.route), child: w) : w;
   }
 
+  // «Ayuda» al pie del riel (abierto), JUSTO encima del menú de cuenta (§3): un control
+  // propio, no escondido en el popup. Abre el asistente vía [onHelp].
+  Widget _helpOpen(BuildContext context, BrandTokens t) => Padding(
+        padding: const EdgeInsets.fromLTRB(10, 0, 10, 2),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            key: const ValueKey('rail-help'),
+            borderRadius: BorderRadius.circular(10),
+            onTap: onHelp,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+              child: Row(
+                children: [
+                  Icon(Icons.support_agent_outlined,
+                      size: 18, color: t.textSecondary),
+                  const SizedBox(width: 10),
+                  Text('Ayuda',
+                      style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: t.textPrimary)),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+
   // El pie es el MENÚ DE CUENTA: identidad + control. Toda la fila abre el menú
   // (cerrar sesión, etc.). El ▾ lo señala como control. Envuelto por [_account].
   Widget _footer(BuildContext context, BrandTokens t) {
@@ -331,6 +368,16 @@ class _KuraNavRailState extends State<KuraNavRail> {
             icon: Icon(Icons.chevron_right, size: 20, color: t.textSecondary),
           ),
           const SizedBox(height: 6),
+          // «Ayuda» también alcanzable en colapsado (§3), sobre el avatar de cuenta.
+          if (onHelp != null)
+            IconButton(
+              key: const ValueKey('rail-help'),
+              tooltip: 'Ayuda',
+              onPressed: onHelp,
+              constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+              icon: Icon(Icons.support_agent_outlined,
+                  size: 20, color: t.textSecondary),
+            ),
           // Pie colapsado: el avatar cumple la misma función que el pie abierto —
           // abre el menú de cuenta (cerrar sesión, etc.).
           _footerCollapsed(context, t),
@@ -562,14 +609,19 @@ class KuraSectionMenu extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(
-              activeLabel == null
-                  ? section.label
-                  : '${section.label} › $activeLabel',
-              style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
-                  color: t.textPrimary),
+            // Flexible + ellipsis: en angosto (p. ej. 430 px) "Sección › Subsección"
+            // no cabe y desbordaba la fila; ahora se recorta en vez de reventar.
+            Flexible(
+              child: Text(
+                activeLabel == null
+                    ? section.label
+                    : '${section.label} › $activeLabel',
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: t.textPrimary),
+              ),
             ),
             const SizedBox(width: 6),
             Icon(Icons.expand_more, size: 16, color: t.textSecondary),

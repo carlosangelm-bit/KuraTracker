@@ -143,6 +143,33 @@ class KuraTheme {
         side: BorderSide.none,
       ),
       dividerTheme: DividerThemeData(color: tokens.border),
+      // Interruptores tokenizados en los CUATRO estados (antes solo el encendido, vía
+      // activeColor: suelto; el apagado caía en los grises de Material —contorno oscuro,
+      // pulgar gris fuerte— que no siguen la marca y pesan MÁS que el encendido). El
+      // apagado usa el token de BORDE (azul en hospital, rosa en cuidadores): sutil y de
+      // marca. Se hereda en toda la app; nadie tiene que poner activeColor a mano.
+      switchTheme: SwitchThemeData(
+        thumbColor: WidgetStateProperty.resolveWith((states) {
+          final on = states.contains(WidgetState.selected);
+          if (states.contains(WidgetState.disabled)) {
+            return on ? tokens.onBrand : tokens.textDisabled;
+          }
+          return on ? tokens.onBrand : tokens.textSecondary;
+        }),
+        trackColor: WidgetStateProperty.resolveWith((states) {
+          final on = states.contains(WidgetState.selected);
+          if (states.contains(WidgetState.disabled)) {
+            return on ? tokens.brandPrimary.withValues(alpha: 0.35) : tokens.chipBg;
+          }
+          return on ? tokens.brandPrimary : tokens.surface;
+        }),
+        trackOutlineColor: WidgetStateProperty.resolveWith((states) {
+          // Encendido: track relleno de marca, sin contorno. Apagado: contorno = token de
+          // BORDE (no el outline gris por defecto de Material).
+          if (states.contains(WidgetState.selected)) return Colors.transparent;
+          return tokens.border;
+        }),
+      ),
       navigationRailTheme: NavigationRailThemeData(
         backgroundColor: tokens.surface,
         selectedIconTheme: IconThemeData(color: tokens.brandPrimary),

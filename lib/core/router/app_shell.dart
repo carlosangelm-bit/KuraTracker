@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 
 import '../config/app_config.dart';
 import '../../features/support/support_launcher.dart';
+import '../nav/section_action.dart'
+    show publishRailPresent, SectionAction, SectionActionButton;
+import '../widgets/kura_primary_fab.dart' show KuraPrimaryFab;
 import '../../features/auth/demo_reset_action.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -119,10 +122,13 @@ class _AppShellState extends ConsumerState<AppShell> {
     final isTopLevel = visibleTop.any((d) => navRouteIsActive(d, currentPath));
 
     // --- Riel de escritorio (KuraNavRail): TRES bandas -----------------------
-    // ≥1200 abierto; 900–1199 colapsado; <900 no hay riel (barra inferior). Requiere
-    // ≥2 destinos: KuraNavRail (como NavigationRail/Bar) no tiene sentido con uno solo
-    // —un cuidador tiene una sola pantalla y queda sin riel y sin barra, y está bien.
-    final showRail = width >= 900 && showOwnNav && visibleTop.length >= 2;
+    // ≥1200 abierto; 900–1199 colapsado; <900 no hay riel (barra inferior). La regla
+    // "hay riel" (ancho ≥900 Y ≥2 destinos) vive en [hasNavRail], fuente única; aquí se
+    // compone con el factor de ruta (showOwnNav es false en /admin y /platform).
+    final showRail = showOwnNav && hasNavRail(ref, context);
+    // Publica si hay riel: TourScope (ancestro) NO pinta el flotante de Ayuda cuando el
+    // riel ya la ofrece en el pie. Sin riel (móvil, cuidador) queda false → flotante.
+    publishRailPresent(ref, showRail, mounted: () => mounted);
     final autoCollapsed = width < 1200;
     final collapsed = _userCollapsed ?? autoCollapsed;
 
@@ -176,6 +182,11 @@ class _AppShellState extends ConsumerState<AppShell> {
                     // centro, ayuda): identidad = control, como en /admin y /platform.
                     accountMenuBuilder: (ctx, child) =>
                         KuraAccountMenu(child: child),
+                    // «Ayuda» al pie del riel (solo prod: el asistente vive detrás de
+                    // Supabase). El flotante queda suprimido por railPresent.
+                    onHelp: AppConfig.isSupabaseConfigured
+                        ? () => openSupportAssistant(ref)
+                        : null,
                   ),
                   const VerticalDivider(width: 1),
                   Expanded(child: child),
@@ -593,6 +604,26 @@ class KuraAccountMenu extends ConsumerWidget {
   }
 }
 
+/// ¿Hay riel de navegación de escritorio para el usuario en sesión? El riel existe
+/// cuando la ventana es ANCHA (≥900) **y** el usuario tiene ≥2 destinos visibles
+/// (NavigationRail/KuraNavRail exigen dos). ÚNICA fuente de esta regla, derivada de la
+/// declaración [kuraNavDestinations]: la usan [AppShell] (showRail), [KuraPageHeader] y el
+/// tablero para decidir dónde va la cuenta, sin copiar la condición del ancho suelta. NO
+/// incluye el factor de ruta (showOwnNav): /admin y /platform lo componen aparte.
+bool hasNavRail(WidgetRef ref, BuildContext context) {
+  final session = ref.watch(sessionProvider);
+  final user = session.user;
+  final modules = ref.watch(enabledModulesProvider);
+  final visibleCount = kuraNavDestinations(
+    moduleEnabled: (k) => modules.any((m) => m.dbValue == k),
+    isAdmin: user?.isAdmin ?? false,
+    isMaster: user?.isMaster ?? false,
+    centerType: session.activeCenterType,
+    isCaregiverOnly: user?.isCaregiverOnly ?? false,
+  ).where((d) => d.isVisible).length;
+  return MediaQuery.of(context).size.width >= 900 && visibleCount >= 2;
+}
+
 /// Encabezado de una PANTALLA CLÍNICA de primer nivel, DENTRO del contenido (sin AppBar):
 /// hermano del de /admin y /platform (KuraContentHeader). Contexto = el centro activo
 /// (11px), título = el nombre de la pantalla (28px w800, una sola vez), acciones a la
@@ -612,21 +643,9 @@ class KuraPageHeader extends ConsumerWidget {
     final centerName =
         (orgId != null ? repo?.organizationById(orgId)?.name : null) ??
             session.activeCenterType.label;
-    // Hay riel cuando la ventana es ANCHA **y** el usuario tiene ≥2 destinos visibles
-    // (NavigationRail/KuraNavRail exigen dos). Se deriva de la MISMA declaración que el
-    // riel (kuraNavDestinations, misma condición que AppShell.showRail), no de una
-    // bandera aparte: así el CUIDADOR —un solo destino, sin riel ni en ancho— recibe la
-    // cuenta en el encabezado. "Angosto" no basta: era la regresión de la etapa 5.
-    final modules = ref.watch(enabledModulesProvider);
-    final visibleCount = kuraNavDestinations(
-      moduleEnabled: (k) => modules.any((m) => m.dbValue == k),
-      isAdmin: user?.isAdmin ?? false,
-      isMaster: user?.isMaster ?? false,
-      centerType: session.activeCenterType,
-      isCaregiverOnly: user?.isCaregiverOnly ?? false,
-    ).where((d) => d.isVisible).length;
-    final hasRail =
-        MediaQuery.of(context).size.width >= 900 && visibleCount >= 2;
+    // Hay riel (fuente única [hasNavRail]): ancho ≥900 Y ≥2 destinos visibles. Así el
+    // CUIDADOR —un solo destino, sin riel ni en ancho— recibe la cuenta en el encabezado.
+    final hasRail = hasNavRail(ref, context);
     return KuraContentHeader.flat(
       title: title,
       context: centerName,
@@ -644,10 +663,23 @@ class KuraPageHeader extends ConsumerWidget {
 /// (KuraPageHeader) vive DENTRO del contenido, como en /admin y /platform. Reemplaza el
 /// `Scaffold(appBar: AppBar(title:…, actions:[UserMenuButton()]))` de la pantalla; el
 /// cuerpo, el FAB y su ubicación se conservan. El nombre de la pantalla sale una sola vez.
-class KuraScreen extends StatelessWidget {
+class KuraScreen extends ConsumerWidget {
   final String title;
   final List<Widget> actions;
   final Widget body;
+
+  /// La acción PRINCIPAL de la pantalla («crear»). KuraScreen decide dónde vive según la
+  /// misma regla del spec (§3/§5): CON riel ([hasNavRail]) sube al encabezado como botón
+  /// SÓLIDO (SectionActionButton, brandPrimary, rótulo completo) y NO hay FAB; SIN riel
+  /// (teléfono / cuidador) baja a un FAB en la zona del pulgar. Si es null no hay ni uno ni
+  /// otro — así una pantalla con FAB condicional (§8.3) pasa `condición ? acción : null` y
+  /// la condición se respeta en ambos destinos. Los `null == null` de [SectionAction]
+  /// deshabilitan el control (crear sin centro resuelto), como el FAB con onPressed null.
+  final SectionAction? primaryAction;
+
+  /// FAB CRUDO para lo que NO es «crear» (p. ej. el cierre de un pedido con su total). No
+  /// pasa por la regla de riel; se pinta tal cual. La mayoría de pantallas usan
+  /// [primaryAction]; esto es para el caso de §8.2.
   final Widget? floatingActionButton;
   final FloatingActionButtonLocation? floatingActionButtonLocation;
   final Widget? belowHeader; // p. ej. un TabBar, que va bajo el encabezado
@@ -656,24 +688,42 @@ class KuraScreen extends StatelessWidget {
     required this.title,
     required this.body,
     this.actions = const [],
+    this.primaryAction,
     this.floatingActionButton,
     this.floatingActionButtonLocation,
     this.belowHeader,
   });
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-        floatingActionButton: floatingActionButton,
-        floatingActionButtonLocation: floatingActionButtonLocation,
-        body: Column(
-          children: [
-            KuraPageHeader(title: title, actions: actions),
-            const Divider(height: 1),
-            if (belowHeader != null) belowHeader!,
-            Expanded(child: body),
-          ],
-        ),
-      );
+  Widget build(BuildContext context, WidgetRef ref) {
+    final hasRail = hasNavRail(ref, context);
+    final action = primaryAction;
+    // CON riel: botón sólido al encabezado, PRIMERO (el más llamativo, §5). SIN riel: FAB.
+    final headerActions = <Widget>[
+      if (action != null && hasRail) SectionActionButton(action),
+      ...actions,
+    ];
+    final fab = floatingActionButton ??
+        (action != null && !hasRail
+            ? KuraPrimaryFab(
+                icon: action.locked ? Icons.lock_outline : action.icon,
+                label: action.label,
+                onPressed: action.onPressed,
+              )
+            : null);
+    return Scaffold(
+      floatingActionButton: fab,
+      floatingActionButtonLocation: floatingActionButtonLocation,
+      body: Column(
+        children: [
+          KuraPageHeader(title: title, actions: headerActions),
+          const Divider(height: 1),
+          if (belowHeader != null) belowHeader!,
+          Expanded(child: body),
+        ],
+      ),
+    );
+  }
 }
 
 class UserMenuButton extends ConsumerWidget {

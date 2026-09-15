@@ -4,8 +4,8 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/design/tokens.dart';
 import '../../core/providers/session_provider.dart';
+import '../../core/nav/section_action.dart' show SectionAction;
 import '../../core/router/app_shell.dart' show KuraScreen;
-import '../../core/widgets/kura_primary_fab.dart';
 import '../../models/patient.dart';
 import '../../models/vac_therapy.dart';
 import '../../services/data_repository.dart';
@@ -32,10 +32,11 @@ class _VacTherapiesScreenState extends ConsumerState<VacTherapiesScreen> {
 
     return KuraScreen(
       title: 'Terapia VAC',
-      floatingActionButton: KuraPrimaryFab(
-        onPressed: () => _newTherapy(orgId),
-        icon: Icons.add,
+      primaryAction: SectionAction(
+        sectionKey: 'vac',
         label: 'Nueva terapia',
+        icon: Icons.add,
+        onPressed: () => _newTherapy(orgId),
       ),
       body: repoAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),

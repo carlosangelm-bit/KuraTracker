@@ -200,7 +200,6 @@ class _TreatmentStepScreenState extends ConsumerState<TreatmentStepScreen> {
                           ),
                           Switch(
                             value: _useKuraProtocol,
-                            activeColor: KuraColors.primary,
                             onChanged: (v) {
                               setState(() => _useKuraProtocol = v);
                               if (v && controller.liveOutput != null) {

@@ -3,10 +3,12 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 
+import '../models/center_type.dart';
 import '../models/organization.dart';
 import '../models/patient.dart';
 import '../models/referral.dart';
 import '../models/staff.dart';
+import 'pdf_brand_color.dart';
 
 /// Genera y muestra (Printing.layoutPdf) el "Formato de referencia /
 /// interconsulta" (Prompt 6) con los datos del paciente, motivo, especialidad,
@@ -18,7 +20,8 @@ Future<void> generateAndShowReferralPdf({
   Organization? org,
 }) async {
   final dateFmt = DateFormat('dd/MM/yyyy');
-  final brand = _brandColor(org?.brandPrimaryColor);
+  final brand = brandPdfColor(
+      org?.brandPrimaryColor, org?.centerType ?? CenterType.clinicaHeridas);
   final centerName = org?.name ?? 'KuraTracker';
   final firmaNombre =
       referral.referralSignedBy ?? referringStaff?.fullName ?? '—';
@@ -145,10 +148,3 @@ pw.Widget _kv(String k, String v) => pw.Padding(
       ),
     );
 
-PdfColor _brandColor(String? hex) {
-  if (hex == null || hex.trim().isEmpty) return const PdfColor.fromInt(0xFF7C3AED);
-  var h = hex.trim().replaceAll('#', '');
-  if (h.length == 6) h = 'FF$h';
-  final v = int.tryParse(h, radix: 16);
-  return v == null ? const PdfColor.fromInt(0xFF7C3AED) : PdfColor.fromInt(v);
-}

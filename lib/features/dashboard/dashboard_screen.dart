@@ -10,7 +10,9 @@ import '../../core/design/tokens.dart';
 import '../../core/layout/responsive.dart';
 import '../../services/demo/demo_lead_service.dart';
 import '../../core/providers/session_provider.dart';
-import '../../core/router/app_shell.dart' show kFloatingNavBarHeight, UserMenuButton;
+import '../../core/nav/section_action.dart' show SectionAction, SectionActionButton;
+import '../../core/router/app_shell.dart'
+    show kFloatingNavBarHeight, UserMenuButton, hasNavRail;
 import '../../core/widgets/kura_glass_card.dart';
 import '../../core/widgets/kura_primary_fab.dart';
 import '../../engine/models/kura_engine_enums.dart';
@@ -200,10 +202,12 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
       ),
       // Alta de paciente = escritura clínica: se oculta en modo lectura (prueba
       // vencida/impago), igual que en la lista. La ruta además está gateada en el
-      // router, así que ni por URL se llega al formulario.
-      floatingActionButton: (repoAsync.valueOrNull
-                  ?.centerCanWriteClinical(user?.organizationId) ??
-              true)
+      // router, así que ni por URL se llega al formulario. CON riel la acción sube al
+      // encabezado del saludo (_greeting); aquí queda solo el FAB SIN riel (§3/§8.3).
+      floatingActionButton: (!hasNavRail(ref, context) &&
+              (repoAsync.valueOrNull
+                      ?.centerCanWriteClinical(user?.organizationId) ??
+                  true))
           ? KuraPrimaryFab(
               onPressed: () => context.go('/patients/new'),
               icon: Icons.person_add,
@@ -261,6 +265,12 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
             demoLeadName.isNotEmpty)
         ? demoLeadName
         : (user?.fullName.split(' ').first ?? '');
+    // CON riel, la acción principal (alta de paciente) vive en este encabezado, no en un
+    // FAB (§3). Respeta la misma condición de escritura clínica que el FAB (§8.3).
+    final hasRail = hasNavRail(ref, context);
+    final canWrite = ref.watch(dataRepositoryProvider).valueOrNull
+            ?.centerCanWriteClinical(user?.organizationId) ??
+        true;
     return [
       // Encabezado: saludo a la izquierda y el avatar/menú de usuario a la
       // derecha (antes vivía en el AppBar del shell, ya removido).
@@ -283,11 +293,26 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
               ],
             ),
           ),
-          const SizedBox(width: 8),
-          const Padding(
-            padding: EdgeInsets.only(top: 2),
-            child: UserMenuButton(),
-          ),
+          // CON riel: la acción principal (sólida, §5) vive aquí, en el encabezado.
+          if (hasRail && canWrite) ...[
+            const SizedBox(width: 8),
+            SectionActionButton(SectionAction(
+              sectionKey: 'inicio',
+              label: 'Nuevo paciente',
+              icon: Icons.person_add,
+              onPressed: () => context.go('/patients/new'),
+            )),
+          ],
+          // La cuenta va aquí SOLO cuando no hay riel (móvil, o un rol sin riel): con
+          // riel (≥900 y ≥2 destinos) vive en su pie, y repetirla aquí duplicaba el menú
+          // de cuenta en Inicio. Misma fuente única que KuraPageHeader y AppShell.showRail.
+          if (!hasRail) ...[
+            const SizedBox(width: 8),
+            const Padding(
+              padding: EdgeInsets.only(top: 2),
+              child: UserMenuButton(),
+            ),
+          ],
         ],
       ),
     ];

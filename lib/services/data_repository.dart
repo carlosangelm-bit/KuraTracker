@@ -3496,6 +3496,40 @@ class DataRepository {
   }
 
   Future<void> setSiteActive(String siteId, bool active) async {
+    // Guardia de UX que ANTICIPA el trigger trg_zz_prevent_site_deactivation (0134):
+    // mismos tres rechazos, MISMOS mensajes, para no viajar al servidor y enterarse al
+    // final (y para el DEMO/LocalStore, que no tiene Postgres). La autoridad es el
+    // trigger. Solo al desactivar un sitio que estaba activo (true → false).
+    if (!active) {
+      final match = listSites().where((s) => s.id == siteId);
+      final site = match.isEmpty ? null : match.first;
+      if (site != null && site.isActive) {
+        // 1) ¿Es el único sitio activo del centro?
+        final otherActive = listSites(organizationId: site.organizationId)
+            .any((s) => s.id != siteId && s.isActive);
+        if (!otherActive) {
+          throw Exception(
+              'No puedes desactivar este sitio: es el único activo del centro y '
+              'toda consulta necesita un sitio. Da de alta otro antes de '
+              'desactivar este.');
+        }
+        // 2) ¿Tiene personal ACTIVO con este sitio como principal?
+        final staffN = listStaff()
+            .where((s) => s.isActive && s.primarySiteId == siteId)
+            .length;
+        if (staffN > 0) {
+          throw Exception(
+              'No puedes desactivar este sitio: $staffN personas lo tienen como '
+              'sitio principal. Reasígnalas en Personal antes de desactivarlo.');
+        }
+        // 3) ¿Tiene existencias de inventario distintas de cero?
+        if (inventoryOnHand(siteId).values.any((q) => q != 0)) {
+          throw Exception(
+              'No puedes desactivar este sitio: tiene existencias en inventario. '
+              'Trasládalas o ajústalas a cero antes.');
+        }
+      }
+    }
     await _store.updateRow(Collections.sites, siteId, {'is_active': active});
   }
 

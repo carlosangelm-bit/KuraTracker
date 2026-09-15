@@ -3,10 +3,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:kuratracker/core/design/tokens.dart';
-import 'package:kuratracker/features/admin/admin_home_screen.dart';
+import 'package:kuratracker/features/admin/note_catalog_screen.dart';
 import 'package:kuratracker/services/data_repository.dart';
 
-/// Humo de la etapa 2a: la pestaña Configuración (NoteCatalogTab) rinde sus tres
+/// Humo de la etapa 2a: la pestaña Configuración (NoteCatalogScreen) rinde sus tres
 /// grupos sin excepción de build/layout, y el encabezado del canvas está presente.
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -23,7 +23,7 @@ void main() {
 
     await tester.pumpWidget(MaterialApp(
       theme: ThemeData(extensions: <ThemeExtension<dynamic>>[BrandTokens.kura]),
-      home: Scaffold(body: NoteCatalogTab(repo: repo, organizationId: org)),
+      home: Scaffold(body: NoteCatalogScreen(repo: repo, organizationId: org)),
     ));
     await tester.pumpAndSettle();
 

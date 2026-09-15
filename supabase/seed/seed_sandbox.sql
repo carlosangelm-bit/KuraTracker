@@ -196,6 +196,38 @@ select site_hospital, org_hospital, 'Hospital Sandbox · Piso 3 Medicina Interna
 union all
 select site_cuidadores, org_cuidadores, 'Cuidadores Sandbox · Domicilio', 'domicilio', 'Sede sintética de pruebas', true from sb;
 
+-- Sitios EXTRA de Clínica Sandbox para ejercer A MANO los dos escenarios de la guardia
+-- de desactivación de sitios (0134) que no se podían probar con datos reales. Entran en
+-- el MISMO barrido: son sitios de org_clinica, así que la limpieza de arriba
+-- (`delete from public.sites where organization_id in (…)`) los borra, y con ellos —por
+-- FK `on delete cascade` en site_id— sus inventory_items/inventory_movements. El seed
+-- sigue re-ejecutable sin residuos.
+--   · Almacén: CON existencias y SIN personal. Al desactivarlo debe salir el mensaje del
+--     INVENTARIO, no otro: Consultorio 1 sigue activo (no es el único sitio) y nadie lo
+--     tiene como primary_site_id (no es el caso del personal). Así el orden de los
+--     rechazos queda distinguible.
+--   · Consultorio 2: limpio (sin personal, sin inventario). Desactivarlo debe FUNCIONAR
+--     —la mitad que distingue una guardia correcta de una que bloquea todo—.
+insert into public.sites (id, organization_id, name, kind, address, is_active)
+select 'a0000000-0000-4000-a000-000000000014'::uuid, org_clinica,
+       'Clínica Sandbox · Almacén', 'otro', 'Sede sintética de pruebas', true from sb
+union all
+select 'a0000000-0000-4000-a000-000000000015'::uuid, org_clinica,
+       'Clínica Sandbox · Consultorio 2', 'clinica', 'Sede sintética de pruebas', true from sb;
+
+-- Existencias en el Almacén: un artículo + una entrada con delta positivo (neto <> 0).
+-- created_by queda null (los perfiles aún no existen en este punto del seed).
+insert into public.inventory_items (id, organization_id, site_id, name, is_external, is_active)
+select 'a0000000-0000-4000-a000-000000000031'::uuid, org_clinica,
+       'a0000000-0000-4000-a000-000000000014'::uuid,
+       'Apósito de prueba (Almacén)', true, true from sb;
+insert into public.inventory_movements
+       (id, organization_id, site_id, inventory_item_id, delta, reason, note)
+select 'a0000000-0000-4000-a000-000000000032'::uuid, org_clinica,
+       'a0000000-0000-4000-a000-000000000014'::uuid,
+       'a0000000-0000-4000-a000-000000000031'::uuid,
+       10, 'compra', 'Entrada sintética para ejercer la guardia de sitios (0134)' from sb;
+
 -- -----------------------------------------------------------------------------
 -- 3. Cuentas (auth.users + identities) → profiles → membresías → staff
 -- -----------------------------------------------------------------------------
@@ -459,8 +491,14 @@ select site_basica_test, org_basica_test, 'Clínica Prueba · Consultorio', 'cli
 
 -- Derechos SOLO base: plan + module:clinico + seat:clinico. SIN module:admin,
 -- module:insumos ni module:comercial → esas pantallas muestran el bloqueo con precio.
-insert into public.org_entitlements (organization_id, kind, key, quantity, status, source)
-select o.org, e.kind, e.key, e.qty, 'active', 'master'
+-- source='master' debe cumplir ent_master_grant_shape (0132): grant_type válido,
+-- reason ≥ 10 chars y (is_permanent o current_period_end). Estos son derechos
+-- sintéticos del sandbox → cortesía permanente.
+insert into public.org_entitlements
+    (organization_id, kind, key, quantity, status, source,
+     grant_type, reason, is_permanent)
+select o.org, e.kind, e.key, e.qty, 'active', 'master',
+       'cortesia', 'Semilla sintética del sandbox (centro de verificación)', true
   from (select org_hospital_test as org from sb2
         union all select org_basica_test from sb2) o
   cross join (values
@@ -469,7 +507,9 @@ select o.org, e.kind, e.key, e.qty, 'active', 'master'
     ('seat',   'clinico', 5)
   ) as e(kind, key, qty)
 on conflict (organization_id, kind, key) do update
-  set quantity = excluded.quantity, status = 'active', source = 'master';
+  set quantity = excluded.quantity, status = 'active', source = 'master',
+      grant_type = excluded.grant_type, reason = excluded.reason,
+      is_permanent = excluded.is_permanent;
 
 select pg_temp.sb_user('admin.hospital.test@sandbox.kuratracker.mx', 'Admin Hospital Prueba',
   array['admin']::public.user_role[], (select org_hospital_test from sb2));

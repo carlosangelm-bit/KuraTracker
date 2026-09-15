@@ -7,8 +7,8 @@ import 'package:go_router/go_router.dart';
 import '../../core/providers/session_provider.dart';
 import '../../core/theme/kura_theme.dart';
 import '../../models/center_type.dart';
+import '../../core/nav/section_action.dart' show SectionAction;
 import '../../core/router/app_shell.dart' show kFloatingNavBarHeight, KuraScreen;
-import '../../core/widgets/kura_primary_fab.dart';
 import '../../engine/models/kura_engine_enums.dart';
 import '../../engine/sheehan_decision_style.dart';
 import '../../models/app_user.dart';
@@ -345,13 +345,15 @@ class PatientsListScreenState extends ConsumerState<PatientsListScreen> {
             ),
       // Alta de paciente = escritura clínica: se oculta si el centro está en modo
       // lectura (pago vencido/prueba terminada). La banda del shell explica el motivo.
-      floatingActionButton: (repoAsync.valueOrNull
+      // La condición (§8.3) se respeta en AMBOS destinos: null → ni botón ni FAB.
+      primaryAction: (repoAsync.valueOrNull
                   ?.centerCanWriteClinical(session.user?.organizationId) ??
               true)
-          ? KuraPrimaryFab(
-              onPressed: () => context.go('/patients/new'),
-              icon: Icons.person_add,
+          ? SectionAction(
+              sectionKey: 'patients',
               label: 'Nuevo paciente',
+              icon: Icons.person_add,
+              onPressed: () => context.go('/patients/new'),
             )
           : null,
     );

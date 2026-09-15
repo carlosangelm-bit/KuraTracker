@@ -8,6 +8,7 @@ import '../../core/providers/session_provider.dart';
 import '../../engine/models/kura_engine_enums.dart' show EtiologiaLabel;
 import '../../models/wound.dart';
 import '../../services/data_repository.dart';
+import '../../core/widgets/kura_primary_fab.dart';
 import '../prevention/preventive_assessment_sheet.dart';
 
 /// Pantalla del monitor de un paciente (cuidador con varios pacientes): AppBar
@@ -67,7 +68,7 @@ class _CaregiverPatientMonitorState
         final instructions = repo.caregiverInstructionsFor(widget.patientId);
 
         return PageMaxWidth(child: ListView(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 88),
+          padding: EdgeInsets.fromLTRB(16, 12, 16, kuraListBottomInset(context)),
           children: [
             Text(patient.fullName,
                 style:

@@ -6,9 +6,10 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/theme/kura_theme.dart';
 import '../../core/layout/responsive.dart';
+import '../../core/nav/section_action.dart' show SectionAction, SectionActionButton;
 import '../../core/providers/session_provider.dart';
 import '../../core/router/app_shell.dart'
-    show KuraScreen, kFloatingNavBarHeight;
+    show KuraScreen, kFloatingNavBarHeight, hasNavRail;
 import '../../core/widgets/kura_primary_fab.dart';
 import '../../models/commercial.dart';
 import '../../models/inventory.dart';
@@ -19,6 +20,27 @@ import '../../services/data_repository.dart';
 import '../insumos/dashboard_charts.dart';
 
 String _money(double v) => '\$${v.toStringAsFixed(2)} MXN';
+
+/// La acción de una sección comercial CON riel (§3): botón sólido (brandPrimary, rótulo
+/// completo, §5) arriba del contenido de la sección activa — no en el encabezado externo,
+/// que dice «Comercial» y no sabe de qué sección es la acción. SIN riel devuelve nada: el
+/// FAB de la sección (zona del pulgar) se queda. Cada sección la usa arriba de su Column y
+/// apaga su FAB con la misma condición, así no hay flotante sobre el contenido en escritorio.
+class _RailActionBar extends ConsumerWidget {
+  final SectionAction action;
+  const _RailActionBar(this.action);
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    if (!hasNavRail(ref, context)) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      child: Align(
+        alignment: Alignment.centerRight,
+        child: SectionActionButton(action),
+      ),
+    );
+  }
+}
 
 /// Etiqueta del estado de un pago de terminal (para mostrarlo en la tarjeta).
 String _pagoEstadoLabel(String s) => switch (s) {
@@ -162,14 +184,24 @@ class _CobrosTabState extends ConsumerState<_CobrosTab> {
     final list = _filter == null ? all : all.where((c) => c.status == _filter).toList();
     final fmt = DateFormat('dd/MM/yyyy HH:mm');
 
+    final rail = hasNavRail(ref, context);
+    final action = SectionAction(
+      sectionKey: 'comercial',
+      label: 'Nuevo cobro',
+      icon: Icons.add,
+      onPressed: () => _nuevoCobro(repo),
+    );
     return Scaffold(
-      floatingActionButton: KuraPrimaryFab(
-        onPressed: () => _nuevoCobro(repo),
-        icon: Icons.add,
-        label: 'Nuevo cobro',
-      ),
+      floatingActionButton: rail
+          ? null
+          : KuraPrimaryFab(
+              onPressed: () => _nuevoCobro(repo),
+              icon: Icons.add,
+              label: 'Nuevo cobro',
+            ),
       body: Column(
       children: [
+        _RailActionBar(action),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
           child: Row(
@@ -953,8 +985,18 @@ class _ServiciosTabState extends ConsumerState<_ServiciosTab> {
   /// Catálogo LOCAL de servicios (centros sin Acuity): CRUD de honorarios.
   Widget _localView(BuildContext context, DataRepository repo) {
     final services = repo.listServices(widget.orgId, activeOnly: false);
+    final rail = hasNavRail(ref, context);
+    final action = SectionAction(
+      sectionKey: 'comercial',
+      label: 'Servicio',
+      icon: Icons.add,
+      onPressed: () => _edit(repo, null),
+    );
     return Scaffold(
-      body: services.isEmpty
+      body: Column(children: [
+        _RailActionBar(action),
+        Expanded(
+          child: services.isEmpty
           ? const Center(
               child: Padding(
                   padding: EdgeInsets.all(32),
@@ -996,11 +1038,15 @@ class _ServiciosTabState extends ConsumerState<_ServiciosTab> {
                 );
               },
             ),
-      floatingActionButton: KuraPrimaryFab(
-        onPressed: () => _edit(repo, null),
-        icon: Icons.add,
-        label: 'Servicio',
-      ),
+        ),
+      ]),
+      floatingActionButton: rail
+          ? null
+          : KuraPrimaryFab(
+              onPressed: () => _edit(repo, null),
+              icon: Icons.add,
+              label: 'Servicio',
+            ),
     );
   }
 
@@ -1461,10 +1507,19 @@ class _ConciliacionTabState extends ConsumerState<_ConciliacionTab> {
     final unlinkedTotal = unlinked.fold<double>(0, (a, p) => a + p.amount);
 
     final org = repo.organizationById(widget.orgId);
+    final rail = hasNavRail(ref, context);
+    final action = SectionAction(
+      sectionKey: 'comercial',
+      label: 'Registrar pago',
+      icon: Icons.add_card,
+      onPressed: () => _addManual(repo),
+    );
     return Scaffold(
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 88),
+        padding: EdgeInsets.fromLTRB(
+            16, 12, 16, rail ? 16 : kuraListBottomInset(context)),
         children: [
+          _RailActionBar(action),
           _TerminalConfigCard(
             repo: repo,
             orgId: widget.orgId,
@@ -1527,11 +1582,13 @@ class _ConciliacionTabState extends ConsumerState<_ConciliacionTab> {
           ],
         ],
       ),
-      floatingActionButton: KuraPrimaryFab(
-        onPressed: () => _addManual(repo),
-        icon: Icons.add_card,
-        label: 'Registrar pago',
-      ),
+      floatingActionButton: rail
+          ? null
+          : KuraPrimaryFab(
+              onPressed: () => _addManual(repo),
+              icon: Icons.add_card,
+              label: 'Registrar pago',
+            ),
     );
   }
 

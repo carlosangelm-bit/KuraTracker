@@ -5,7 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:kuratracker/core/design/tokens.dart';
-import 'package:kuratracker/features/admin/admin_home_screen.dart';
+import 'package:kuratracker/features/admin/note_catalog_screen.dart';
 import 'package:kuratracker/services/data_repository.dart';
 import 'package:kuratracker/services/local_db/local_store.dart';
 
@@ -43,7 +43,7 @@ void main() {
       routes: [
         GoRoute(
           path: '/admin',
-          builder: (c, s) => NoteCatalogTab(repo: repo, organizationId: org),
+          builder: (c, s) => NoteCatalogScreen(repo: repo, organizationId: org),
           routes: [
             GoRoute(
               path: 'protocolo-kura',

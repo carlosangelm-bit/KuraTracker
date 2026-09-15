@@ -4,9 +4,11 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/config/app_config.dart';
 import '../../core/design/tokens.dart';
+import '../../core/nav/section_action.dart' show railPresentProvider;
 import '../../core/providers/session_provider.dart';
 import '../../core/router/app_router.dart';
-import '../../core/router/app_shell.dart' show kFloatingNavBarHeight;
+import '../../core/widgets/kura_primary_fab.dart'
+    show kuraFabLift, kuraLauncherBottom;
 import '../../core/theme/kura_theme.dart';
 import '../../models/app_user.dart';
 import '../support/support_chat_panel.dart';
@@ -103,9 +105,13 @@ class _TourScopeState extends ConsumerState<TourScope> {
     // demo. Mismo anclaje bottom-left, elevado sobre la barra flotante. Se oculta
     // cuando el panel de chat está abierto.
     final chat = ref.watch(supportChatProvider);
+    // Con riel, la Ayuda vive en su pie (§3): no dupliques el flotante. Sin riel
+    // (teléfono, y el cuidador en cualquier anchura) railPresent es false → flotante.
+    final railPresent = ref.watch(railPresentProvider);
     final showHelp = !_isDemo &&
         !tour.running &&
         !chat.open &&
+        !railPresent &&
         ref.watch(sessionProvider).isAuthenticated;
 
     return Stack(
@@ -137,18 +143,23 @@ class _TourScopeState extends ConsumerState<TourScope> {
 
   /// Ancla el lanzador flotante (Tour en demo / Ayuda en prod) SIN empalmarse
   /// con la navegación ni con el FAB "Nuevo paciente" (bottom-right):
-  ///  - Escritorio (≥900): abajo-DERECHA, elevado por encima del FAB. El anclaje
-  ///    viejo (`left: 88`) caía ENCIMA del NavigationRail, que en español mide
-  ///    ~140px (más que los 88 supuestos), robándole toques al rail.
+  ///  - Escritorio (≥900): abajo-DERECHA, POR ENCIMA de la huella del FAB. El FAB
+  ///    (KuraPrimaryFab) se ELEVA su huella completa (`kFloatingNavBarHeight + 12 +
+  ///    safe-area`) y se sienta en endFloat (16px), así que en escritorio ocupa hasta
+  ///    ~140px desde abajo; un `bottom` fijo de 84 caía ENCIMA (lo reportado). El
+  ///    lanzador libera esa huella derivándola de las MISMAS constantes, no de un número
+  ///    suelto — así no se traslapa en ninguna anchura ni con el FAB extendido.
   ///  - Móvil (<900): abajo-izquierda, elevado sobre la barra flotante (el FAB
   ///    vive en bottom-right, así que la izquierda queda libre).
   Positioned _floatingLauncher(BuildContext context, Widget child) {
-    final mq = MediaQuery.of(context);
-    final wide = mq.size.width >= 900;
+    final wide = MediaQuery.of(context).size.width >= 900;
+    // Geometría de la esquina: FUENTE ÚNICA en kura_primary_fab.dart (la misma de la que
+    // sale la reserva inferior de las listas). Escritorio: apilado sobre la huella del
+    // FAB. Móvil: a la izquierda, a la altura del FAB (la derecha la ocupa el FAB).
     return Positioned(
       left: wide ? null : 16,
       right: wide ? 16 : null,
-      bottom: wide ? 84 : mq.viewPadding.bottom + kFloatingNavBarHeight + 12,
+      bottom: wide ? kuraLauncherBottom(context) : kuraFabLift(context),
       child: child,
     );
   }

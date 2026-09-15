@@ -6,9 +6,11 @@ import 'package:printing/printing.dart';
 import '../engine/models/kura_engine_enums.dart';
 import '../engine/risk/braden_scale.dart';
 import '../models/adverse_event.dart';
+import '../models/center_type.dart';
 import '../models/patient.dart';
 import '../models/preventive_task.dart';
 import 'data_repository.dart';
+import 'pdf_brand_color.dart';
 
 /// Genera el REPORTE HOSPITALARIO DE PREVENCIÓN (LPP) para uno o varios
 /// pacientes: internamiento, riesgo (Braden), comorbilidades, diagnósticos,
@@ -34,7 +36,8 @@ Future<void> generatePreventionReportPdf({
 
   final org = repo.organizationById(organizationId);
   final centerName = org?.name ?? 'Centro';
-  final brand = _parseHex(org?.brandPrimaryColor) ?? PdfColor.fromInt(0xFF2563EB);
+  final brand = brandPdfColor(
+      org?.brandPrimaryColor, org?.centerType ?? CenterType.clinicaHeridas);
 
   // Resolución de "quién" por id (staff o usuario).
   final staffById = {for (final s in repo.listStaff()) s.id: s.fullName};
@@ -244,14 +247,6 @@ Future<void> generatePreventionReportPdf({
 String _bradenBand(int? s, BradenScale scale) {
   if (s == null) return 'sin valoración';
   return scale.bandFor(s)?.label.toLowerCase() ?? 'sin valoración';
-}
-
-PdfColor? _parseHex(String? hex) {
-  if (hex == null) return null;
-  var h = hex.replaceAll('#', '').trim();
-  if (h.length == 6) h = 'FF$h';
-  final v = int.tryParse(h, radix: 16);
-  return v == null ? null : PdfColor.fromInt(v);
 }
 
 pw.Widget _section(String title, PdfColor brand) => pw.Container(

@@ -424,7 +424,6 @@ class _PatientFormScreenState extends ConsumerState<PatientFormScreen> {
                         contentPadding: EdgeInsets.zero,
                         title: const Text('Cuidador identificado'),
                         value: _hasCaregiver,
-                        activeColor: KuraColors.primary,
                         onChanged: (v) => setState(() => _hasCaregiver = v),
                       ),
                       if (_hasCaregiver) ...[
@@ -443,7 +442,6 @@ class _PatientFormScreenState extends ConsumerState<PatientFormScreen> {
                         title: const Text('Paciente frágil'),
                         subtitle: const Text('Activa interconsulta a geriatría en el motor Kura+'),
                         value: _fragile,
-                        activeColor: KuraColors.primary,
                         onChanged: (v) => setState(() => _fragile = v),
                       ),
                       const SizedBox(height: 20),

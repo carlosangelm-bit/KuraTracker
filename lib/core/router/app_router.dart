@@ -452,13 +452,19 @@ final routerProvider = Provider<GoRouter>((ref) {
           // capturara también a las hijas. El riel vive en el shell (AdminSectionsShell)
           // y PERSISTE entre secciones; cada sección es solo su cuerpo, con
           // NoTransitionPage (cambiar de sección no anima ni recarga la pantalla).
+          // El PROPIO shell va también con NoTransitionPage (pageBuilder): ENTRAR a la
+          // consola desde una pestaña clínica NO debe animar el subárbol completo (§12).
+          // Con `builder:` go_router lo envolvía en la página por omisión (MaterialPage) y
+          // esa transición delataba «recarga» al entrar, aunque entre secciones no anime.
           GoRoute(
             path: '/admin',
             redirect: (context, state) => '/admin/usuarios',
           ),
           ShellRoute(
-            builder: (context, state, child) => AdminSectionsShell(
-                currentRoute: state.matchedLocation, child: child),
+            pageBuilder: (context, state, child) => NoTransitionPage(
+              child: AdminSectionsShell(
+                  currentRoute: state.matchedLocation, child: child),
+            ),
             routes: [
               for (final s in const [
                 'usuarios',
@@ -512,13 +518,17 @@ final routerProvider = Provider<GoRouter>((ref) {
           // riel vive en el shell (PlatformSectionsShell) y persiste; cada sección es su
           // cuerpo, con NoTransitionPage (cambiar de sección no anima ni recarga). El
           // centro seleccionado vive en un provider, así sobrevive el cambio de sección.
+          // El PROPIO shell va también con NoTransitionPage (pageBuilder): ENTRAR a la
+          // consola del master desde una pestaña clínica NO debe animar el subárbol (§12).
           GoRoute(
             path: '/platform',
             redirect: (context, state) => '/platform/centros',
           ),
           ShellRoute(
-            builder: (context, state, child) => PlatformSectionsShell(
-                currentRoute: state.matchedLocation, child: child),
+            pageBuilder: (context, state, child) => NoTransitionPage(
+              child: PlatformSectionsShell(
+                  currentRoute: state.matchedLocation, child: child),
+            ),
             routes: [
               for (final s in const [
                 'centros',

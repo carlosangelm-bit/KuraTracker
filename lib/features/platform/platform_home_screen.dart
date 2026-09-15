@@ -7,7 +7,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/theme/kura_theme.dart';
 import '../../core/providers/session_provider.dart';
-import '../../core/router/app_shell.dart' show centerTypeColor, KuraAccountMenu;
+import '../../core/config/app_config.dart';
+import '../../core/router/app_shell.dart' show KuraAccountMenu, hasNavRail;
+import '../support/support_launcher.dart';
 import '../../core/widgets/kura_primary_fab.dart';
 import '../../core/nav/kura_nav_destinations.dart';
 import '../../core/nav/kura_nav_rail.dart';
@@ -22,8 +24,14 @@ import '../../engine/params/clinical_params.dart';
 import '../../services/data_repository.dart';
 import '../../services/clinical_params_csv.dart';
 import '../../services/csv_download.dart';
-import '../admin/admin_home_screen.dart'
-    show UsersTab, StaffTab, SitesTab, NoteCatalogTab, BrandingTab;
+import '../admin/users_screen.dart' show UsersScreen;
+import '../admin/staff_screen.dart' show StaffScreen;
+import '../admin/sites_screen.dart' show SitesScreen;
+import '../admin/note_catalog_screen.dart' show NoteCatalogScreen;
+import '../admin/branding_screen.dart' show BrandingScreen;
+import 'trial_founder_notice.dart';
+import 'centers_view.dart';
+import '../../core/nav/section_action.dart';
 
 /// Area de "Plataforma": pantalla exclusiva del rol `master`
 /// (administrador de plataforma, ver 0012_master_role.sql). A diferencia
@@ -247,6 +255,9 @@ class _PlatformSectionsShellState extends ConsumerState<PlatformSectionsShell> {
     // colapsar/expandir manda por encima del ancho una vez que el usuario lo toca.
     final autoCollapsed = MediaQuery.of(context).size.width < 1200;
     final collapsed = _userCollapsed ?? autoCollapsed;
+    // La consola del master SIEMPRE pinta un riel: aquí siempre hay riel, así que
+    // TourScope no duplica el flotante de Ayuda.
+    publishRailPresent(ref, true, mounted: () => mounted);
     final navs = platformNavDestinations();
     final plataforma = navs.first; // "Plataforma" con sus 9 secciones
     final user = ref.watch(sessionProvider).user;
@@ -294,7 +305,13 @@ class _PlatformSectionsShellState extends ConsumerState<PlatformSectionsShell> {
           section: plataforma,
           currentRoute: widget.currentRoute,
           collapsed: collapsed,
-          actions: actions,
+          // La acción principal de la sección (a ≥900) precede a las del master (CSV,
+          // anomalías): es la más llamativa del encabezado.
+          actions: [
+            ...sectionHeaderActions(ref, widget.currentRoute,
+                hasRail: hasNavRail(ref, context)),
+            ...actions,
+          ],
         ),
         const Divider(height: 1),
         Expanded(child: widget.child),
@@ -316,6 +333,9 @@ class _PlatformSectionsShellState extends ConsumerState<PlatformSectionsShell> {
                 setState(() => _userCollapsed = !collapsed),
             // El pie del riel es el menú de cuenta (cerrar sesión, etc.).
             accountMenuBuilder: (ctx, child) => KuraAccountMenu(child: child),
+            onHelp: AppConfig.isSupabaseConfigured
+                ? () => openSupportAssistant(ref)
+                : null,
           ),
           const VerticalDivider(width: 1),
           Expanded(child: content),
@@ -372,6 +392,21 @@ class _PlatformSectionBodyState extends ConsumerState<PlatformSectionBody> {
       dynamic user, String? selected) {
     switch (section) {
       case 'centros':
+        // CON riel: «Nuevo centro» al encabezado (§3), vía el provider que lee el shell
+        // (sectionKey='centros', el último segmento de la ruta). SIN riel: el FAB del tab.
+        final rail = hasNavRail(ref, context);
+        publishSectionAction(
+          ref,
+          rail
+              ? SectionAction(
+                  sectionKey: 'centros',
+                  label: 'Nuevo centro',
+                  icon: Icons.add_business_outlined,
+                  onPressed: () => _openCreateOrganizationDialog(repo),
+                )
+              : null,
+          mounted: () => mounted,
+        );
         return _OrganizationsTab(
           repo: repo,
           organizations: orgs,
@@ -379,6 +414,7 @@ class _PlatformSectionBodyState extends ConsumerState<PlatformSectionBody> {
           onSelect: _selectOrg,
           onCreate: () => _openCreateOrganizationDialog(repo),
           onChanged: () => setState(() {}),
+          showFab: !rail,
         );
       case 'solicitudes':
         return _LicenseRequestsTab(
@@ -389,12 +425,12 @@ class _PlatformSectionBodyState extends ConsumerState<PlatformSectionBody> {
     }
     if (orgs.isEmpty) return const _NoOrganizationsState();
     final perCenter = switch (section) {
-      'usuarios' => UsersTab(
+      'usuarios' => UsersScreen(
           repo: repo, organizationId: selected, currentUserId: user?.id),
-      'personal' => StaffTab(repo: repo, organizationId: selected),
-      'sitios' => SitesTab(repo: repo, organizationId: selected),
-      'catalogo' => NoteCatalogTab(repo: repo, organizationId: selected),
-      'marca' => BrandingTab(repo: repo, organizationId: selected),
+      'personal' => StaffScreen(repo: repo, organizationId: selected),
+      'sitios' => SitesScreen(repo: repo, organizationId: selected),
+      'catalogo' => NoteCatalogScreen(repo: repo, organizationId: selected),
+      'marca' => BrandingScreen(repo: repo, organizationId: selected),
       'modulos' => _ModulesTab(
           repo: repo, organizationId: selected, updatedBy: user?.id),
       'licencia' => CenterLicensePanel(
@@ -579,6 +615,10 @@ class _OrganizationsTab extends StatelessWidget {
   final VoidCallback onCreate;
   final VoidCallback onChanged;
 
+  // CON riel la acción «Nuevo centro» sube al encabezado (la publica el shell); aquí el
+  // FAB se apaga. SIN riel se queda. §3.
+  final bool showFab;
+
   const _OrganizationsTab({
     required this.repo,
     required this.organizations,
@@ -586,6 +626,7 @@ class _OrganizationsTab extends StatelessWidget {
     required this.onSelect,
     required this.onCreate,
     required this.onChanged,
+    this.showFab = true,
   });
 
   @override
@@ -597,101 +638,29 @@ class _OrganizationsTab extends StatelessWidget {
           _ShopifyCatalogSyncCard(repo: repo),
           Expanded(
             child: organizations.isEmpty
-          ? const _NoOrganizationsState()
-          : ListView.separated(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 88),
-              itemCount: organizations.length,
-              separatorBuilder: (_, __) => const SizedBox(height: 8),
-              itemBuilder: (context, i) {
-                final o = organizations[i];
-                final isSelected = o.id == selectedOrgId;
-                return Card(
-                  color: isSelected ? KuraColors.primary.withOpacity(0.08) : null,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      ListTile(
-                        leading: CircleAvatar(
-                          backgroundColor: centerTypeColor(o.centerType).withOpacity(0.12),
-                          child: Icon(Icons.hub_outlined, color: centerTypeColor(o.centerType)),
-                        ),
-                        title: Text(o.name),
-                        // Tipo visible de un vistazo (un centro mal tipificado se
-                        // ve aquí en vez de descubrirse por un "no funciona") +
-                        // marca de centro de pruebas.
-                        subtitle: Text(
-                          '${o.centerType.label}'
-                          '${o.isTest ? ' · PRUEBA' : ''} · '
-                          '${o.isActive ? 'Activo' : 'Inactivo'}',
-                        ),
-                        trailing: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Text('Activo', style: TextStyle(fontSize: 10)),
-                            // shrinkWrap: sin el relleno de 48 px del área de toque,
-                            // 'Activo' + el switch caben en la fila del ListTile (antes
-                            // se desbordaba 7 px por abajo).
-                            Switch(
-                              value: o.isActive,
-                              activeColor: KuraColors.primary,
-                              materialTapTargetSize:
-                                  MaterialTapTargetSize.shrinkWrap,
-                              onChanged: (v) async {
-                                await repo.setOrganizationActive(o.id, v);
-                                onChanged();
-                              },
-                            ),
-                          ],
-                        ),
-                        onTap: () => onSelect(o.id),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 0, 8, 8),
-                        child: Row(
-                          children: [
-                            const Text('Tipo:', style: TextStyle(fontSize: 13)),
-                            const SizedBox(width: 8),
-                            DropdownButton<CenterType>(
-                              value: o.centerType,
-                              items: CenterType.values
-                                  .map((t) => DropdownMenuItem(
-                                        value: t,
-                                        child: Text(t.label,
-                                            style: const TextStyle(fontSize: 13)),
-                                      ))
-                                  .toList(),
-                              onChanged: (t) async {
-                                if (t == null) return;
-                                await repo.setCenterType(o.id, t);
-                                onChanged();
-                              },
-                            ),
-                            const Spacer(),
-                            TextButton.icon(
-                              icon: const Icon(Icons.group_add_outlined, size: 18),
-                              label: const Text('Miembros'),
-                              onPressed: () => showDialog<void>(
-                                context: context,
-                                builder: (dialogCtx) =>
-                                    _MembershipsDialog(repo: repo, org: o),
-                              ).then((_) => onChanged()),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
+                ? const _NoOrganizationsState()
+                : PlatformCentersView(
+                    repo: repo,
+                    organizations: organizations,
+                    selectedOrgId: selectedOrgId,
+                    onSelect: onSelect,
+                    onChanged: onChanged,
+                    onMembers: (o) => showDialog<void>(
+                      context: context,
+                      builder: (dialogCtx) =>
+                          _MembershipsDialog(repo: repo, org: o),
+                    ).then((_) => onChanged()),
                   ),
-                );
-              },
-            ),
           ),
         ],
       ),
-      floatingActionButton: KuraPrimaryFab(
-        onPressed: onCreate,
-        icon: Icons.add_business_outlined,
-        label: 'Nuevo centro',
-      ),
+      floatingActionButton: showFab
+          ? KuraPrimaryFab(
+              onPressed: onCreate,
+              icon: Icons.add_business_outlined,
+              label: 'Nuevo centro',
+            )
+          : null,
     );
   }
 }
@@ -739,7 +708,7 @@ class _ModulesTabState extends State<_ModulesTab> {
         (_scope == _ModuleScope.usuario && scopeProfileId != null);
 
     return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 88),
+      padding: EdgeInsets.fromLTRB(16, 16, 16, kuraListBottomInset(context)),
       children: [
         Text('Módulos de ${org.name}',
             style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
@@ -1036,7 +1005,6 @@ class _MembershipsDialogState extends State<_MembershipsDialog> {
                           ),
                         Switch(
                           value: isMember,
-                          activeColor: KuraColors.primary,
                           onChanged: _busy
                               ? null
                               : (v) => _toggle(u, v, existing: m),
@@ -1131,9 +1099,12 @@ class _OrganizationFormDialogState extends State<_OrganizationFormDialog> {
       }
 
       if (!mounted) return;
-      // Si se creó fundador con contraseña temporal (SMTP no configurado), mostrarla
-      // al master antes de cerrar — es la única forma de entregársela al prospecto.
-      if (founder?.tempPassword != null) {
+      // Al crear el fundador se le envía el correo para que ponga su propia contraseña,
+      // igual que Usuarios (resetPasswordForEmail ya se usa ahí y en el login). La
+      // temporal queda como respaldo SOLO si el envío falla, con el motivo real.
+      if (founder != null) {
+        final notice = await notifyTrialFounder(founder);
+        if (!mounted) return;
         await showDialog<void>(
           context: context,
           builder: (dctx) => AlertDialog(
@@ -1142,13 +1113,24 @@ class _OrganizationFormDialogState extends State<_OrganizationFormDialog> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Admin: ${founder!.email}'),
+                Text('Admin: ${notice.email}'),
                 const SizedBox(height: 4),
-                SelectableText('Contraseña temporal: ${founder.tempPassword}'),
+                Text('Prueba de $trialDays días.',
+                    style: const TextStyle(fontSize: 12)),
                 const SizedBox(height: 8),
-                Text('Prueba de $trialDays días. Entrégale estas credenciales al '
-                    'prospecto (no hay correo de invitación configurado).',
-                    style: const TextStyle(fontSize: 11)),
+                if (notice.emailSent)
+                  const Text(
+                      'Se le envió un correo para que establezca su contraseña.',
+                      style: TextStyle(fontSize: 12))
+                else ...[
+                  Text(
+                      'No se pudo enviar el correo'
+                      '${notice.error != null ? ' (${notice.error})' : ''}. '
+                      'Entrégale esta contraseña temporal:',
+                      style: const TextStyle(fontSize: 12)),
+                  const SizedBox(height: 4),
+                  SelectableText(notice.tempPassword ?? '(sin contraseña temporal)'),
+                ],
               ],
             ),
             actions: [

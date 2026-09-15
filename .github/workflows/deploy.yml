@@ -337,7 +337,15 @@ jobs:
             --dart-define=SUPABASE_ANON_KEY="${{ secrets.SUPABASE_ANON_KEY }}" \
             --dart-define=APP_ENV="$APP_ENV" \
             --dart-define=VISION_ENABLED="$VISION_ENABLED" \
+            --dart-define=BUILD_SHA="${{ github.sha }}" \
             --dart-define=SHOPIFY_STOREFRONT_TOKEN="${{ secrets.SHOPIFY_STOREFRONT_TOKEN }}"
+          # Sello de build: el SHA DESPLEGADO, servido junto al bundle. La app compila el
+          # mismo SHA (BUILD_SHA, visible en el banner del sandbox); comparar ambos revela
+          # una pestaña con código viejo del caché del service worker (Flutter web es
+          # cache-first). El SHA es público en GitHub → no es secreto.
+          printf '{"sha":"%s","ref":"%s","env":"%s","builtAt":"%s"}\n' \
+            "${{ github.sha }}" "${{ github.ref_name }}" "$APP_ENV" \
+            "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > build/web/build.json
 
       - name: Deploy → ${{ env.CF_PAGES_PROJECT }}
         uses: cloudflare/wrangler-action@v3
@@ -365,7 +373,12 @@ jobs:
             --dart-define=SHOPIFY_STOREFRONT_TOKEN="${{ secrets.SHOPIFY_STOREFRONT_TOKEN }}" \
             --dart-define=LEADS_ENDPOINT="${{ secrets.SUPABASE_URL }}/functions/v1/demo-lead" \
             --dart-define=AVISO_URL="${{ vars.AVISO_URL }}" \
+            --dart-define=BUILD_SHA="${{ github.sha }}" \
             --dart-define=DEMO_EVENT="${{ vars.DEMO_EVENT || 'Congreso de heridas · sep 2026' }}"
+          # Mismo sello de build para la demo (también sirve cache-first).
+          printf '{"sha":"%s","ref":"%s","env":"%s","builtAt":"%s"}\n' \
+            "${{ github.sha }}" "${{ github.ref_name }}" "demo" \
+            "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > build/web/build.json
 
       - name: Deploy demo → kuratracker-demo
         if: env.DEPLOY_ENV == 'production'
