@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/design/tokens.dart';
+import '../../core/nav/section_action.dart';
+import '../../core/router/app_shell.dart' show hasNavRail;
 import '../../core/widgets/kura_primary_fab.dart';
 import '../../models/site.dart';
 import '../../services/data_repository.dart';
@@ -22,16 +25,16 @@ import '../../services/data_repository.dart';
 /// Desactivar un sitio pasa por la guardia de [DataRepository.setSiteActive] (y su
 /// trigger 0134): puede rechazarse (único activo / personal asignado / inventario). El
 /// mensaje se muestra con [_showRepoError], igual que Usuarios y Personal.
-class SitesScreen extends StatefulWidget {
+class SitesScreen extends ConsumerStatefulWidget {
   final DataRepository repo;
   final String? organizationId;
   const SitesScreen({super.key, required this.repo, required this.organizationId});
 
   @override
-  State<SitesScreen> createState() => _SitesScreenState();
+  ConsumerState<SitesScreen> createState() => _SitesScreenState();
 }
 
-class _SitesScreenState extends State<SitesScreen> {
+class _SitesScreenState extends ConsumerState<SitesScreen> {
   /// Muestra el mensaje de un rechazo del repositorio (candado comercial o guardia de
   /// desactivación). Están redactados para decir qué hacer; morían silenciosos en el
   /// interruptor.
@@ -60,6 +63,25 @@ class _SitesScreenState extends State<SitesScreen> {
     // Administración (avanzado). Editar/activar los existentes no se gatea.
     final canAddSite =
         sites.isEmpty || widget.repo.premiumAdminFor(widget.organizationId);
+    // CON riel: la acción sube al encabezado (§3). El candado comercial se conserva ahí
+    // (§8.1): sin módulo, SectionAction.locked pinta el candado y abre la venta, no un
+    // botón muerto. SIN riel: el FAB (con su misma lógica de candado) se queda al pulgar.
+    final rail = hasNavRail(ref, context);
+    publishSectionAction(
+      ref,
+      rail
+          ? SectionAction(
+              sectionKey: 'sitios',
+              label: 'Nuevo',
+              icon: Icons.add_location_alt_outlined,
+              locked: !canAddSite,
+              onPressed: canAddSite
+                  ? () => _openSiteForm()
+                  : () => _showAdminModuleUpsell(context),
+            )
+          : null,
+      mounted: () => mounted,
+    );
     return Scaffold(
       body: sites.isEmpty
           ? const _SitesEmptyState(
@@ -69,19 +91,22 @@ class _SitesScreenState extends State<SitesScreen> {
                   '(clínica, domicilio, hospital...).',
             )
           : ListView.separated(
-              padding:
-                  EdgeInsets.fromLTRB(16, 16, 16, kuraListBottomInset(context)),
+              padding: EdgeInsets.fromLTRB(
+                  16, 16, 16, rail ? 16 : kuraListBottomInset(context)),
               itemCount: sites.length,
               separatorBuilder: (_, __) => const SizedBox(height: 8),
               itemBuilder: (context, i) => _siteCard(sites[i]),
             ),
-      floatingActionButton: KuraPrimaryFab(
-        onPressed: canAddSite
-            ? () => _openSiteForm()
-            : () => _showAdminModuleUpsell(context),
-        icon: canAddSite ? Icons.add_location_alt_outlined : Icons.lock_outline,
-        label: 'Nuevo',
-      ),
+      floatingActionButton: rail
+          ? null
+          : KuraPrimaryFab(
+              onPressed: canAddSite
+                  ? () => _openSiteForm()
+                  : () => _showAdminModuleUpsell(context),
+              icon:
+                  canAddSite ? Icons.add_location_alt_outlined : Icons.lock_outline,
+              label: 'Nuevo',
+            ),
     );
   }
 

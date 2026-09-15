@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../core/theme/kura_theme.dart';
 import '../../core/providers/session_provider.dart';
 import '../../core/router/app_shell.dart' show UserMenuButton;
+import '../../core/widgets/kura_bottom_action_bar.dart';
 import '../../models/inventory.dart';
 import '../../models/supply_order.dart';
 import '../../services/data_repository.dart';
@@ -227,11 +228,14 @@ class _ReabastoScreenState extends ConsumerState<ReabastoScreen> {
           );
         },
       ),
-      floatingActionButton: _buildCheckoutFab(repoAsync.valueOrNull, user?.organizationId),
+      // El checkout NO es «crear»: es el CIERRE de un pedido (carrito → tienda). Va en una
+      // barra de acción inferior fija (§8.2), no en un FAB que tape el último renglón.
+      bottomNavigationBar:
+          _buildCheckoutBar(repoAsync.valueOrNull, user?.organizationId),
     );
   }
 
-  Widget? _buildCheckoutFab(DataRepository? repo, String? orgId) {
+  Widget? _buildCheckoutBar(DataRepository? repo, String? orgId) {
     if (repo == null || !repo.premiumInsumosFor(orgId) || _siteId == null) return null;
     final items = repo.listInventoryItems(organizationId: orgId, siteId: _siteId);
     final onHand = repo.inventoryOnHand(_siteId!);
@@ -243,15 +247,13 @@ class _ReabastoScreenState extends ConsumerState<ReabastoScreen> {
             (onHand[it.id] ?? 0) <= it.reorderThreshold!)
         .toList();
     if (storeLow.isEmpty) return null;
-    return FloatingActionButton.extended(
-      onPressed: _checkingOut ? null : () => _checkout(repo, storeLow, onHand),
-      icon: _checkingOut
-          ? const SizedBox(
-              width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
-          : const Icon(Icons.shopping_cart_checkout),
-      label: Text(_checkingOut
+    return KuraBottomActionBar(
+      busy: _checkingOut,
+      icon: Icons.shopping_cart_checkout,
+      onPressed: () => _checkout(repo, storeLow, onHand),
+      label: _checkingOut
           ? 'Preparando…'
-          : 'Reabastecer ${storeLow.length} en la tienda'),
+          : 'Reabastecer ${storeLow.length} en la tienda',
     );
   }
 

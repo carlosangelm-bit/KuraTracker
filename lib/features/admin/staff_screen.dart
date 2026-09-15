@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/design/tokens.dart';
+import '../../core/nav/section_action.dart';
+import '../../core/router/app_shell.dart' show hasNavRail;
 import '../../core/widgets/kura_primary_fab.dart';
 import 'staff_avatar.dart';
 import '../../models/app_user.dart';
@@ -21,16 +24,16 @@ import '../../services/data_repository.dart';
 /// Se reutiliza en dos contextos, como Usuarios:
 ///   - Panel de Administración (admin de centro): organizationId = su centro.
 ///   - Área de Plataforma (master): organizationId = centro elegido en el selector.
-class StaffScreen extends StatefulWidget {
+class StaffScreen extends ConsumerStatefulWidget {
   final DataRepository repo;
   final String? organizationId;
   const StaffScreen({super.key, required this.repo, required this.organizationId});
 
   @override
-  State<StaffScreen> createState() => _StaffScreenState();
+  ConsumerState<StaffScreen> createState() => _StaffScreenState();
 }
 
-class _StaffScreenState extends State<StaffScreen> {
+class _StaffScreenState extends ConsumerState<StaffScreen> {
   Future<void> _openStaffForm({StaffMember? existing}) async {
     final sites = widget.repo.listSites(organizationId: widget.organizationId);
     // Candidatos para vincular profile_id: perfiles sin fila en staff aun,
@@ -61,6 +64,21 @@ class _StaffScreenState extends State<StaffScreen> {
   @override
   Widget build(BuildContext context) {
     final staff = widget.repo.listStaff(organizationId: widget.organizationId);
+    // CON riel: la acción sube al encabezado (§3); el FAB desaparece y la lista no reserva
+    // huella abajo. SIN riel (teléfono / cuidador): el FAB se queda en la zona del pulgar.
+    final rail = hasNavRail(ref, context);
+    publishSectionAction(
+      ref,
+      rail
+          ? SectionAction(
+              sectionKey: 'personal',
+              label: 'Nuevo',
+              icon: Icons.person_add,
+              onPressed: () => _openStaffForm(),
+            )
+          : null,
+      mounted: () => mounted,
+    );
     return Scaffold(
       body: staff.isEmpty
           ? const _StaffEmptyState(
@@ -69,17 +87,19 @@ class _StaffScreenState extends State<StaffScreen> {
                   'Usa el botón "Nuevo" para dar de alta al primero.',
             )
           : ListView.separated(
-              padding:
-                  EdgeInsets.fromLTRB(16, 16, 16, kuraListBottomInset(context)),
+              padding: EdgeInsets.fromLTRB(
+                  16, 16, 16, rail ? 16 : kuraListBottomInset(context)),
               itemCount: staff.length,
               separatorBuilder: (_, __) => const SizedBox(height: 8),
               itemBuilder: (context, i) => _staffCard(staff[i]),
             ),
-      floatingActionButton: KuraPrimaryFab(
-        onPressed: () => _openStaffForm(),
-        icon: Icons.person_add,
-        label: 'Nuevo',
-      ),
+      floatingActionButton: rail
+          ? null
+          : KuraPrimaryFab(
+              onPressed: () => _openStaffForm(),
+              icon: Icons.person_add,
+              label: 'Nuevo',
+            ),
     );
   }
 
