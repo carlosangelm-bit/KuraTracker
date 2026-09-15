@@ -15,6 +15,7 @@ import '../../engine/wound_checkpoint_deriver.dart';
 import '../../models/app_user.dart';
 import '../../models/center_type.dart';
 import '../../models/consultation.dart';
+import '../../services/pdf_brand_color.dart';
 import '../../engine/models/kura_engine_enums.dart';
 import '../../models/patient.dart';
 import '../../models/treatment_plan.dart' show WoundPhoto, TreatmentPlan;
@@ -422,14 +423,6 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     }
   }
 
-  PdfColor _brandColor(String? hex) {
-    if (hex == null || hex.trim().isEmpty) return const PdfColor.fromInt(0xFF7C3AED);
-    var h = hex.trim().replaceAll('#', '');
-    if (h.length == 6) h = 'FF$h';
-    final v = int.tryParse(h, radix: 16);
-    return v == null ? const PdfColor.fromInt(0xFF7C3AED) : PdfColor.fromInt(v);
-  }
-
   Future<pw.ImageProvider?> _loadLogo(String? logoPath) async {
     if (logoPath == null || logoPath.isEmpty) return null;
     try {
@@ -482,7 +475,8 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
           ? const []
           : repo.listOrganizations().where((o) => o.id == userOrgId).toList();
       final org = orgs.isEmpty ? null : orgs.first;
-      final brandColor = _brandColor(org?.brandPrimaryColor);
+      final brandColor = brandPdfColor(
+          org?.brandPrimaryColor, org?.centerType ?? CenterType.clinicaHeridas);
       final brandLogo = await _loadLogo(org?.brandLogoPath);
       final centerName = org?.name ?? 'KuraTracker';
 
