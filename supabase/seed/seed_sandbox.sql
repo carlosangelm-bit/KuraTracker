@@ -491,8 +491,14 @@ select site_basica_test, org_basica_test, 'Clínica Prueba · Consultorio', 'cli
 
 -- Derechos SOLO base: plan + module:clinico + seat:clinico. SIN module:admin,
 -- module:insumos ni module:comercial → esas pantallas muestran el bloqueo con precio.
-insert into public.org_entitlements (organization_id, kind, key, quantity, status, source)
-select o.org, e.kind, e.key, e.qty, 'active', 'master'
+-- source='master' debe cumplir ent_master_grant_shape (0132): grant_type válido,
+-- reason ≥ 10 chars y (is_permanent o current_period_end). Estos son derechos
+-- sintéticos del sandbox → cortesía permanente.
+insert into public.org_entitlements
+    (organization_id, kind, key, quantity, status, source,
+     grant_type, reason, is_permanent)
+select o.org, e.kind, e.key, e.qty, 'active', 'master',
+       'cortesia', 'Semilla sintética del sandbox (centro de verificación)', true
   from (select org_hospital_test as org from sb2
         union all select org_basica_test from sb2) o
   cross join (values
@@ -501,7 +507,9 @@ select o.org, e.kind, e.key, e.qty, 'active', 'master'
     ('seat',   'clinico', 5)
   ) as e(kind, key, qty)
 on conflict (organization_id, kind, key) do update
-  set quantity = excluded.quantity, status = 'active', source = 'master';
+  set quantity = excluded.quantity, status = 'active', source = 'master',
+      grant_type = excluded.grant_type, reason = excluded.reason,
+      is_permanent = excluded.is_permanent;
 
 select pg_temp.sb_user('admin.hospital.test@sandbox.kuratracker.mx', 'Admin Hospital Prueba',
   array['admin']::public.user_role[], (select org_hospital_test from sb2));
