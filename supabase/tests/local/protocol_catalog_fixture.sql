@@ -107,12 +107,37 @@ insert into public.organizations (id, name)
   values ('11111111-1111-1111-1111-111111111111', 'Centro sin author')
   on conflict do nothing;
 insert into public.profiles (id, roles, role, organization_id)
-  values ('22222222-2222-2222-2222-222222222222',
+  values ('22222222-2222-2222-2222-222222222222',   -- clínico (NO admin)
           array['clinico']::public.user_role[], 'clinico',
+          '11111111-1111-1111-1111-111111111111'),
+         ('33333333-3333-3333-3333-333333333333',   -- ADMIN del MISMO centro
+          array['admin']::public.user_role[], 'admin',
           '11111111-1111-1111-1111-111111111111')
   on conflict do nothing;
 -- Derechos que NO son protocol:author (para que el test sea honesto).
 insert into public.org_entitlements (organization_id, kind, key, status, source)
   values ('11111111-1111-1111-1111-111111111111', 'module', 'admin', 'active', 'master'),
          ('11111111-1111-1111-1111-111111111111', 'module', 'insumos', 'active', 'master')
+  on conflict do nothing;
+
+-- Tres centros para la ASIMETRÍA DE VIGENCIA (test C): cada uno con un admin y su
+-- protocol:author de distinto origen/fecha. current_org_has_protocol_author() se prueba
+-- directo por auth.uid (no hace falta RLS): mira la vigencia, no la visibilidad de filas.
+--   A (master, sin fecha)                       → ABRE
+--   B (master, fecha VENCIDA)                   → CIERRA
+--   C (stripe, fecha vencida, status activo)    → ABRE (Stripe ignora la fecha)
+insert into public.organizations (id, name) values
+  ('44444444-4444-4444-4444-444444444444', 'A master sin fecha'),
+  ('55555555-5555-5555-5555-555555555555', 'B master vencido'),
+  ('66666666-6666-6666-6666-666666666666', 'C stripe vencido')
+  on conflict do nothing;
+insert into public.profiles (id, roles, role, organization_id) values
+  ('4a000000-0000-0000-0000-000000000000', array['admin']::public.user_role[], 'admin', '44444444-4444-4444-4444-444444444444'),
+  ('5a000000-0000-0000-0000-000000000000', array['admin']::public.user_role[], 'admin', '55555555-5555-5555-5555-555555555555'),
+  ('6a000000-0000-0000-0000-000000000000', array['admin']::public.user_role[], 'admin', '66666666-6666-6666-6666-666666666666')
+  on conflict do nothing;
+insert into public.org_entitlements (organization_id, kind, key, status, source, current_period_end) values
+  ('44444444-4444-4444-4444-444444444444', 'module', 'protocol:author', 'active', 'master', null),
+  ('55555555-5555-5555-5555-555555555555', 'module', 'protocol:author', 'active', 'master', now() - interval '1 day'),
+  ('66666666-6666-6666-6666-666666666666', 'module', 'protocol:author', 'active', 'stripe', now() - interval '1 day')
   on conflict do nothing;
