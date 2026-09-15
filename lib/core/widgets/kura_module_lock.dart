@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import 'kura_back_button.dart';
 import '../design/tints.dart';
 import '../design/tokens.dart';
 import '../format/money.dart';
@@ -18,7 +19,12 @@ Widget adminModuleLockedScaffold(
   required String description,
 }) =>
     Scaffold(
-      appBar: AppBar(title: Text(title)),
+      // La rama bloqueada también es una hija profunda de /admin: lleva su regreso a
+      // Configuración (§13.1), si no, un centro sin el módulo queda varado en el candado.
+      appBar: AppBar(
+        leading: const KuraBackButton(fallback: '/admin/configuracion'),
+        title: Text(title),
+      ),
       body: Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
