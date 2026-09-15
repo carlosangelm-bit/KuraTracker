@@ -159,19 +159,24 @@ class SandboxBanner extends StatelessWidget {
     if (!AppConfig.isSandbox) return child;
     return Column(
       children: [
-        const Material(
-          color: Color(0xFFE65100),
+        Material(
+          color: const Color(0xFFE65100),
           child: SafeArea(
             bottom: false,
             child: SizedBox(
               height: 22,
               width: double.infinity,
               child: Center(
+                // El SHA CORRIENDO (buildShaShort) va en el banner: comparado con el
+                // SHA DESPLEGADO en /build.json revela una pestaña con código viejo del
+                // caché del service worker (Flutter web es cache-first). Es el «sello de
+                // build» — el veredicto visual en el sandbox no vale sin confirmarlo.
                 child: Text(
-                  'SANDBOX · entorno de pruebas · datos sintéticos, no es el expediente real',
+                  'SANDBOX · entorno de pruebas · datos sintéticos, no es el '
+                  'expediente real · build ${AppConfig.buildShaShort}',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
+                  style: const TextStyle(
                     color: Colors.white,
                     fontSize: 11,
                     fontWeight: FontWeight.w700,

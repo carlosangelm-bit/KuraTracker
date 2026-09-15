@@ -35,6 +35,21 @@ class AppConfig {
   /// expediente real. En producción y en la demo es false.
   static bool get isSandbox => appEnv == 'sandbox';
 
+  /// SHA del commit con el que se compiló ESTE bundle (lo inyecta el CI con
+  /// `--dart-define=BUILD_SHA=$GITHUB_SHA`); 'dev' en un build local sin define.
+  /// Es el SHA que CORRE en la pestaña. El CI también sirve el SHA DESPLEGADO en
+  /// `/build.json`; comparar ambos revela una pestaña con código viejo del caché
+  /// del service worker (Flutter web es cache-first). Ver la nota de la caché del
+  /// sandbox. NO es secreto (el SHA es público en GitHub).
+  static const String buildSha = String.fromEnvironment(
+    'BUILD_SHA',
+    defaultValue: 'dev',
+  );
+
+  /// Forma corta (7) del [buildSha], para mostrar en el banner sin ocupar la línea.
+  static String get buildShaShort =>
+      buildSha.length > 7 ? buildSha.substring(0, 7) : buildSha;
+
   /// Motor de visión ("Medir con foto"): trabajo en curso, APAGADO por defecto.
   /// La inyecta el CI/build con `--dart-define=VISION_ENABLED=true` para
   /// encenderlo (p. ej. al probar en sandbox). Condiciona SOLO la ENTRADA al
