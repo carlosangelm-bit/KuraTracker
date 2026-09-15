@@ -440,6 +440,7 @@ class _CenterTypeDropdown extends StatelessWidget {
     return DropdownButton<CenterType>(
       value: org.centerType,
       isDense: true,
+      isExpanded: true, // llena la columna y ELIPSA; sin esto desborda la celda
       underline: const SizedBox.shrink(),
       items: [
         for (final ct in CenterType.values)

@@ -46,7 +46,7 @@ void main() {
         reason: 'sin derecho la píldora es punteada');
   });
 
-  testWidgets('sin desbordamiento a 1000 y a 430 px', (t) async {
+  testWidgets('sin desbordamiento a 1400, 1000 y 430 px', (t) async {
     final repo = await DataRepository.instance();
     final orgs = repo.listOrganizations();
     Widget view(double w) => _wrap(
@@ -60,7 +60,7 @@ void main() {
           ),
           width: w,
         );
-    for (final w in [1000.0, 430.0]) {
+    for (final w in [1400.0, 1000.0, 430.0]) {
       await t.pumpWidget(view(w));
       await t.pumpAndSettle();
       expect(t.takeException(), isNull, reason: 'desbordamiento a $w px');
