@@ -190,6 +190,34 @@ class KuraTheme {
         // constante; en escritorio (rail lateral) solo lo sube un poco.
         insetPadding: const EdgeInsets.only(left: 12, right: 12, bottom: 80),
       ),
+      // Diálogos y hojas inferiores VESTIDOS desde el tema (no en los ~87 sitios de
+      // llamada): sin esto caían en los defaults de Material 3 —radio 28, tinte de
+      // elevación, tipografía por omisión— que chocan con las tarjetas (radio 16, borde de
+      // token, sin tinte). Al vivir en el tema, el diálogo cambia de morado a azul o rosa
+      // con el tipo de centro sin que nadie lo pida. Mismo lenguaje que cardTheme.
+      dialogTheme: DialogThemeData(
+        backgroundColor: tokens.surface,
+        surfaceTintColor: Colors.transparent,
+        elevation: 0,
+        shape: RoundedRectangleBorder(
+          borderRadius: AppRadii.mdR,
+          side: BorderSide(color: tokens.border),
+        ),
+        titleTextStyle: GoogleFonts.nunito(
+          color: tokens.textPrimary,
+          fontSize: 20,
+          fontWeight: FontWeight.w800,
+        ),
+        contentTextStyle: textTheme.bodyMedium?.copyWith(color: tokens.textPrimary),
+      ),
+      bottomSheetTheme: BottomSheetThemeData(
+        backgroundColor: tokens.surface,
+        surfaceTintColor: Colors.transparent,
+        shape: const RoundedRectangleBorder(
+          borderRadius:
+              BorderRadius.vertical(top: Radius.circular(AppRadii.lg)),
+        ),
+      ),
     );
   }
 }

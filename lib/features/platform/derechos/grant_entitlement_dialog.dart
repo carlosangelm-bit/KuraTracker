@@ -145,9 +145,8 @@ class _GrantEntitlementDialogState extends State<GrantEntitlementDialog> {
     final t = BrandTokens.of(context);
     final target = _target;
     final monthly = target?.monthlyCents;
+    // Sin fondo/forma locales: el dialogTheme del centro los provee (§13.2).
     return Dialog(
-      backgroundColor: t.surface,
-      shape: RoundedRectangleBorder(borderRadius: AppRadii.mdR),
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 620),
         child: SingleChildScrollView(

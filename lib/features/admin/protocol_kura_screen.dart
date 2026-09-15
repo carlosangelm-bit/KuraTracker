@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../core/widgets/kura_back_button.dart';
 
 import '../../core/widgets/kura_module_lock.dart';
 
@@ -72,7 +73,10 @@ class _ProtocolKuraScreenState extends State<ProtocolKuraScreen> {
           description: 'Arma los pasos de tu propio protocolo: qué conceptos van en cada uno.');
     }
     return Scaffold(
-      appBar: AppBar(title: const Text('Protocolo Kura+')),
+      appBar: AppBar(
+        leading: const KuraBackButton(fallback: '/admin/configuracion'),
+        title: const Text('Protocolo Kura+'),
+      ),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 40),
         children: [

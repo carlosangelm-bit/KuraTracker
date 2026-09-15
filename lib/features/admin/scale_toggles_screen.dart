@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../core/widgets/kura_back_button.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/providers/session_provider.dart';
@@ -63,7 +64,10 @@ class _ScaleTogglesScreenState extends ConsumerState<ScaleTogglesScreen> {
   Widget build(BuildContext context) {
     final catalog = ref.watch(scaleApplicabilityProvider);
     return Scaffold(
-      appBar: AppBar(title: const Text('Escalas del protocolo')),
+      appBar: AppBar(
+        leading: const KuraBackButton(fallback: '/admin/configuracion'),
+        title: const Text('Escalas del protocolo'),
+      ),
       body: catalog.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => Center(

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../core/widgets/kura_back_button.dart';
 
 import '../../core/widgets/kura_module_lock.dart';
 
@@ -116,7 +117,10 @@ class _ProtocolProductRulesScreenState
         : repo.orphanProtocolRules(organizationId: orgId!);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Productos del protocolo')),
+      appBar: AppBar(
+        leading: const KuraBackButton(fallback: '/admin/configuracion'),
+        title: const Text('Productos del protocolo'),
+      ),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 40),
         children: [

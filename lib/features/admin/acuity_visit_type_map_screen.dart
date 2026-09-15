@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../core/widgets/kura_back_button.dart';
 
 import '../../core/widgets/kura_module_lock.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -72,7 +73,10 @@ class _AcuityVisitTypeMapScreenState
           description: 'Mapea los tipos de cita de Acuity a valoración o seguimiento.');
     }
     return Scaffold(
-      appBar: AppBar(title: const Text('Tipos de consulta (Acuity)')),
+      appBar: AppBar(
+        leading: const KuraBackButton(fallback: '/admin/configuracion'),
+        title: const Text('Tipos de consulta (Acuity)'),
+      ),
       body: FutureBuilder<List<dynamic>>(
         future: _typesFuture,
         builder: (context, snap) {
