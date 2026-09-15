@@ -138,6 +138,65 @@ begin
 end $$;
 
 -- =============================================================================
+-- TEST 8 — 2.d (el punto entero de la etapa): un centro que CONSUME Kura+ (seat:protocolo)
+-- recibe su régimen de resolve_protocol, PERO un SELECT directo a protocol_catalog_rules le
+-- da CERO filas. Las dos cosas EN LA MISMA SESIÓN, con la misma sesión.
+-- =============================================================================
+begin;
+  -- Catálogo con una regla (postgres, salta RLS) que apunta al insumo del consumidor.
+  insert into public.protocol_catalog_rules (category, inventory_item_id)
+    values ('aposito', 'c0000000-0000-0000-0000-000000000001');
+  set local test.uid = '9a000000-0000-0000-0000-000000000000';  -- admin del consumidor
+  set local role authenticated;
+  do $$
+  declare n_regimen int; n_catalogo int;
+  begin
+    -- (a) recibe su régimen del catálogo (source='kura'):
+    select count(*) into n_regimen
+    from public.resolve_protocol(
+      '99999999-9999-9999-9999-999999999999', array['aposito']::text[],
+      null, null, null, null, null, null, null, null)
+    where source = 'kura';
+    if n_regimen < 1 then
+      raise exception 'TEST8a FAIL: el consumidor no recibió su régimen del catálogo';
+    end if;
+    -- (b) pero NO puede LEER el catálogo (RLS: solo protocol:author):
+    select count(*) into n_catalogo from public.protocol_catalog_rules;
+    if n_catalogo <> 0 then
+      raise exception 'TEST8b FAIL: el consumidor LEYÓ el catálogo (% filas)', n_catalogo;
+    end if;
+    raise notice 'TEST8 PASS: consume recibe su régimen del catálogo y NO puede leerlo (0 filas)';
+  end $$;
+  reset role;
+rollback;
+
+-- =============================================================================
+-- TEST 9 — 2.e huérfanas: el reporte de huérfanas del CATÁLOGO SOLO lo ve protocol:author;
+-- a un consumidor no se le filtra por ahí lo que no ve por la puerta.
+-- =============================================================================
+begin;
+  insert into public.protocol_catalog_rules (category, inventory_item_id) values ('aposito', null);
+  -- author (44444444 tiene protocol:author) VE la huérfana:
+  set local test.uid = '4a000000-0000-0000-0000-000000000000';
+  set local role authenticated;
+  do $$ declare n int; begin
+    select count(*) into n from public.resolve_protocol_orphans('44444444-4444-4444-4444-444444444444', null);
+    if n < 1 then raise exception 'TEST9a FAIL: el author no vio la huérfana del catálogo'; end if;
+    raise notice 'TEST9a PASS: author ve las huérfanas del catálogo';
+  end $$;
+  reset role;
+  -- consumidor (99999999, sin author) NO ve nada por el reporte:
+  set local test.uid = '9a000000-0000-0000-0000-000000000000';
+  set local role authenticated;
+  do $$ declare n int; begin
+    select count(*) into n from public.resolve_protocol_orphans('99999999-9999-9999-9999-999999999999', null);
+    if n <> 0 then raise exception 'TEST9b FAIL: el consumidor vio % huérfana(s) del catálogo', n; end if;
+    raise notice 'TEST9b PASS: al consumidor no se le filtran las huérfanas del catálogo';
+  end $$;
+  reset role;
+rollback;
+
+-- =============================================================================
 -- TEST 4 — Guarda de deriva (15.1.d). Derivada del catálogo de Postgres, no una lista a
 -- mano: toda columna de protocol_product_rules (salvo organization_id) debe existir en
 -- protocol_catalog_rules con el MISMO tipo, y al revés.

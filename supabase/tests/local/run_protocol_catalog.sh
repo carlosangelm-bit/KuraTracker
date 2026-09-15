@@ -22,5 +22,6 @@ psql < supabase/migrations/0077_protocol_rule_conditions.sql >/dev/null
 psql < supabase/migrations/0136_protocol_catalog_matrix_schema.sql >/dev/null
 psql < supabase/migrations/0137_protocol_catalog_admin_only.sql >/dev/null
 psql < supabase/migrations/0138_org_entitlement_vigente.sql >/dev/null
+psql < supabase/migrations/0139_resolve_protocol.sql >/dev/null
 echo "--- 0136: candado RLS (protocol:author) + guarda de deriva de esquemas ---"
 psql < supabase/tests/local/protocol_catalog_local_tests.sql 2>&1 | grep -E "PASS|FAIL|ALL TESTS PASSED"
