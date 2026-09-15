@@ -195,7 +195,10 @@ class KuraTheme {
       // elevación, tipografía por omisión— que chocan con las tarjetas (radio 16, borde de
       // token, sin tinte). Al vivir en el tema, el diálogo cambia de morado a azul o rosa
       // con el tipo de centro sin que nadie lo pida. Mismo lenguaje que cardTheme.
-      dialogTheme: DialogThemeData(
+      // copyWith sobre el tema base (no el constructor FooThemeData) para NO depender del
+      // nombre de la clase: entre Flutter 3.27 (CI) y el local cambió DialogTheme →
+      // DialogThemeData; copyWith devuelve el tipo que use cada versión.
+      dialogTheme: base.dialogTheme.copyWith(
         backgroundColor: tokens.surface,
         surfaceTintColor: Colors.transparent,
         elevation: 0,
@@ -210,7 +213,7 @@ class KuraTheme {
         ),
         contentTextStyle: textTheme.bodyMedium?.copyWith(color: tokens.textPrimary),
       ),
-      bottomSheetTheme: BottomSheetThemeData(
+      bottomSheetTheme: base.bottomSheetTheme.copyWith(
         backgroundColor: tokens.surface,
         surfaceTintColor: Colors.transparent,
         shape: const RoundedRectangleBorder(
