@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/config/app_config.dart';
 import '../../core/design/tokens.dart';
+import '../../core/nav/section_action.dart' show railPresentProvider;
 import '../../core/providers/session_provider.dart';
 import '../../core/router/app_router.dart';
 import '../../core/widgets/kura_primary_fab.dart'
@@ -104,9 +105,13 @@ class _TourScopeState extends ConsumerState<TourScope> {
     // demo. Mismo anclaje bottom-left, elevado sobre la barra flotante. Se oculta
     // cuando el panel de chat está abierto.
     final chat = ref.watch(supportChatProvider);
+    // Con riel, la Ayuda vive en su pie (§3): no dupliques el flotante. Sin riel
+    // (teléfono, y el cuidador en cualquier anchura) railPresent es false → flotante.
+    final railPresent = ref.watch(railPresentProvider);
     final showHelp = !_isDemo &&
         !tour.running &&
         !chat.open &&
+        !railPresent &&
         ref.watch(sessionProvider).isAuthenticated;
 
     return Stack(

@@ -40,23 +40,55 @@ class SectionAction {
 /// La acción de la sección activa (o null). La sección la fija; el shell la observa.
 final sectionActionProvider = StateProvider<SectionAction?>((ref) => null);
 
-/// La sección publica su acción (o null a <900 px). Fuera de la fase de build (post
-/// frame) y solo si cambió, para no escribir el provider durante el build ni hacer bucle.
-void publishSectionAction(WidgetRef ref, SectionAction? action) {
+/// ¿Hay un riel de navegación en pantalla AHORA MISMO (con su pie de cuenta + Ayuda)? Lo
+/// publica el shell que pinta el riel; TourScope (su ANCESTRO) lo observa para NO duplicar
+/// el lanzador flotante de «Ayuda» cuando el riel ya la ofrece en el pie (§3). Sin riel
+/// (teléfono, y el cuidador en cualquier anchura) queda en false y el flotante se mantiene.
+/// El shell descendiente publica DESPUÉS del ancestro (su build corre después), así que en
+/// /admin y /platform —donde AppShell no pinta riel pero su shell anidado sí— gana el true.
+final railPresentProvider = StateProvider<bool>((ref) => false);
+
+/// El shell publica si su riel está en pantalla. Misma disciplina que [publishSectionAction]:
+/// post-frame, solo si cambió, y SOLO si sigue montado (al salir de /admin el shell anidado
+/// se destruye en el mismo cuadro; la guardia evita el `ref` desechado).
+void publishRailPresent(
+  WidgetRef ref,
+  bool present, {
+  required bool Function() mounted,
+}) {
   WidgetsBinding.instance.addPostFrameCallback((_) {
+    if (!mounted()) return;
+    final n = ref.read(railPresentProvider.notifier);
+    if (n.state != present) n.state = present;
+  });
+}
+
+/// La sección publica su acción (o null cuando no hay riel). Fuera de la fase de build
+/// (post-frame), solo si cambió (no bucle), y SOLO si el widget sigue montado: si la
+/// pantalla se destruye en el mismo cuadro (un redirect del router como
+/// /admin → /admin/usuarios), la devolución correría sobre un `ref` desechado y Flutter
+/// lanzaría «Cannot use ref after the widget was disposed» — pantalla roja. [mounted]
+/// es el getter del State (`() => mounted`).
+void publishSectionAction(
+  WidgetRef ref,
+  SectionAction? action, {
+  required bool Function() mounted,
+}) {
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    if (!mounted()) return;
     final n = ref.read(sectionActionProvider.notifier);
     if (n.state != action) n.state = action;
   });
 }
 
 /// Lo que el shell mete en `KuraContentHeader.actions`: el botón de la sección activa,
-/// SOLO a ≥900 px y solo si la acción publicada es de ESTA sección (su sectionKey == el
-/// último segmento de la ruta). A <900 no hay botón en el encabezado (queda el FAB).
-List<Widget> sectionHeaderActions(
-    BuildContext context, WidgetRef ref, String currentRoute) {
-  final wide = MediaQuery.of(context).size.width >= 900;
+/// SOLO cuando hay riel ([hasRail], la MISMA condición que gobierna el menú de cuenta) y
+/// solo si la acción publicada es de ESTA sección (su sectionKey == el último segmento
+/// de la ruta). Sin riel no hay botón en el encabezado (queda el FAB).
+List<Widget> sectionHeaderActions(WidgetRef ref, String currentRoute,
+    {required bool hasRail}) {
   final action = ref.watch(sectionActionProvider);
-  if (!wide || action == null) return const [];
+  if (!hasRail || action == null) return const [];
   final segs = currentRoute.split('/').where((s) => s.isNotEmpty).toList();
   final key = segs.isEmpty ? null : segs.last;
   if (action.sectionKey != key) return const [];

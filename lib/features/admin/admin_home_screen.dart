@@ -3,8 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/design/tokens.dart';
 import '../../core/widgets/kura_error_state.dart';
+import '../../core/config/app_config.dart';
 import '../../core/providers/session_provider.dart';
-import '../../core/router/app_shell.dart' show KuraAccountMenu;
+import '../../core/router/app_shell.dart' show KuraAccountMenu, hasNavRail;
+import '../support/support_launcher.dart';
 import '../../core/nav/kura_nav_rail.dart';
 import '../../core/nav/kura_nav_destinations.dart';
 import '../../core/nav/section_action.dart';
@@ -56,6 +58,9 @@ class _AdminSectionsShellState extends ConsumerState<AdminSectionsShell> {
     // manda por encima del ancho una vez que el usuario lo toca.
     final autoCollapsed = MediaQuery.of(context).size.width < 1200;
     final collapsed = _userCollapsed ?? autoCollapsed;
+    // Administración SIEMPRE pinta un riel (abierto o colapsado, nunca barra inferior),
+    // así que aquí siempre hay riel: TourScope no duplica el flotante de Ayuda.
+    publishRailPresent(ref, true, mounted: () => mounted);
     // UN solo riel: la MISMA declaración de la app, con los destinos clínicos de
     // primer nivel y Administración anidando sus seis secciones.
     final modules = ref.watch(enabledModulesProvider);
@@ -79,7 +84,8 @@ class _AdminSectionsShellState extends ConsumerState<AdminSectionsShell> {
           currentRoute: currentRoute,
           collapsed: collapsed,
           // A ≥900 px la acción principal de la sección va aquí (sólida), no en un FAB.
-          actions: sectionHeaderActions(context, ref, currentRoute),
+          actions: sectionHeaderActions(ref, currentRoute,
+              hasRail: hasNavRail(ref, context)),
         ),
         const Divider(height: 1),
         Expanded(child: child),
@@ -100,6 +106,9 @@ class _AdminSectionsShellState extends ConsumerState<AdminSectionsShell> {
             // El pie del riel es el menú de cuenta (cerrar sesión, etc.): al quitar
             // el AppBar se fue el UserMenuButton, así que la identidad ES el control.
             accountMenuBuilder: (ctx, child) => KuraAccountMenu(child: child),
+            onHelp: AppConfig.isSupabaseConfigured
+                ? () => openSupportAssistant(ref)
+                : null,
           ),
           const VerticalDivider(width: 1),
           Expanded(child: content),

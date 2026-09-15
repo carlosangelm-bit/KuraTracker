@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../config/app_config.dart';
 import '../../features/support/support_launcher.dart';
+import '../nav/section_action.dart' show publishRailPresent;
 import '../../features/auth/demo_reset_action.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -123,6 +124,9 @@ class _AppShellState extends ConsumerState<AppShell> {
     // "hay riel" (ancho ≥900 Y ≥2 destinos) vive en [hasNavRail], fuente única; aquí se
     // compone con el factor de ruta (showOwnNav es false en /admin y /platform).
     final showRail = showOwnNav && hasNavRail(ref, context);
+    // Publica si hay riel: TourScope (ancestro) NO pinta el flotante de Ayuda cuando el
+    // riel ya la ofrece en el pie. Sin riel (móvil, cuidador) queda false → flotante.
+    publishRailPresent(ref, showRail, mounted: () => mounted);
     final autoCollapsed = width < 1200;
     final collapsed = _userCollapsed ?? autoCollapsed;
 
@@ -176,6 +180,11 @@ class _AppShellState extends ConsumerState<AppShell> {
                     // centro, ayuda): identidad = control, como en /admin y /platform.
                     accountMenuBuilder: (ctx, child) =>
                         KuraAccountMenu(child: child),
+                    // «Ayuda» al pie del riel (solo prod: el asistente vive detrás de
+                    // Supabase). El flotante queda suprimido por railPresent.
+                    onHelp: AppConfig.isSupabaseConfigured
+                        ? () => openSupportAssistant(ref)
+                        : null,
                   ),
                   const VerticalDivider(width: 1),
                   Expanded(child: child),

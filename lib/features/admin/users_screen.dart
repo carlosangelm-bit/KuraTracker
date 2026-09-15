@@ -7,6 +7,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/config/app_config.dart';
 import '../../core/design/tokens.dart';
 import '../../core/nav/section_action.dart';
+import '../../core/router/app_shell.dart' show hasNavRail;
 import '../../core/utils/caregiver_login.dart';
 import '../../core/widgets/kura_primary_fab.dart';
 import '../../models/app_user.dart';
@@ -219,14 +220,15 @@ class _UsersScreenState extends ConsumerState<UsersScreen> {
       ..sort((a, b) =>
           a.fullName.toLowerCase().compareTo(b.fullName.toLowerCase()));
 
-    // ≥900 px: cero flotantes. La acción principal sube al ENCABEZADO (sólida,
-    // brandPrimary) vía el provider que el shell pinta; el FAB desaparece y la lista ya
-    // no reserva su huella abajo. <900: se queda el FAB (zona del pulgar) y la reserva.
-    final wide = MediaQuery.sizeOf(context).width >= 900;
+    // CON riel (hasNavRail, misma condición que el menú de cuenta): cero flotantes. La
+    // acción principal sube al ENCABEZADO (sólida, brandPrimary) vía el provider que el
+    // shell pinta; el FAB desaparece y la lista ya no reserva su huella abajo. SIN riel
+    // (teléfono / cuidador): se queda el FAB (zona del pulgar) y la reserva.
+    final rail = hasNavRail(ref, context);
     final canCreate = widget.organizationId != null;
     publishSectionAction(
       ref,
-      wide
+      rail
           ? SectionAction(
               sectionKey: 'usuarios',
               label: 'Nuevo usuario',
@@ -234,6 +236,7 @@ class _UsersScreenState extends ConsumerState<UsersScreen> {
               onPressed: canCreate ? _openCreateForm : null,
             )
           : null,
+      mounted: () => mounted,
     );
 
     return Scaffold(
@@ -258,7 +261,7 @@ class _UsersScreenState extends ConsumerState<UsersScreen> {
                       )
                     : ListView.separated(
                         padding: EdgeInsets.fromLTRB(
-                            16, 16, 16, wide ? 16 : kuraListBottomInset(context)),
+                            16, 16, 16, rail ? 16 : kuraListBottomInset(context)),
                         itemCount: users.length,
                         separatorBuilder: (_, __) => const SizedBox(height: 8),
                         itemBuilder: (context, i) => _userCard(users[i]),
@@ -267,7 +270,7 @@ class _UsersScreenState extends ConsumerState<UsersScreen> {
         ],
       ),
       // A ≥900 px NO hay FAB: la acción vive en el encabezado (arriba).
-      floatingActionButton: wide
+      floatingActionButton: rail
           ? null
           : KuraPrimaryFab(
               icon: Icons.person_add_alt_1,
