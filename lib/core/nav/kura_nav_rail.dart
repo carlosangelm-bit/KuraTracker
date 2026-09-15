@@ -562,14 +562,19 @@ class KuraSectionMenu extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(
-              activeLabel == null
-                  ? section.label
-                  : '${section.label} › $activeLabel',
-              style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
-                  color: t.textPrimary),
+            // Flexible + ellipsis: en angosto (p. ej. 430 px) "Sección › Subsección"
+            // no cabe y desbordaba la fila; ahora se recorta en vez de reventar.
+            Flexible(
+              child: Text(
+                activeLabel == null
+                    ? section.label
+                    : '${section.label} › $activeLabel',
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: t.textPrimary),
+              ),
             ),
             const SizedBox(width: 6),
             Icon(Icons.expand_more, size: 16, color: t.textSecondary),
