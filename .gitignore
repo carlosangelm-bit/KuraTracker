@@ -6,7 +6,13 @@ build/
 .packages
 *.iml
 .idea/
-.vscode/
+# .vscode/ se ignora EXCEPTO settings.json: la protección contra el arreglo-al-guardar
+# (source.fixAll) viaja con el repo, no depende de la máquina (postmortem 15-sep, medida 2).
+.vscode/*
+!.vscode/settings.json
+# fvm crea un symlink al SDK fijado por .fvmrc (Flutter 3.27.1, la del CI): el symlink es
+# local, el pin (.fvmrc) SÍ se versiona (medida 1).
+.fvm/
 *.log
 .DS_Store
 .env

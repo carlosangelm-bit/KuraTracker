@@ -1,0 +1,23 @@
+{
+  // Postmortem 15-sep-2026, medida 2. Un arreglo-al-guardar (source.fixAll) cambió solo
+  // `value:` → `initialValue:` (que el CI 3.27.1 rechaza) y, peor, BORRÓ un candado
+  // comercial completo (`if (!premiumAdminFor) return adminModuleLockedScaffold(...)` y su
+  // import) sin que nadie lo decidiera. Se APAGA el arreglo automático; formatear al
+  // guardar se queda. Este archivo está versionado (ver .gitignore) para que la protección
+  // viaje con el proyecto y no dependa de la configuración de cada máquina.
+  "editor.formatOnSave": true,
+  "editor.codeActionsOnSave": {
+    "source.fixAll": "never",
+    "source.organizeImports": "never"
+  },
+  // Sin correcciones automáticas específicas de Dart al guardar tampoco (mismo motivo).
+  "[dart]": {
+    "editor.formatOnSave": true,
+    "editor.codeActionsOnSave": {
+      "source.fixAll": "never",
+      "source.organizeImports": "never"
+    }
+  },
+  // El SDK local debe ser el del CI (3.27.1) vía fvm (.fvmrc), no el del sistema.
+  "dart.flutterSdkPath": ".fvm/flutter_sdk"
+}

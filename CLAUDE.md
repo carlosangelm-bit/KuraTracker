@@ -30,11 +30,21 @@ Lo que **no** viaja con el clone y hay que tener en la máquina nueva:
   producción usa esa versión; escribe código compatible con ella (p. ej.
   `DropdownButtonFormField` usa `value:`, no `initialValue:`; `Color.withValues(alpha:)`
   existe desde 3.27).
-- **La versión local de Flutter puede diferir** (aquí ~3.44) y **no compila la UI de
-  forma confiable**. Validar con `flutter analyze` (objetivo: **0 errores**), **no** con
-  `flutter build`/`flutter test`.
-- **`pubspec.lock`**: revertir cualquier cambio local antes de commitear
-  (`git checkout -- pubspec.lock`) — el lock lo resuelve el CI con su toolchain.
+- **Alinea el Flutter LOCAL a 3.27.1 con `fvm`** (fijado en el repo por `.fvmrc`, no en la
+  máquina). Setup por máquina, una sola vez: `dart pub global activate fvm` y luego
+  `fvm install` en la raíz (baja la 3.27.1 al `.fvm/` local, gitignorado). Después, usa
+  `fvm flutter …` (o el SDK que apunta `.vscode/settings.json`). Alinear cierra de golpe
+  tres males vistos el 15-sep: quick-fixes que proponen API que el CI rechaza; la ceguera de
+  no poder correr `flutter test` local; y el baile del `pubspec.lock`. Postmortem: [[errores-en-silencio-postmortem]] (memoria).
+- **Mientras el local NO esté alineado** (p. ej. sistema en ~3.44), la UI **no compila de
+  forma confiable** (google_fonts truena en const-eval): validar con `flutter analyze`
+  (objetivo: **0 errores/warnings**), **no** con `flutter build`/`flutter test`. Con la 3.27.1
+  vía fvm, `flutter test` sí corre local y se acaban las "pruebas CI-only".
+- **`pubspec.lock`**: si el local NO está alineado, revertir cualquier cambio local antes de
+  commitear (`git checkout -- pubspec.lock`) — el lock lo resuelve el CI con su toolchain.
+- **Arreglo-al-guardar APAGADO** (`.vscode/settings.json`, versionado). `source.fixAll` /
+  `source.organizeImports` en `codeActionsOnSave` cambian código SOLOS (el 15-sep uno borró
+  un candado comercial completo); se dejan en `never`. Formatear al guardar se queda.
 
 ## Deploy (CI/CD propio)
 
@@ -80,6 +90,18 @@ Lo que **no** viaja con el clone y hay que tener en la máquina nueva:
 - **Ramas por feature/fix**; merge `--no-ff` a `main`. Entregas grandes = por fases
   (cada fase = 1 deploy).
 - **Mensajes de commit** terminan con el trailer `Co-Authored-By: Claude ...`.
+- **Lee el diff COMPLETO antes de cada commit** (`git diff` staged), no solo lo que crees
+  haber cambiado. Confirma que CADA hunk es intencional; cualquier hunk que la tarea en
+  curso no explique se INVESTIGA, no se commitea. El 15-sep un arreglo-al-guardar borró un
+  candado comercial y apareció como un bloque eliminado en el diff — revisarlo lo habría
+  cazado antes de mandarlo a CI. Postmortem: [[errores-en-silencio-postmortem]] (memoria).
+- **Si el editor/tooling avisa "cambió en disco" a media edición**, mira el diff ANTES de
+  seguir. Ese aviso salió el 15-sep y dejarlo pasar costó tres corridas de CI.
+- **Guardas ENUMERADAS, no listas a mano**: cuando una prueba vela por un conjunto (candados
+  gateados, escritores de una tabla, colores legados…), DERIVA la lista de la fuente (p. ej.
+  "todo screen que menciona `premiumAdminFor` está enumerado"), no la escribas fija. Una lista
+  derivada caza un borrado silencioso; una manual lo deja pasar en verde. Pendiente de aplicar
+  igual en la Matriz del protocolo (una regla de producto que se caiga sin que nadie lo note).
 - **Permisos por rol**: usa SIEMPRE los getters del conjunto de roles
   (`user.isAdmin`, `user.isMaster`, `user.canDiagnose`, `user.isNurse`), NUNCA
   `user.role == AppRole.x`. El rol escalar es un espejo del conjunto; comparar
