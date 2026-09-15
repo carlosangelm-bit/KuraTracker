@@ -22,11 +22,11 @@ import '../../engine/params/clinical_params.dart';
 import '../../services/data_repository.dart';
 import '../../services/clinical_params_csv.dart';
 import '../../services/csv_download.dart';
-import '../admin/admin_home_screen.dart'
-    show NoteCatalogTab, BrandingTab;
 import '../admin/users_screen.dart' show UsersScreen;
 import '../admin/staff_screen.dart' show StaffScreen;
 import '../admin/sites_screen.dart' show SitesScreen;
+import '../admin/note_catalog_screen.dart' show NoteCatalogScreen;
+import '../admin/branding_screen.dart' show BrandingScreen;
 
 /// Area de "Plataforma": pantalla exclusiva del rol `master`
 /// (administrador de plataforma, ver 0012_master_role.sql). A diferencia
@@ -396,8 +396,8 @@ class _PlatformSectionBodyState extends ConsumerState<PlatformSectionBody> {
           repo: repo, organizationId: selected, currentUserId: user?.id),
       'personal' => StaffScreen(repo: repo, organizationId: selected),
       'sitios' => SitesScreen(repo: repo, organizationId: selected),
-      'catalogo' => NoteCatalogTab(repo: repo, organizationId: selected),
-      'marca' => BrandingTab(repo: repo, organizationId: selected),
+      'catalogo' => NoteCatalogScreen(repo: repo, organizationId: selected),
+      'marca' => BrandingScreen(repo: repo, organizationId: selected),
       'modulos' => _ModulesTab(
           repo: repo, organizationId: selected, updatedBy: user?.id),
       'licencia' => CenterLicensePanel(
