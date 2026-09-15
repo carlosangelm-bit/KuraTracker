@@ -102,17 +102,29 @@ void main() {
     expect(centerOriginLabel(centerOrigin(mixed, 'x')), 'Mixto');
   });
 
-  test('Requiere atención: sin vencimientos próximos ni desacuerdos → "—"', () async {
-    // Derechos coherentes (interruptores apagados y sin derecho), sin current_period_end.
+  test('Requiere atención distingue vencido → vence pronto → "—"', () async {
+    final now = DateTime(2026, 9, 15, 12);
+    String iso(int days) => now.add(Duration(days: days)).toIso8601String();
     final repo = await _repo({
-      Collections.organizations: [_org('o4')],
+      Collections.organizations: [_org('exp'), _org('soon'), _org('nada')],
+      Collections.orgEntitlements: [
+        // Derecho ACTIVO ya vencido → solo lectura. Antes el bucle lo saltaba y salía "—".
+        _ent('e1', 'exp', 'module', 'insumos', end: iso(-3)),
+        _ent('e2', 'soon', 'module', 'insumos', end: iso(26)),
+      ],
       Collections.moduleSettings: [
-        _mod('m1', 'o4', 'insumos', false),
-        _mod('m2', 'o4', 'comercial', false),
+        _mod('m1', 'nada', 'insumos', false),
+        _mod('m2', 'nada', 'comercial', false),
       ],
     });
-    final a = centerAttention(repo, 'o4');
-    expect(a.any, isFalse);
-    expect(centerAttentionLabel(a), '—');
+    final exp = centerAttention(repo, 'exp', now: now);
+    final soon = centerAttention(repo, 'soon', now: now);
+    final nada = centerAttention(repo, 'nada', now: now);
+
+    expect(exp.isExpired, isTrue, reason: 'un derecho activo con fecha pasada = vencido');
+    expect(centerAttentionLabel(exp), 'Venció hace 3 d');
+    expect(soon.isExpired, isFalse);
+    expect(centerAttentionLabel(soon), 'Vence en 26 d');
+    expect(centerAttentionLabel(nada), '—');
   });
 }

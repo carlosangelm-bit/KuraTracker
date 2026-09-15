@@ -305,8 +305,13 @@ class _CentersTable extends StatelessWidget {
         centerAttentionLabel(a),
         style: TextStyle(
             fontSize: 13,
-            color: a.any ? t.statusWarningText : t.textSecondary,
-            fontWeight: a.any ? FontWeight.w600 : FontWeight.w400),
+            // Vencido pesa más que "vence pronto": statusDanger + w700.
+            color: a.isExpired
+                ? t.statusDanger
+                : (a.any ? t.statusWarningText : t.textSecondary),
+            fontWeight: a.isExpired
+                ? FontWeight.w700
+                : (a.any ? FontWeight.w600 : FontWeight.w400)),
       );
 
   Widget _actions(BuildContext context, Organization o) => Row(
@@ -371,7 +376,10 @@ class _CentersCards extends StatelessWidget {
               _kv(t, 'Asientos clínicos', '${r.seatsUsed}/${r.seatsContracted}'),
               _kv(t, 'Origen', centerOriginLabel(r.origin)),
               _kv(t, 'Requiere atención', centerAttentionLabel(r.attention),
-                  danger: r.attention.any),
+                  valueColor: r.attention.isExpired
+                      ? t.statusDanger
+                      : (r.attention.any ? t.statusWarningText : null),
+                  strong: r.attention.any),
               const SizedBox(height: 6),
               Text('Módulos con derecho',
                   style: TextStyle(fontSize: 11, color: t.textSecondary)),
@@ -399,7 +407,9 @@ class _CentersCards extends StatelessWidget {
     );
   }
 
-  Widget _kv(BrandTokens t, String k, String v, {bool danger = false}) => Padding(
+  Widget _kv(BrandTokens t, String k, String v,
+          {Color? valueColor, bool strong = false}) =>
+      Padding(
         padding: const EdgeInsets.symmetric(vertical: 2),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -412,8 +422,8 @@ class _CentersCards extends StatelessWidget {
               child: Text(v,
                   style: TextStyle(
                       fontSize: 13,
-                      color: danger ? t.statusWarningText : t.textPrimary,
-                      fontWeight: danger ? FontWeight.w600 : FontWeight.w400)),
+                      color: valueColor ?? t.textPrimary,
+                      fontWeight: strong ? FontWeight.w600 : FontWeight.w400)),
             ),
           ],
         ),
