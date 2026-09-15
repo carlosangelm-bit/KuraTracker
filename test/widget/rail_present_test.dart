@@ -16,6 +16,7 @@ import 'package:kuratracker/core/nav/section_action.dart';
 import 'package:kuratracker/core/providers/session_provider.dart';
 import 'package:kuratracker/core/router/app_shell.dart';
 import 'package:kuratracker/models/app_user.dart';
+import 'package:kuratracker/models/module_key.dart';
 
 class _FakeSession extends SessionController {
   _FakeSession(AppUser user) {
@@ -56,6 +57,13 @@ Future<bool> _railPresentFor(WidgetTester t, AppUser user, Size size) async {
   });
   final container = ProviderContainer(overrides: [
     sessionProvider.overrideWith((ref) => _FakeSession(user)),
+    // Módulos suficientes para que un clínico tenga ≥2 destinos (hasNavRail). No afecta
+    // al cuidador: su nav (isCaregiverOnly) es <2 destinos con o sin módulos.
+    enabledModulesProvider.overrideWithValue(const {
+      ModuleKey.patients,
+      ModuleKey.agenda,
+      ModuleKey.reports,
+    }),
   ]);
   addTearDown(container.dispose);
   await t.pumpWidget(UncontrolledProviderScope(
