@@ -66,8 +66,12 @@ class _AdminSectionsShellState extends ConsumerState<AdminSectionsShell> {
     final modules = ref.watch(enabledModulesProvider);
     final navs = kuraNavDestinations(
       moduleEnabled: (k) => modules.any((m) => m.dbValue == k),
-      isAdmin: true,
-      isMaster: false,
+      // Rol REAL de la sesión, como en AppShell: con isMaster clavado en false, un master
+      // que entraba a Administración perdía el destino Plataforma y ganaba Inicio —un riel
+      // distinto del que traía (§13.3). La guarda de rol de arriba ya deja pasar a admin Y a
+      // master, así que esto NO cambia quién entra, solo qué riel ve.
+      isAdmin: sessionUser?.isAdmin ?? false,
+      isMaster: sessionUser?.isMaster ?? false,
       // Tipo de centro activo: define la rama de agenda (hospital → Rondas).
       centerType: ref.watch(sessionProvider).activeCenterType,
     );

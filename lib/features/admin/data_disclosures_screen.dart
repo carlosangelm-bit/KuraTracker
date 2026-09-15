@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../core/widgets/kura_back_button.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
@@ -35,7 +36,10 @@ class _DataDisclosuresScreenState extends ConsumerState<DataDisclosuresScreen> {
     final orgFilter = (user?.isMaster ?? false) ? null : user?.organizationId;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Registro de divulgaciones')),
+      appBar: AppBar(
+        leading: const KuraBackButton(fallback: '/admin/configuracion'),
+        title: const Text('Registro de divulgaciones'),
+      ),
       body: repoAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, st) => Center(

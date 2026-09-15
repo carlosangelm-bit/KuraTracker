@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../core/widgets/kura_back_button.dart';
 
 import '../../core/theme/kura_theme.dart';
 import '../../engine/kura_clinical_adjustments.dart';
@@ -12,7 +13,10 @@ class RecommendationsReferenceScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Fuente de recomendaciones')),
+      appBar: AppBar(
+        leading: const KuraBackButton(fallback: '/admin/configuracion'),
+        title: const Text('Fuente de recomendaciones'),
+      ),
       body: FutureBuilder<KuraClinicalAdjustments>(
         future: KuraClinicalAdjustments.loadFromAssets(),
         builder: (context, snap) {

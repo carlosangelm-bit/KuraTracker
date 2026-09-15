@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-
-import '../../core/widgets/kura_module_lock.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../core/widgets/kura_back_button.dart';
 
 import '../../core/theme/kura_theme.dart';
 import '../../services/acuity_service.dart';
@@ -69,17 +69,11 @@ class _AcuitySessionTypeScreenState
 
   @override
   Widget build(BuildContext context) {
-    // Segunda capa del candado (además del botón): con URL propia, un admin
-    // sin el módulo entraría tecleando la ruta. Se bloquea al construir.
-    if (!widget.repo.premiumAdminFor(widget.organizationId)) {
-      return adminModuleLockedScaffold(context,
-          repo: widget.repo,
-          organizationId: widget.organizationId,
-          title: 'Tipo de cita para sesiones',
-          description: 'Conecta las sesiones del plan con tu agenda de Acuity.');
-    }
     return Scaffold(
-      appBar: AppBar(title: const Text('Tipo de cita para sesiones')),
+      appBar: AppBar(
+        leading: const KuraBackButton(fallback: '/admin/configuracion'),
+        title: const Text('Tipo de cita para sesiones'),
+      ),
       body: FutureBuilder<List<dynamic>>(
         future: _typesFuture,
         builder: (context, snap) {
@@ -124,7 +118,7 @@ class _AcuitySessionTypeScreenState
                 )
               else ...[
                 DropdownButtonFormField<String>(
-                  value: _selectedSiteId,
+                  initialValue: _selectedSiteId,
                   isExpanded: true,
                   decoration: const InputDecoration(
                       labelText: 'Sitio', isDense: true),

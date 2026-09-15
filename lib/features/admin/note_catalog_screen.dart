@@ -834,10 +834,8 @@ class _NoteCatalogScreenState extends State<NoteCatalogScreen> {
     showDialog<void>(
       context: context,
       builder: (dialogCtx) {
-        final t = BrandTokens.of(dialogCtx);
+        // Sin fondo/forma locales: el dialogTheme del centro los provee (§13.2).
         return Dialog(
-          backgroundColor: t.surface,
-          shape: const RoundedRectangleBorder(borderRadius: AppRadii.mdR),
           child: Padding(
             padding: const EdgeInsets.all(AppSpacing.sm),
             child: KuraModuleLock.section(
