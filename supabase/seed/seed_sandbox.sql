@@ -196,6 +196,38 @@ select site_hospital, org_hospital, 'Hospital Sandbox · Piso 3 Medicina Interna
 union all
 select site_cuidadores, org_cuidadores, 'Cuidadores Sandbox · Domicilio', 'domicilio', 'Sede sintética de pruebas', true from sb;
 
+-- Sitios EXTRA de Clínica Sandbox para ejercer A MANO los dos escenarios de la guardia
+-- de desactivación de sitios (0134) que no se podían probar con datos reales. Entran en
+-- el MISMO barrido: son sitios de org_clinica, así que la limpieza de arriba
+-- (`delete from public.sites where organization_id in (…)`) los borra, y con ellos —por
+-- FK `on delete cascade` en site_id— sus inventory_items/inventory_movements. El seed
+-- sigue re-ejecutable sin residuos.
+--   · Almacén: CON existencias y SIN personal. Al desactivarlo debe salir el mensaje del
+--     INVENTARIO, no otro: Consultorio 1 sigue activo (no es el único sitio) y nadie lo
+--     tiene como primary_site_id (no es el caso del personal). Así el orden de los
+--     rechazos queda distinguible.
+--   · Consultorio 2: limpio (sin personal, sin inventario). Desactivarlo debe FUNCIONAR
+--     —la mitad que distingue una guardia correcta de una que bloquea todo—.
+insert into public.sites (id, organization_id, name, kind, address, is_active)
+select 'a0000000-0000-4000-a000-000000000014'::uuid, org_clinica,
+       'Clínica Sandbox · Almacén', 'otro', 'Sede sintética de pruebas', true from sb
+union all
+select 'a0000000-0000-4000-a000-000000000015'::uuid, org_clinica,
+       'Clínica Sandbox · Consultorio 2', 'clinica', 'Sede sintética de pruebas', true from sb;
+
+-- Existencias en el Almacén: un artículo + una entrada con delta positivo (neto <> 0).
+-- created_by queda null (los perfiles aún no existen en este punto del seed).
+insert into public.inventory_items (id, organization_id, site_id, name, is_external, is_active)
+select 'a0000000-0000-4000-a000-000000000031'::uuid, org_clinica,
+       'a0000000-0000-4000-a000-000000000014'::uuid,
+       'Apósito de prueba (Almacén)', true, true from sb;
+insert into public.inventory_movements
+       (id, organization_id, site_id, inventory_item_id, delta, reason, note)
+select 'a0000000-0000-4000-a000-000000000032'::uuid, org_clinica,
+       'a0000000-0000-4000-a000-000000000014'::uuid,
+       'a0000000-0000-4000-a000-000000000031'::uuid,
+       10, 'compra', 'Entrada sintética para ejercer la guardia de sitios (0134)' from sb;
+
 -- -----------------------------------------------------------------------------
 -- 3. Cuentas (auth.users + identities) → profiles → membresías → staff
 -- -----------------------------------------------------------------------------
