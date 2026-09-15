@@ -27,6 +27,7 @@ import '../admin/staff_screen.dart' show StaffScreen;
 import '../admin/sites_screen.dart' show SitesScreen;
 import '../admin/note_catalog_screen.dart' show NoteCatalogScreen;
 import '../admin/branding_screen.dart' show BrandingScreen;
+import 'trial_founder_notice.dart';
 
 /// Area de "Plataforma": pantalla exclusiva del rol `master`
 /// (administrador de plataforma, ver 0012_master_role.sql). A diferencia
@@ -1132,9 +1133,12 @@ class _OrganizationFormDialogState extends State<_OrganizationFormDialog> {
       }
 
       if (!mounted) return;
-      // Si se creó fundador con contraseña temporal (SMTP no configurado), mostrarla
-      // al master antes de cerrar — es la única forma de entregársela al prospecto.
-      if (founder?.tempPassword != null) {
+      // Al crear el fundador se le envía el correo para que ponga su propia contraseña,
+      // igual que Usuarios (resetPasswordForEmail ya se usa ahí y en el login). La
+      // temporal queda como respaldo SOLO si el envío falla, con el motivo real.
+      if (founder != null) {
+        final notice = await notifyTrialFounder(founder);
+        if (!mounted) return;
         await showDialog<void>(
           context: context,
           builder: (dctx) => AlertDialog(
@@ -1143,13 +1147,24 @@ class _OrganizationFormDialogState extends State<_OrganizationFormDialog> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Admin: ${founder!.email}'),
+                Text('Admin: ${notice.email}'),
                 const SizedBox(height: 4),
-                SelectableText('Contraseña temporal: ${founder.tempPassword}'),
+                Text('Prueba de $trialDays días.',
+                    style: const TextStyle(fontSize: 12)),
                 const SizedBox(height: 8),
-                Text('Prueba de $trialDays días. Entrégale estas credenciales al '
-                    'prospecto (no hay correo de invitación configurado).',
-                    style: const TextStyle(fontSize: 11)),
+                if (notice.emailSent)
+                  const Text(
+                      'Se le envió un correo para que establezca su contraseña.',
+                      style: TextStyle(fontSize: 12))
+                else ...[
+                  Text(
+                      'No se pudo enviar el correo'
+                      '${notice.error != null ? ' (${notice.error})' : ''}. '
+                      'Entrégale esta contraseña temporal:',
+                      style: const TextStyle(fontSize: 12)),
+                  const SizedBox(height: 4),
+                  SelectableText(notice.tempPassword ?? '(sin contraseña temporal)'),
+                ],
               ],
             ),
             actions: [
