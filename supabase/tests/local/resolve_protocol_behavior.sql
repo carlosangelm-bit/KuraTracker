@@ -92,60 +92,83 @@ begin
 end $$;
 
 -- =============================================================================
--- Bordes que la demo NO corre (solo servidor): fuente CATÁLOGO + CONTEXTO. Inline, con fuente.
+-- Bordes que la demo NO corre (solo servidor): fuente CATÁLOGO, CONTEXTO e IDENTIDAD (etapa 5).
+-- Cada escenario usa una CATEGORÍA distinta: el catálogo es GLOBAL y ahora las huérfanas con
+-- nombre SALEN (item null), así que dos escenarios en la misma categoría se cruzarían.
 -- =============================================================================
--- Centro AUTOR (protocol:author) con su inventario y reglas de catálogo con contexto.
+-- A) AUTOR (protocol:author). CONTEXTO + PROSA. Reglas sin identidad → item null, pero la PROSA
+--    (name) es lo que ve el clínico, y chk compara category|name|qty|source. category = aposito.
 insert into public.organizations (id, name) values
   ('b0000000-0000-0000-0000-000000000002', 'Behavior author') on conflict do nothing;
 insert into public.org_entitlements (organization_id, kind, key, status, source) values
   ('b0000000-0000-0000-0000-000000000002', 'module', 'protocol:author', 'active', 'master') on conflict do nothing;
-insert into public.inventory_items (id, organization_id, site_id, name) values
-  ('a0000000-0000-0000-0000-00000000c1c1','b0000000-0000-0000-0000-000000000002',null,'I1'),
-  ('a0000000-0000-0000-0000-00000000c2c2','b0000000-0000-0000-0000-000000000002',null,'I2')
-  on conflict do nothing;
 -- I1 solo aplica con etiología=pie_diabetico; I2 con context_value NULL = cualquier valor de piel.
 insert into public.protocol_catalog_rules
-  (id, category, inventory_item_id, name, dimension, quantity_mode, quantity_value, sort_order, exudate_levels, zone_groups, infection, context_kind, context_value)
+  (id, category, name, dimension, quantity_mode, quantity_value, sort_order, exudate_levels, zone_groups, infection, context_kind, context_value)
 values
-  ('d0000000-0000-0000-0000-000000000001','aposito','a0000000-0000-0000-0000-00000000c1c1','I1','none','fixed',1,0,'[]','[]','any','etiologia','pie_diabetico'),
-  ('d0000000-0000-0000-0000-000000000002','aposito','a0000000-0000-0000-0000-00000000c2c2','I2','none','fixed',1,1,'[]','[]','any','piel',null)
+  ('d0000000-0000-0000-0000-000000000001','aposito','I1','none','fixed',1,0,'[]','[]','any','etiologia','pie_diabetico'),
+  ('d0000000-0000-0000-0000-000000000002','aposito','I2','none','fixed',1,1,'[]','[]','any','piel',null)
   on conflict do nothing;
 
 do $$
 declare a uuid := 'b0000000-0000-0000-0000-000000000002';
 begin
-  -- contexto que CALZA (etiología pie_diabetico) → I1, fuente 'kura'.
   perform pg_temp.chk('ctx-etio-calza', 'aposito|I1|1.000|kura', a, array['aposito'], null,null,null,null,null,null, 'etiologia','pie_diabetico');
-  -- contexto de MISMO kind pero OTRO valor (quemaduras) → I1 no aplica; queda vacío.
   perform pg_temp.chk('ctx-etio-otro',  '', a, array['aposito'], null,null,null,null,null,null, 'etiologia','quemaduras');
-  -- SIN contexto (null) → una regla con context_kind no-null NO aplica → vacío.
   perform pg_temp.chk('ctx-null',       '', a, array['aposito'], null,null,null,null,null,null, null,null);
-  -- context_value NULL en la regla = CUALQUIER valor de ese kind → I2 con piel=dai.
   perform pg_temp.chk('ctx-value-any-dai','aposito|I2|1.000|kura', a, array['aposito'], null,null,null,null,null,null, 'piel','dai');
   perform pg_temp.chk('ctx-value-any-marsi','aposito|I2|1.000|kura', a, array['aposito'], null,null,null,null,null,null, 'piel','marsi');
 end $$;
 
--- Centro que CONSUME (seat:protocolo) resuelve contra el catálogo → fuente 'kura' (2.b).
+-- B) CONSUME (seat:protocolo) + IDENTIDAD que ATERRIZA. La regla del catálogo referencia el par
+--    shopify; el consumidor tiene un insumo con ESE par → resolve enlaza el item (no null).
+--    category = compresion (aislada de A). Fuente 'kura' (2.b: consume contra el catálogo).
 insert into public.organizations (id, name) values
   ('b0000000-0000-0000-0000-000000000003', 'Behavior consume') on conflict do nothing;
 insert into public.org_entitlements (organization_id, kind, key, quantity, status, source) values
   ('b0000000-0000-0000-0000-000000000003', 'seat', 'protocolo', 1, 'active', 'master') on conflict do nothing;
--- El consumidor tiene su PROPIO insumo (id distinto) y una regla de catálogo que lo apunta.
--- (En la etapa 5 el catálogo referirá el producto por IDENTIDAD, no por el id de un centro;
--- aquí basta con que el join calce para probar la FUENTE del consumidor.)
-insert into public.inventory_items (id, organization_id, site_id, name) values
-  ('a0000000-0000-0000-0000-0000000000c3','b0000000-0000-0000-0000-000000000003',null,'I3-consumidor')
+insert into public.inventory_items (id, organization_id, site_id, name, shopify_product_id, shopify_variant_id) values
+  ('a0000000-0000-0000-0000-0000000000c3','b0000000-0000-0000-0000-000000000003',null,'I3-consumidor','SP-I3','')
   on conflict do nothing;
 insert into public.protocol_catalog_rules
-  (id, category, inventory_item_id, name, dimension, quantity_mode, quantity_value, sort_order, exudate_levels, zone_groups, infection, context_kind, context_value)
+  (id, category, name, shopify_product_id, shopify_variant_id, dimension, quantity_mode, quantity_value, sort_order, exudate_levels, zone_groups, infection, context_kind, context_value)
 values
-  ('d0000000-0000-0000-0000-000000000003','aposito','a0000000-0000-0000-0000-0000000000c3','I3','none','fixed',1,2,'[]','[]','any','piel',null)
+  ('d0000000-0000-0000-0000-000000000003','compresion','I3-consumidor','SP-I3','','none','fixed',1,2,'[]','[]','any','piel',null)
   on conflict do nothing;
 
 do $$
-declare c uuid := 'b0000000-0000-0000-0000-000000000003';
+declare c uuid := 'b0000000-0000-0000-0000-000000000003'; got_item uuid;
 begin
-  perform pg_temp.chk('consume-catalogo', 'aposito|I3-consumidor|1.000|kura', c, array['aposito'], null,null,null,null,null,null, 'piel','dai');
+  perform pg_temp.chk('consume-identidad', 'compresion|I3-consumidor|1.000|kura', c, array['compresion'], null,null,null,null,null,null, 'piel','dai');
+  -- y la IDENTIDAD ATERRIZÓ: el item resuelto NO es null (se enlazó al insumo del consumidor).
+  select t.inventory_item_id into got_item
+  from public.resolve_protocol(c, array['compresion'], null,null,null,null,null,null,'piel','dai') t limit 1;
+  if got_item is distinct from 'a0000000-0000-0000-0000-0000000000c3' then
+    raise exception 'BEHAVIOR FAIL [consume-identidad-item]: esperaba el insumo del consumidor, fue %', got_item;
+  end if;
+  raise notice 'BEHAVIOR PASS [consume-identidad-item]';
+end $$;
+
+-- C) HUÉRFANA CON NOMBRE: identidad que NO aterriza en el centro → la regla se resuelve IGUAL
+--    (la prosa la ve el clínico) pero con item NULL, no se salta. category = descarga (aislada).
+insert into public.protocol_catalog_rules
+  (id, category, name, shopify_product_id, shopify_variant_id, dimension, quantity_mode, quantity_value, sort_order, exudate_levels, zone_groups, infection, context_kind, context_value)
+values
+  ('d0000000-0000-0000-0000-000000000005','descarga','Prod-sin-stock','SP-NOWHERE','','none','fixed',1,0,'[]','[]','any','evolucion','seguimiento')
+  on conflict do nothing;
+
+do $$
+declare c uuid := 'b0000000-0000-0000-0000-000000000003'; got_item uuid; n int;
+begin
+  -- se DEVUELVE con su nombre (no vacío):
+  perform pg_temp.chk('huerfana-con-nombre', 'descarga|Prod-sin-stock|1.000|kura', c, array['descarga'], null,null,null,null,null,null, 'evolucion','seguimiento');
+  -- …y su item es NULL (no aterrizó en el centro):
+  select t.inventory_item_id, count(*) over () into got_item, n
+  from public.resolve_protocol(c, array['descarga'], null,null,null,null,null,null,'evolucion','seguimiento') t limit 1;
+  if n <> 1 or got_item is not null then
+    raise exception 'BEHAVIOR FAIL [huerfana-item-null]: esperaba 1 fila con item null, fue n=% item=%', n, got_item;
+  end if;
+  raise notice 'BEHAVIOR PASS [huerfana-item-null]';
 end $$;
 
 select '=== BEHAVIOR: ALL PASSED ===' as result;

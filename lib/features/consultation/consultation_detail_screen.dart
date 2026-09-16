@@ -1334,7 +1334,10 @@ class _SuppliesUsedSectionState extends ConsumerState<_SuppliesUsedSection> {
       if (resolved.isNotEmpty) {
         var added = 0;
         for (final r in resolved) {
-          if (!existingIds.add(r.inventoryItemId)) continue;
+          // Con insumo enlazado se deduplica por él; una huérfana con nombre (§15 etapa 5,
+          // item null) no dedupe —se agrega como sugerencia con su nombre, sin enlace a stock.
+          final itemId = r.inventoryItemId;
+          if (itemId != null && !existingIds.add(itemId)) continue;
           await repo.addSupplyUsage(
             organizationId: orgId,
             consultationId: widget.consultationId,

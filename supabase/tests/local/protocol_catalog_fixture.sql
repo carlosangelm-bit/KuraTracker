@@ -36,7 +36,10 @@ create table if not exists public.inventory_items (
   name text,
   unit_cost numeric(10, 2),
   currency text default 'MXN',
-  is_active boolean not null default true
+  is_active boolean not null default true,
+  -- par shopify (0050): puente centro→identidad que usa resolve_protocol (0140) en el catálogo.
+  shopify_product_id text,
+  shopify_variant_id text
 );
 
 -- org_entitlements con la forma de 0113 (kind/key/status).

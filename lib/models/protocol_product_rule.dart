@@ -197,7 +197,11 @@ class ProtocolProductRule {
 /// Producto resuelto para una categoría del protocolo (salida de la resolución).
 class ResolvedProtocolProduct {
   final String category; // KuraTag.dbValue
-  final String inventoryItemId;
+  // NULLABLE desde §15 etapa 5: una regla del catálogo Kura+ sin identidad (o cuya identidad no
+  // aterriza en el inventario del centro) se resuelve igual —la PROSA es lo que ve el clínico—
+  // pero sin insumo enlazado. Es una huérfana con nombre, no un vacío. El costo/precio/consumo
+  // solo aplican cuando hay insumo.
+  final String? inventoryItemId;
   final String name;
   final double quantity;
   final double? unitCost;
