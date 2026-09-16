@@ -342,4 +342,31 @@ begin;
   reset role;
 rollback;
 
+-- =============================================================================
+-- TEST 13 — INTERRUPTOR de fuente SOLO de master (§15 desacople). protocol_resolves_from_catalog
+-- decide si un centro AUTOR resuelve contra el catálogo o sus reglas propias. Un no-master no lo
+-- cambia (candado trg_zz_); el master sí. Es lo que evita que alguien mueva a Kura+ al catálogo
+-- (identidad nula) sin ser master.
+-- =============================================================================
+begin;
+  set local test.uid = '4a000000-0000-0000-0000-000000000000';  -- admin, NO master
+  do $$ begin
+    begin
+      update public.organizations set protocol_resolves_from_catalog = true
+        where id = '44444444-4444-4444-4444-444444444444';
+      raise exception 'TEST13a FAIL: un no-master cambió el interruptor de fuente';
+    exception when others then
+      if sqlerrm like '%master%'
+        then raise notice 'TEST13a PASS: no-master NO puede cambiar el interruptor';
+        else raise; end if;
+    end;
+  end $$;
+  set local test.uid = '30000000-0000-0000-0000-000000000000';  -- MASTER
+  do $$ begin
+    update public.organizations set protocol_resolves_from_catalog = true
+      where id = '44444444-4444-4444-4444-444444444444';
+    raise notice 'TEST13b PASS: el master sí cambia el interruptor';
+  end $$;
+rollback;
+
 select '=== ALL TESTS PASSED ===' as result;

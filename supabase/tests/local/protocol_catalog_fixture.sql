@@ -121,6 +121,9 @@ insert into public.profiles (id, roles, role, organization_id)
           '11111111-1111-1111-1111-111111111111'),
          ('33333333-3333-3333-3333-333333333333',   -- ADMIN del MISMO centro
           array['admin']::public.user_role[], 'admin',
+          '11111111-1111-1111-1111-111111111111'),
+         ('30000000-0000-0000-0000-000000000000',   -- MASTER (para el interruptor de fuente, §desacople)
+          array['master']::public.user_role[], 'master',
           '11111111-1111-1111-1111-111111111111')
   on conflict do nothing;
 -- Derechos que NO son protocol:author (para que el test sea honesto).
