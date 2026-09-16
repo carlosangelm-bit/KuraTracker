@@ -7109,8 +7109,21 @@ class DataRepository {
   }) async {
     final store = _store;
     if (store is! SupabaseDataStore) {
-      // Demo / almacén local: el RPC no existe. Puerta 3.c.
-      throw const ProtocolResolutionUnavailable('sin servidor (almacén local)');
+      // DEMO ÚNICAMENTE. El único almacén que NO es Supabase es LocalStore, y solo
+      // existe en el build de demo (sin credenciales). Ahí no hay servidor que
+      // resuelva, así que se resuelve en local sobre las reglas PROPIAS sembradas.
+      // Ver _resolveProtocolLocalDemo: por qué es seguro aquí y qué pasa si esta
+      // puerta deja de distinguir demo de producción.
+      return _resolveProtocolLocalDemo(
+        organizationId: organizationId,
+        categories: categories,
+        areaCm2: areaCm2,
+        volumeCm3: volumeCm3,
+        exudateLevel: exudateLevel,
+        zoneGroup: zoneGroup,
+        infectionSuspected: infectionSuspected,
+        siteId: siteId,
+      );
     }
     final List<dynamic> rows;
     try {
@@ -7155,6 +7168,135 @@ class DataRepository {
     }
     return out;
   }
+
+  /// RESOLUCIÓN LOCAL — SOLO PARA LA DEMO. No es un atajo ni un fallback general.
+  ///
+  /// POR QUÉ EXISTE: la resolución vive en el servidor (`resolve_protocol`) por dos
+  /// razones — una sola autoridad, y proteger el catálogo Kura+ (no viaja al
+  /// dispositivo). La demo corre sobre `LocalStore`, sin servidor, con datos
+  /// SINTÉTICOS y SIN catálogo (solo reglas propias sembradas): ahí ninguna de las
+  /// dos razones aplica, así que se resuelve en local para no romper el argumento
+  /// de venta con un "sin conexión". Solo mira `protocol_product_rules` (propias);
+  /// NUNCA el catálogo.
+  ///
+  /// SI ESTA FUNCIÓN LLEGA A PRODUCCIÓN, el catálogo Kura+ terminaría resolviéndose
+  /// (y por tanto viajando) en el cliente. La ÚNICA puerta que lo impide es que su
+  /// llamador solo la invoca cuando `_store is! SupabaseDataStore` — hoy, únicamente
+  /// la demo. Si alguien mete un caché, un almacén falso o refactoriza esa condición,
+  /// la puerta cambia de sentido EN SILENCIO. La prueba de conducta (corpus único) NO
+  /// lo atraparía —el resultado sería correcto; cambia QUIÉN lo calcula—; lo atrapa
+  /// `resolve_protocol_demo_test.dart` → "con SupabaseDataStore presente, esto es
+  /// INALCANZABLE". Si tocas la puerta, esa prueba debe ponerse roja.
+  ///
+  /// Es el espejo Dart de `resolve_protocol` (0139) sobre la tabla propia; el corpus
+  /// único `protocol_behavior_corpus.json` mantiene ambos en paridad.
+  List<ResolvedProtocolProduct> _resolveProtocolLocalDemo({
+    required String organizationId,
+    required Set<KuraTag> categories,
+    double? areaCm2,
+    double? volumeCm3,
+    String? exudateLevel,
+    String? zoneGroup,
+    bool? infectionSuspected,
+    String? siteId,
+  }) {
+    final wanted = {for (final c in categories) c.dbValue};
+    final inv = {
+      for (final it in listInventoryItems(
+          organizationId: organizationId, siteId: siteId, activeOnly: false))
+        it.id: it
+    };
+    // Reglas propias que APLICAN, agrupadas por categoría. listProtocolProductRules
+    // ya viene ordenada por (category, sort_order) → el primer match por item gana el
+    // dedup, igual que el row_number del SQL.
+    final byCat = <String, List<ProtocolProductRule>>{};
+    for (final r in listProtocolProductRules(organizationId)) {
+      if (r.inventoryItemId == null || !wanted.contains(r.category)) continue;
+      if (!_demoRuleApplies(r,
+          areaCm2: areaCm2,
+          volumeCm3: volumeCm3,
+          exudateLevel: exudateLevel,
+          zoneGroup: zoneGroup,
+          infectionSuspected: infectionSuspected)) {
+        continue;
+      }
+      byCat.putIfAbsent(r.category, () => []).add(r);
+    }
+    final out = <ResolvedProtocolProduct>[];
+    // Orden final = (category, sort_order), como el `order by` del SQL.
+    for (final cat in byCat.keys.toList()..sort()) {
+      final matching = byCat[cat]!;
+      final maxSpec = matching
+          .map(_demoRuleSpecificity)
+          .reduce((a, b) => a > b ? a : b);
+      final seen = <String>{};
+      for (final r in matching.where((r) => _demoRuleSpecificity(r) == maxSpec)) {
+        if (!seen.add(r.inventoryItemId!)) continue; // dedup: gana el de menor sort_order
+        final item = inv[r.inventoryItemId];
+        if (item == null) continue; // huérfana (item no está en el centro/sitio): se salta
+        out.add(ResolvedProtocolProduct(
+          category: cat,
+          inventoryItemId: item.id,
+          name: item.name,
+          quantity: _demoRuleQuantity(r, areaCm2: areaCm2, volumeCm3: volumeCm3),
+          unitCost: item.unitCost,
+          unitPrice: item.unitPrice,
+          currency: item.currency,
+        ));
+      }
+    }
+    return out;
+  }
+
+  // Espejos Dart de appliesTo/specificity/quantityFor de `resolve_protocol` (0139),
+  // SOLO para _resolveProtocolLocalDemo. No los use nada de producción: la resolución
+  // de producción es el RPC. El corpus único los mantiene en paridad con el SQL.
+  bool _demoRuleApplies(
+    ProtocolProductRule r, {
+    double? areaCm2,
+    double? volumeCm3,
+    String? exudateLevel,
+    String? zoneGroup,
+    bool? infectionSuspected,
+  }) {
+    if (r.dimension != RuleDimension.none) {
+      final v = r.dimension == RuleDimension.area ? areaCm2 : volumeCm3;
+      if (v == null) return false;
+      if (r.minValue != null && v < r.minValue!) return false;
+      if (r.maxValue != null && v >= r.maxValue!) return false; // [min, max)
+    }
+    if (r.exudateLevels.isNotEmpty &&
+        (exudateLevel == null || !r.exudateLevels.contains(exudateLevel))) {
+      return false;
+    }
+    if (r.zoneGroups.isNotEmpty &&
+        (zoneGroup == null || !r.zoneGroups.contains(zoneGroup))) {
+      return false;
+    }
+    if (r.infection != RuleInfection.any) {
+      if (infectionSuspected == null) return false;
+      if (r.infection == RuleInfection.yes && !infectionSuspected) return false;
+      if (r.infection == RuleInfection.no && infectionSuspected) return false;
+    }
+    return true;
+  }
+
+  int _demoRuleSpecificity(ProtocolProductRule r) {
+    var n = 0;
+    if (r.dimension != RuleDimension.none) n++;
+    if (r.exudateLevels.isNotEmpty) n++;
+    if (r.zoneGroups.isNotEmpty) n++;
+    if (r.infection != RuleInfection.any) n++;
+    return n;
+  }
+
+  double _demoRuleQuantity(ProtocolProductRule r,
+          {double? areaCm2, double? volumeCm3}) =>
+      switch (r.quantityMode) {
+        QuantityMode.perArea => (areaCm2 ?? 0) * r.quantityValue,
+        QuantityMode.perVolume => (volumeCm3 ?? 0) * r.quantityValue,
+        QuantityMode.fixed => r.quantityValue,
+      };
 
   // ---------------- Recomendaciones Kura+ ----------------
 

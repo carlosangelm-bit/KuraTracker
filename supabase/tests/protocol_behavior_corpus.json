@@ -1,0 +1,49 @@
+{
+  "_note": "Corpus ÚNICO de conducta de resolución sobre reglas PROPIAS del centro. Lo leen DOS pruebas, el MISMO archivo: (1) supabase/tests/local/resolve_protocol_behavior.sql, el resolvedor del SERVIDOR (resolve_protocol); (2) test/unit/resolve_protocol_demo_test.dart, el resolvedor LOCAL DE DEMO (_resolveProtocolLocalDemo). No son dos copias: si editas un caso aquí, ambas lo ven, y si las dos implementaciones divergen, una de las dos pruebas se pone roja. Salida esperada = 'category|name|qty' SIN fuente (en reglas propias la fuente siempre es 'propio'; el corpus del catálogo/contexto vive aparte, en el .sql, porque la demo no lo corre). name = nombre del INVENTARIO (no de la regla). qty con 3 decimales.",
+  "org": "b0000000-0000-0000-0000-000000000001",
+  "site": "50000000-0000-0000-0000-000000000051",
+  "items": [
+    { "id": "a0000000-0000-0000-0000-00000000000a", "site": "50000000-0000-0000-0000-000000000051", "name": "A" },
+    { "id": "a0000000-0000-0000-0000-00000000000b", "site": "50000000-0000-0000-0000-000000000051", "name": "B" },
+    { "id": "a0000000-0000-0000-0000-00000000000c", "site": "50000000-0000-0000-0000-000000000051", "name": "C" },
+    { "id": "a0000000-0000-0000-0000-00000000000d", "site": "50000000-0000-0000-0000-000000000051", "name": "D" },
+    { "id": "a0000000-0000-0000-0000-00000000000e", "site": "50000000-0000-0000-0000-000000000051", "name": "E" },
+    { "id": "a0000000-0000-0000-0000-00000000000f", "site": "50000000-0000-0000-0000-000000000051", "name": "F" },
+    { "id": "a0000000-0000-0000-0000-000000000010", "site": "50000000-0000-0000-0000-000000000051", "name": "G" },
+    { "id": "a0000000-0000-0000-0000-000000000011", "site": "50000000-0000-0000-0000-000000000051", "name": "H" },
+    { "id": "a0000000-0000-0000-0000-0000000000ff", "site": "50000000-0000-0000-0000-000000000052", "name": "Z" }
+  ],
+  "rules": [
+    { "id": "c0000000-0000-0000-0000-000000000000", "category": "aposito", "item": "a0000000-0000-0000-0000-00000000000a", "name": "A", "dimension": "none", "min": null, "max": null, "quantity_mode": "fixed", "quantity_value": 1, "sort_order": 0, "exudate_levels": [], "zone_groups": [], "infection": "any" },
+    { "id": "c0000000-0000-0000-0000-000000000001", "category": "aposito", "item": "a0000000-0000-0000-0000-00000000000b", "name": "B", "dimension": "area", "min": 0, "max": 10, "quantity_mode": "fixed", "quantity_value": 1, "sort_order": 1, "exudate_levels": [], "zone_groups": [], "infection": "any" },
+    { "id": "c0000000-0000-0000-0000-000000000002", "category": "aposito", "item": "a0000000-0000-0000-0000-00000000000c", "name": "C", "dimension": "area", "min": 10, "max": null, "quantity_mode": "fixed", "quantity_value": 1, "sort_order": 2, "exudate_levels": [], "zone_groups": [], "infection": "any" },
+    { "id": "c0000000-0000-0000-0000-000000000003", "category": "aposito", "item": "a0000000-0000-0000-0000-000000000011", "name": "H", "dimension": "none", "min": null, "max": null, "quantity_mode": "fixed", "quantity_value": 1, "sort_order": 3, "exudate_levels": ["abundante"], "zone_groups": [], "infection": "any" },
+    { "id": "c0000000-0000-0000-0000-000000000004", "category": "aposito", "item": "a0000000-0000-0000-0000-00000000000a", "name": "A", "dimension": "area", "min": 0, "max": 10, "quantity_mode": "fixed", "quantity_value": 1, "sort_order": 4, "exudate_levels": ["abundante"], "zone_groups": [], "infection": "any" },
+    { "id": "c0000000-0000-0000-0000-000000000005", "category": "limpieza", "item": "a0000000-0000-0000-0000-00000000000f", "name": "F", "dimension": "none", "min": null, "max": null, "quantity_mode": "fixed", "quantity_value": 1, "sort_order": 5, "exudate_levels": [], "zone_groups": [], "infection": "any" },
+    { "id": "c0000000-0000-0000-0000-000000000006", "category": "limpieza", "item": "a0000000-0000-0000-0000-000000000010", "name": "G", "dimension": "none", "min": null, "max": null, "quantity_mode": "fixed", "quantity_value": 1, "sort_order": 6, "exudate_levels": [], "zone_groups": [], "infection": "any" },
+    { "id": "c0000000-0000-0000-0000-000000000007", "category": "relleno_cavidad", "item": "a0000000-0000-0000-0000-00000000000d", "name": "D", "dimension": "volume", "min": 0, "max": 5, "quantity_mode": "per_volume", "quantity_value": 0.5, "sort_order": 7, "exudate_levels": [], "zone_groups": [], "infection": "any" },
+    { "id": "c0000000-0000-0000-0000-000000000008", "category": "relleno_cavidad", "item": "a0000000-0000-0000-0000-00000000000e", "name": "E", "dimension": "volume", "min": 5, "max": null, "quantity_mode": "per_volume", "quantity_value": 0.5, "sort_order": 8, "exudate_levels": [], "zone_groups": [], "infection": "any" },
+    { "id": "c0000000-0000-0000-0000-000000000009", "category": "relleno_cavidad", "item": "a0000000-0000-0000-0000-00000000000d", "name": "D", "dimension": "volume", "min": 0, "max": 5, "quantity_mode": "fixed", "quantity_value": 9, "sort_order": 9, "exudate_levels": [], "zone_groups": [], "infection": "any" },
+    { "id": "c0000000-0000-0000-0000-00000000000a", "category": "aposito", "item": "a0000000-0000-0000-0000-000000000010", "name": "G", "dimension": "none", "min": null, "max": null, "quantity_mode": "fixed", "quantity_value": 1, "sort_order": 10, "exudate_levels": [], "zone_groups": ["sacro_gluteo"], "infection": "yes" },
+    { "id": "c0000000-0000-0000-0000-00000000000b", "category": "aposito", "item": "a0000000-0000-0000-0000-0000000000ff", "name": "Z", "dimension": "area", "min": 0, "max": 10, "quantity_mode": "fixed", "quantity_value": 1, "sort_order": 11, "exudate_levels": [], "zone_groups": [], "infection": "any" }
+  ],
+  "cases": [
+    { "label": "area-borde-inf", "categories": ["aposito"], "area": 0, "volume": null, "exudate": null, "zone": null, "infection": null, "expected": "aposito|B|1.000" },
+    { "label": "area-dentro", "categories": ["aposito"], "area": 5, "volume": null, "exudate": null, "zone": null, "infection": null, "expected": "aposito|B|1.000" },
+    { "label": "area-borde-sup", "categories": ["aposito"], "area": 10, "volume": null, "exudate": null, "zone": null, "infection": null, "expected": "aposito|C|1.000" },
+    { "label": "area-just-antes", "categories": ["aposito"], "area": 9.99, "volume": null, "exudate": null, "zone": null, "infection": null, "expected": "aposito|B|1.000" },
+    { "label": "area-grande", "categories": ["aposito"], "area": 50, "volume": null, "exudate": null, "zone": null, "infection": null, "expected": "aposito|C|1.000" },
+    { "label": "area-null", "categories": ["aposito"], "area": null, "volume": null, "exudate": null, "zone": null, "infection": null, "expected": "aposito|A|1.000" },
+    { "label": "area+exud-spec2", "categories": ["aposito"], "area": 5, "volume": null, "exudate": "abundante", "zone": null, "infection": null, "expected": "aposito|A|1.000" },
+    { "label": "exudado-solo", "categories": ["aposito"], "area": null, "volume": null, "exudate": "abundante", "zone": null, "infection": null, "expected": "aposito|H|1.000" },
+    { "label": "exudado-otro", "categories": ["aposito"], "area": null, "volume": null, "exudate": "escaso", "zone": null, "infection": null, "expected": "aposito|A|1.000" },
+    { "label": "zona+infec-spec2", "categories": ["aposito"], "area": null, "volume": null, "exudate": null, "zone": "sacro_gluteo", "infection": true, "expected": "aposito|G|1.000" },
+    { "label": "zona-sin-infec", "categories": ["aposito"], "area": null, "volume": null, "exudate": null, "zone": "sacro_gluteo", "infection": false, "expected": "aposito|A|1.000" },
+    { "label": "limpieza-empate", "categories": ["limpieza"], "area": null, "volume": null, "exudate": null, "zone": null, "infection": null, "expected": "limpieza|F|1.000, limpieza|G|1.000" },
+    { "label": "relleno-borde-inf", "categories": ["relleno_cavidad"], "area": null, "volume": 0, "exudate": null, "zone": null, "infection": null, "expected": "relleno_cavidad|D|0.000" },
+    { "label": "relleno-borde-sup", "categories": ["relleno_cavidad"], "area": null, "volume": 5, "exudate": null, "zone": null, "infection": null, "expected": "relleno_cavidad|E|2.500" },
+    { "label": "relleno-dentro", "categories": ["relleno_cavidad"], "area": null, "volume": 3, "exudate": null, "zone": null, "infection": null, "expected": "relleno_cavidad|D|1.500" },
+    { "label": "multi-cat", "categories": ["aposito", "limpieza", "relleno_cavidad"], "area": 5, "volume": 2, "exudate": "abundante", "zone": null, "infection": null, "expected": "aposito|A|1.000, limpieza|F|1.000, limpieza|G|1.000, relleno_cavidad|D|1.000" },
+    { "label": "cat-inexistente", "categories": ["desbridamiento"], "area": 5, "volume": null, "exudate": null, "zone": null, "infection": null, "expected": "" }
+  ]
+}

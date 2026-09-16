@@ -37,6 +37,19 @@ done
 
 echo "--- candado / vigencia / aislamiento / huérfanas ---"
 psql < supabase/tests/local/protocol_catalog_local_tests.sql 2>&1 | grep -E "PASS|FAIL|ALL TESTS PASSED"
-echo "--- resolve_protocol · conducta (salidas esperadas a mano) ---"
+
+# CONDICIÓN 1 (etapa 3.5): el corpus de reglas propias es UN SOLO archivo, leído por esta
+# prueba de SQL y por la del resolvedor de demo. Se carga aquí a la tabla corpus_json (una fila,
+# jsonb) para que resolve_protocol_behavior.sql lo lea. jq compacta el JSON a una línea (para
+# \copy en formato TEXT); si no hay jq, python hace lo mismo.
+psql -c "drop table if exists corpus_json; create table corpus_json(j jsonb);" >/dev/null
+if command -v jq >/dev/null 2>&1; then
+  jq -c . supabase/tests/protocol_behavior_corpus.json | psql -c "\copy corpus_json(j) from stdin" >/dev/null
+else
+  python3 -c "import json,sys; sys.stdout.write(json.dumps(json.load(open('supabase/tests/protocol_behavior_corpus.json'))))" \
+    | psql -c "\copy corpus_json(j) from stdin" >/dev/null
+fi
+
+echo "--- resolve_protocol · conducta (corpus único + catálogo/contexto) ---"
 psql < supabase/tests/local/resolve_protocol_behavior.sql 2>&1 | grep -E "BEHAVIOR PASS|BEHAVIOR FAIL|ALL PASSED"
 echo "SQL TESTS OK"
