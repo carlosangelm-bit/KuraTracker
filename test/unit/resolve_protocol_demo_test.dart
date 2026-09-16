@@ -195,4 +195,29 @@ void main() {
     expect(out.single.inventoryItemId, 'rpc-item-id',
         reason: 'el resultado salió del camino local → la puerta de demo se coló a producción');
   });
+
+  // FUENTE (6.1) — la degradación catálogo→propio debe ser OBSERVABLE. source viaja del RPC al
+  // modelo; si alguien deja de leer m['source'] en el mapeo, estos tests se ponen rojos y la
+  // degradación deja de ser un cambio en silencio.
+  test('FUENTE 6.1 · source del RPC llega al modelo (kura)', () async {
+    final spy = _RpcSpyStore(); // su callRpcResult devuelve source: 'kura'
+    spy.primeCache({
+      Collections.inventoryItems: const [],
+      Collections.protocolProductRules: const [],
+    });
+    final repo = await DataRepository.forSeeding(spy);
+    final out = await repo.resolveProtocolProductsRpc(
+      organizationId: org, categories: {_tag('aposito')}, siteId: site);
+    expect(out.single.source, 'kura',
+        reason: 'si el mapper deja de leer m[source], la degradación catálogo→propio vuelve a ser invisible');
+  });
+
+  test('FUENTE 6.1 · el resolvedor de demo (reglas propias) emite propio', () async {
+    final repo = await DataRepository.forSeeding(_MemStore(seedFromCorpus()));
+    final out = await repo.resolveProtocolProductsRpc(
+      organizationId: org, categories: {_tag('aposito')}, siteId: site, areaCm2: 5);
+    expect(out, isNotEmpty);
+    expect(out.every((r) => r.source == 'propio'), isTrue,
+        reason: 'la demo resuelve reglas propias → source propio');
+  });
 }

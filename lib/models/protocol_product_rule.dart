@@ -207,11 +207,19 @@ class ResolvedProtocolProduct {
   final double? unitCost;
   final double? unitPrice;
   final String? currency;
+  // FUENTE del régimen: 'kura' (catálogo Kura+ curado) o 'propio' (reglas del centro). §15
+  // etapa 6.1: la fuente EXISTE en SQL desde 0139/0140 pero nunca se leía. Sin ella, que un
+  // centro Kura+ cuyo asiento vence caiga de golpe del catálogo a sus reglas propias sería un
+  // cambio en silencio —mismas tarjetas, otro régimen—. Viaja hasta la UI para que la
+  // degradación sea OBSERVABLE; no debe existir como camino real sin ser visible. REQUERIDO a
+  // propósito: quien construya un resuelto debe declarar de qué régimen salió.
+  final String source;
   const ResolvedProtocolProduct({
     required this.category,
     required this.inventoryItemId,
     required this.name,
     required this.quantity,
+    required this.source,
     this.unitCost,
     this.unitPrice,
     this.currency,

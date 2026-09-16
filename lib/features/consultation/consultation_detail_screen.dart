@@ -1355,8 +1355,13 @@ class _SuppliesUsedSectionState extends ConsumerState<_SuppliesUsedSection> {
         if (added > 0) {
           if (mounted) {
             setState(() {});
+            // §15 etapa 6.1: se dice de QUÉ régimen salieron. Que un Kura+ vencido caiga del
+            // catálogo curado a sus reglas propias no puede pasar en silencio.
+            final regimen = resolved.first.source == 'kura'
+                ? 'del régimen Kura+'
+                : 'del protocolo propio del centro';
             ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                content: Text('Se agregaron $added insumo(s) del protocolo.')));
+                content: Text('Se agregaron $added insumo(s) $regimen.')));
           }
           return;
         }

@@ -85,6 +85,9 @@ class _TreatmentProgramBuilderScreenState
   // se puede traer. Cuando eso pasa se guarda aquí el mensaje para MOSTRARLO —no
   // dejar la lista vacía como si no hubiera protocolo que sugerir.
   String? _suggestionError;
+  // §15 etapa 6.1: 'kura' | 'propio' | null. Qué régimen resolvió los insumos sugeridos, para
+  // decirlo sobrio en pantalla (la degradación catálogo→propio no puede ser invisible).
+  String? _regimenSource;
 
   // Cadencia
   final Set<int> _weekdays = {1, 3, 5}; // Lun/Mié/Vie por defecto
@@ -135,6 +138,7 @@ class _TreatmentProgramBuilderScreenState
       DataRepository repo, String orgId, String? siteId) async {
     _supplies.clear();
     _suggestionError = null;
+    _regimenSource = null;
     final components = repo.treatmentComponentsForConsultation(widget.consultationId);
 
     // 1) Vía preferente (0076): resolución por CATEGORÍA + MEDIDA de la herida.
@@ -175,6 +179,9 @@ class _TreatmentProgramBuilderScreenState
             'Revisa tu red o agrega los insumos manualmente.';
         return;
       }
+      // §15 etapa 6.1: de qué régimen salió (catálogo Kura+ vs reglas propias). Se muestra
+      // sobrio junto a los insumos: la degradación catálogo→propio no puede ser invisible.
+      if (resolved.isNotEmpty) _regimenSource = resolved.first.source;
       for (final r in resolved) {
         final tag = KuraTag.values.where((t) => t.dbValue == r.category);
         _supplies.add(_SupplyRow(
@@ -561,6 +568,30 @@ class _TreatmentProgramBuilderScreenState
 
           // ---- Insumos por procedimiento ----
           _sectionTitle('Insumos por procedimiento', 'por sesión o mensual'),
+          // §15 etapa 6.1: qué régimen resolvió estos insumos (sobrio, no un error).
+          if (_supplies.isNotEmpty && _regimenSource != null)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Row(
+                children: [
+                  Icon(
+                      _regimenSource == 'kura'
+                          ? Icons.verified_outlined
+                          : Icons.folder_outlined,
+                      size: 14,
+                      color: KuraColors.darkText.withValues(alpha: 0.6)),
+                  const SizedBox(width: 6),
+                  Text(
+                    _regimenSource == 'kura'
+                        ? 'Régimen Kura+'
+                        : 'Protocolo propio del centro',
+                    style: TextStyle(
+                        fontSize: 12,
+                        color: KuraColors.darkText.withValues(alpha: 0.6)),
+                  ),
+                ],
+              ),
+            ),
           if (_supplies.isEmpty && _suggestionError != null)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 12),
