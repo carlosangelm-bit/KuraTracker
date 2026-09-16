@@ -34,6 +34,17 @@ class _ResetPasswordScreenState extends ConsumerState<ResetPasswordScreen> {
   }
 
   Future<void> _submit() async {
+    // CANDADO PROPIO (§prod, condición 2 de Carlos): sin contexto de recuperación CONFIRMADO no se
+    // escribe. Hoy solo se llega aquí por el evento de recuperación, pero esa garantía vive en el
+    // router; este candado NO depende de que el de al lado no falle. La ruta /reset-password es
+    // pública: si alguien llega con OTRA sesión activa (tecleando la URL), updateUser le cambiaría
+    // la contraseña a ESA cuenta sin saberlo. passwordRecoveryProvider es el contexto confirmado.
+    if (!ref.read(passwordRecoveryProvider)) {
+      setState(() => _error =
+          'Este formulario solo funciona desde el enlace de restablecimiento que llega a tu '
+          'correo. Pide uno nuevo desde la pantalla de inicio de sesión.');
+      return;
+    }
     final pass = _passCtrl.text;
     if (pass.length < 8) {
       setState(() => _error = 'La contraseña debe tener al menos 8 caracteres.');

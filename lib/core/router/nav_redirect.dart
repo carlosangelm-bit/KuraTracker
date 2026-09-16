@@ -16,7 +16,18 @@ String? resolveNavRedirect({
   required bool isMaster,
   required bool isCaregiver,
   required bool isAdmin,
+  required bool isPasswordRecovery,
 }) {
+  // §prod (carrera de recuperación): el enlace del correo debe llevar a /reset-password y ganar
+  // sobre cualquier otra regla —incluso una sesión activa de OTRA cuenta—. Si no, alguien con
+  // sesión abierta que abra el enlace termina en la app (o cambia su propia contraseña sin
+  // saberlo). Va de PRIMERO, antes del corte en frío y de los retornos por rol. No en demo.
+  if (isPasswordRecovery &&
+      !isDemoMode &&
+      !matchedLocation.startsWith('/reset-password')) {
+    return '/reset-password';
+  }
+
   // Enlace profundo en frío (sin sesión): guarda el destino pretendido para
   // restaurarlo al resolver la sesión. No se guardan destinos triviales ni de auth.
   if (!loggedIn && !goingToLogin && !goingToDemo) {
