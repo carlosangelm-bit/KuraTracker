@@ -31,7 +31,8 @@ for f in \
   supabase/migrations/0136_protocol_catalog_matrix_schema.sql \
   supabase/migrations/0137_protocol_catalog_admin_only.sql \
   supabase/migrations/0138_org_entitlement_vigente.sql \
-  supabase/migrations/0139_resolve_protocol.sql; do
+  supabase/migrations/0139_resolve_protocol.sql \
+  supabase/migrations/0140_protocol_catalog_identity.sql; do
   psql < "$f" >/dev/null
 done
 
@@ -50,6 +51,12 @@ else
     | psql -c "\copy corpus_json(j) from stdin" >/dev/null
 fi
 
-echo "--- resolve_protocol · conducta (corpus único + catálogo/contexto) ---"
+echo "--- resolve_protocol · conducta (corpus único + catálogo/contexto/identidad) ---"
 psql < supabase/tests/local/resolve_protocol_behavior.sql 2>&1 | grep -E "BEHAVIOR PASS|BEHAVIOR FAIL|ALL PASSED"
+
+# ETAPA 5: se siembra el catálogo real (0141, las 35) y se verifica que un consumidor RESUELVA y
+# DEVUELVA filas. Se carga DESPUÉS de la conducta para que las 35 no contaminen esos casos.
+psql < supabase/migrations/0141_seed_protocol_catalog_kura_35.sql >/dev/null
+echo "--- resolve_protocol · verificación de la siembra (35 → el consumidor resuelve) ---"
+psql < supabase/tests/local/resolve_protocol_seed_verify.sql 2>&1 | grep -E "SEED PASS|SEED FAIL|ALL PASSED"
 echo "SQL TESTS OK"

@@ -7153,9 +7153,10 @@ class DataRepository {
     final out = <ResolvedProtocolProduct>[];
     for (final row in rows) {
       final m = (row as Map).cast<String, dynamic>();
+      // itemId puede ser null: huérfana con nombre del catálogo (§15 etapa 5). NO se salta —la
+      // prosa es lo que ve el clínico; costo/precio solo se enriquecen si hay insumo enlazado.
       final itemId = m['inventory_item_id'] as String?;
-      if (itemId == null) continue;
-      final item = inv[itemId];
+      final item = itemId == null ? null : inv[itemId];
       out.add(ResolvedProtocolProduct(
         category: m['category'] as String,
         inventoryItemId: itemId,
