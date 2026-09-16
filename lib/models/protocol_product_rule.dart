@@ -128,6 +128,27 @@ class ProtocolProductRule {
   final RuleInfection infection;
   final int priority;
 
+  // --- Campos del CATÁLOGO Kura+ (§15). En reglas PROPIAS son null (existen por paridad de
+  // esquema, 0136/0140). La MISMA clase sirve las dos fuentes de la Matriz: catálogo (author) y
+  // tabla propia (módulo sin Kura+). Una pantalla, dos orígenes.
+  final String? contextKind; // etiologia | piel | evolucion | null (= todo)
+  final String? contextValue;
+  final String? scaleLabel; // referencia (prosa; no gobierna nada)
+  final String? triggerLabel;
+  final String? brand;
+  final String? altName;
+  final String? altBrand;
+  final String? notePhrase;
+  final String? shopifyProductId; // IDENTIDAD (par shopify); null = huérfana con nombre
+  final String? shopifyVariantId;
+  final String? etapaClinica; // referencia (para la Matriz)
+  final String? notas;
+
+  /// Tiene identidad de producto atada (par shopify). Si no, es una huérfana con nombre: la
+  /// prosa se ve, pero no aterriza en inventario hasta que un humano la ate (§15 etapa 6.3).
+  bool get hasIdentity =>
+      shopifyProductId != null && shopifyProductId!.isNotEmpty;
+
   const ProtocolProductRule({
     required this.id,
     required this.organizationId,
@@ -144,6 +165,18 @@ class ProtocolProductRule {
     this.zoneGroups = const [],
     this.infection = RuleInfection.any,
     this.priority = 0,
+    this.contextKind,
+    this.contextValue,
+    this.scaleLabel,
+    this.triggerLabel,
+    this.brand,
+    this.altName,
+    this.altBrand,
+    this.notePhrase,
+    this.shopifyProductId,
+    this.shopifyVariantId,
+    this.etapaClinica,
+    this.notas,
   });
 
   // La resolución (match por medida/exudado/zona/infección, especificidad y
@@ -155,7 +188,9 @@ class ProtocolProductRule {
   factory ProtocolProductRule.fromJson(Map<String, dynamic> j) =>
       ProtocolProductRule(
         id: j['id'] as String,
-        organizationId: j['organization_id'] as String,
+        // El catálogo Kura+ es GLOBAL (sin organization_id) → '' para esas filas; las reglas
+        // propias siempre lo traen.
+        organizationId: j['organization_id'] as String? ?? '',
         category: j['category'] as String? ?? '',
         inventoryItemId: j['inventory_item_id'] as String?,
         name: j['name'] as String?,
@@ -173,6 +208,18 @@ class ProtocolProductRule {
             .toList(),
         infection: ruleInfectionFromDb(j['infection'] as String?),
         priority: (j['priority'] as num?)?.toInt() ?? 0,
+        contextKind: j['context_kind'] as String?,
+        contextValue: j['context_value'] as String?,
+        scaleLabel: j['scale_label'] as String?,
+        triggerLabel: j['trigger_label'] as String?,
+        brand: j['brand'] as String?,
+        altName: j['alt_name'] as String?,
+        altBrand: j['alt_brand'] as String?,
+        notePhrase: j['note_phrase'] as String?,
+        shopifyProductId: j['shopify_product_id'] as String?,
+        shopifyVariantId: j['shopify_variant_id'] as String?,
+        etapaClinica: j['etapa_clinica'] as String?,
+        notas: j['notas'] as String?,
       );
 
   Map<String, dynamic> toJson() => {
@@ -191,6 +238,18 @@ class ProtocolProductRule {
         'zone_groups': zoneGroups,
         'infection': infection.dbValue,
         'priority': priority,
+        'context_kind': contextKind,
+        'context_value': contextValue,
+        'scale_label': scaleLabel,
+        'trigger_label': triggerLabel,
+        'brand': brand,
+        'alt_name': altName,
+        'alt_brand': altBrand,
+        'note_phrase': notePhrase,
+        'shopify_product_id': shopifyProductId,
+        'shopify_variant_id': shopifyVariantId,
+        'etapa_clinica': etapaClinica,
+        'notas': notas,
       };
 }
 

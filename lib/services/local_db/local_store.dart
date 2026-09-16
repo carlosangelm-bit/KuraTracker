@@ -214,6 +214,9 @@ class Collections {
   static const treatmentProgramSupplies = 'treatment_program_supplies';
   static const treatmentProgramSessions = 'treatment_program_sessions';
   static const protocolProductRules = 'protocol_product_rules';
+  // Catálogo Kura+ (§15). Global (sin organization_id), RLS = protocol:author. Al hidratar, un
+  // centro sin author recibe 0 filas (RLS filtra); un author recibe la matriz. Lo lee la Matriz.
+  static const protocolCatalogRules = 'protocol_catalog_rules';
 
   /// Todas las colecciones/tablas, en un orden razonable para hidratar la
   /// cache de [SupabaseDataStore] tras el login (catalogos primero, luego
@@ -279,5 +282,6 @@ class Collections {
     treatmentProgramSupplies,
     treatmentProgramSessions,
     protocolProductRules,
+    protocolCatalogRules,
   ];
 }
