@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/config/app_config.dart';
+import 'clear_recovery_url.dart';
 
 /// Inicializacion del cliente Supabase (Auth + Postgrest + Storage).
 ///
@@ -29,14 +30,18 @@ class SupabaseBootstrap {
 
   static Future<void> initialize() async {
     if (_initialized) return;
-    // detectSessionInUri:false → NO se procesa la URL DENTRO de initialize; se hace a mano abajo,
-    // ya con el listener puesto, para no perder el evento passwordRecovery (la carrera).
+    // detectSessionInUri SOLO se apaga en WEB, donde el reemplazo manual (abajo, tras kIsWeb) sí
+    // corre. En móvil (Android/iOS) NADA sustituye al observador de deeplinks del SDK, así que se
+    // deja PRENDIDO: móvil queda EXACTAMENTE como hoy (el SDK maneja el enlace inicial y los que
+    // llegan con la app abierta —que el camino manual ni cubre—). Cero cambio en la plataforma que
+    // no puedo probar e2e. En web se apaga y lo sustituye la llamada manual, para no perder el
+    // evento passwordRecovery (la carrera).
     await Supabase.initialize(
       url: AppConfig.supabaseUrl,
       anonKey: AppConfig.supabaseAnonKey,
       debug: false,
       authOptions:
-          const FlutterAuthClientOptions(detectSessionInUri: false),
+          const FlutterAuthClientOptions(detectSessionInUri: !kIsWeb),
     );
     // Listener ANTES de tocar la URL: así el passwordRecovery de la URL inicial SÍ se captura.
     Supabase.instance.client.auth.onAuthStateChange.listen((data) {
@@ -52,9 +57,14 @@ class SupabaseBootstrap {
     if (kIsWeb && _looksLikeAuthCallback(Uri.base)) {
       try {
         await Supabase.instance.client.auth.getSessionFromUrl(Uri.base);
+        // CORRECCIÓN 2: getSessionFromUrl NO limpia la URL (supabase lo hace aparte, con
+        // clearAuthUrlParameters(), no exportada). Si el ?code= se queda en la barra, recargar
+        // /reset-password reintenta un código YA GASTADO → error de vencido con el usuario a media
+        // captura. Se limpia tras el canje exitoso.
+        clearRecoveryUrl();
       } catch (_) {
         // token vencido/usado, o no era auth: el login lee el error del query string (login-mute)
-        // y ofrece pedir otro. NUNCA se tumba el arranque.
+        // y ofrece pedir otro. NUNCA se tumba el arranque. NO se limpia la URL: el login la lee.
       }
     }
     _initialized = true;
