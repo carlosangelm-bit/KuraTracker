@@ -142,6 +142,9 @@ insert into public.organizations (id, name) values
   on conflict do nothing;
 insert into public.profiles (id, roles, role, organization_id) values
   ('4a000000-0000-0000-0000-000000000000', array['admin']::public.user_role[], 'admin', '44444444-4444-4444-4444-444444444444'),
+  -- Miembro del MISMO centro author pero SIN rol admin (clínico): capacidad del centro sí,
+  -- autoridad del usuario no. Prueba que la autoridad única (6.2) pide rol, no solo derecho.
+  ('4b000000-0000-0000-0000-000000000000', array['clinico']::public.user_role[], 'clinico', '44444444-4444-4444-4444-444444444444'),
   ('5a000000-0000-0000-0000-000000000000', array['admin']::public.user_role[], 'admin', '55555555-5555-5555-5555-555555555555'),
   ('6a000000-0000-0000-0000-000000000000', array['admin']::public.user_role[], 'admin', '66666666-6666-6666-6666-666666666666')
   on conflict do nothing;

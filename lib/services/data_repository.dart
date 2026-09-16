@@ -7028,10 +7028,19 @@ class DataRepository {
 
   // ------------- Reglas producto-por-categoría del protocolo (0076) -------------
 
-  /// ¿Este centro AUTORA el catálogo Kura+? (module:protocol:author vigente). Gatea el modo
-  /// CATÁLOGO de la Matriz; sin esto, la Matriz muestra la tabla PROPIA del centro. §15 etapa 6.2.
-  bool isProtocolCatalogAuthor(String? organizationId) =>
-      canWriteModule(organizationId, 'protocol:author');
+  /// AUTORIDAD (no capacidad) para ver/editar el catálogo Kura+. Espejo Dart EXACTO de la
+  /// autoridad única en SQL, `current_user_can_author_catalog()` (0142): master, o admin del
+  /// centro CON protocol:author vigente. Gatea el modo CATÁLOGO de la Matriz. `canWriteModule`
+  /// solo dice si el CENTRO tiene el derecho (capacidad) — la RLS pide además el ROL; pedir solo
+  /// la capacidad abría el catálogo a un no-admin y le dejaba la tabla vacía (tablero mudo). Debe
+  /// coincidir con la autoridad SQL: si cambia una, cambia la otra.
+  bool canAuthorProtocolCatalog({
+    required String? organizationId,
+    required bool isAdmin,
+    required bool isMaster,
+  }) =>
+      isMaster ||
+      (isAdmin && canWriteModule(organizationId, 'protocol:author'));
 
   /// Catálogo Kura+ (§15). GLOBAL (sin organization_id); la RLS solo deja verlo a protocol:author,
   /// así que para un centro sin autoría llega vacío. Ordenado por (categoría, sort_order), como
