@@ -19,6 +19,7 @@ String coldEntry(String typed,
         isMaster: isMaster,
         isCaregiver: isCaregiver,
         isAdmin: isAdmin,
+        isPasswordRecovery: false,
       ) ??
       typed;
 
@@ -36,6 +37,7 @@ String coldEntry(String typed,
       isMaster: isMaster,
       isCaregiver: isCaregiver,
       isAdmin: isAdmin,
+      isPasswordRecovery: false,
     );
     if (r == null || r == loc) return uri.path;
     loc = r;
@@ -88,9 +90,52 @@ void main() {
         fromParam: '/platform/licencia',
         isMaster: true,
         isCaregiver: false,
+        isPasswordRecovery: false,
         isAdmin: false,
       ),
       '/platform/licencia',
+    );
+  });
+
+  // §prod (carrera de recuperación): el enlace del correo debe llevar a /reset-password AUNQUE
+  // haya una sesión activa —el caso que originó el defecto: Carlos con su cuenta abierta—. La
+  // recuperación gana sobre la sesión y sobre el rol; nunca cae en la app.
+  test('recuperación con sesión previa activa (otra cuenta) → /reset-password', () {
+    for (final loc in ['/', '/platform', '/patients/123', '/login']) {
+      expect(
+        resolveNavRedirect(
+          loggedIn: true, // sesión activa de otra cuenta
+          isDemoMode: false,
+          goingToLogin: loc == '/login',
+          goingToDemo: false,
+          matchedLocation: loc,
+          uriString: loc,
+          fromParam: null,
+          isMaster: true, // aunque el rol mandaría a /platform
+          isCaregiver: false,
+          isAdmin: false,
+          isPasswordRecovery: true,
+        ),
+        '/reset-password',
+        reason: 'la recuperación debe ganar sobre la sesión/rol en $loc',
+      );
+    }
+    // Ya en /reset-password: no se redirige a sí mismo (no hay bucle).
+    expect(
+      resolveNavRedirect(
+        loggedIn: true,
+        isDemoMode: false,
+        goingToLogin: false,
+        goingToDemo: false,
+        matchedLocation: '/reset-password',
+        uriString: '/reset-password',
+        fromParam: null,
+        isMaster: true,
+        isCaregiver: false,
+        isAdmin: false,
+        isPasswordRecovery: true,
+      ),
+      isNot('/reset-password'),
     );
   });
 }
