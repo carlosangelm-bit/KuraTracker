@@ -43,12 +43,6 @@ class SupabaseBootstrap {
       authOptions:
           const FlutterAuthClientOptions(detectSessionInUri: !kIsWeb),
     );
-    // Listener ANTES de tocar la URL: así el passwordRecovery de la URL inicial SÍ se captura.
-    Supabase.instance.client.auth.onAuthStateChange.listen((data) {
-      if (data.event == AuthChangeEvent.passwordRecovery) {
-        passwordRecoveryFromUrl = true;
-      }
-    });
     // Procesa la URL inicial a mano (lo que detectSessionInUri hacía dentro de initialize).
     // CONDICIÓN 1 (Carlos): ENVUELTO. Una URL normal (sin credencial de auth) hace que
     // getSessionFromUrl LANCE; si falla —URL no-auth, o token vencido/usado— la app arranca IGUAL
@@ -56,7 +50,16 @@ class SupabaseBootstrap {
     // PANTALLA EN BLANCO PARA TODOS — el único modo de falla peor que el bug que arreglamos.
     if (kIsWeb && _looksLikeAuthCallback(Uri.base)) {
       try {
-        await Supabase.instance.client.auth.getSessionFromUrl(Uri.base);
+        final res =
+            await Supabase.instance.client.auth.getSessionFromUrl(Uri.base);
+        // DETERMINISTA (no por microtarea): la recuperación se lee del RETORNO, no del evento. En
+        // PKCE, getSessionFromUrl→exchangeCodeForSession devuelve redirectType = el .name del mismo
+        // AuthChangeEvent que gotrue (2.26, gotrue_client.dart:417) compara para EMITIR
+        // passwordRecovery. Se usa la MISMA constante del SDK, no una literal adivinada, y la URL
+        // inicial no depende de que el evento llegue a tiempo (esa era la última carrera). El
+        // listener del router queda para recuperaciones POSTERIORES (deeplink con la app abierta).
+        passwordRecoveryFromUrl =
+            res.redirectType == AuthChangeEvent.passwordRecovery.name;
         // CORRECCIÓN 2: getSessionFromUrl NO limpia la URL (supabase lo hace aparte, con
         // clearAuthUrlParameters(), no exportada). Si el ?code= se queda en la barra, recargar
         // /reset-password reintenta un código YA GASTADO → error de vencido con el usuario a media
