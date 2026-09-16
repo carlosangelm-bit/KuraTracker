@@ -87,6 +87,34 @@ void main() {
     expect(find.text('Este centro resuelve el protocolo con:'), findsNothing);
   });
 
+  testWidgets('la tabla muestra contexto LEGIBLE + nota + encabezados de columna', (t) async {
+    final store = await LocalStore.instance();
+    final repo = await DataRepository.instance();
+    const org = 'matrix-table';
+    await _seedEntitlement(store, org, 'admin');
+    await _seedEntitlement(store, org, 'protocol:author');
+    await store.upsert(Collections.protocolCatalogRules, {
+      'id': 'cat-tbl-1',
+      'category': 'aposito',
+      'context_kind': 'etiologia',
+      'context_value': 'pie_diabetico',
+      'name': 'Producto X',
+      'brand': 'Marca Y',
+      'note_phrase': 'Aplicar cada 48 h',
+      'quantity_mode': 'fixed',
+      'quantity_value': 1,
+      'sort_order': 0,
+    });
+    await _pump(t, repo, _user(AppRole.admin, org), org);
+    // Etiqueta legible (en el chip de filtro y en la fila), NO el valor crudo con guion bajo (fix #1).
+    expect(find.text('Pie diabético'), findsWidgets);
+    expect(find.text('pie_diabetico'), findsNothing);
+    // note_phrase visible + su encabezado de columna (fix #2, antes no estaban).
+    expect(find.text('Aplicar cada 48 h'), findsOneWidget);
+    expect(find.text('FRASE PARA LA NOTA'), findsOneWidget);
+    expect(find.text('CONTEXTO'), findsOneWidget);
+  });
+
   testWidgets('sin permiso (no admin) → se DICE, no se deja en blanco', (t) async {
     final store = await LocalStore.instance();
     final repo = await DataRepository.instance();
