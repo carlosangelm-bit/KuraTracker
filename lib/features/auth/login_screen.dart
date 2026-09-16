@@ -12,6 +12,34 @@ import '../../models/app_user.dart';
 
 enum _LoginMode { personal, cuidador }
 
+/// Traduce el error que Supabase manda cuando el enlace de restablecimiento no sirve, a un
+/// mensaje humano (o null si no hay error). Función PURA para poder probarla contra la URL real
+/// de producción. Los params (`error`, `error_code`, `error_description`) llegan como query
+/// string: a veces arriba en /login, a veces anidados dentro de `?from=` porque el redirect del
+/// guard capturó la location original (/login?from=/?error=...). Se miran los DOS lugares.
+/// NO diagnostica la causa de fondo (pedido dos veces / escáner de correo / expiración real);
+/// solo DICE que el enlace no sirve para que la pantalla no quede muda.
+String? authLinkErrorMessage(Map<String, String> query) {
+  String? code = query['error_code'];
+  String? err = query['error'];
+  String? desc = query['error_description'];
+  final from = query['from'];
+  if (from != null && from.isNotEmpty) {
+    final nested = Uri.tryParse(from);
+    if (nested != null) {
+      code ??= nested.queryParameters['error_code'];
+      err ??= nested.queryParameters['error'];
+      desc ??= nested.queryParameters['error_description'];
+    }
+  }
+  if (code == null && err == null && desc == null) return null;
+  if (code == 'otp_expired' || err == 'access_denied') {
+    return 'El enlace de restablecimiento ya no es válido: caducó o ya se usó. '
+        'Pide uno nuevo y ábrelo apenas llegue a tu correo.';
+  }
+  return desc ?? 'El enlace de acceso no es válido. Pide uno nuevo.';
+}
+
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
 
@@ -126,6 +154,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   Widget build(BuildContext context) {
     final session = ref.watch(sessionProvider);
     final repoAsync = ref.watch(dataRepositoryProvider);
+    final linkError =
+        authLinkErrorMessage(GoRouterState.of(context).uri.queryParameters);
 
     return Scaffold(
       body: Center(
@@ -166,6 +196,47 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       ),
                 ),
                 const SizedBox(height: 32),
+                // §prod: el enlace de restablecimiento no sirvió (Supabase lo dijo por query
+                // string). Se DICE, con la salida a la mano —pedir otro—, en vez de dejar el login
+                // mudo como si el producto estuviera roto.
+                if (linkError != null) ...[
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: KuraColors.warning.withValues(alpha: 0.10),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                          color: KuraColors.warning.withValues(alpha: 0.4)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Icon(Icons.link_off,
+                                size: 18, color: KuraColors.warning),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(linkError,
+                                  style: const TextStyle(fontSize: 13)),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: FilledButton.tonalIcon(
+                            icon: const Icon(Icons.mail_outline, size: 18),
+                            label: const Text('Pedir otro enlace'),
+                            onPressed: _forgotPassword,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                ],
                 Card(
                   child: Padding(
                     padding: const EdgeInsets.all(24),
