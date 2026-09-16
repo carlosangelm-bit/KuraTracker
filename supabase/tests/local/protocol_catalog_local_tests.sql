@@ -235,4 +235,69 @@ begin
   raise notice 'TEST4 PASS: esquemas en paridad columna a columna (salvo organization_id)';
 end $$;
 
+-- =============================================================================
+-- TEST 10 — GUARDA ENUMERADA de la AUTORIDAD del catálogo (6.2). "¿Quién puede ver/editar el
+-- catálogo?" debe tener UNA respuesta: current_user_can_author_catalog(). Derivada del catálogo
+-- de Postgres, no de una lista a mano: (a) toda policy sobre protocol_catalog_rules deriva de la
+-- autoridad; (b) ninguna función que toque protocol_catalog_rules chequea rol/derecho de autoría
+-- (is_admin | is_master | current_org_has_protocol_author) FUERA de la autoridad. Así una CUARTA
+-- puerta no nace en silencio (el tablero mudo que originó esto).
+-- =============================================================================
+do $$
+declare rogue text;
+begin
+  -- (a) policies del catálogo que NO derivan de la autoridad.
+  select string_agg(polname, ', ') into rogue
+  from pg_policy p join pg_class c on c.oid = p.polrelid
+  where c.relname = 'protocol_catalog_rules'
+    and ( coalesce(pg_get_expr(p.polqual, p.polrelid), '')       not like '%current_user_can_author_catalog%'
+       or coalesce(pg_get_expr(p.polwithcheck, p.polrelid), '')  not like '%current_user_can_author_catalog%' );
+  if rogue is not null then
+    raise exception 'GUARDA 6.2 FAIL: policy del catálogo no deriva de la autoridad: %', rogue;
+  end if;
+
+  -- (b) funciones que tocan el catálogo y chequean rol/autoría fuera de la autoridad única.
+  select string_agg(pr.proname, ', ') into rogue
+  from pg_proc pr join pg_namespace n on n.oid = pr.pronamespace
+  where n.nspname = 'public'
+    and pr.prosrc ~ 'protocol_catalog_rules'
+    and (pr.prosrc ~ 'is_admin' or pr.prosrc ~ 'is_master' or pr.prosrc ~ 'current_org_has_protocol_author')
+    and pr.prosrc !~ 'current_user_can_author_catalog'
+    and pr.proname not in (
+      'current_user_can_author_catalog'   -- la definición ÚNICA
+    );
+  if rogue is not null then
+    raise exception 'GUARDA 6.2 FAIL: función chequea autoría del catálogo fuera de current_user_can_author_catalog: %', rogue;
+  end if;
+  raise notice 'TEST10 PASS: la autoridad del catálogo vive solo en current_user_can_author_catalog';
+end $$;
+
+-- =============================================================================
+-- TEST 11 — el tablero mudo, cerrado. Un miembro del centro author SIN rol admin (4b) ya NO
+-- recibe el reporte de huérfanas: concuerda con la RLS (que también le deja la tabla vacía). Un
+-- admin del mismo centro (4a) sí. Las tres puertas concuerdan; sin rol → dicho por igual (0/0),
+-- no vacío-y-lleno.
+-- =============================================================================
+begin;
+  insert into public.protocol_catalog_rules (category) values ('aposito'); -- huérfana (sin identidad)
+  -- (a) no-admin del centro author: 0 huérfanas (antes: las recibía → tablero mudo).
+  set local test.uid = '4b000000-0000-0000-0000-000000000000';
+  set local role authenticated;
+  do $$ declare n int; begin
+    select count(*) into n from public.resolve_protocol_orphans('44444444-4444-4444-4444-444444444444', null);
+    if n <> 0 then raise exception 'TEST11a FAIL: no-admin del centro author vio % huérfana(s)', n; end if;
+    raise notice 'TEST11a PASS: no-admin author → 0 huérfanas (concuerda con la RLS)';
+  end $$;
+  reset role;
+  -- (b) admin del mismo centro: sí ve la huérfana.
+  set local test.uid = '4a000000-0000-0000-0000-000000000000';
+  set local role authenticated;
+  do $$ declare n int; begin
+    select count(*) into n from public.resolve_protocol_orphans('44444444-4444-4444-4444-444444444444', null);
+    if n < 1 then raise exception 'TEST11b FAIL: admin author no vio la huérfana (vio %)', n; end if;
+    raise notice 'TEST11b PASS: admin author sí ve las huérfanas';
+  end $$;
+  reset role;
+rollback;
+
 select '=== ALL TESTS PASSED ===' as result;

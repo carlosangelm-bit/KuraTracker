@@ -32,7 +32,8 @@ for f in \
   supabase/migrations/0137_protocol_catalog_admin_only.sql \
   supabase/migrations/0138_org_entitlement_vigente.sql \
   supabase/migrations/0139_resolve_protocol.sql \
-  supabase/migrations/0140_protocol_catalog_identity.sql; do
+  supabase/migrations/0140_protocol_catalog_identity.sql \
+  supabase/migrations/0142_protocol_catalog_authority.sql; do
   psql < "$f" >/dev/null
 done
 

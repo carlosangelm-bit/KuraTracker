@@ -82,10 +82,28 @@ void main() {
     expect(byId['cat-2']!.hasIdentity, isFalse); // huérfana con nombre
   });
 
-  test('isProtocolCatalogAuthor gatea por module:protocol:author vigente', () async {
+  test('canAuthorProtocolCatalog = AUTORIDAD (rol + derecho), no solo capacidad', () async {
     final r = await repo();
-    expect(r.isProtocolCatalogAuthor(_authorOrg), isTrue);
-    expect(r.isProtocolCatalogAuthor(_plainOrg), isFalse);
-    expect(r.isProtocolCatalogAuthor(null), isFalse);
+    // admin del centro author → autoría.
+    expect(
+        r.canAuthorProtocolCatalog(
+            organizationId: _authorOrg, isAdmin: true, isMaster: false),
+        isTrue);
+    // MISMO centro (tiene el derecho) pero SIN rol admin → NO autoría (el tablero mudo cerrado).
+    expect(
+        r.canAuthorProtocolCatalog(
+            organizationId: _authorOrg, isAdmin: false, isMaster: false),
+        isFalse,
+        reason: 'capacidad del centro sin rol no basta — debe coincidir con la RLS');
+    // admin pero centro SIN el derecho → NO autoría.
+    expect(
+        r.canAuthorProtocolCatalog(
+            organizationId: _plainOrg, isAdmin: true, isMaster: false),
+        isFalse);
+    // master → autoría siempre.
+    expect(
+        r.canAuthorProtocolCatalog(
+            organizationId: _plainOrg, isAdmin: false, isMaster: true),
+        isTrue);
   });
 }
