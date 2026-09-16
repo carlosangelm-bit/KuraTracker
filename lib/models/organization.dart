@@ -19,6 +19,9 @@ class Organization {
   // Insumos (0047: mapeo/inventario/costeo/reabasto) y Protocolo Kura+ (0049).
   final bool premiumInsumos;
   final bool premiumProtocoloKura;
+  // §15 desacople: interruptor de master. Si el centro AUTORA el catálogo, false = resuelve con sus
+  // reglas propias, true = resuelve contra el catálogo Kura+. No afecta a consumidores (seat).
+  final bool resolvesFromCatalog;
   final bool shopifyMirror;
   // Alcance del inventario (0053): 'site' (por sitio) | 'center' (por centro).
   final String inventoryScope;
@@ -47,6 +50,7 @@ class Organization {
     this.centerType = CenterType.clinicaHeridas,
     this.premiumInsumos = false,
     this.premiumProtocoloKura = false,
+    this.resolvesFromCatalog = false,
     this.shopifyMirror = false,
     this.inventoryScope = 'site',
     this.mpPointDeviceId,
@@ -67,6 +71,8 @@ class Organization {
         centerType: CenterTypeX.fromDb(json['center_type'] as String?),
         premiumInsumos: json['premium_insumos'] as bool? ?? false,
         premiumProtocoloKura: json['premium_protocolo_kura'] as bool? ?? false,
+        resolvesFromCatalog:
+            json['protocol_resolves_from_catalog'] as bool? ?? false,
         shopifyMirror: json['shopify_mirror'] as bool? ?? false,
         inventoryScope: (json['inventory_scope'] as String?) ?? 'site',
         mpPointDeviceId: json['mp_point_device_id'] as String?,
@@ -91,6 +97,7 @@ class Organization {
         'center_type': centerType.dbValue,
         'premium_insumos': premiumInsumos,
         'premium_protocolo_kura': premiumProtocoloKura,
+        'protocol_resolves_from_catalog': resolvesFromCatalog,
         'shopify_mirror': shopifyMirror,
         'inventory_scope': inventoryScope,
         'mp_point_device_id': mpPointDeviceId,
