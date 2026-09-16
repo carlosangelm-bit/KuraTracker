@@ -35,6 +35,31 @@ class _ProtocolMatrixScreenState extends ConsumerState<ProtocolMatrixScreen> {
   // hidratación de la org llega después; la RPC ya actualizó la base que leen las clínicas).
   bool? _switchOverride;
   bool _flipping = false;
+  // Filtros (§presentación): con 35 reglas, 17 solo en apósito, recorrer a scroll no se sostiene
+  // en vivo. Se filtra por PASO (categoría) y por CONTEXTO.
+  String? _catFilter; // KuraTag.dbValue | null = todos
+  String? _ctxFilter; // context_value | null = todos
+
+  // Etiquetas legibles de contexto. Los valores crudos vienen del catálogo (Excel); el texto es el
+  // del DOMINIO (mismas palabras de las pantallas clínicas), no inventado. Un valor sin mapa cae a
+  // su forma cruda (visible, para cazarlo), no a un guion bajo silencioso.
+  static const _ctxKindLabel = {
+    'etiologia': 'Etiología',
+    'piel': 'Piel',
+    'evolucion': 'Evolución',
+  };
+  static const _ctxValueLabel = {
+    'lpp': 'Lesión por presión (LPP)',
+    'pie_diabetico': 'Pie diabético',
+    'quemaduras': 'Quemaduras',
+    'quirurgica': 'Quirúrgica',
+    'insuf_venosa': 'Insuficiencia venosa',
+    'desgarro': 'Desgarro cutáneo',
+    'dai': 'DAI (dermatitis asociada a incontinencia)',
+    'marsi': 'MARSI (lesión por adhesivos)',
+    'mdrpi': 'MDRPI (lesión por dispositivo médico)',
+    'seguimiento': 'Seguimiento',
+  };
 
   DataRepository get repo => widget.repo;
   String? get org => widget.organizationId;
@@ -78,37 +103,148 @@ class _ProtocolMatrixScreenState extends ConsumerState<ProtocolMatrixScreen> {
 
   // ------------------------------------------------------------------ AUTORA
   Widget _catalogView(bool isMaster) {
-    final rules = repo.listProtocolCatalogRules();
+    final all = repo.listProtocolCatalogRules();
+    final atadas = all.where((r) => r.hasIdentity).length;
+
+    // Filtrado. El contexto disponible depende del paso elegido (para no ofrecer valores vacíos).
+    final catPool = all
+        .where((r) => _catFilter == null || r.category == _catFilter)
+        .toList();
+    final shown = catPool
+        .where((r) => _ctxFilter == null || r.contextValue == _ctxFilter)
+        .toList();
+    // Agrupado por paso (categoría) para que se lea como matriz, no como lista corrida.
     final byCat = <String, List<ProtocolProductRule>>{};
-    for (final r in rules) {
+    for (final r in shown) {
       byCat.putIfAbsent(r.category, () => []).add(r);
     }
     final cats = byCat.keys.toList()..sort();
-    final atadas = rules.where((r) => r.hasIdentity).length;
 
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
         _switchHeader(isMaster),
         const SizedBox(height: 12),
-        Text('Catálogo Kura+ · $atadas de ${rules.length} reglas con producto atado',
+        Text('Catálogo Kura+ · $atadas de ${all.length} reglas con producto atado',
             style: TextStyle(
-                fontSize: 12,
-                color: BrandTokens.of(context).textSecondary)),
-        const SizedBox(height: 8),
-        if (rules.isEmpty)
+                fontSize: 12, color: BrandTokens.of(context).textSecondary)),
+        const SizedBox(height: 12),
+        _filters(all, catPool),
+        const SizedBox(height: 12),
+        if (shown.isEmpty)
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 24),
-            child: Text('El catálogo aún no tiene reglas.'),
+            child: Text('No hay reglas para ese filtro.'),
+          )
+        else
+          // Tabla: la vista se recorre por COLUMNA. Scroll horizontal si no cabe (nunca desborda
+          // el body). El contexto manda —es lo que identifica una regla dentro de un paso—; el
+          // producto es la respuesta, va después.
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            // Ancho FIJO para que los Expanded (flex de columna) tengan un ancho acotado; se hace
+            // más ancho que la pantalla en móvil → scroll horizontal, sin desbordar el body.
+            child: SizedBox(
+              width: (MediaQuery.of(context).size.width - 32)
+                  .clamp(880.0, double.infinity),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _headerRow(),
+                  const Divider(height: 1),
+                  for (final c in cats) ...[
+                    _categoryBand(c, byCat[c]!.length),
+                    for (final r in byCat[c]!) _dataRow(r),
+                  ],
+                ],
+              ),
+            ),
           ),
-        for (final c in cats) ...[
-          _categoryTitle(c),
-          for (final r in byCat[c]!) _ruleTile(r),
-          const SizedBox(height: 8),
+      ],
+    );
+  }
+
+  // -------- filtros por paso y por contexto --------
+  Widget _filters(List<ProtocolProductRule> all, List<ProtocolProductRule> catPool) {
+    final cats = (all.map((r) => r.category).toSet().toList())..sort();
+    final ctxs = (catPool
+        .map((r) => r.contextValue)
+        .whereType<String>()
+        .toSet()
+        .toList())
+      ..sort();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Wrap(spacing: 6, runSpacing: 4, children: [
+          _chip('Todos los pasos', _catFilter == null,
+              () => setState(() => _catFilter = null)),
+          for (final c in cats)
+            _chip(_catLabel(c), _catFilter == c, () {
+              setState(() {
+                _catFilter = c;
+                _ctxFilter = null; // el contexto depende del paso
+              });
+            }),
+        ]),
+        if (ctxs.isNotEmpty) ...[
+          const SizedBox(height: 6),
+          Wrap(spacing: 6, runSpacing: 4, children: [
+            _chip('Todo contexto', _ctxFilter == null,
+                () => setState(() => _ctxFilter = null)),
+            for (final v in ctxs)
+              _chip(_ctxValueLabel[v] ?? v, _ctxFilter == v,
+                  () => setState(() => _ctxFilter = v)),
+          ]),
         ],
       ],
     );
   }
+
+  Widget _chip(String label, bool selected, VoidCallback onTap) => ChoiceChip(
+        label: Text(label, style: const TextStyle(fontSize: 12)),
+        selected: selected,
+        onSelected: (_) => onTap(),
+      );
+
+  String _catLabel(String category) {
+    final tag = KuraTag.values.where((t) => t.dbValue == category);
+    return tag.isEmpty ? category : tag.first.label;
+  }
+
+  // -------- tabla: encabezado, banda de paso, fila de datos --------
+  // Pesos de columna, compartidos por encabezado y filas para que alineen.
+  static const _wCtx = 3, _wScale = 3, _wNote = 3, _wProd = 3, _wQty = 1, _wId = 3;
+
+  Widget _cell(Widget child, int flex) =>
+      Expanded(flex: flex, child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+          child: child));
+
+  Widget _hCell(String t, int flex) => _cell(
+      Text(t,
+          style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w800,
+              color: BrandTokens.of(context).textSecondary)),
+      flex);
+
+  Widget _headerRow() => Row(children: [
+        _hCell('CONTEXTO', _wCtx),
+        _hCell('ESCALA · DISPARADOR', _wScale),
+        _hCell('FRASE PARA LA NOTA', _wNote),
+        _hCell('PRODUCTO · MARCA', _wProd),
+        _hCell('CANT.', _wQty),
+        _hCell('IDENTIDAD', _wId),
+      ]);
+
+  Widget _categoryBand(String category, int n) => Container(
+        width: double.infinity,
+        color: BrandTokens.of(context).chipBg,
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+        child: Text('${_catLabel(category)}  ·  $n',
+            style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13)),
+      );
 
   Widget _switchHeader(bool isMaster) {
     final catalog = _resolvesFromCatalog;
@@ -190,59 +326,86 @@ class _ProtocolMatrixScreenState extends ConsumerState<ProtocolMatrixScreen> {
     }
   }
 
-  Widget _categoryTitle(String category) {
-    final tag = KuraTag.values.where((t) => t.dbValue == category);
-    return Padding(
-      padding: const EdgeInsets.only(top: 8, bottom: 4),
-      child: Text(tag.isEmpty ? category : tag.first.label,
-          style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
-    );
+  String _orDash(String s) => s.isEmpty ? '—' : s;
+
+  String _qty(ProtocolProductRule r) {
+    final v = r.quantityValue;
+    final n = v == v.roundToDouble() ? v.toInt().toString() : v.toString();
+    return switch (r.quantityMode) {
+      QuantityMode.fixed => n,
+      QuantityMode.perArea => '$n ×cm²',
+      QuantityMode.perVolume => '$n ×cm³',
+    };
   }
 
-  Widget _ruleTile(ProtocolProductRule r) {
-    final ctx = [r.contextValue, r.scaleLabel, r.triggerLabel]
-        .whereType<String>()
-        .where((s) => s.isNotEmpty)
-        .join(' · ');
-    return Card(
-      child: ListTile(
-        title: Text(r.name ?? '(sin nombre)'),
-        subtitle: Column(
+  Widget _dataRow(ProtocolProductRule r) {
+    final t = BrandTokens.of(context);
+    return DefaultTextStyle.merge(
+      style: const TextStyle(fontSize: 12),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+            border: Border(bottom: BorderSide(color: t.border, width: 0.5))),
+        child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if (r.brand != null && r.brand!.isNotEmpty)
-              Text(r.brand!, style: const TextStyle(fontSize: 12)),
-            if (ctx.isNotEmpty)
-              Text(ctx,
-                  style: TextStyle(
-                      fontSize: 11,
-                      color: BrandTokens.of(context).textSecondary)),
-            const SizedBox(height: 4),
-            r.hasIdentity
-                ? Row(children: [
-                    Icon(Icons.link, size: 14, color: BrandTokens.of(context).brandPrimary),
-                    const SizedBox(width: 4),
-                    Text('Producto atado',
-                        style: TextStyle(
-                            fontSize: 12, color: BrandTokens.of(context).brandPrimary)),
-                  ])
-                : Row(children: [
-                    Icon(Icons.link_off,
-                        size: 14, color: BrandTokens.of(context).statusWarning),
-                    const SizedBox(width: 4),
-                    Text('Sin producto de la tienda asignado',
-                        style: TextStyle(
-                            fontSize: 12, color: BrandTokens.of(context).statusWarning)),
-                  ]),
+            // CONTEXTO manda: el VALOR en negrita (lo que distingue la regla dentro del paso), el
+            // tipo pequeño encima. Ya no es prosa gris escondida.
+            _cell(
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(_ctxKindLabel[r.contextKind] ?? r.contextKind ?? '—',
+                      style: TextStyle(fontSize: 10, color: t.textSecondary)),
+                  Text(_ctxValueLabel[r.contextValue] ?? r.contextValue ?? '—',
+                      style: const TextStyle(fontWeight: FontWeight.w700)),
+                ]),
+                _wCtx),
+            _cell(
+                Text(_orDash([r.scaleLabel, r.triggerLabel]
+                    .whereType<String>()
+                    .where((s) => s.isNotEmpty)
+                    .join(' · '))),
+                _wScale),
+            _cell(Text(_orDash(r.notePhrase ?? '')), _wNote),
+            _cell(
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(r.name ?? '—'),
+                  if (r.brand != null && r.brand!.isNotEmpty)
+                    Text(r.brand!,
+                        style: TextStyle(fontSize: 11, color: t.textSecondary)),
+                ]),
+                _wProd),
+            _cell(Text(_qty(r)), _wQty),
+            _cell(_identityCell(r, t), _wId),
           ],
-        ),
-        trailing: TextButton(
-          onPressed: () => _atar(r),
-          child: Text(r.hasIdentity ? 'Cambiar' : 'Atar'),
         ),
       ),
     );
   }
+
+  Widget _identityCell(ProtocolProductRule r, BrandTokens t) => Row(
+        children: [
+          Expanded(
+            child: r.hasIdentity
+                ? Row(children: [
+                    Icon(Icons.link, size: 14, color: t.brandPrimary),
+                    const SizedBox(width: 4),
+                    Flexible(
+                        child: Text('Producto atado',
+                            style: TextStyle(color: t.brandPrimary))),
+                  ])
+                : Row(children: [
+                    Icon(Icons.link_off, size: 14, color: t.statusWarning),
+                    const SizedBox(width: 4),
+                    Flexible(
+                        child: Text('Sin producto asignado',
+                            style: TextStyle(color: t.statusWarning))),
+                  ]),
+          ),
+          TextButton(
+            onPressed: () => _atar(r),
+            child: Text(r.hasIdentity ? 'Cambiar' : 'Atar'),
+          ),
+        ],
+      );
 
   // ------------------------------------------------------------------ ATADO
   Future<void> _atar(ProtocolProductRule rule) async {
