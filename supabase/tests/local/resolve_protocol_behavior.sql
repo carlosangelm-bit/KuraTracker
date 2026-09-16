@@ -111,10 +111,12 @@ end $$;
 -- A) AUTOR (protocol:author). CONTEXTO + PROSA. Reglas sin identidad → item null, pero la PROSA
 --    (name) es lo que ve el clínico, y chk compara category|name|qty|source. category = aposito.
 -- §desacople: el autor edita el catálogo, pero RESUELVE con el catálogo solo si master prendió el
--- interruptor. Aquí lo prendemos (por INSERT, que no dispara el candado de master) para probar el
--- camino de catálogo. El caso 'autor con interruptor APAGADO → reglas propias' va más abajo.
+-- interruptor. Lo prendemos con sesión de MASTER (el candado de 0145 cubre INSERT+UPDATE, así que
+-- un true sin master se rechaza). El caso 'autor con interruptor APAGADO → reglas propias' va abajo.
+select set_config('test.uid', '30000000-0000-0000-0000-000000000000', false);  -- master
 insert into public.organizations (id, name, protocol_resolves_from_catalog) values
   ('b0000000-0000-0000-0000-000000000002', 'Behavior author', true) on conflict do nothing;
+select set_config('test.uid', '', false);
 insert into public.org_entitlements (organization_id, kind, key, status, source) values
   ('b0000000-0000-0000-0000-000000000002', 'module', 'protocol:author', 'active', 'master') on conflict do nothing;
 -- I1 solo aplica con etiología=pie_diabetico; I2 con context_value NULL = cualquier valor de piel.
@@ -186,14 +188,16 @@ begin
   raise notice 'BEHAVIOR PASS [huerfana-item-null]';
 end $$;
 
--- D) DESACOPLE (§15): un centro AUTOR con el interruptor APAGADO (default) resuelve con sus REGLAS
---    PROPIAS, no con el catálogo —aunque PUEDA editarlo—. Es el caso que protege a Kura+ al aterrizar
---    el bloque: sigue sugiriendo lo suyo (atado a inventario) hasta que master lo mande al catálogo.
---    category = relleno_cavidad (aislada). Fuente 'propio', no 'kura'.
+-- D) EL CASO KURA+ (§15 jerarquía): un centro AUTOR con el interruptor APAGADO Y CON seat:protocolo
+--    vigente (cupo>=1) resuelve con sus REGLAS PROPIAS, no con el catálogo. Ser autor MANDA sobre
+--    tener asiento: el asiento no le puede cambiar la fuente saltándose el interruptor. Es
+--    exactamente Kura+ (tiene asientos para su personal). category = relleno_cavidad (aislada).
 insert into public.organizations (id, name) values
   ('b0000000-0000-0000-0000-000000000006', 'Behavior author OFF') on conflict do nothing; -- switch = false (default)
-insert into public.org_entitlements (organization_id, kind, key, status, source) values
-  ('b0000000-0000-0000-0000-000000000006', 'module', 'protocol:author', 'active', 'master') on conflict do nothing;
+insert into public.org_entitlements (organization_id, kind, key, quantity, status, source) values
+  ('b0000000-0000-0000-0000-000000000006', 'module', 'protocol:author', null, 'active', 'master'),
+  ('b0000000-0000-0000-0000-000000000006', 'seat',   'protocolo',       12,   'active', 'master')
+  on conflict do nothing;
 insert into public.inventory_items (id, organization_id, site_id, name) values
   ('a0000000-0000-0000-0000-0000000000d6','b0000000-0000-0000-0000-000000000006',null,'Propio-D6') on conflict do nothing;
 insert into public.protocol_product_rules
@@ -205,7 +209,9 @@ values
 do $$
 declare a uuid := 'b0000000-0000-0000-0000-000000000006';
 begin
-  perform pg_temp.chk('autor-interruptor-apagado', 'relleno_cavidad|Propio-D6|1.000|propio',
+  -- autor + seat vigente + interruptor APAGADO → reglas PROPIAS (no catálogo). Con la disyunción
+  -- vieja, el asiento habría forzado el catálogo (vacío para relleno) y esto se pondría rojo.
+  perform pg_temp.chk('kura+-autor-con-asiento-apagado', 'relleno_cavidad|Propio-D6|1.000|propio',
                       a, array['relleno_cavidad'], null,null,null,null,null,null, null,null);
 end $$;
 

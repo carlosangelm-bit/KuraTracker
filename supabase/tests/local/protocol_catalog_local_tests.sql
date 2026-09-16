@@ -369,4 +369,24 @@ begin;
   end $$;
 rollback;
 
+-- =============================================================================
+-- TEST 14 — el candado del interruptor cubre INSERT (0145), no solo UPDATE. Un no-master no puede
+-- CREAR un centro que ya nazca resolviendo del catálogo (esquivando el interruptor). La creación
+-- normal de centros nace en false y pasa; esto rechaza el true sin master.
+-- =============================================================================
+begin;
+  set local test.uid = '4a000000-0000-0000-0000-000000000000';  -- admin, NO master
+  do $$ begin
+    begin
+      insert into public.organizations (id, name, protocol_resolves_from_catalog)
+        values ('bb000000-0000-0000-0000-000000000014', 'intento no-master', true);
+      raise exception 'TEST14 FAIL: un no-master creó un centro con el interruptor en true';
+    exception when others then
+      if sqlerrm like '%master%'
+        then raise notice 'TEST14 PASS: no-master NO puede crear con el interruptor en true';
+        else raise; end if;
+    end;
+  end $$;
+rollback;
+
 select '=== ALL TESTS PASSED ===' as result;
