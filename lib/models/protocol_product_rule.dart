@@ -146,58 +146,11 @@ class ProtocolProductRule {
     this.priority = 0,
   });
 
-  /// La regla aplica si TODAS sus condiciones se cumplen. Una condición con
-  /// valor no provisto (null) hace que la regla NO aplique (fail-safe: no se
-  /// sugiere un producto condicionado si falta el dato).
-  bool appliesTo({
-    double? areaCm2,
-    double? volumeCm3,
-    String? exudateLevel,
-    String? zoneGroup,
-    bool? infectionSuspected,
-  }) {
-    // Medida (área/volumen)
-    if (dimension != RuleDimension.none) {
-      final v = dimension == RuleDimension.area ? areaCm2 : volumeCm3;
-      if (v == null) return false;
-      if (minValue != null && v < minValue!) return false;
-      if (maxValue != null && v >= maxValue!) return false; // [min, max)
-    }
-    // Exudado
-    if (exudateLevels.isNotEmpty) {
-      if (exudateLevel == null || !exudateLevels.contains(exudateLevel)) {
-        return false;
-      }
-    }
-    // Zona anatómica
-    if (zoneGroups.isNotEmpty) {
-      if (zoneGroup == null || !zoneGroups.contains(zoneGroup)) return false;
-    }
-    // Infección / riesgo
-    if (infection != RuleInfection.any) {
-      if (infectionSuspected == null) return false;
-      if (infection == RuleInfection.yes && !infectionSuspected) return false;
-      if (infection == RuleInfection.no && infectionSuspected) return false;
-    }
-    return true;
-  }
-
-  /// Cuántas condiciones tiene activas (para elegir la regla más específica).
-  int get specificity {
-    var n = 0;
-    if (dimension != RuleDimension.none) n++;
-    if (exudateLevels.isNotEmpty) n++;
-    if (zoneGroups.isNotEmpty) n++;
-    if (infection != RuleInfection.any) n++;
-    return n;
-  }
-
-  /// Cantidad resuelta según el modo y la medida.
-  double quantityFor({double? areaCm2, double? volumeCm3}) => switch (quantityMode) {
-        QuantityMode.perArea => (areaCm2 ?? 0) * quantityValue,
-        QuantityMode.perVolume => (volumeCm3 ?? 0) * quantityValue,
-        QuantityMode.fixed => quantityValue,
-      };
+  // La resolución (match por medida/exudado/zona/infección, especificidad y
+  // cantidad) se retiró de Dart en §15 etapa 3: ahora vive SOLO en SQL
+  // (`resolve_protocol`, migración 0139), consultada vía
+  // DataRepository.resolveProtocolProductsRpc. Estos campos siguen siendo los
+  // que EDITA el catálogo/las reglas; ya no se evalúan en el cliente.
 
   factory ProtocolProductRule.fromJson(Map<String, dynamic> j) =>
       ProtocolProductRule(
@@ -259,4 +212,19 @@ class ResolvedProtocolProduct {
     this.unitPrice,
     this.currency,
   });
+}
+
+/// La resolución del protocolo NO se pudo consultar: el almacén es local (demo,
+/// `LocalStore`) o la llamada al servidor falló (sin conexión). La resolución
+/// vive en el servidor desde §15 etapa 3 (`resolve_protocol`); ese movimiento
+/// rompe los dos flujos que la usan cuando no hay red. Quien la reciba DEBE
+/// decir en pantalla que no pudo traer la sugerencia —un vacío silencioso en una
+/// pantalla clínica es peor que un error— en vez de mostrar la pantalla en
+/// blanco como si no hubiera nada que sugerir. El soporte offline llega en la
+/// etapa 4; aquí solo se hace explícito el hueco.
+class ProtocolResolutionUnavailable implements Exception {
+  final Object? cause;
+  const ProtocolResolutionUnavailable([this.cause]);
+  @override
+  String toString() => 'ProtocolResolutionUnavailable: $cause';
 }

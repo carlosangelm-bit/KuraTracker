@@ -81,6 +81,10 @@ class _TreatmentProgramBuilderScreenState
   bool _acuityMode = false;
 
   final List<_SupplyRow> _supplies = [];
+  // §15 etapa 3.c: la resolución del protocolo vive en el servidor; sin red no
+  // se puede traer. Cuando eso pasa se guarda aquí el mensaje para MOSTRARLO —no
+  // dejar la lista vacía como si no hubiera protocolo que sugerir.
+  String? _suggestionError;
 
   // Cadencia
   final Set<int> _weekdays = {1, 3, 5}; // Lun/Mié/Vie por defecto
@@ -121,14 +125,16 @@ class _TreatmentProgramBuilderScreenState
           repo.listSites(organizationId: orgId).where((s) => s.isActive).toList();
       _siteId = sites.isEmpty ? null : sites.first.id;
       _acuityMode = repo.schedulingModeFor(orgId) == 'acuity';
-      _buildSuggestedSupplies(repo, orgId, _siteId);
+      await _buildSuggestedSupplies(repo, orgId, _siteId);
     }
     await _refreshConflicts();
     if (mounted) setState(() => _loading = false);
   }
 
-  void _buildSuggestedSupplies(DataRepository repo, String orgId, String? siteId) {
+  Future<void> _buildSuggestedSupplies(
+      DataRepository repo, String orgId, String? siteId) async {
     _supplies.clear();
+    _suggestionError = null;
     final components = repo.treatmentComponentsForConsultation(widget.consultationId);
 
     // 1) Vía preferente (0076): resolución por CATEGORÍA + MEDIDA de la herida.
@@ -148,16 +154,27 @@ class _TreatmentProgramBuilderScreenState
             .firstWhere((a) => a.consultationId == widget.consultationId)
         : (assessments.isEmpty ? null : assessments.last);
     if (categories.isNotEmpty) {
-      final resolved = repo.resolveProtocolProducts(
-        organizationId: orgId,
-        categories: categories,
-        areaCm2: last?.areaCm2,
-        volumeCm3: last?.volumeCm3,
-        exudateLevel: assess?.exudateAmount.name,
-        zoneGroup: ZoneGroup.forLocation(wound?.bodyLocationPrimary),
-        infectionSuspected: assess?.infectionCriteria.isNotEmpty,
-        siteId: siteId,
-      );
+      final List<ResolvedProtocolProduct> resolved;
+      try {
+        resolved = await repo.resolveProtocolProductsRpc(
+          organizationId: orgId,
+          categories: categories,
+          areaCm2: last?.areaCm2,
+          volumeCm3: last?.volumeCm3,
+          exudateLevel: assess?.exudateAmount.name,
+          zoneGroup: ZoneGroup.forLocation(wound?.bodyLocationPrimary),
+          infectionSuspected: assess?.infectionCriteria.isNotEmpty,
+          siteId: siteId,
+        );
+      } on ProtocolResolutionUnavailable {
+        // §15 etapa 3.c: sin red no se puede traer la resolución del servidor.
+        // Se DICE (abajo, en el bloque vacío), no se deja la lista en blanco como
+        // si el protocolo no tuviera nada que sugerir.
+        _suggestionError =
+            'No se pudo traer la sugerencia del protocolo (sin conexión). '
+            'Revisa tu red o agrega los insumos manualmente.';
+        return;
+      }
       for (final r in resolved) {
         final tag = KuraTag.values.where((t) => t.dbValue == r.category);
         _supplies.add(_SupplyRow(
@@ -544,7 +561,26 @@ class _TreatmentProgramBuilderScreenState
 
           // ---- Insumos por procedimiento ----
           _sectionTitle('Insumos por procedimiento', 'por sesión o mensual'),
-          if (_supplies.isEmpty)
+          if (_supplies.isEmpty && _suggestionError != null)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(Icons.cloud_off,
+                      size: 16, color: KuraColors.warning),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      _suggestionError!,
+                      style: const TextStyle(
+                          fontSize: 12, color: KuraColors.warning),
+                    ),
+                  ),
+                ],
+              ),
+            )
+          else if (_supplies.isEmpty)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 12),
               child: Text(
