@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -83,21 +84,31 @@ class SessionController extends StateNotifier<SessionState> {
 
   Future<void> _restoreSupabaseSession() async {
     final authUser = Supabase.instance.client.auth.currentUser;
+    // [SESSION-RELOAD] instrumentación temporal del defecto de recarga web. Traza
+    // el tramo que Carlos señaló: currentUser (ya poblado tras setInitialSession),
+    // la hidratación del perfil desde profiles (necesita red) y el veredicto. QUITAR
+    // al cerrar session-reload-web.
+    debugPrint('[SESSION-RELOAD] restore: authUser=${authUser?.email} '
+        'session=${Supabase.instance.client.auth.currentSession != null}');
     if (authUser == null) return;
     state = state.copyWith(isLoading: true);
     try {
       final repo = await DataRepository.instance();
       await repo.hydrateAfterLogin();
       var user = repo.findUserByEmail(authUser.email ?? '');
+      debugPrint('[SESSION-RELOAD] tras hydrate: perfiles=${repo.listUsers().length} '
+          'match=${user != null} active=${user?.isActive}');
       if (user != null && user.isActive) {
         user = await _ensureStaffIdForAdmin(repo, user);
         state = _buildSession(repo, user);
         return;
       }
-    } catch (_) {
+    } catch (e) {
       // Sesion invalida/expirada o perfil aun no disponible; se pedira
       // login manual.
+      debugPrint('[SESSION-RELOAD] EXCEPCIÓN en restore: $e');
     }
+    debugPrint('[SESSION-RELOAD] restore SIN usuario → isAuthenticated=false → /login');
     state = state.copyWith(isLoading: false);
   }
 

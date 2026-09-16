@@ -104,6 +104,16 @@ class SupabaseDataStore implements DataStore {
     try {
       final rows = await _client.from(collection).select();
       _cache[collection] = (rows as List).cast<Map<String, dynamic>>();
+      // [SESSION-RELOAD] instrumentación temporal: en el arranque en frío (recarga
+      // web) el perfil debe venir aquí; si RLS/red devuelve [] sin lanzar, la fila
+      // queda vacía en silencio y findUserByEmail no encuentra al usuario. Se
+      // registra el conteo + si el token de la petición estaba presente. QUITAR al
+      // cerrar el defecto session-reload-web.
+      if (collection == Collections.profiles) {
+        final tok = Supabase.instance.client.auth.currentSession?.accessToken;
+        debugPrint('[SESSION-RELOAD] refreshCollection(profiles) → '
+            '${_cache[collection]!.length} filas · token=${tok != null && tok.isNotEmpty}');
+      }
       _persistCollection(collection);
     } catch (e) {
       debugPrint('refreshCollection("$collection") falló, se omite: $e');
