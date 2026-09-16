@@ -4,7 +4,6 @@ import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../providers/session_provider.dart';
-import '../../services/supabase/supabase_bootstrap.dart';
 import 'nav_redirect.dart';
 import '../../models/app_user.dart';
 import '../../models/module_key.dart';
@@ -130,16 +129,12 @@ final routerProvider = Provider<GoRouter>((ref) {
   // sesión propia. Solo en modo Supabase (en demo no hay auth real).
   if (!isDemoMode) {
     ref.listen(passwordRecoveryProvider, (_, __) => refreshNotifier.ping());
-    // SEMILLA de la carrera: la recuperación de la URL INICIAL la capturó el bootstrap (antes de
-    // que este listener existiera). Se siembra el provider UNA vez y se consume la bandera; de
-    // aquí en adelante el provider es la autoridad (reset_password_screen lo apaga al terminar,
-    // así que no se vuelve a forzar /reset-password). Microtask para no mutar provider en build.
-    if (SupabaseBootstrap.passwordRecoveryFromUrl) {
-      SupabaseBootstrap.passwordRecoveryFromUrl = false;
-      Future.microtask(
-          () => ref.read(passwordRecoveryProvider.notifier).state = true);
-    }
-    // Listener para recuperaciones POSTERIORES (deeplink con la app ya abierta).
+    // El evento passwordRecovery lo captura este listener. NOTA (§prod): con detectSessionInUri por
+    // defecto, el evento de la URL INICIAL se emite DENTRO de Supabase.initialize —antes de que este
+    // listener exista— y se pierde (broadcast sin replay): la carrera del enlace de recuperación
+    // sigue ABIERTA. El arreglo anterior (bootstrap con detectSessionInUri:false + procesado manual)
+    // se revirtió por causar una regresión de sesión-en-recarga en web; se re-aborda con verificación
+    // en el sandbox. Aquí el listener cubre las recuperaciones POSTERIORES (app ya abierta).
     Supabase.instance.client.auth.onAuthStateChange.listen((data) {
       if (data.event == AuthChangeEvent.passwordRecovery) {
         ref.read(passwordRecoveryProvider.notifier).state = true;
