@@ -7162,6 +7162,10 @@ class DataRepository {
         inventoryItemId: itemId,
         name: (m['name'] as String?) ?? item?.name ?? '',
         quantity: (m['quantity'] as num?)?.toDouble() ?? 1,
+        // FUENTE (§15 etapa 6.1): se LEE del RPC y viaja a la UI. Si esta lectura se cae, la
+        // degradación catálogo→propio vuelve a ser invisible; resolve_protocol_source_test la
+        // pone roja.
+        source: (m['source'] as String?) ?? 'propio',
         unitCost: item?.unitCost,
         unitPrice: item?.unitPrice,
         currency: item?.currency,
@@ -7240,6 +7244,7 @@ class DataRepository {
           inventoryItemId: item.id,
           name: item.name,
           quantity: _demoRuleQuantity(r, areaCm2: areaCm2, volumeCm3: volumeCm3),
+          source: 'propio', // demo resuelve SIEMPRE reglas propias del centro
           unitCost: item.unitCost,
           unitPrice: item.unitPrice,
           currency: item.currency,
