@@ -1307,16 +1307,30 @@ class _SuppliesUsedSectionState extends ConsumerState<_SuppliesUsedSection> {
           ? assessments
               .firstWhere((a) => a.consultationId == widget.consultationId)
           : (assessments.isEmpty ? null : assessments.last);
-      final resolved = repo.resolveProtocolProducts(
-        organizationId: orgId,
-        categories: categories,
-        areaCm2: last?.areaCm2,
-        volumeCm3: last?.volumeCm3,
-        exudateLevel: assess?.exudateAmount.name,
-        zoneGroup: ZoneGroup.forLocation(wound?.bodyLocationPrimary),
-        infectionSuspected: assess?.infectionCriteria.isNotEmpty,
-        siteId: siteId,
-      );
+      final List<ResolvedProtocolProduct> resolved;
+      try {
+        resolved = await repo.resolveProtocolProductsRpc(
+          organizationId: orgId,
+          categories: categories,
+          areaCm2: last?.areaCm2,
+          volumeCm3: last?.volumeCm3,
+          exudateLevel: assess?.exudateAmount.name,
+          zoneGroup: ZoneGroup.forLocation(wound?.bodyLocationPrimary),
+          infectionSuspected: assess?.infectionCriteria.isNotEmpty,
+          siteId: siteId,
+        );
+      } on ProtocolResolutionUnavailable {
+        // §15 etapa 3.c: la resolución vive en el servidor; sin red no se trae.
+        // DECIRLO —no caer en silencio al mapeo viejo, ni dejar la pantalla como
+        // si no hubiera protocolo que sugerir. Un vacío silencioso es peor.
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+              content: Text(
+                  'No se pudo traer la sugerencia del protocolo (sin conexión). '
+                  'Revisa tu red o agrega los insumos manualmente.')));
+        }
+        return;
+      }
       if (resolved.isNotEmpty) {
         var added = 0;
         for (final r in resolved) {

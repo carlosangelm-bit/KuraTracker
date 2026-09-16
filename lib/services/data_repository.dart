@@ -7040,17 +7040,14 @@ class DataRepository {
           return c != 0 ? c : a.sortOrder.compareTo(b.sortOrder);
         });
 
-  List<ProtocolProductRule> protocolRulesForCategory(
-          String organizationId, KuraTag category) =>
-      listProtocolProductRules(organizationId)
-          .where((r) => r.category == category.dbValue)
-          .toList();
-
   /// Reglas de protocolo HUÉRFANAS: sin insumo asignado (`inventory_item_id`
   /// null), o apuntando a un insumo que no existe en el centro (o en el sitio, si
-  /// se pasa [siteId]). `resolveProtocolProducts` las salta EN SILENCIO —una
-  /// siembra a medias se ve idéntica a una que no corrió—; esto las hace visibles
-  /// (§2) para poder verificar la siembra y cazar errores de clasificación.
+  /// se pasa [siteId]). La resolución (ahora `resolve_protocol` en SQL) las salta
+  /// EN SILENCIO —una siembra a medias se ve idéntica a una que no corrió—; esto
+  /// las hace visibles (§2) para verificar la siembra y cazar clasificaciones
+  /// erróneas. (Este reporte del catálogo Kura vive en el SQL homónimo
+  /// `resolve_protocol_orphans`; este helper Dart cubre las reglas PROPIAS del
+  /// centro y lo consume aún el editor `protocol_product_rules_screen`.)
   List<({ProtocolProductRule rule, String reason})> orphanProtocolRules({
     required String organizationId,
     String? siteId,
@@ -7086,12 +7083,19 @@ class DataRepository {
     await _store.deleteRow(Collections.protocolProductRules, id);
   }
 
-  /// RESOLUCIÓN unificada protocolo → producto. Para cada categoría del régimen
-  /// (KuraTag), elige la(s) regla(s) cuya dimensión/rango calza con la medida de
-  /// la herida (área/volumen) y devuelve el producto concreto + cantidad. Es la
-  /// misma resolución para el armador del plan y el "sugerir del plan" del
-  /// seguimiento. Enriquece costo/precio desde el inventario.
-  List<ResolvedProtocolProduct> resolveProtocolProducts({
+  /// RESOLUCIÓN unificada protocolo → producto, AHORA EN EL SERVIDOR
+  /// (`resolve_protocol`, migración 0139). Hasta la etapa 3 de §15 esto vivía en
+  /// Dart (`resolveProtocolProducts`, retirado): el match por medida/exudado/
+  /// zona/infección, la especificidad, el dedup y la FUENTE del régimen (reglas
+  /// propias vs catálogo Kura, según el derecho vigente) ahora los decide UNA
+  /// sola autoridad en SQL. Aquí solo se ENRIQUECE costo/precio/moneda desde el
+  /// inventario ya cargado (esos campos no viajan en el RPC; viven en el insumo).
+  ///
+  /// Lanza [ProtocolResolutionUnavailable] si NO hay servidor (demo/`LocalStore`)
+  /// o si la llamada falla (sin conexión). El llamador DEBE decirlo en pantalla,
+  /// nunca dejarla en blanco como si no hubiera nada que sugerir (§15 etapa 3.c;
+  /// el soporte sin conexión llega en la etapa 4).
+  Future<List<ResolvedProtocolProduct>> resolveProtocolProductsRpc({
     required String organizationId,
     required Set<KuraTag> categories,
     double? areaCm2,
@@ -7100,46 +7104,54 @@ class DataRepository {
     String? zoneGroup, // ZoneGroup key
     bool? infectionSuspected,
     String? siteId,
-  }) {
+    String? contextKind, // etiologia | piel | evolucion
+    String? contextValue,
+  }) async {
+    final store = _store;
+    if (store is! SupabaseDataStore) {
+      // Demo / almacén local: el RPC no existe. Puerta 3.c.
+      throw const ProtocolResolutionUnavailable('sin servidor (almacén local)');
+    }
+    final List<dynamic> rows;
+    try {
+      final res = await store.callRpcResult('resolve_protocol', {
+        'p_organization_id': organizationId,
+        'p_categories': categories.map((t) => t.dbValue).toList(),
+        'p_area_cm2': areaCm2,
+        'p_volume_cm3': volumeCm3,
+        'p_exudate_level': exudateLevel,
+        'p_zone_group': zoneGroup,
+        'p_infection_suspected': infectionSuspected,
+        'p_site_id': siteId,
+        'p_context_kind': contextKind,
+        'p_context_value': contextValue,
+      });
+      rows = (res as List).cast<dynamic>();
+    } catch (e) {
+      throw ProtocolResolutionUnavailable(e);
+    }
+    // costo/precio/moneda NO viajan en el RPC (viven en el inventario): se
+    // enriquecen aquí por inventory_item_id contra el inventario local.
     final inv = {
       for (final it in listInventoryItems(
           organizationId: organizationId, siteId: siteId, activeOnly: false))
         it.id: it
     };
     final out = <ResolvedProtocolProduct>[];
-    final seen = <String>{};
-    for (final cat in categories) {
-      // Reglas de la categoría que APLICAN a este caso.
-      final matching = protocolRulesForCategory(organizationId, cat)
-          .where((r) => r.inventoryItemId != null)
-          .where((r) => r.appliesTo(
-                areaCm2: areaCm2,
-                volumeCm3: volumeCm3,
-                exudateLevel: exudateLevel,
-                zoneGroup: zoneGroup,
-                infectionSuspected: infectionSuspected,
-              ))
-          .toList();
-      if (matching.isEmpty) continue;
-      // Gana la MÁS ESPECÍFICA (más condiciones); el comodín solo aplica si no
-      // hubo match específico. Empate de especificidad → todas (p. ej. limpieza
-      // = solución + gasa, ambas sin condiciones).
-      final maxSpec =
-          matching.map((r) => r.specificity).reduce((a, b) => a > b ? a : b);
-      for (final r in matching.where((r) => r.specificity == maxSpec)) {
-        if (!seen.add('${cat.dbValue}::${r.inventoryItemId}')) continue;
-        final item = inv[r.inventoryItemId];
-        if (item == null) continue;
-        out.add(ResolvedProtocolProduct(
-          category: cat.dbValue,
-          inventoryItemId: item.id,
-          name: item.name,
-          quantity: r.quantityFor(areaCm2: areaCm2, volumeCm3: volumeCm3),
-          unitCost: item.unitCost,
-          unitPrice: item.unitPrice,
-          currency: item.currency,
-        ));
-      }
+    for (final row in rows) {
+      final m = (row as Map).cast<String, dynamic>();
+      final itemId = m['inventory_item_id'] as String?;
+      if (itemId == null) continue;
+      final item = inv[itemId];
+      out.add(ResolvedProtocolProduct(
+        category: m['category'] as String,
+        inventoryItemId: itemId,
+        name: (m['name'] as String?) ?? item?.name ?? '',
+        quantity: (m['quantity'] as num?)?.toDouble() ?? 1,
+        unitCost: item?.unitCost,
+        unitPrice: item?.unitPrice,
+        currency: item?.currency,
+      ));
     }
     return out;
   }
