@@ -36,6 +36,7 @@ CHAIN=(
   supabase/migrations/0140_protocol_catalog_identity.sql
   supabase/migrations/0142_protocol_catalog_authority.sql
   supabase/migrations/0143_protocol_catalog_orphans_scope.sql
+  supabase/migrations/0144_protocol_resolve_source_switch.sql
 )
 SEED=supabase/migrations/0141_seed_protocol_catalog_kura_35.sql
 

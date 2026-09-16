@@ -110,8 +110,11 @@ end $$;
 -- =============================================================================
 -- A) AUTOR (protocol:author). CONTEXTO + PROSA. Reglas sin identidad → item null, pero la PROSA
 --    (name) es lo que ve el clínico, y chk compara category|name|qty|source. category = aposito.
-insert into public.organizations (id, name) values
-  ('b0000000-0000-0000-0000-000000000002', 'Behavior author') on conflict do nothing;
+-- §desacople: el autor edita el catálogo, pero RESUELVE con el catálogo solo si master prendió el
+-- interruptor. Aquí lo prendemos (por INSERT, que no dispara el candado de master) para probar el
+-- camino de catálogo. El caso 'autor con interruptor APAGADO → reglas propias' va más abajo.
+insert into public.organizations (id, name, protocol_resolves_from_catalog) values
+  ('b0000000-0000-0000-0000-000000000002', 'Behavior author', true) on conflict do nothing;
 insert into public.org_entitlements (organization_id, kind, key, status, source) values
   ('b0000000-0000-0000-0000-000000000002', 'module', 'protocol:author', 'active', 'master') on conflict do nothing;
 -- I1 solo aplica con etiología=pie_diabetico; I2 con context_value NULL = cualquier valor de piel.
@@ -181,6 +184,29 @@ begin
     raise exception 'BEHAVIOR FAIL [huerfana-item-null]: esperaba 1 fila con item null, fue n=% item=%', n, got_item;
   end if;
   raise notice 'BEHAVIOR PASS [huerfana-item-null]';
+end $$;
+
+-- D) DESACOPLE (§15): un centro AUTOR con el interruptor APAGADO (default) resuelve con sus REGLAS
+--    PROPIAS, no con el catálogo —aunque PUEDA editarlo—. Es el caso que protege a Kura+ al aterrizar
+--    el bloque: sigue sugiriendo lo suyo (atado a inventario) hasta que master lo mande al catálogo.
+--    category = relleno_cavidad (aislada). Fuente 'propio', no 'kura'.
+insert into public.organizations (id, name) values
+  ('b0000000-0000-0000-0000-000000000006', 'Behavior author OFF') on conflict do nothing; -- switch = false (default)
+insert into public.org_entitlements (organization_id, kind, key, status, source) values
+  ('b0000000-0000-0000-0000-000000000006', 'module', 'protocol:author', 'active', 'master') on conflict do nothing;
+insert into public.inventory_items (id, organization_id, site_id, name) values
+  ('a0000000-0000-0000-0000-0000000000d6','b0000000-0000-0000-0000-000000000006',null,'Propio-D6') on conflict do nothing;
+insert into public.protocol_product_rules
+  (id, organization_id, category, inventory_item_id, name, dimension, quantity_mode, quantity_value, sort_order, exudate_levels, zone_groups, infection)
+values
+  ('c6000000-0000-0000-0000-000000000001','b0000000-0000-0000-0000-000000000006','relleno_cavidad','a0000000-0000-0000-0000-0000000000d6','Propio-D6','none','fixed',1,0,'[]','[]','any')
+  on conflict do nothing;
+
+do $$
+declare a uuid := 'b0000000-0000-0000-0000-000000000006';
+begin
+  perform pg_temp.chk('autor-interruptor-apagado', 'relleno_cavidad|Propio-D6|1.000|propio',
+                      a, array['relleno_cavidad'], null,null,null,null,null,null, null,null);
 end $$;
 
 select '=== BEHAVIOR: ALL PASSED ===' as result;
