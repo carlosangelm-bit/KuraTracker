@@ -91,6 +91,18 @@ begin
   end loop;
 end $$;
 
+-- FUENTE (6.1) del lado SERVIDOR: resolve_protocol debe devolver la columna `source` con los DOS
+-- valores según el derecho. Aquí el camino PROPIO → 'propio'; los casos de catálogo de abajo →
+-- 'kura'. Esto ata la garantía en el SERVIDOR (que la función DEVUELVE source), no solo en el
+-- mapper de Dart: si una migración redefine resolve_protocol sin la columna, esta prueba revienta.
+do $$
+declare o uuid; s uuid;
+begin
+  select (j->>'org')::uuid, (j->>'site')::uuid into o, s from corpus_json;
+  perform pg_temp.chk('own-source-propio', 'aposito|B|1.000|propio',
+                      o, array['aposito'], 0, null, null, null, null, s);
+end $$;
+
 -- =============================================================================
 -- Bordes que la demo NO corre (solo servidor): fuente CATÁLOGO, CONTEXTO e IDENTIDAD (etapa 5).
 -- Cada escenario usa una CATEGORÍA distinta: el catálogo es GLOBAL y ahora las huérfanas con

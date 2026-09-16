@@ -7162,10 +7162,11 @@ class DataRepository {
         inventoryItemId: itemId,
         name: (m['name'] as String?) ?? item?.name ?? '',
         quantity: (m['quantity'] as num?)?.toDouble() ?? 1,
-        // FUENTE (§15 etapa 6.1): se LEE del RPC y viaja a la UI. Si esta lectura se cae, la
-        // degradación catálogo→propio vuelve a ser invisible; resolve_protocol_source_test la
-        // pone roja.
-        source: (m['source'] as String?) ?? 'propio',
+        // FUENTE (§15 etapa 6.1): se LEE del RPC y viaja a la UI. Si la columna NO viene, es un
+        // defecto de contrato (una migración redefinió resolve_protocol sin ella) — se marca
+        // 'desconocido' y se hace visible, NO se inventa 'propio' (verde y mintiendo). El lado
+        // servidor lo guardan las aserciones de source en resolve_protocol_behavior.
+        source: (m['source'] as String?) ?? kRegimenSourceUnknown,
         unitCost: item?.unitCost,
         unitPrice: item?.unitPrice,
         currency: item?.currency,

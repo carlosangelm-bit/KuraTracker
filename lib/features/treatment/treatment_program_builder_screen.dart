@@ -575,19 +575,23 @@ class _TreatmentProgramBuilderScreenState
               child: Row(
                 children: [
                   Icon(
-                      _regimenSource == 'kura'
-                          ? Icons.verified_outlined
-                          : Icons.folder_outlined,
+                      switch (_regimenSource) {
+                        'kura' => Icons.verified_outlined,
+                        'propio' => Icons.folder_outlined,
+                        _ => Icons.help_outline,
+                      },
                       size: 14,
-                      color: KuraColors.darkText.withValues(alpha: 0.6)),
+                      color: _regimenSource == kRegimenSourceUnknown
+                          ? KuraColors.warning
+                          : KuraColors.darkText.withValues(alpha: 0.6)),
                   const SizedBox(width: 6),
                   Text(
-                    _regimenSource == 'kura'
-                        ? 'Régimen Kura+'
-                        : 'Protocolo propio del centro',
+                    regimenSourceLabel(_regimenSource!),
                     style: TextStyle(
                         fontSize: 12,
-                        color: KuraColors.darkText.withValues(alpha: 0.6)),
+                        color: _regimenSource == kRegimenSourceUnknown
+                            ? KuraColors.warning
+                            : KuraColors.darkText.withValues(alpha: 0.6)),
                   ),
                 ],
               ),

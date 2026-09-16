@@ -21,6 +21,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kuratracker/models/note_option_catalog.dart';
+import 'package:kuratracker/models/protocol_product_rule.dart' show kRegimenSourceUnknown;
 import 'package:kuratracker/services/data_repository.dart';
 import 'package:kuratracker/services/local_db/local_store.dart' show Collections;
 import 'package:kuratracker/services/remote/data_store.dart';
@@ -42,7 +43,11 @@ class _MemStore implements DataStore {
 // producto FIJO ('rpc-item-id') distinto del que resolvería el camino local, para poder
 // distinguir por el resultado QUIÉN calculó.
 class _RpcSpyStore extends SupabaseDataStore {
-  _RpcSpyStore() : super(SupabaseClient('http://localhost', 'test-anon-key'));
+  // includeSource:false simula una migración futura que redefine resolve_protocol SIN la columna
+  // source — el defecto de contrato que el centinela 'desconocido' debe hacer visible.
+  _RpcSpyStore({this.includeSource = true})
+      : super(SupabaseClient('http://localhost', 'test-anon-key'));
+  final bool includeSource;
   int rpcCalls = 0;
   String? lastRpcName;
   @override
@@ -55,7 +60,7 @@ class _RpcSpyStore extends SupabaseDataStore {
         'inventory_item_id': 'rpc-item-id',
         'name': 'Producto resuelto por el servidor',
         'quantity': 1,
-        'source': 'kura',
+        if (includeSource) 'source': 'kura',
       }
     ];
   }
@@ -219,5 +224,20 @@ void main() {
     expect(out, isNotEmpty);
     expect(out.every((r) => r.source == 'propio'), isTrue,
         reason: 'la demo resuelve reglas propias → source propio');
+  });
+
+  // Sin default inocente: si el RPC no trae la columna (contrato roto), NO se inventa 'propio'
+  // —eso etiquetaría el catálogo como régimen propio, verde y mintiendo—. Se marca 'desconocido'.
+  test('FUENTE 6.1 · source ausente en el RPC → desconocido, no propio', () async {
+    final spy = _RpcSpyStore(includeSource: false);
+    spy.primeCache({
+      Collections.inventoryItems: const [],
+      Collections.protocolProductRules: const [],
+    });
+    final repo = await DataRepository.forSeeding(spy);
+    final out = await repo.resolveProtocolProductsRpc(
+      organizationId: org, categories: {_tag('aposito')}, siteId: site);
+    expect(out.single.source, kRegimenSourceUnknown,
+        reason: 'columna ausente = defecto de contrato, no el valor más inocente');
   });
 }
