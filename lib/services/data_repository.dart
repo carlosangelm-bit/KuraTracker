@@ -7028,6 +7028,45 @@ class DataRepository {
 
   // ------------- Reglas producto-por-categoría del protocolo (0076) -------------
 
+  /// ¿Este centro AUTORA el catálogo Kura+? (module:protocol:author vigente). Gatea el modo
+  /// CATÁLOGO de la Matriz; sin esto, la Matriz muestra la tabla PROPIA del centro. §15 etapa 6.2.
+  bool isProtocolCatalogAuthor(String? organizationId) =>
+      canWriteModule(organizationId, 'protocol:author');
+
+  /// Catálogo Kura+ (§15). GLOBAL (sin organization_id); la RLS solo deja verlo a protocol:author,
+  /// así que para un centro sin autoría llega vacío. Ordenado por (categoría, sort_order), como
+  /// resolve_protocol. Es la fuente-author de la Matriz; la fuente-propia es
+  /// listProtocolProductRules.
+  List<ProtocolProductRule> listProtocolCatalogRules() => _store
+      .getAll(Collections.protocolCatalogRules)
+      .map(ProtocolProductRule.fromJson)
+      .toList()
+    ..sort((a, b) {
+      final c = a.category.compareTo(b.category);
+      return c != 0 ? c : a.sortOrder.compareTo(b.sortOrder);
+    });
+
+  /// Huérfanas del CATÁLOGO Kura+ (regla sin identidad de producto, o cuya identidad no aterriza
+  /// en el inventario del centro/sitio). Vía RPC resolve_protocol_orphans (SECURITY DEFINER con
+  /// guarda de author en el cuerpo). Solo en el backend real; en demo/local no hay catálogo → [].
+  Future<List<({String ruleId, String category, String reason})>>
+      catalogOrphans({required String organizationId, String? siteId}) async {
+    final store = _store;
+    if (store is! SupabaseDataStore) return const [];
+    final res = await store.callRpcResult('resolve_protocol_orphans', {
+      'p_organization_id': organizationId,
+      'p_site_id': siteId,
+    });
+    return [
+      for (final row in (res as List))
+        (
+          ruleId: (row as Map)['rule_id'] as String,
+          category: row['category'] as String,
+          reason: row['reason'] as String,
+        )
+    ];
+  }
+
   List<ProtocolProductRule> listProtocolProductRules(String? organizationId) =>
       _store
           .getAll(Collections.protocolProductRules)
