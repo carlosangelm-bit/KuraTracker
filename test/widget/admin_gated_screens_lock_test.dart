@@ -12,12 +12,13 @@ import 'package:kuratracker/services/local_db/local_store.dart';
 
 import 'package:kuratracker/features/admin/protocol_kura_screen.dart';
 import 'package:kuratracker/features/admin/protocol_product_rules_screen.dart';
+import 'package:kuratracker/features/admin/protocol_matrix_screen.dart';
 import 'package:kuratracker/features/admin/acuity_session_type_screen.dart';
 import 'package:kuratracker/features/admin/acuity_visit_type_map_screen.dart';
 import 'package:kuratracker/features/admin/patient_cleanup_screen.dart';
 
-/// 2b — que el candado esté PUESTO, no solo que funcione. Enumera las CINCO
-/// pantallas gateadas por el módulo Administración avanzada y exige que cada una,
+/// 2b — que el candado esté PUESTO, no solo que funcione. Enumera las pantallas
+/// gateadas por el módulo Administración avanzada y exige que cada una,
 /// abierta sin el módulo (como al teclear su URL), muestre el bloqueo con precio; y
 /// que con el módulo, ninguna lo muestre. La lista vive en UN solo lugar: agregar
 /// una sexta pantalla gateada obliga a sumarla aquí.
@@ -28,6 +29,9 @@ final _gatedScreens =
     <({String name, String file, Widget Function(DataRepository, String?) build})>[
   (name: 'ProtocolKuraScreen', file: 'protocol_kura_screen.dart', build: (r, o) => ProtocolKuraScreen(repo: r, organizationId: o)),
   (name: 'ProtocolProductRulesScreen', file: 'protocol_product_rules_screen.dart', build: (r, o) => ProtocolProductRulesScreen(repo: r, organizationId: o)),
+  // §15 etapa 6: la Matriz reemplaza a la anterior en la ruta. Lleva el candado comercial PRIMERO
+  // (gate del centro, antes del rol) para que sobreviva a la unificación futura del modo propio.
+  (name: 'ProtocolMatrixScreen', file: 'protocol_matrix_screen.dart', build: (r, o) => ProtocolMatrixScreen(repo: r, organizationId: o)),
   (name: 'AcuitySessionTypeScreen', file: 'acuity_session_type_screen.dart', build: (r, o) => AcuitySessionTypeScreen(repo: r, organizationId: o)),
   (name: 'AcuityVisitTypeMapScreen', file: 'acuity_visit_type_map_screen.dart', build: (r, o) => AcuityVisitTypeMapScreen(repo: r, organizationId: o)),
   (name: 'PatientCleanupScreen', file: 'patient_cleanup_screen.dart', build: (r, o) => PatientCleanupScreen(repo: r, organizationId: o)),
@@ -116,7 +120,7 @@ void main() {
     }
   });
 
-  testWidgets('sin module:admin: las 5 muestran el bloqueo con precio',
+  testWidgets('sin module:admin: todas las gateadas muestran el bloqueo con precio',
       (tester) async {
     final repo = await DataRepository.instance(); // billing_catalog sembrado
     const org = 'gated-sin-admin'; // sin derechos → sin module:admin
@@ -126,7 +130,7 @@ void main() {
     }
   });
 
-  testWidgets('con module:admin: ninguna de las 5 muestra el bloqueo',
+  testWidgets('con module:admin: ninguna de las gateadas muestra el bloqueo',
       (tester) async {
     final store = await LocalStore.instance();
     final repo = await DataRepository.instance();

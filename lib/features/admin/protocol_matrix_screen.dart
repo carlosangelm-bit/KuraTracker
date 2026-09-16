@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/providers/session_provider.dart';
 import '../../core/design/tokens.dart';
+import '../../core/widgets/kura_module_lock.dart';
 import '../../models/note_option_catalog.dart';
 import '../../models/product_catalog_item.dart';
 import '../../models/protocol_product_rule.dart';
@@ -46,6 +47,19 @@ class _ProtocolMatrixScreenState extends ConsumerState<ProtocolMatrixScreen> {
     final user = ref.watch(sessionProvider).user;
     final isMaster = user?.isMaster ?? false;
     final isAdmin = user?.isAdmin ?? false;
+    // Candado COMERCIAL (module:admin), como todas las pantallas hijas de /admin: es un gate del
+    // CENTRO, independiente del rol, así que va PRIMERO. Un centro sin el módulo ve el bloqueo con
+    // precio, teclee quien teclee la URL. La enumeración en admin_gated_screens_lock_test exige que
+    // esta pantalla lo conserve (si se le cae, la reja se pone roja).
+    if (!repo.premiumAdminFor(org)) {
+      return adminModuleLockedScaffold(context,
+          repo: repo,
+          organizationId: org,
+          title: 'Matriz del protocolo',
+          description:
+              'Edita el régimen por paso y contexto, y ata cada uno al producto de tu centro.');
+    }
+
     final canAuthor = repo.canAuthorProtocolCatalog(
         organizationId: org, isAdmin: isAdmin, isMaster: isMaster);
 
