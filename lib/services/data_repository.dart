@@ -7076,6 +7076,43 @@ class DataRepository {
     ];
   }
 
+  /// Guarda (upsert) una regla del CATÁLOGO Kura+. La tabla es GLOBAL: NO tiene organization_id,
+  /// así que se ESCRIBEN solo sus columnas (se quita organization_id del toJson). La RLS
+  /// (current_user_can_author_catalog) decide si el upsert procede. §15 etapa 6.
+  Future<void> saveProtocolCatalogRule(ProtocolProductRule rule) async {
+    final row = {...rule.toJson()}
+      ..remove('organization_id')
+      ..['id'] = rule.id.isEmpty ? _uuid.v4() : rule.id
+      ..['updated_at'] = DateTime.now().toIso8601String();
+    await _store.upsertRow(Collections.protocolCatalogRules, row);
+  }
+
+  Future<void> deleteProtocolCatalogRule(String id) async {
+    await _store.deleteRow(Collections.protocolCatalogRules, id);
+  }
+
+  /// ¿El centro resuelve HOY contra el catálogo (true) o sus reglas propias (false)? Lee el
+  /// interruptor de master (organizations.protocol_resolves_from_catalog). La Matriz lo muestra en
+  /// su cabecera: el interruptor no puede ser mudo (§15 desacople).
+  bool resolvesFromCatalog(String? organizationId) {
+    if (organizationId == null) return false;
+    for (final o in listOrganizations()) {
+      if (o.id == organizationId) return o.resolvesFromCatalog;
+    }
+    return false;
+  }
+
+  /// Master enciende/apaga si un centro AUTOR resuelve contra el catálogo. Vía RPC
+  /// set_org_resolves_from_catalog (guarda de master en el cuerpo + candado trg_zz_). Solo backend.
+  Future<void> setOrgResolvesFromCatalog(String organizationId, bool on) async {
+    final store = _store;
+    if (store is! SupabaseDataStore) return;
+    await store.callRpc('set_org_resolves_from_catalog', {
+      'p_organization_id': organizationId,
+      'p_on': on,
+    });
+  }
+
   List<ProtocolProductRule> listProtocolProductRules(String? organizationId) =>
       _store
           .getAll(Collections.protocolProductRules)

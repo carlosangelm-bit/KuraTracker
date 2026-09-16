@@ -2,6 +2,7 @@
 // (global, sin organization_id) se lee y modela bien, que hasIdentity distingue atada de huérfana
 // con nombre, y que el gating de author (module:protocol:author vigente) decide el modo catálogo.
 import 'package:flutter_test/flutter_test.dart';
+import 'package:kuratracker/models/protocol_product_rule.dart';
 import 'package:kuratracker/services/data_repository.dart';
 import 'package:kuratracker/services/local_db/local_store.dart' show Collections;
 import 'package:kuratracker/services/remote/data_store.dart';
@@ -9,8 +10,18 @@ import 'package:kuratracker/services/remote/data_store.dart';
 class _MemStore implements DataStore {
   final Map<String, List<Map<String, dynamic>>> data;
   _MemStore(this.data);
+  String? lastUpsertCollection;
+  Map<String, dynamic>? lastUpsert;
   @override
   List<Map<String, dynamic>> getAll(String c) => data[c] ?? const [];
+  @override
+  Future<Map<String, dynamic>> upsertRow(
+      String c, Map<String, dynamic> row) async {
+    lastUpsertCollection = c;
+    lastUpsert = row;
+    return row;
+  }
+
   @override
   dynamic noSuchMethod(Invocation i) =>
       throw UnimplementedError('MemStore: ${i.memberName}');
@@ -105,5 +116,33 @@ void main() {
         r.canAuthorProtocolCatalog(
             organizationId: _plainOrg, isAdmin: false, isMaster: true),
         isTrue);
+  });
+
+  test('resolvesFromCatalog lee el interruptor de master (§desacople)', () async {
+    final r = await DataRepository.forSeeding(_MemStore({
+      Collections.organizations: [
+        {'id': _authorOrg, 'name': 'Kura+', 'protocol_resolves_from_catalog': true},
+        {'id': _plainOrg, 'name': 'Otro'}, // sin la columna → false
+      ],
+    }));
+    expect(r.resolvesFromCatalog(_authorOrg), isTrue);
+    expect(r.resolvesFromCatalog(_plainOrg), isFalse);
+    expect(r.resolvesFromCatalog(null), isFalse);
+  });
+
+  test('saveProtocolCatalogRule QUITA organization_id (catálogo global) y va a la tabla catálogo',
+      () async {
+    final store = _MemStore({});
+    final r = await DataRepository.forSeeding(store);
+    await r.saveProtocolCatalogRule(const ProtocolProductRule(
+      id: 'cat-x',
+      organizationId: 'no-debe-ir', // se debe quitar
+      category: 'aposito',
+      name: 'Producto',
+    ));
+    expect(store.lastUpsertCollection, Collections.protocolCatalogRules);
+    expect(store.lastUpsert!.containsKey('organization_id'), isFalse,
+        reason: 'el catálogo es global; escribir organization_id fallaría (no existe la columna)');
+    expect(store.lastUpsert!['id'], 'cat-x');
   });
 }
