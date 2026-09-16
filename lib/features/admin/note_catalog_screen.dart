@@ -499,9 +499,9 @@ class _NoteCatalogScreenState extends State<NoteCatalogScreen> {
               onOpen: () => context.go('/admin/protocolo-kura'),
             ),
             _CfgTile(
-              icon: Icons.inventory_2_outlined,
-              name: 'Productos del protocolo',
-              desc: 'Qué insumo y cuánto, por paso',
+              icon: Icons.grid_view_outlined,
+              name: 'Matriz del protocolo',
+              desc: 'Régimen por paso y contexto; atado de productos',
               locked: adminLocked,
               onOpen: () => context.go('/admin/productos-protocolo'),
             ),

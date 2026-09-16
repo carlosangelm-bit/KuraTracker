@@ -37,7 +37,7 @@ import '../../features/reports/reports_screen.dart';
 import '../../features/agenda/agenda_screen.dart';
 import '../../features/admin/admin_home_screen.dart';
 import '../../features/admin/protocol_kura_screen.dart';
-import '../../features/admin/protocol_product_rules_screen.dart';
+import '../../features/admin/protocol_matrix_screen.dart';
 import '../../features/admin/acuity_session_type_screen.dart';
 import '../../features/admin/acuity_visit_type_map_screen.dart';
 import '../../features/admin/patient_cleanup_screen.dart';
@@ -500,8 +500,10 @@ final routerProvider = Provider<GoRouter>((ref) {
                   ProtocolKuraScreen(repo: repo, organizationId: org))),
           GoRoute(
               path: '/admin/productos-protocolo',
+              // §15 etapa 6: la Matriz reemplaza al editor viejo. Gatea tres estados por permiso
+              // (autora → catálogo + atado; módulo sin autoría → reglas propias; sin permiso → dicho).
               builder: _adminChild((repo, org) =>
-                  ProtocolProductRulesScreen(repo: repo, organizationId: org))),
+                  ProtocolMatrixScreen(repo: repo, organizationId: org))),
           GoRoute(
               path: '/admin/tipo-cita-sesiones',
               builder: _adminChild((repo, org) =>
