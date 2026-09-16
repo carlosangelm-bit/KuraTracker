@@ -257,14 +257,26 @@ begin
   end if;
 
   -- (b) funciones que tocan el catálogo y chequean rol/autoría fuera de la autoridad única.
+  -- Incluye la GRAFÍA COPIABLE org_entitlement_vigente(...,'protocol:author') —así la escribe
+  -- resolve_protocol (0139:60/0140:78), y es la línea que el siguiente copiará—, no solo
+  -- is_admin/is_master/current_org_has_protocol_author.
   select string_agg(pr.proname, ', ') into rogue
   from pg_proc pr join pg_namespace n on n.oid = pr.pronamespace
   where n.nspname = 'public'
     and pr.prosrc ~ 'protocol_catalog_rules'
-    and (pr.prosrc ~ 'is_admin' or pr.prosrc ~ 'is_master' or pr.prosrc ~ 'current_org_has_protocol_author')
+    and ( pr.prosrc ~ 'is_admin'
+       or pr.prosrc ~ 'is_master'
+       or pr.prosrc ~ 'current_org_has_protocol_author'
+       or pr.prosrc ~ 'protocol:author' )   -- la grafía copiable
     and pr.prosrc !~ 'current_user_can_author_catalog'
     and pr.proname not in (
-      'current_user_can_author_catalog'   -- la definición ÚNICA
+      'current_user_can_author_catalog',   -- la definición ÚNICA
+      -- resolve_protocol usa org_entitlement_vigente('protocol:author') para la FUENTE del
+      -- régimen, NO para gatear la edición del catálogo: RESOLVER es capacidad a propósito (una
+      -- kuradora debe recibir sugerencias Kura+ sin ser admin); EDITAR es autoridad. Excepción
+      -- DECLARADA por nombre, no un accidente de grafía: si alguien acorta esa línea, esta guarda
+      -- NO se pone roja por la razón equivocada.
+      'resolve_protocol'
     );
   if rogue is not null then
     raise exception 'GUARDA 6.2 FAIL: función chequea autoría del catálogo fuera de current_user_can_author_catalog: %', rogue;
@@ -296,6 +308,36 @@ begin;
     select count(*) into n from public.resolve_protocol_orphans('44444444-4444-4444-4444-444444444444', null);
     if n < 1 then raise exception 'TEST11b FAIL: admin author no vio la huérfana (vio %)', n; end if;
     raise notice 'TEST11b PASS: admin author sí ve las huérfanas';
+  end $$;
+  reset role;
+rollback;
+
+-- =============================================================================
+-- TEST 12 — fuga transversal cerrada (0143). resolve_protocol_orphans es SECURITY DEFINER (salta
+-- la RLS de inventory_items); un admin author no debe poder consultar OTRO centro y deducir su
+-- inventario por los motivos de huérfana. p_organization_id se ancla al centro en sesión (salvo
+-- master).
+-- =============================================================================
+begin;
+  -- Regla de catálogo CON identidad que ningún centro de prueba tiene en inventario.
+  insert into public.protocol_catalog_rules (category, shopify_product_id, shopify_variant_id)
+    values ('aposito', 'SP-LEAK-TEST', '');
+  set local test.uid = '4a000000-0000-0000-0000-000000000000';  -- admin author del centro 44444444
+  set local role authenticated;
+  do $$ declare n_otro int; n_propio int; begin
+    -- (a) consulta OTRO centro (99999999): el ancla → 0 filas, sin fuga.
+    select count(*) into n_otro
+    from public.resolve_protocol_orphans('99999999-9999-9999-9999-999999999999', null);
+    if n_otro <> 0 then
+      raise exception 'TEST12a FAIL: fuga transversal — un author dedujo huérfanas de otro centro (% filas)', n_otro;
+    end if;
+    -- (b) su PROPIO centro: sí ve la huérfana.
+    select count(*) into n_propio
+    from public.resolve_protocol_orphans('44444444-4444-4444-4444-444444444444', null);
+    if n_propio < 1 then
+      raise exception 'TEST12b FAIL: el author no vio la huérfana de su propio centro (vio %)', n_propio;
+    end if;
+    raise notice 'TEST12 PASS: p_organization_id anclado al centro en sesión (otro=0, propio=%)', n_propio;
   end $$;
   reset role;
 rollback;
