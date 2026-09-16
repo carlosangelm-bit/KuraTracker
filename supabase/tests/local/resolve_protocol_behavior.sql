@@ -1,12 +1,19 @@
 -- ETAPA 3.a — Pruebas de CONDUCTA de resolve_protocol con salidas ESPERADAS escritas a mano
 -- (no comparaciones contra Dart: cuando el Dart desaparezca, esto sigue siendo la cobertura).
--- Reusa el corpus de los 17 casos de paridad (hoy afirmaban SQL==Dart; ahora "SQL devuelve
--- EXACTAMENTE esto") + los bordes que la paridad no cubre: contexto y la fuente CATÁLOGO.
--- Se carga tras la cadena de migraciones (fixture + 0076/0077/0136..0139). Corre en LOCAL
--- (run_resolve_protocol_behavior.sh) y en CI (job sql_tests con servicio postgres).
+--
+-- CONDICIÓN 1 de la etapa 3.5 (demo): los casos de reglas PROPIAS NO viven aquí — viven en
+-- supabase/tests/protocol_behavior_corpus.json, el MISMO archivo que lee la prueba del
+-- resolvedor LOCAL DE DEMO (test/unit/resolve_protocol_demo_test.dart). Este script CARGA ese
+-- corpus (lo dejó el runner en la tabla corpus_json) y lo corre contra el servidor. Si las dos
+-- implementaciones divergen, una de las dos pruebas se pone roja — no hay dos copias del corpus.
+-- Los bordes que la demo NO cubre (fuente CATÁLOGO + CONTEXTO) sí viven aquí, inline, porque el
+-- resolvedor de demo solo resuelve reglas propias.
+--
+-- Se carga tras la cadena de migraciones (fixture + 0076/0077/0136..0139) y tras el \copy del
+-- corpus a corpus_json. Corre en LOCAL (run_sql_tests.sh) y en CI (job sql_tests con postgres).
 
 -- Helper: corre resolve_protocol y compara el régimen (category|producto|cantidad|fuente,
--- en ORDEN) contra el esperado; revienta si difiere.
+-- en ORDEN) contra el esperado; revienta si difiere. Lo usan los casos de CATÁLOGO (con fuente).
 create or replace function pg_temp.chk(
   label text, expected text,
   p_org uuid, p_cats text[], p_area numeric, p_vol numeric,
@@ -29,68 +36,63 @@ begin
 end $$;
 
 -- =============================================================================
--- Corpus PROPIO (protocol_product_rules): un centro SIN Kura+ → camino 'propio'.
+-- Corpus PROPIO — cargado desde protocol_behavior_corpus.json (tabla corpus_json). Un centro
+-- SIN Kura+ → camino 'propio'. La salida esperada del corpus es 'category|name|qty' SIN fuente
+-- (en reglas propias la fuente es constante 'propio'); aquí se formatea igual para comparar.
 -- =============================================================================
-insert into public.organizations (id, name) values
-  ('b0000000-0000-0000-0000-000000000001', 'Behavior propio') on conflict do nothing;
--- Inventario: A..H en el sitio S1; Z en OTRO sitio (huérfana por sitio).
-insert into public.inventory_items (id, organization_id, site_id, name) values
-  ('a0000000-0000-0000-0000-00000000000a','b0000000-0000-0000-0000-000000000001','50000000-0000-0000-0000-000000000051','A'),
-  ('a0000000-0000-0000-0000-00000000000b','b0000000-0000-0000-0000-000000000001','50000000-0000-0000-0000-000000000051','B'),
-  ('a0000000-0000-0000-0000-00000000000c','b0000000-0000-0000-0000-000000000001','50000000-0000-0000-0000-000000000051','C'),
-  ('a0000000-0000-0000-0000-00000000000d','b0000000-0000-0000-0000-000000000001','50000000-0000-0000-0000-000000000051','D'),
-  ('a0000000-0000-0000-0000-00000000000e','b0000000-0000-0000-0000-000000000001','50000000-0000-0000-0000-000000000051','E'),
-  ('a0000000-0000-0000-0000-00000000000f','b0000000-0000-0000-0000-000000000001','50000000-0000-0000-0000-000000000051','F'),
-  ('a0000000-0000-0000-0000-000000000010','b0000000-0000-0000-0000-000000000001','50000000-0000-0000-0000-000000000051','G'),
-  ('a0000000-0000-0000-0000-000000000011','b0000000-0000-0000-0000-000000000001','50000000-0000-0000-0000-000000000051','H'),
-  ('a0000000-0000-0000-0000-0000000000ff','b0000000-0000-0000-0000-000000000001','50000000-0000-0000-0000-000000000052','Z')
-  on conflict do nothing;
--- Reglas (sort_order define el orden y el desempate del dedup; priority NO desempata).
-insert into public.protocol_product_rules
-  (id, organization_id, category, inventory_item_id, name, dimension, min_value, max_value, quantity_mode, quantity_value, sort_order, exudate_levels, zone_groups, infection)
-values
-  ('c0000000-0000-0000-0000-000000000000','b0000000-0000-0000-0000-000000000001','aposito','a0000000-0000-0000-0000-00000000000a','A','none',null,null,'fixed',1,0,'[]','[]','any'),
-  ('c0000000-0000-0000-0000-000000000001','b0000000-0000-0000-0000-000000000001','aposito','a0000000-0000-0000-0000-00000000000b','B','area',0,10,'fixed',1,1,'[]','[]','any'),
-  ('c0000000-0000-0000-0000-000000000002','b0000000-0000-0000-0000-000000000001','aposito','a0000000-0000-0000-0000-00000000000c','C','area',10,null,'fixed',1,2,'[]','[]','any'),
-  ('c0000000-0000-0000-0000-000000000003','b0000000-0000-0000-0000-000000000001','aposito','a0000000-0000-0000-0000-000000000011','H','none',null,null,'fixed',1,3,'["abundante"]','[]','any'),
-  ('c0000000-0000-0000-0000-000000000004','b0000000-0000-0000-0000-000000000001','aposito','a0000000-0000-0000-0000-00000000000a','A','area',0,10,'fixed',1,4,'["abundante"]','[]','any'),
-  ('c0000000-0000-0000-0000-000000000005','b0000000-0000-0000-0000-000000000001','limpieza','a0000000-0000-0000-0000-00000000000f','F','none',null,null,'fixed',1,5,'[]','[]','any'),
-  ('c0000000-0000-0000-0000-000000000006','b0000000-0000-0000-0000-000000000001','limpieza','a0000000-0000-0000-0000-000000000010','G','none',null,null,'fixed',1,6,'[]','[]','any'),
-  ('c0000000-0000-0000-0000-000000000007','b0000000-0000-0000-0000-000000000001','relleno_cavidad','a0000000-0000-0000-0000-00000000000d','D','volume',0,5,'per_volume',0.5,7,'[]','[]','any'),
-  ('c0000000-0000-0000-0000-000000000008','b0000000-0000-0000-0000-000000000001','relleno_cavidad','a0000000-0000-0000-0000-00000000000e','E','volume',5,null,'per_volume',0.5,8,'[]','[]','any'),
-  ('c0000000-0000-0000-0000-000000000009','b0000000-0000-0000-0000-000000000001','relleno_cavidad','a0000000-0000-0000-0000-00000000000d','D','volume',0,5,'fixed',9,9,'[]','[]','any'),
-  ('c0000000-0000-0000-0000-00000000000a','b0000000-0000-0000-0000-000000000001','aposito','a0000000-0000-0000-0000-000000000010','G','none',null,null,'fixed',1,10,'[]','["sacro_gluteo"]','yes'),
-  ('c0000000-0000-0000-0000-00000000000b','b0000000-0000-0000-0000-000000000001','aposito','a0000000-0000-0000-0000-0000000000ff','Z','area',0,10,'fixed',1,11,'[]','[]','any')
-  on conflict do nothing;
+do $$
+declare c jsonb;
+begin
+  select j into c from corpus_json;   -- una sola fila con todo el corpus
+  if c is null then
+    raise exception 'BEHAVIOR FAIL: corpus_json vacío (¿el runner no cargó el corpus?)';
+  end if;
+
+  insert into public.organizations (id, name)
+    values ((c->>'org')::uuid, 'Behavior propio') on conflict do nothing;
+
+  insert into public.inventory_items (id, organization_id, site_id, name)
+    select (it->>'id')::uuid, (c->>'org')::uuid, (it->>'site')::uuid, it->>'name'
+    from jsonb_array_elements(c->'items') it
+    on conflict do nothing;
+
+  insert into public.protocol_product_rules
+    (id, organization_id, category, inventory_item_id, name, dimension, min_value, max_value,
+     quantity_mode, quantity_value, sort_order, exudate_levels, zone_groups, infection)
+    select (r->>'id')::uuid, (c->>'org')::uuid, r->>'category', (r->>'item')::uuid, r->>'name',
+           r->>'dimension', (r->>'min')::numeric, (r->>'max')::numeric,
+           r->>'quantity_mode', (r->>'quantity_value')::numeric, (r->>'sort_order')::int,
+           r->'exudate_levels', r->'zone_groups', r->>'infection'
+    from jsonb_array_elements(c->'rules') r
+    on conflict do nothing;
+end $$;
 
 do $$
-declare o uuid := 'b0000000-0000-0000-0000-000000000001';
-        s uuid := '50000000-0000-0000-0000-000000000051';
+declare o uuid; s uuid; cs jsonb; got text; expected text;
 begin
-  -- Los 17 casos, con salida ESPERADA a mano (fuente 'propio').
-  perform pg_temp.chk('area-borde-inf', 'aposito|B|1.000|propio', o, array['aposito'], 0, null, null, null, null, s);
-  perform pg_temp.chk('area-dentro',    'aposito|B|1.000|propio', o, array['aposito'], 5, null, null, null, null, s);
-  perform pg_temp.chk('area-borde-sup', 'aposito|C|1.000|propio', o, array['aposito'], 10, null, null, null, null, s);
-  perform pg_temp.chk('area-just-antes','aposito|B|1.000|propio', o, array['aposito'], 9.99, null, null, null, null, s);
-  perform pg_temp.chk('area-grande',    'aposito|C|1.000|propio', o, array['aposito'], 50, null, null, null, null, s);
-  perform pg_temp.chk('area-null',      'aposito|A|1.000|propio', o, array['aposito'], null, null, null, null, null, s);
-  perform pg_temp.chk('area+exud-spec2','aposito|A|1.000|propio', o, array['aposito'], 5, null, 'abundante', null, null, s);
-  perform pg_temp.chk('exudado-solo',   'aposito|H|1.000|propio', o, array['aposito'], null, null, 'abundante', null, null, s);
-  perform pg_temp.chk('exudado-otro',   'aposito|A|1.000|propio', o, array['aposito'], null, null, 'escaso', null, null, s);
-  perform pg_temp.chk('zona+infec-spec2','aposito|G|1.000|propio', o, array['aposito'], null, null, null, 'sacro_gluteo', true, s);
-  perform pg_temp.chk('zona-sin-infec', 'aposito|A|1.000|propio', o, array['aposito'], null, null, null, 'sacro_gluteo', false, s);
-  perform pg_temp.chk('limpieza-empate','limpieza|F|1.000|propio, limpieza|G|1.000|propio', o, array['limpieza'], null, null, null, null, null, s);
-  perform pg_temp.chk('relleno-borde-inf','relleno_cavidad|D|0.000|propio', o, array['relleno_cavidad'], null, 0, null, null, null, s);
-  perform pg_temp.chk('relleno-borde-sup','relleno_cavidad|E|2.500|propio', o, array['relleno_cavidad'], null, 5, null, null, null, s);
-  perform pg_temp.chk('relleno-dentro', 'relleno_cavidad|D|1.500|propio', o, array['relleno_cavidad'], null, 3, null, null, null, s);
-  perform pg_temp.chk('multi-cat',
-    'aposito|A|1.000|propio, limpieza|F|1.000|propio, limpieza|G|1.000|propio, relleno_cavidad|D|1.000|propio',
-    o, array['aposito','limpieza','relleno_cavidad'], 5, 2, 'abundante', null, null, s);
-  perform pg_temp.chk('cat-inexistente','', o, array['desbridamiento'], 5, null, null, null, null, s);
+  select (j->>'org')::uuid, (j->>'site')::uuid into o, s from corpus_json;
+  for cs in select value from corpus_json, jsonb_array_elements(j->'cases') as value loop
+    select coalesce(string_agg(
+             t.category || '|' || t.name || '|' || to_char(round(t.quantity, 3), 'FM990.000'),
+             ', ' order by t.ord), '')
+      into got
+    from public.resolve_protocol(
+           o,
+           array(select jsonb_array_elements_text(cs->'categories')),
+           (cs->>'area')::numeric, (cs->>'volume')::numeric,
+           cs->>'exudate', cs->>'zone', (cs->>'infection')::boolean,
+           s, null, null)
+         with ordinality as t(category, inventory_item_id, name, quantity, brand, alt_name, alt_brand, note_phrase, source, ord);
+    expected := cs->>'expected';
+    if got is distinct from expected then
+      raise exception 'BEHAVIOR FAIL [%]: esperado "%" pero fue "%"', cs->>'label', expected, got;
+    end if;
+    raise notice 'BEHAVIOR PASS [corpus %]', cs->>'label';
+  end loop;
 end $$;
 
 -- =============================================================================
--- Bordes que la paridad NO cubre (Dart tampoco): fuente CATÁLOGO + CONTEXTO.
+-- Bordes que la demo NO corre (solo servidor): fuente CATÁLOGO + CONTEXTO. Inline, con fuente.
 -- =============================================================================
 -- Centro AUTOR (protocol:author) con su inventario y reglas de catálogo con contexto.
 insert into public.organizations (id, name) values
