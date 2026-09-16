@@ -956,6 +956,10 @@ class _SuppliesUsedSection extends ConsumerStatefulWidget {
 class _SuppliesUsedSectionState extends ConsumerState<_SuppliesUsedSection> {
   String _money(double v) => '\$${v.toStringAsFixed(2)} MXN';
   bool _preloadTried = false;
+  // §15 etapa 6.1: régimen que resolvió la última sugerencia ('kura'|'propio'|desconocido).
+  // Chip PERSISTENTE junto a los insumos (no solo el snackbar, que dura 4 s): si María trabaja
+  // con el régimen degradado, la pantalla no debe verse idéntica al caso normal.
+  String? _regimenSource;
 
   @override
   void initState() {
@@ -1038,6 +1042,31 @@ class _SuppliesUsedSectionState extends ConsumerState<_SuppliesUsedSection> {
               ],
             ),
             const SizedBox(height: 8),
+            // §15 etapa 6.1: chip PERSISTENTE del régimen que sugirió (no solo el snackbar).
+            if (_regimenSource != null) ...[
+              Row(
+                children: [
+                  Icon(
+                      switch (_regimenSource) {
+                        'kura' => Icons.verified_outlined,
+                        'propio' => Icons.folder_outlined,
+                        _ => Icons.help_outline,
+                      },
+                      size: 14,
+                      color: _regimenSource == kRegimenSourceUnknown
+                          ? KuraColors.warning
+                          : KuraColors.darkText.withValues(alpha: 0.6)),
+                  const SizedBox(width: 6),
+                  Text(regimenSourceLabel(_regimenSource!),
+                      style: TextStyle(
+                          fontSize: 12,
+                          color: _regimenSource == kRegimenSourceUnknown
+                              ? KuraColors.warning
+                              : KuraColors.darkText.withValues(alpha: 0.6))),
+                ],
+              ),
+              const SizedBox(height: 8),
+            ],
             if (usage.isEmpty)
               const Padding(
                 padding: EdgeInsets.symmetric(vertical: 8),
@@ -1353,15 +1382,14 @@ class _SuppliesUsedSectionState extends ConsumerState<_SuppliesUsedSection> {
           added++;
         }
         if (added > 0) {
+          // §15 etapa 6.1: de QUÉ régimen salieron. El chip persistente (junto a los insumos)
+          // es el portador; el snackbar es refuerzo (dura 4 s y solo si se agregó algo).
+          _regimenSource = resolved.first.source;
           if (mounted) {
             setState(() {});
-            // §15 etapa 6.1: se dice de QUÉ régimen salieron. Que un Kura+ vencido caiga del
-            // catálogo curado a sus reglas propias no puede pasar en silencio.
-            final regimen = resolved.first.source == 'kura'
-                ? 'del régimen Kura+'
-                : 'del protocolo propio del centro';
             ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                content: Text('Se agregaron $added insumo(s) $regimen.')));
+                content: Text(
+                    'Se agregaron $added insumo(s) · ${regimenSourceLabel(resolved.first.source)}')));
           }
           return;
         }

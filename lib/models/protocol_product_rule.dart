@@ -194,6 +194,21 @@ class ProtocolProductRule {
       };
 }
 
+/// Valor centinela de `source` cuando el RPC NO trae la columna. NO es un valor legítimo del
+/// servidor (que emite 'kura' o 'propio'): significa que el contrato se rompió (p. ej. una
+/// migración redefinió resolve_protocol sin la columna). Se hace VISIBLE en vez de inventar el
+/// valor más inocente ('propio'), que etiquetaría el catálogo como régimen propio — verde y
+/// mintiendo. §15 etapa 6.1.
+const String kRegimenSourceUnknown = 'desconocido';
+
+/// Rótulo único (3 vías) del régimen que resolvió. Que sea uno solo evita que un flujo mande
+/// 'desconocido' al cajón de 'propio' y el otro no.
+String regimenSourceLabel(String source) => switch (source) {
+      'kura' => 'Régimen Kura+',
+      'propio' => 'Protocolo propio del centro',
+      _ => 'Régimen desconocido',
+    };
+
 /// Producto resuelto para una categoría del protocolo (salida de la resolución).
 class ResolvedProtocolProduct {
   final String category; // KuraTag.dbValue
