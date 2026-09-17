@@ -2739,7 +2739,7 @@ class DataRepository {
     await _store.updateRow(Collections.charges, chargeId, {
       'status': 'pagado',
       'payment_method': method,
-      'paid_at': DateTime.now().toIso8601String(),
+      'paid_at': DateTime.now().toUtc().toIso8601String(),
       'updated_at': DateTime.now().toIso8601String(),
       if (provider != null) 'payment_provider': provider,
       if (mpPaymentId != null) 'mp_payment_id': mpPaymentId,
@@ -4461,7 +4461,7 @@ class DataRepository {
           'wound_id': woundId,
           'notes': notes,
           'status': DiagnosisStatus.activo.dbValue,
-          'noted_at': DateTime.now().toIso8601String(),
+          'noted_at': DateTime.now().toUtc().toIso8601String(),
           'noted_by': staffId,
         },
       );
@@ -4537,7 +4537,7 @@ class DataRepository {
       diagnosisId,
       {
         'status': status.dbValue,
-        'noted_at': DateTime.now().toIso8601String(),
+        'noted_at': DateTime.now().toUtc().toIso8601String(),
         'noted_by': staffId,
       },
     );
@@ -4630,14 +4630,14 @@ class DataRepository {
       'instill_dwell_min': instillDwellMin,
       'dressing_type': dressing?.dbValue,
       'change_interval_hours': changeIntervalHours,
-      'placed_at': (placedAt ?? now).toIso8601String(),
+      'placed_at': (placedAt ?? now).toUtc().toIso8601String(),
       'placed_by': createdBy,
       'placed_location': placedLocation?.dbValue,
       'current_location': placedLocation?.dbValue,
       'status': VacTherapyStatus.activa.dbValue,
       'caregiver_instructions': caregiverInstructions,
       'notes': notes,
-      'started_at': now.toIso8601String(),
+      'started_at': now.toUtc().toIso8601String(),
       'created_by': createdBy,
       'created_at': now.toIso8601String(),
       'updated_at': now.toIso8601String(),
@@ -4813,7 +4813,7 @@ class DataRepository {
       'floor': floor,
       'area': area,
       'bed': bed,
-      'admitted_at': DateTime.now().toIso8601String(),
+      'admitted_at': DateTime.now().toUtc().toIso8601String(),
       'discharged_at': null,
       'status': AdmissionStatus.activo.dbValue,
       'notes': notes,
@@ -4826,7 +4826,7 @@ class DataRepository {
   Future<void> dischargePatient(String admissionId) async {
     await _store.updateRow(Collections.patientAdmissions, admissionId, {
       'status': AdmissionStatus.egresado.dbValue,
-      'discharged_at': DateTime.now().toIso8601String(),
+      'discharged_at': DateTime.now().toUtc().toIso8601String(),
     });
     // Al egresar, CANCELAR (no borrar) las tareas AUTO pendientes con fecha
     // FUTURA de esta admisión: ya no hay ronda que las ejecute, y sin esto
@@ -4882,7 +4882,7 @@ class DataRepository {
       'patient_id': patientId,
       'braden_score': bradenScore,
       'braden_subscores': bradenSubscores,
-      'assessed_at': DateTime.now().toIso8601String(),
+      'assessed_at': DateTime.now().toUtc().toIso8601String(),
       'assessed_by': staffId,
       'notes': notes,
       'created_at': DateTime.now().toIso8601String(),
@@ -5166,7 +5166,9 @@ class DataRepository {
       'total_score': totalScore,
       'category_result': categoryResult,
       'band_id': bandId,
-      'assessed_at': now,
+      // Evento (b): el instante de la valoración va en UTC EXPLÍCITO, desacoplado
+      // de `now` (que aún sella created_at/updated_at — deuda de auditoría aparte).
+      'assessed_at': DateTime.now().toUtc().toIso8601String(),
       'assessed_by': staffId,
       'notes': notes,
       'created_at': now,
@@ -5501,7 +5503,7 @@ class DataRepository {
       'rule_id': ruleId,
       'action_id': actionId,
       'action_label': actionLabel,
-      'applied_at': DateTime.now().toIso8601String(),
+      'applied_at': DateTime.now().toUtc().toIso8601String(),
       'applied_by': staffId,
       'notes': notes,
       'created_at': DateTime.now().toIso8601String(),
@@ -6288,7 +6290,11 @@ class DataRepository {
       'visit_date': visitDate.toIso8601String().substring(0, 10),
       'vital_signs': vitalSigns,
       'is_draft': isDraft,
-      'created_at': DateTime.now().toIso8601String(),
+      // created_at en UTC EXPLÍCITO (no hora local). En prod la base tiene `default
+      // now()`, pero LocalStore (demo) NO emula ese default y el modelo castea
+      // created_at como String no-nulo → hay que mandarlo. Quitar la escritura del
+      // cliente queda para cuando LocalStore emule el default (deuda de auditoría (a)).
+      'created_at': DateTime.now().toUtc().toIso8601String(),
       'follow_up_care_type': followUpCareType,
       'follow_up_procedure_desc': followUpProcedureDesc,
       'follow_up_materials_used': followUpMaterialsUsed,
@@ -6297,7 +6303,9 @@ class DataRepository {
       'follow_up_signed_license': followUpSignedLicense,
       'follow_up_signed_specialty': followUpSignedSpecialty,
       'follow_up_signature': followUpSignature,
-      'follow_up_signed_at': followUpSignedAt?.toIso8601String(),
+      // Firma del seguimiento (hecho legal): el valor lo captura el cliente; se
+      // normaliza a UTC EXPLÍCITO, nunca hora local sin zona.
+      'follow_up_signed_at': followUpSignedAt?.toUtc().toIso8601String(),
       'scheduled_appointment_ref': scheduledAppointmentRef,
       'specialist_notes': specialistNotes,
       'visit_summary': visitSummary,
@@ -6483,12 +6491,15 @@ class DataRepository {
           Collections.consents, existing.first['id'] as String, patch);
       return Consent.fromJson(saved);
     }
-    // created_at NO lo escribe el cliente: la tabla trae `default now()` (0026),
-    // la base lo pone en UTC como corresponde.
+    // created_at en UTC EXPLÍCITO. En prod la tabla tiene `default now()` (0026),
+    // pero insertRow devuelve la fila TAL CUAL se mandó y LocalStore (demo) no emula
+    // ese default → Consent.fromJson haría DateTime.parse(null) y truena. Se manda
+    // hasta que LocalStore emule el default (deuda de auditoría (a)).
     final row = {
       'id': _uuid.v4(),
       'patient_id': patientId,
       'type': type.dbValue,
+      'created_at': DateTime.now().toUtc().toIso8601String(),
       ...patch,
     };
     final saved = await _store.insertRow(Collections.consents, row);
@@ -6552,7 +6563,7 @@ class DataRepository {
     final saved = await _store.updateRow(Collections.referrals, id, {
       'return_doc_ref': returnDocRef,
       'return_notes': returnNotes,
-      'returned_at': DateTime.now().toIso8601String(),
+      'returned_at': DateTime.now().toUtc().toIso8601String(),
       'status': ReferralStatus.respondida.dbValue,
     });
     return Referral.fromJson(saved);
@@ -6576,7 +6587,10 @@ class DataRepository {
         _orgOfPatient(data['patient_id'] as String?));
     final row = Map<String, dynamic>.from(data);
     row['id'] = row['id'] ?? _uuid.v4();
-    row['created_at'] = row['created_at'] ?? DateTime.now().toIso8601String();
+    // created_at en UTC EXPLÍCITO (no hora local). LocalStore (demo) no emula el
+    // `default now()` de prod y el modelo castea created_at no-nulo → hay que mandarlo.
+    // La quita del cliente queda para cuando LocalStore emule el default (deuda (a)).
+    row['created_at'] = row['created_at'] ?? DateTime.now().toUtc().toIso8601String();
     row['is_active'] = row['is_active'] ?? true;
     final saved = await _store.insertRow(Collections.wounds, row);
     return Wound.fromJson(saved);
@@ -7474,7 +7488,7 @@ class DataRepository {
       'debug_features': output.debugFeatures,
       'debug_raw_scores': output.debugRawScores,
       'clinician_decision': decision.name,
-      'clinician_decision_at': DateTime.now().toIso8601String(),
+      'clinician_decision_at': DateTime.now().toUtc().toIso8601String(),
       'clinician_notes': clinicianNotes,
       'generated_at': output.generatedAt.toIso8601String(),
       'created_at': DateTime.now().toIso8601String(),

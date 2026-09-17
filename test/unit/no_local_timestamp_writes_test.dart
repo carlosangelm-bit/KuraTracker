@@ -12,10 +12,22 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  // Deuda conocida (17-sep-2026): 66 escrituras en hora local en lib/. Ya arreglados y
-  // FUERA de la cuenta: protocol_catalog_rules (base, 0146) y consents (created_at → default
-  // 0026; granted_at → toUtc explícito). Los 6 sitios correctos usan `.toUtc()` y NO cuentan.
-  const knownLocalTimestampDebt = 66;
+  // Deuda conocida (17-sep-2026): 55 escrituras en hora local en lib/. BAJA al migrar cada
+  // tabla a la base/UTC. Ya arreglados y FUERA de la cuenta:
+  //  · protocol_catalog_rules: el cliente NO escribe created_at/updated_at (el modelo NO los lee;
+  //    la base los dueña vía 0136 default + 0146 trigger).
+  //  · EVENTOS del grupo (b) a UTC EXPLÍCITO (`.toUtc()`): consents.granted_at,
+  //    consultations.follow_up_signed_at, assessed_at (risk+scale), admitted_at/discharged_at,
+  //    applied_at, started_at/placed_at (VAC), noted_at (×2), clinician_decision_at/returned_at,
+  //    paid_at.
+  //  · created_at de consents/consultations/wounds: en UTC EXPLÍCITO por el cliente (NO removido).
+  //    OJO: LocalStore (demo) NO emula el `default now()` de prod y el modelo castea created_at
+  //    no-nulo → si se quita la escritura, truena en demo. La quita queda para cuando LocalStore
+  //    emule el default (deuda de auditoría (a)).
+  // Lo que sigue en la cuenta es AUDITORÍA (created_at/updated_at que el cliente aún sella en hora
+  // local): deuda aparte, se salda emulando el default en LocalStore + trigger set_updated_at por
+  // tabla + quitar la escritura. Los 6 sitios ya correctos usan `.toUtc()` y NO cuentan.
+  const knownLocalTimestampDebt = 55;
 
   test('no aparecen sellos en HORA LOCAL nuevos (DateTime.now().toIso8601String())', () {
     // Coincide LOCAL: DateTime.now().toIso8601String() SIN `.toUtc()` en medio.
