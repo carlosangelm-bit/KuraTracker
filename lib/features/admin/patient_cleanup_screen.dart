@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import '../../core/widgets/kura_back_button.dart';
 
 import '../../core/widgets/kura_module_lock.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -18,6 +17,8 @@ import '../../services/data_repository.dart';
 ///
 /// PII: los nombres del padrón se pegan EN VIVO por el usuario; nunca se guardan
 /// en el código ni en Git. Solo viven en memoria mientras dura la pantalla.
+/// CUERPO (sin Scaffold): vive DENTRO del shell de /admin; el título y el riel
+/// los pone el shell.
 class PatientCleanupScreen extends ConsumerStatefulWidget {
   final DataRepository repo;
   final String? organizationId;
@@ -201,20 +202,14 @@ class _PatientCleanupScreenState extends ConsumerState<PatientCleanupScreen> {
     // centro, no del superusuario. Enumerado en admin_gated_screens_lock_test.
     final isMaster = ref.read(sessionProvider).user?.isMaster ?? false;
     if (!isMaster && !widget.repo.premiumAdminFor(widget.organizationId)) {
-      return adminModuleLockedScaffold(context,
+      return adminModuleLockedBody(
           repo: widget.repo,
           organizationId: widget.organizationId,
-          title: 'Depurar expedientes',
           description: 'Archiva en bloque los expedientes que ya no atiendes, contra tu padrón.');
     }
     final archived =
         widget.repo.listArchivedPatients(organizationId: widget.organizationId);
-    return Scaffold(
-      appBar: AppBar(
-        leading: const KuraBackButton(fallback: '/admin/configuracion'),
-        title: const Text('Depurar expedientes'),
-      ),
-      body: AbsorbPointer(
+    return AbsorbPointer(
         absorbing: _working,
         child: ListView(
           padding: const EdgeInsets.all(16),
@@ -231,8 +226,7 @@ class _PatientCleanupScreenState extends ConsumerState<PatientCleanupScreen> {
             const SizedBox(height: 40),
           ],
         ),
-      ),
-    );
+      );
   }
 
   Widget _intro() => Card(

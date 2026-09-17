@@ -33,8 +33,10 @@ void main() {
     final src = File('lib/core/router/app_router.dart').readAsStringSync();
     final paths = resolveFullPaths(src);
     expect(paths, isNotEmpty, reason: 'No se extrajo ninguna ruta del router.');
-    // Sanidad: las hijas nuevas de /admin quedaron resueltas a ruta completa.
-    expect(paths, contains('/admin/protocolo-kura'));
+    // (Antes se afirmaba aquí contains('/admin/protocolo-kura'); desde que las 8
+    // profundas se generan con `for (s in [...]) '/admin/$s'` como las 6 secciones,
+    // ya NO son literales que el scan extraiga. Su cobertura la da la allowlist de
+    // '/admin'; que el resolvedor compone rutas hijas lo prueba el caso negativo.)
 
     for (final p in paths) {
       expect(

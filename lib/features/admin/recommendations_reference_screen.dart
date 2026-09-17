@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import '../../core/widgets/kura_back_button.dart';
 
 import '../../core/theme/kura_theme.dart';
 import '../../engine/kura_clinical_adjustments.dart';
@@ -7,17 +6,14 @@ import '../../engine/kura_clinical_adjustments.dart';
 /// KT-16 — Fuente ÚNICA de recomendaciones (referencia, solo lectura). Reúne en
 /// un lugar los algoritmos, versiones y rangos que alimentan las sugerencias de
 /// Kura+, para que el equipo clínico los consulte y verifique.
+/// CUERPO (sin Scaffold): vive DENTRO del shell de /admin; el título y el riel los
+/// pone el shell.
 class RecommendationsReferenceScreen extends StatelessWidget {
   const RecommendationsReferenceScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        leading: const KuraBackButton(fallback: '/admin/configuracion'),
-        title: const Text('Fuente de recomendaciones'),
-      ),
-      body: FutureBuilder<KuraClinicalAdjustments>(
+    return FutureBuilder<KuraClinicalAdjustments>(
         future: KuraClinicalAdjustments.loadFromAssets(),
         builder: (context, snap) {
           if (snap.connectionState == ConnectionState.waiting) {
@@ -45,8 +41,7 @@ class RecommendationsReferenceScreen extends StatelessWidget {
             ],
           );
         },
-      ),
-    );
+      );
   }
 
   Widget _card(String title, List<Widget> children, {String? subtitle}) => Card(

@@ -96,7 +96,9 @@ Future<void> _pump(WidgetTester tester, Widget screen,
     ],
     child: MaterialApp(
       theme: ThemeData(extensions: <ThemeExtension<dynamic>>[BrandTokens.kura]),
-      home: screen,
+      // Las pantallas ya son CUERPOS sin Scaffold (el shell de /admin da el chrome);
+      // aquí las envolvemos en un Scaffold para el ancestro Material (Card/ListTile).
+      home: Scaffold(body: screen),
     ),
   ));
   await tester.pumpAndSettle();

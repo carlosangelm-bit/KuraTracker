@@ -116,6 +116,43 @@ List<NavDestination> kuraNavDestinations({
             label: 'Configuración',
             icon: Icons.settings_outlined,
             route: '/admin/configuracion'),
+        // Las 8 pantallas profundas — antes se abrían a pantalla completa desde
+        // Configuración; ahora viven en el riel (decisión Carlos 17-sep), como
+        // hermanas de las secciones. El candado comercial de cada una lo aplica su
+        // propio cuerpo (y el master lo trasciende). El título del cuerpo lo deriva
+        // KuraContentHeader del label activo, así que el label = el título.
+        NavDestination(
+            label: 'Protocolo Kura+',
+            icon: Icons.rule_outlined,
+            route: '/admin/protocolo-kura'),
+        NavDestination(
+            label: 'Matriz del protocolo',
+            icon: Icons.grid_on_outlined,
+            route: '/admin/productos-protocolo'),
+        NavDestination(
+            label: 'Escalas del protocolo',
+            icon: Icons.tune_outlined,
+            route: '/admin/escalas-protocolo'),
+        NavDestination(
+            label: 'Fuente de recomendaciones',
+            icon: Icons.menu_book_outlined,
+            route: '/admin/fuente-recomendaciones'),
+        NavDestination(
+            label: 'Tipos de cita',
+            icon: Icons.event_outlined,
+            route: '/admin/tipo-cita-sesiones'),
+        NavDestination(
+            label: 'Tipos de consulta',
+            icon: Icons.event_note_outlined,
+            route: '/admin/tipos-consulta'),
+        NavDestination(
+            label: 'Registro de divulgaciones',
+            icon: Icons.privacy_tip_outlined,
+            route: '/admin/divulgaciones'),
+        NavDestination(
+            label: 'Depurar expedientes',
+            icon: Icons.archive_outlined,
+            route: '/admin/depurar-expedientes'),
         NavDestination(
             label: 'Marca',
             icon: Icons.palette_outlined,

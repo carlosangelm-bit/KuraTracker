@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import '../../core/widgets/kura_back_button.dart';
 
 import '../../core/widgets/kura_module_lock.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -13,6 +12,8 @@ import '../../services/data_repository.dart';
 /// admin/master elige, por cada tipo del catálogo de Acuity, si equivale a una
 /// VALORACIÓN o a un SEGUIMIENTO. Con esto la consulta iniciada desde una cita
 /// decide su tipo sola, y la consulta directa en KuraTracker usa este catálogo.
+/// CUERPO (sin Scaffold): vive DENTRO del shell de /admin; el título y el riel
+/// los pone el shell.
 class AcuityVisitTypeMapScreen extends ConsumerStatefulWidget {
   final DataRepository repo;
   final String? organizationId;
@@ -70,18 +71,12 @@ class _AcuityVisitTypeMapScreenState
     // centro, no del superusuario. Enumerado en admin_gated_screens_lock_test.
     final isMaster = ref.read(sessionProvider).user?.isMaster ?? false;
     if (!isMaster && !widget.repo.premiumAdminFor(widget.organizationId)) {
-      return adminModuleLockedScaffold(context,
+      return adminModuleLockedBody(
           repo: widget.repo,
           organizationId: widget.organizationId,
-          title: 'Tipos de consulta (Acuity)',
           description: 'Mapea los tipos de cita de Acuity a valoración o seguimiento.');
     }
-    return Scaffold(
-      appBar: AppBar(
-        leading: const KuraBackButton(fallback: '/admin/configuracion'),
-        title: const Text('Tipos de consulta (Acuity)'),
-      ),
-      body: FutureBuilder<List<dynamic>>(
+    return FutureBuilder<List<dynamic>>(
         future: _typesFuture,
         builder: (context, snap) {
           if (snap.connectionState == ConnectionState.waiting) {
@@ -122,8 +117,7 @@ class _AcuityVisitTypeMapScreenState
             ],
           );
         },
-      ),
-    );
+      );
   }
 
   Widget _typeRow(Map t) {

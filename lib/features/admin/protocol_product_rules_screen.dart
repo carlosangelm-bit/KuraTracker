@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../core/widgets/kura_back_button.dart';
-
 import '../../core/widgets/kura_module_lock.dart';
 
 import '../../core/providers/session_provider.dart';
@@ -102,10 +100,9 @@ class _ProtocolProductRulesScreenState
     // centro, no del superusuario. Enumerado en admin_gated_screens_lock_test.
     final isMaster = ref.read(sessionProvider).user?.isMaster ?? false;
     if (!isMaster && !widget.repo.premiumAdminFor(widget.organizationId)) {
-      return adminModuleLockedScaffold(context,
+      return adminModuleLockedBody(
           repo: widget.repo,
           organizationId: widget.organizationId,
-          title: 'Productos del protocolo',
           description: 'Vincula cada paso con el producto que usa tu centro y en qué cantidad.');
     }
     final allRules = orgId == null
@@ -122,12 +119,9 @@ class _ProtocolProductRulesScreenState
         ? const <({ProtocolProductRule rule, String reason})>[]
         : repo.orphanProtocolRules(organizationId: orgId!);
 
-    return Scaffold(
-      appBar: AppBar(
-        leading: const KuraBackButton(fallback: '/admin/configuracion'),
-        title: const Text('Productos del protocolo'),
-      ),
-      body: ListView(
+    // CUERPO (sin Scaffold): vive DENTRO del shell de /admin (la Matriz delega aquí
+    // en modo tabla-propia). El título y el riel los pone el shell.
+    return ListView(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 40),
         children: [
           Text(
@@ -186,8 +180,7 @@ class _ProtocolProductRulesScreenState
           for (final cat in _categories)
             _categoryCard(cat, byCat[cat.dbValue] ?? const []),
         ],
-      ),
-    );
+      );
   }
 
   Widget _categoryCard(KuraTag cat, List<ProtocolProductRule> rules) {

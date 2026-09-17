@@ -80,10 +80,9 @@ class _ProtocolMatrixScreenState extends ConsumerState<ProtocolMatrixScreen> {
     // precio. La enumeración en admin_gated_screens_lock_test exige AMBAS caras (sin módulo y sin
     // master → bloqueo; master → NO bloqueo).
     if (!isMaster && !repo.premiumAdminFor(org)) {
-      return adminModuleLockedScaffold(context,
+      return adminModuleLockedBody(
           repo: repo,
           organizationId: org,
-          title: 'Matriz del protocolo',
           description:
               'Edita el régimen por paso y contexto, y ata cada uno al producto de tu centro.');
     }
@@ -91,17 +90,16 @@ class _ProtocolMatrixScreenState extends ConsumerState<ProtocolMatrixScreen> {
     final canAuthor = repo.canAuthorProtocolCatalog(
         organizationId: org, isAdmin: isAdmin, isMaster: isMaster);
 
-    // Módulo SIN autoría: reglas propias del centro. Se delega al editor existente (que trae su
-    // propio Scaffold) para no perder la EDICIÓN de reglas propias. La unificación total de ese
-    // modo dentro de la Matriz queda como seguimiento; el foco de esta etapa es el catálogo.
+    // Módulo SIN autoría: reglas propias del centro. Se delega al editor existente (ahora también
+    // un cuerpo sin Scaffold) para no perder la EDICIÓN de reglas propias. La unificación total de
+    // ese modo dentro de la Matriz queda como seguimiento; el foco de esta etapa es el catálogo.
     if (!canAuthor && isAdmin) {
       return ProtocolProductRulesScreen(repo: repo, organizationId: org);
     }
 
-    return Scaffold(
-      appBar: AppBar(title: const Text('Matriz del protocolo')),
-      body: canAuthor ? _catalogView(isMaster) : _noPermission(),
-    );
+    // CUERPO (sin Scaffold): vive DENTRO del shell de /admin; el título ('Matriz del
+    // protocolo') y el riel los pone el shell.
+    return canAuthor ? _catalogView(isMaster) : _noPermission();
   }
 
   // ------------------------------------------------------------------ AUTORA

@@ -39,6 +39,28 @@ Widget adminModuleLockedScaffold(
       ),
     );
 
+/// Igual que [adminModuleLockedScaffold] pero SIN Scaffold/AppBar: para las pantallas
+/// hijas de /admin que ahora se abren DENTRO del shell (riel visible). El título y la
+/// navegación los pone el shell; aquí solo va el contenido del candado (que DICE EL
+/// PRECIO). Sin volver propio: el riel es la salida.
+Widget adminModuleLockedBody({
+  required DataRepository repo,
+  required String? organizationId,
+  required String description,
+}) =>
+    Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: KuraModuleLock.section(
+          repo: repo,
+          organizationId: organizationId ?? '',
+          moduleKey: 'admin',
+          moduleName: 'Administración avanzada',
+          description: description,
+        ),
+      ),
+    );
+
 enum _Density { band, action, section }
 
 /// Bloqueo de módulo (canvas §2). Un solo componente, tres densidades — banda en

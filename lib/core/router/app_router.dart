@@ -36,16 +36,8 @@ import '../../features/referrals/referral_create_screen.dart';
 import '../../features/reports/reports_screen.dart';
 import '../../features/agenda/agenda_screen.dart';
 import '../../features/admin/admin_home_screen.dart';
-import '../../features/admin/protocol_kura_screen.dart';
-import '../../features/admin/protocol_matrix_screen.dart';
-import '../../features/admin/acuity_session_type_screen.dart';
-import '../../features/admin/acuity_visit_type_map_screen.dart';
-import '../../features/admin/patient_cleanup_screen.dart';
-import '../../features/admin/scale_toggles_screen.dart';
-import '../../features/admin/recommendations_reference_screen.dart';
-import '../../features/admin/data_disclosures_screen.dart';
-import '../../services/data_repository.dart';
-import '../widgets/kura_error_state.dart';
+// Las 8 pantallas profundas de /admin ya NO se enrutan aquí: son cuerpos dentro del
+// shell (AdminSectionBody las construye por sufijo). Sus imports viven en admin_home_screen.
 import '../../features/import_export/import_export_screen.dart';
 import '../../features/import_export/ekare_import_screen.dart';
 import '../../features/platform/platform_home_screen.dart';
@@ -75,39 +67,6 @@ class _RouterRefreshNotifier extends ChangeNotifier {
 /// El router se construye una sola vez (Provider), y se suscribe via
 /// ref.listen a cambios de sesion para disparar sus redirects sin perder
 /// el estado de navegacion en cada rebuild de widgets.
-/// Builder para una pantalla hija de /admin que necesita el DataRepository (async)
-/// y el centro en sesión. Resuelve el repo con su estado de carga/error y arma la
-/// pantalla; así cada ruta hija se declara en una línea sin repetir el `.when`.
-Widget Function(BuildContext, GoRouterState) _adminChild(
-    Widget Function(DataRepository repo, String? organizationId) build) {
-  return (context, state) => Consumer(
-        builder: (ctx, ref, _) {
-          final repoAsync = ref.watch(dataRepositoryProvider);
-          final org = ref.watch(sessionProvider).user?.organizationId;
-          return repoAsync.when(
-            loading: () =>
-                const Scaffold(body: Center(child: CircularProgressIndicator())),
-            error: (e, _) => Scaffold(
-              appBar: AppBar(),
-              body: Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: KuraErrorState(
-                    title: 'No pudimos cargar esta pantalla',
-                    reassurance:
-                        'Puede ser tu conexión. Tus datos están a salvo.',
-                    detail: '$e',
-                    onRetry: () => ref.invalidate(dataRepositoryProvider),
-                  ),
-                ),
-              ),
-            ),
-            data: (repo) => build(repo, org),
-          );
-        },
-      );
-}
-
 /// Ruta clínica de PRIMER NIVEL (un destino del riel). Con el riel único, moverse entre
 /// estos destinos es cambiar de PANEL, igual que entre las secciones de /admin y
 /// /platform: sin animación (NoTransitionPage). Las rutas PROFUNDAS —detalle de paciente,
@@ -477,11 +436,23 @@ final routerProvider = Provider<GoRouter>((ref) {
                   currentRoute: state.matchedLocation, child: child),
             ),
             routes: [
+              // Las 6 secciones + las 8 profundas, TODAS bajo el shell (riel visible).
+              // NoTransitionPage: cambiar de una a otra no anima ni recarga el shell
+              // (§12). El cuerpo lo resuelve AdminSectionBody por el sufijo; el candado
+              // comercial de las gateadas lo aplica cada cuerpo (master lo trasciende).
               for (final s in const [
                 'usuarios',
                 'personal',
                 'sitios',
                 'configuracion',
+                'protocolo-kura',
+                'productos-protocolo',
+                'escalas-protocolo',
+                'fuente-recomendaciones',
+                'tipo-cita-sesiones',
+                'tipos-consulta',
+                'divulgaciones',
+                'depurar-expedientes',
                 'marca',
                 'licencias',
               ])
@@ -492,41 +463,6 @@ final routerProvider = Provider<GoRouter>((ref) {
                 ),
             ],
           ),
-          // Las 8 pantallas hijas profundas de Administración (FUERA del shell de
-          // secciones: son pantallas completas). El gate por rol lo da el redirect global.
-          GoRoute(
-              path: '/admin/protocolo-kura',
-              builder: _adminChild((repo, org) =>
-                  ProtocolKuraScreen(repo: repo, organizationId: org))),
-          GoRoute(
-              path: '/admin/productos-protocolo',
-              // §15 etapa 6: la Matriz reemplaza al editor viejo. Gatea tres estados por permiso
-              // (autora → catálogo + atado; módulo sin autoría → reglas propias; sin permiso → dicho).
-              builder: _adminChild((repo, org) =>
-                  ProtocolMatrixScreen(repo: repo, organizationId: org))),
-          GoRoute(
-              path: '/admin/tipo-cita-sesiones',
-              builder: _adminChild((repo, org) =>
-                  AcuitySessionTypeScreen(repo: repo, organizationId: org))),
-          GoRoute(
-              path: '/admin/tipos-consulta',
-              builder: _adminChild((repo, org) =>
-                  AcuityVisitTypeMapScreen(repo: repo, organizationId: org))),
-          GoRoute(
-              path: '/admin/depurar-expedientes',
-              builder: _adminChild((repo, org) =>
-                  PatientCleanupScreen(repo: repo, organizationId: org))),
-          GoRoute(
-              path: '/admin/escalas-protocolo',
-              builder: _adminChild((repo, org) =>
-                  ScaleTogglesScreen(repo: repo, organizationId: org))),
-          GoRoute(
-              path: '/admin/fuente-recomendaciones',
-              builder: (context, state) =>
-                  const RecommendationsReferenceScreen()),
-          GoRoute(
-              path: '/admin/divulgaciones',
-              builder: (context, state) => const DataDisclosuresScreen()),
           // /platform: canónico (childless, canoniza a Centros) + ShellRoute anidado. El
           // riel vive en el shell (PlatformSectionsShell) y persiste; cada sección es su
           // cuerpo, con NoTransitionPage (cambiar de sección no anima ni recarga). El

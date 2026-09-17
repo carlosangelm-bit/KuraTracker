@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import '../../core/widgets/kura_back_button.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/providers/session_provider.dart';
@@ -14,6 +13,8 @@ import '../../services/data_repository.dart';
 ///
 /// Guarda AL INSTANTE (como sus hermanas): cada cambio persiste solo, sin botón
 /// "Guardar" que se pueda perder al salir.
+/// CUERPO (sin Scaffold): vive DENTRO del shell de /admin; el título y el riel
+/// los pone el shell.
 class ScaleTogglesScreen extends ConsumerStatefulWidget {
   final DataRepository repo;
   final String? organizationId;
@@ -63,12 +64,7 @@ class _ScaleTogglesScreenState extends ConsumerState<ScaleTogglesScreen> {
   @override
   Widget build(BuildContext context) {
     final catalog = ref.watch(scaleApplicabilityProvider);
-    return Scaffold(
-      appBar: AppBar(
-        leading: const KuraBackButton(fallback: '/admin/configuracion'),
-        title: const Text('Escalas del protocolo'),
-      ),
-      body: catalog.when(
+    return catalog.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => Center(
           child: Padding(
@@ -129,7 +125,6 @@ class _ScaleTogglesScreenState extends ConsumerState<ScaleTogglesScreen> {
             ],
           );
         },
-      ),
-    );
+      );
   }
 }

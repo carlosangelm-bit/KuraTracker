@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../core/widgets/kura_back_button.dart';
-
 import '../../core/widgets/kura_module_lock.dart';
 
 import '../../core/providers/session_provider.dart';
@@ -34,6 +32,8 @@ NoteOptionField _fieldForTag(KuraTag t) =>
 /// del protocolo, el admin marca qué conceptos de su catálogo pertenecen (y ve
 /// el producto comercial mapeado de los materiales). Internamente asigna la
 /// etiqueta kura_tag del concepto; aquí se presenta protocolo-primero.
+/// CUERPO (sin Scaffold): vive DENTRO del shell de /admin; el título y el riel
+/// los pone el shell.
 class ProtocolKuraScreen extends ConsumerStatefulWidget {
   final DataRepository repo;
   final String? organizationId;
@@ -72,18 +72,12 @@ class _ProtocolKuraScreenState extends ConsumerState<ProtocolKuraScreen> {
     // centro, no del superusuario. Enumerado en admin_gated_screens_lock_test.
     final isMaster = ref.read(sessionProvider).user?.isMaster ?? false;
     if (!isMaster && !widget.repo.premiumAdminFor(widget.organizationId)) {
-      return adminModuleLockedScaffold(context,
+      return adminModuleLockedBody(
           repo: widget.repo,
           organizationId: widget.organizationId,
-          title: 'Protocolo Kura+',
           description: 'Arma los pasos de tu propio protocolo: qué conceptos van en cada uno.');
     }
-    return Scaffold(
-      appBar: AppBar(
-        leading: const KuraBackButton(fallback: '/admin/configuracion'),
-        title: const Text('Protocolo Kura+'),
-      ),
-      body: ListView(
+    return ListView(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 40),
         children: [
           Text(
@@ -100,8 +94,7 @@ class _ProtocolKuraScreenState extends ConsumerState<ProtocolKuraScreen> {
           _sectionLabel('Material'),
           ..._material.map(_categoryCard),
         ],
-      ),
-    );
+      );
   }
 
   Widget _sectionLabel(String s) => Padding(

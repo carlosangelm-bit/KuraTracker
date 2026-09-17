@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/providers/session_provider.dart';
 
-import '../../core/widgets/kura_back_button.dart';
 import '../../core/widgets/kura_module_lock.dart';
 import '../../core/theme/kura_theme.dart';
 import '../../services/acuity_service.dart';
@@ -12,6 +11,8 @@ import '../../services/data_repository.dart';
 /// Config del tipo de cita de Acuity para las sesiones del plan (0080). El
 /// master/admin elige, de la lista de Acuity, qué tipo representa una "sesión
 /// de curación/seguimiento"; con ese tipo se agendan las sesiones al aceptar.
+/// CUERPO (sin Scaffold): vive DENTRO del shell de /admin; el título y el riel
+/// los pone el shell.
 class AcuitySessionTypeScreen extends ConsumerStatefulWidget {
   final DataRepository repo;
   final String? organizationId;
@@ -77,18 +78,12 @@ class _AcuitySessionTypeScreenState
     // centro, no del superusuario. Enumerado en admin_gated_screens_lock_test.
     final isMaster = ref.read(sessionProvider).user?.isMaster ?? false;
     if (!isMaster && !widget.repo.premiumAdminFor(widget.organizationId)) {
-      return adminModuleLockedScaffold(context,
+      return adminModuleLockedBody(
           repo: widget.repo,
           organizationId: widget.organizationId,
-          title: 'Tipo de cita para sesiones',
           description: 'Conecta las sesiones del plan con tu agenda de Acuity.');
     }
-    return Scaffold(
-      appBar: AppBar(
-        leading: const KuraBackButton(fallback: '/admin/configuracion'),
-        title: const Text('Tipo de cita para sesiones'),
-      ),
-      body: FutureBuilder<List<dynamic>>(
+    return FutureBuilder<List<dynamic>>(
         future: _typesFuture,
         builder: (context, snap) {
           if (snap.connectionState == ConnectionState.waiting) {
@@ -173,7 +168,6 @@ class _AcuitySessionTypeScreenState
             ],
           );
         },
-      ),
-    );
+      );
   }
 }

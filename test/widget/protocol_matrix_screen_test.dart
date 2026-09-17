@@ -53,7 +53,9 @@ Future<void> _pump(
     ],
     child: MaterialApp(
       theme: ThemeData(extensions: <ThemeExtension<dynamic>>[BrandTokens.kura]),
-      home: ProtocolMatrixScreen(repo: repo, organizationId: org),
+      // La Matriz ya es un CUERPO sin Scaffold (el shell de /admin da el chrome);
+      // se envuelve en Scaffold para el ancestro Material.
+      home: Scaffold(body: ProtocolMatrixScreen(repo: repo, organizationId: org)),
     ),
   ));
   await t.pumpAndSettle();

@@ -30,6 +30,16 @@ void main() {
     'Personal': '/admin/personal',
     'Sitios': '/admin/sitios',
     'Configuración': '/admin/configuracion',
+    // Las 8 profundas ahora viven en el riel (antes eran pantallas completas fuera
+    // del shell). Enumeradas aquí: si se agrega/quita una, esta prueba lo caza.
+    'Protocolo Kura+': '/admin/protocolo-kura',
+    'Matriz del protocolo': '/admin/productos-protocolo',
+    'Escalas del protocolo': '/admin/escalas-protocolo',
+    'Fuente de recomendaciones': '/admin/fuente-recomendaciones',
+    'Tipos de cita': '/admin/tipo-cita-sesiones',
+    'Tipos de consulta': '/admin/tipos-consulta',
+    'Registro de divulgaciones': '/admin/divulgaciones',
+    'Depurar expedientes': '/admin/depurar-expedientes',
     'Marca': '/admin/marca',
     'Licencias': '/admin/licencias',
   };

@@ -16,6 +16,15 @@ import 'staff_screen.dart';
 import 'sites_screen.dart';
 import 'note_catalog_screen.dart';
 import 'branding_screen.dart';
+// Las 8 pantallas profundas de /admin, ahora cuerpos dentro del shell.
+import 'protocol_kura_screen.dart';
+import 'protocol_matrix_screen.dart';
+import 'scale_toggles_screen.dart';
+import 'recommendations_reference_screen.dart';
+import 'acuity_session_type_screen.dart';
+import 'acuity_visit_type_map_screen.dart';
+import 'data_disclosures_screen.dart';
+import 'patient_cleanup_screen.dart';
 import '../../models/module_key.dart';
 
 /// Panel de administración: gestión de personal sanitario, sitios y
@@ -166,6 +175,30 @@ class AdminSectionBody extends ConsumerWidget {
           case 'licencias':
             return LicensePanel(
                 repo: repo, organizationId: organizationId, user: sessionUser);
+          // Las 8 profundas — cuerpos (sin Scaffold). Cada una aplica su propio
+          // candado comercial (y el master lo trasciende). El shell pone el título
+          // (lo deriva del label del riel) y el riel.
+          case 'protocolo-kura':
+            return ProtocolKuraScreen(repo: repo, organizationId: organizationId);
+          case 'productos-protocolo':
+            return ProtocolMatrixScreen(
+                repo: repo, organizationId: organizationId);
+          case 'escalas-protocolo':
+            return ScaleTogglesScreen(
+                repo: repo, organizationId: organizationId);
+          case 'fuente-recomendaciones':
+            return const RecommendationsReferenceScreen();
+          case 'tipo-cita-sesiones':
+            return AcuitySessionTypeScreen(
+                repo: repo, organizationId: organizationId);
+          case 'tipos-consulta':
+            return AcuityVisitTypeMapScreen(
+                repo: repo, organizationId: organizationId);
+          case 'divulgaciones':
+            return const DataDisclosuresScreen();
+          case 'depurar-expedientes':
+            return PatientCleanupScreen(
+                repo: repo, organizationId: organizationId);
           default:
             return UsersScreen(
                 repo: repo,

@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import '../../core/widgets/kura_back_button.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
@@ -12,6 +11,8 @@ import '../../services/data_repository.dart';
 /// Registro de divulgaciones (0101): qué datos clínicos SALIERON del centro,
 /// cuándo y por mano de quién. Solo lectura (la tabla es inmutable). Visible
 /// para admin del centro y para master. Lista simple, orden descendente.
+/// CUERPO (sin Scaffold): vive DENTRO del shell de /admin; el título y el riel
+/// los pone el shell.
 class DataDisclosuresScreen extends ConsumerStatefulWidget {
   const DataDisclosuresScreen({super.key});
   @override
@@ -35,12 +36,7 @@ class _DataDisclosuresScreenState extends ConsumerState<DataDisclosuresScreen> {
     // El master ve todas las que le devuelva la RLS; el admin, las de su centro.
     final orgFilter = (user?.isMaster ?? false) ? null : user?.organizationId;
 
-    return Scaffold(
-      appBar: AppBar(
-        leading: const KuraBackButton(fallback: '/admin/configuracion'),
-        title: const Text('Registro de divulgaciones'),
-      ),
-      body: repoAsync.when(
+    return repoAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, st) => Center(
           child: Padding(
@@ -104,8 +100,7 @@ class _DataDisclosuresScreenState extends ConsumerState<DataDisclosuresScreen> {
             ],
           );
         },
-      ),
-    );
+      );
   }
 
   Widget _tile(DataDisclosure d) {
