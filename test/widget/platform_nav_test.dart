@@ -37,13 +37,17 @@ void main() {
     expect(got['Licencia'], '/platform/licencia');
   });
 
-  test('el riel del master tiene dos destinos: Plataforma e Importar (hermanos)', () {
+  test('el riel del master: Plataforma + Administración + Importar (hermanos)', () {
     // "Importar expedientes" se absorbió de la tira externa a la declaración; ya no
     // es un solo destino de primer nivel (72 px de riel colapsado sí se justifican).
+    // Administración se AÑADIÓ para el master (0012, master trasciende): es su entrada
+    // a /admin y su navegación entre secciones —sin ella, un master que abre una
+    // pantalla de /admin queda atrapado (no hay flecha de volver, la quitó el shell).
     final tops = platformNavDestinations();
-    expect(tops.map((d) => d.route).toList(), ['/platform', '/import-export']);
-    expect(tops.first.label, 'Plataforma');
-    expect(tops.last.label, 'Importar expedientes');
+    expect(tops.first.route, '/platform', reason: 'Plataforma va primero');
+    expect(tops.map((d) => d.route).toSet(),
+        {'/platform', '/admin', '/import-export'});
+    expect(tops.firstWhere((d) => d.route == '/admin').label, 'Administración');
   });
 
   testWidgets('1 · cada una de las nueve monta su pantalla y queda activa',

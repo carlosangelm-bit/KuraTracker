@@ -97,7 +97,11 @@ List<NavDestination> kuraNavDestinations({
       label: 'Administración',
       icon: Icons.settings_outlined,
       route: '/admin',
-      visibleWhen: () => isAdmin && !isCaregiverOnly,
+      // isAdmin O isMaster: el master TRASCIENDE (0012, mismo patrón que el candado
+      // comercial). Sin master aquí, un master que abre una pantalla de /admin queda
+      // SIN navegación visible entre secciones (el riel no le muestra Administración)
+      // y sin la flecha de volver (que se quitó al meter las profundas al shell).
+      visibleWhen: () => (isAdmin || isMaster) && !isCaregiverOnly,
       // Las seis secciones reales de AdminHomeScreen, en su orden.
       children: const [
         NavDestination(
