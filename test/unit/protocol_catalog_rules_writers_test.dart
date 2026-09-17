@@ -69,9 +69,16 @@ void main() {
     // La policy se REDEFINE por historia (0136→0137→0142); la VIGENTE es 0142.
     expect(policyMigs.any((m) => m.startsWith('0142')), isTrue,
         reason: 'la policy vigente de protocol_catalog_rules debe estar en 0142');
-    // El trigger se declara en 0136 (uno solo). Si aparece otro archivo, re-enumera.
-    expect(triggerMigs.toSet(), {'0136_protocol_catalog_matrix_schema.sql'},
-        reason: 'trigger(s) sobre protocol_catalog_rules fuera de 0136: $triggerMigs. '
-            'Un trigger nuevo es un escritor/candado nuevo: enumera y actualiza la reja.');
+    // DOS triggers ENUMERADOS sobre la tabla: (3a) auditoría (0136) y (3b) set_updated_at
+    // (0146 — la BASE dueña de updated_at; el cliente dejó de escribirlo). Si aparece OTRO
+    // archivo con trigger, es un escritor/candado nuevo: enumera y actualiza la reja.
+    expect(
+        triggerMigs.toSet(),
+        {
+          '0136_protocol_catalog_matrix_schema.sql',
+          '0146_protocol_catalog_rules_updated_at.sql',
+        },
+        reason: 'trigger(s) sobre protocol_catalog_rules fuera de los enumerados: '
+            '$triggerMigs. Un trigger nuevo es un escritor/candado nuevo.');
   });
 }

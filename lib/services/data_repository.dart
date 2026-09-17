@@ -7125,10 +7125,14 @@ class DataRepository {
   /// así que se ESCRIBEN solo sus columnas (se quita organization_id del toJson). La RLS
   /// (current_user_can_author_catalog) decide si el upsert procede. §15 etapa 6.
   Future<void> saveProtocolCatalogRule(ProtocolProductRule rule) async {
+    // La BASE es la dueña de updated_at (default now() en INSERT + trigger
+    // set_updated_at en UPDATE, 0146): el cliente NO lo escribe. Antes mandaba
+    // DateTime.now() (hora LOCAL) sobre un timestamptz → 360 min de desfase.
     final row = {...rule.toJson()}
       ..remove('organization_id')
-      ..['id'] = rule.id.isEmpty ? _uuid.v4() : rule.id
-      ..['updated_at'] = DateTime.now().toIso8601String();
+      ..remove('updated_at')
+      ..remove('created_at')
+      ..['id'] = rule.id.isEmpty ? _uuid.v4() : rule.id;
     await _store.upsertRow(Collections.protocolCatalogRules, row);
   }
 
