@@ -6,7 +6,8 @@ import '../../core/widgets/kura_error_state.dart';
 import '../../core/config/app_config.dart';
 import '../../core/providers/session_provider.dart';
 import '../../core/providers/active_organization_provider.dart';
-import '../../core/router/app_shell.dart' show KuraAccountMenu, hasNavRail;
+import '../../core/router/app_shell.dart'
+    show KuraAccountMenu, hasNavRail, ActiveCenterChip;
 import '../support/support_launcher.dart';
 import '../../core/nav/kura_nav_rail.dart';
 import '../../core/nav/kura_nav_destinations.dart';
@@ -98,8 +99,13 @@ class _AdminSectionsShellState extends ConsumerState<AdminSectionsShell> {
           currentRoute: currentRoute,
           collapsed: collapsed,
           // A ≥900 px la acción principal de la sección va aquí (sólida), no en un FAB.
-          actions: sectionHeaderActions(ref, currentRoute,
-              hasRail: hasNavRail(ref, context)),
+          // El chip del centro activo va PRIMERO (solo master): el master siempre ve
+          // sobre qué centro administra, el mismo que consultó la puerta de capacidad.
+          actions: [
+            const ActiveCenterChip(),
+            ...sectionHeaderActions(ref, currentRoute,
+                hasRail: hasNavRail(ref, context)),
+          ],
         ),
         const Divider(height: 1),
         Expanded(child: child),

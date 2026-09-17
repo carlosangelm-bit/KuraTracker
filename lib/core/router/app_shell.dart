@@ -11,6 +11,7 @@ import 'package:go_router/go_router.dart';
 
 import '../design/tokens.dart';
 import '../providers/session_provider.dart';
+import '../providers/active_organization_provider.dart';
 import '../widgets/kura_glass_card.dart';
 import '../nav/kura_nav_destinations.dart';
 import '../nav/kura_nav_rail.dart';
@@ -637,8 +638,11 @@ class KuraPageHeader extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final session = ref.watch(sessionProvider);
-    final user = session.user;
-    final orgId = user?.organizationId;
+    // El migajón nombra el CENTRO ACTIVO — el MISMO que consultó la puerta de
+    // capacidad (activeOrganizationIdProvider), no el de origen. Si no, el master
+    // opera sobre un centro y la etiqueta dice otro ("algo cambia y la pantalla no
+    // lo dice"). No-master → activo == origen, idéntico.
+    final orgId = ref.watch(activeOrganizationIdProvider);
     final repo = ref.watch(dataRepositoryProvider).valueOrNull;
     final centerName =
         (orgId != null ? repo?.organizationById(orgId)?.name : null) ??
@@ -655,6 +659,46 @@ class KuraPageHeader extends ConsumerWidget {
         // (cerrar sesión, cambiar de centro) va en el encabezado. Con riel, en su pie.
         if (!hasRail) const UserMenuButton(),
       ],
+    );
+  }
+}
+
+/// Chip del CENTRO ACTIVO — nombra el MISMO centro que consultó la puerta de
+/// capacidad ([activeOrganizationIdProvider]). Solo para el MASTER (que puede
+/// inspeccionar un centro ajeno): así nunca opera sobre un centro sin verlo. Para
+/// no-master no pinta nada (activo == origen; su encabezado ya lo dice), preservando
+/// la conducta idéntica. Se coloca en el encabezado de /admin y las clínicas.
+class ActiveCenterChip extends ConsumerWidget {
+  const ActiveCenterChip({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final user = ref.watch(sessionProvider).user;
+    if (user?.isMaster != true) return const SizedBox.shrink();
+    final orgId = ref.watch(activeOrganizationIdProvider);
+    final repo = ref.watch(dataRepositoryProvider).valueOrNull;
+    final name = (orgId != null ? repo?.organizationById(orgId)?.name : null);
+    if (name == null) return const SizedBox.shrink();
+    final t = BrandTokens.of(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: t.chipBg,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: t.border),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.hub_outlined, size: 15, color: t.brandPrimary),
+          const SizedBox(width: 6),
+          Text('Centro activo: $name',
+              style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: t.textPrimary)),
+        ],
+      ),
     );
   }
 }
