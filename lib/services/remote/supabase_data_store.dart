@@ -102,18 +102,28 @@ class SupabaseDataStore implements DataStore {
     }
   }
 
+  // Concurrencia ACOTADA de la hidratación. NO 60 de golpe: medido en el sandbox,
+  // el paralelismo sin límite NO compró velocidad (729 ms vs ~700 ms por tandas) y
+  // SÍ metió contención (las llamadas subieron de ~130 ms a 150–545 ms: se
+  // encolaban en el límite de conexiones del navegador). En prod, con carga útil
+  // real (p.ej. wound_photos), la contención es peor y es justo donde una petición
+  // se cae en SILENCIO (refreshCollection traga el error como []). Tandas de 8 =
+  // casi toda la ganancia, sin ponerle el pie al servidor. Tunable.
+  static const _hydrationBatchSize = 8;
+
   Future<void> _runHydrate() async {
     // [SESSION-RELOAD] medición temporal del arranque en frío. QUITAR al cerrar.
     final sw = Stopwatch()..start();
-    // PARALELO: el costo es LATENCIA (~130 ms/colección sin importar filas), no
-    // datos. 60 viajes SECUENCIALes (~8 s) → concurrentes (~1 s). NO cambia QUÉ se
-    // carga (el lazy-load de solo el arranque es un cambio aparte). Si en prod la
-    // carga útil (p.ej. wound_photos) presiona la conexión, acotar la concurrencia.
-    await Future.wait(Collections.all.map(refreshCollection));
+    final all = Collections.all;
+    for (var i = 0; i < all.length; i += _hydrationBatchSize) {
+      final batch = all.skip(i).take(_hydrationBatchSize);
+      await Future.wait(batch.map(refreshCollection));
+    }
     sw.stop();
     _hydrated = true;
     debugPrint('[SESSION-RELOAD] hydrate() COMPLETO: '
-        '${Collections.all.length} colecciones en ${sw.elapsedMilliseconds} ms (paralelo)');
+        '${all.length} colecciones en ${sw.elapsedMilliseconds} ms '
+        '(tandas de $_hydrationBatchSize)');
   }
 
   bool get isHydrated => _hydrated;
