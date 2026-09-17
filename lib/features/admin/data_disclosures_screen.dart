@@ -22,11 +22,21 @@ class DataDisclosuresScreen extends ConsumerStatefulWidget {
 
 class _DataDisclosuresScreenState extends ConsumerState<DataDisclosuresScreen> {
   bool _refreshed = false;
+  String? _refreshError;
   final _fmt = DateFormat('dd/MM/yyyy HH:mm');
 
   Future<void> _refresh(DataRepository repo) async {
-    await repo.refreshDataDisclosures();
-    if (mounted) setState(() => _refreshed = true);
+    // SIEMPRE progresa (finally): sin esto, un fallo del refresco dejaba _refreshed
+    // en false y la pantalla se quedaba en el spinner —"abre en blanco"—. Si falla,
+    // se dice; si no, se ve el estado vacío o la lista.
+    try {
+      await repo.refreshDataDisclosures();
+      if (mounted) setState(() => _refreshError = null);
+    } catch (e) {
+      if (mounted) setState(() => _refreshError = '$e'.replaceFirst('Exception: ', ''));
+    } finally {
+      if (mounted) setState(() => _refreshed = true);
+    }
   }
 
   @override
@@ -83,14 +93,36 @@ class _DataDisclosuresScreenState extends ConsumerState<DataDisclosuresScreen> {
                 ),
               ),
               Expanded(
-                child: items.isEmpty
-                    ? const Center(
+                child: _refreshError != null && items.isEmpty
+                    // Falló el refresco: NO decir "sin divulgaciones" (mentiría). Se dice
+                    // que no se pudo cargar y se ofrece reintentar.
+                    ? Center(
                         child: Padding(
-                          padding: EdgeInsets.all(32),
-                          child: Text('Sin divulgaciones registradas.'),
+                          padding: const EdgeInsets.all(32),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Text(
+                                  'No se pudo cargar el registro de divulgaciones.',
+                                  textAlign: TextAlign.center),
+                              const SizedBox(height: 12),
+                              FilledButton.tonalIcon(
+                                onPressed: () => _refresh(repo),
+                                icon: const Icon(Icons.refresh),
+                                label: const Text('Reintentar'),
+                              ),
+                            ],
+                          ),
                         ),
                       )
-                    : ListView.separated(
+                    : items.isEmpty
+                        ? const Center(
+                            child: Padding(
+                              padding: EdgeInsets.all(32),
+                              child: Text('Sin divulgaciones registradas.'),
+                            ),
+                          )
+                        : ListView.separated(
                         padding: const EdgeInsets.fromLTRB(12, 4, 12, 24),
                         itemCount: items.length,
                         separatorBuilder: (_, __) => const Divider(height: 1),

@@ -63,7 +63,13 @@ Future<void> _pump(
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
-  setUp(() => SharedPreferences.setMockInitialValues({}));
+  // protocol_catalog_rules es GLOBAL (sin org): sin limpiarla, las reglas que crea un
+  // test (alta/edición) se filtran al siguiente. Se limpia antes de cada uno.
+  setUp(() async {
+    SharedPreferences.setMockInitialValues({});
+    final store = await LocalStore.instance();
+    await store.clearCollection(Collections.protocolCatalogRules);
+  });
 
   testWidgets('AUTORA (admin + protocol:author) → catálogo con cabecera del régimen',
       (t) async {
@@ -101,6 +107,38 @@ void main() {
     expect(rules.length, before + 1);
     expect(rules.any((r) => r.notePhrase == 'Curación cada 72 h'), isTrue);
     expect(find.text('Regla creada'), findsOneWidget); // no falla en silencio
+  });
+
+  testWidgets('EDITOR: editar REEMPLAZA la frase (no la antepone)', (t) async {
+    final store = await LocalStore.instance();
+    final repo = await DataRepository.instance();
+    const org = 'matrix-edit-replace';
+    await _seedEntitlement(store, org, 'admin');
+    await _seedEntitlement(store, org, 'protocol:author');
+    await store.upsert(Collections.protocolCatalogRules, {
+      'id': 'cat-edit-1',
+      'category': 'aposito',
+      'note_phrase': 'FRASE VIEJA',
+      'quantity_mode': 'fixed',
+      'quantity_value': 1,
+      'sort_order': 0,
+    });
+    await _pump(t, repo, _user(AppRole.admin, org), org);
+
+    await t.tap(find.byIcon(Icons.edit_outlined).first);
+    await t.pumpAndSettle();
+    // El campo llega PRECARGADO con la frase vieja.
+    expect(find.widgetWithText(TextField, 'FRASE VIEJA'), findsOneWidget);
+    // enterText selecciona-todo y escribe encima: debe REEMPLAZAR, no anteponer.
+    await t.enterText(
+        find.widgetWithText(TextField, 'Frase para la nota'), 'FRASE NUEVA');
+    await t.tap(find.text('Guardar'));
+    await t.pumpAndSettle();
+
+    final rule = repo
+        .listProtocolCatalogRules()
+        .firstWhere((r) => r.id == 'cat-edit-1');
+    expect(rule.notePhrase, 'FRASE NUEVA'); // reemplazada, no "FRASE NUEVAFRASE VIEJA"
   });
 
   testWidgets('admin SIN autoría → editor de reglas propias (delegado)', (t) async {

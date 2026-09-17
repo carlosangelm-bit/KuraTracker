@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/providers/session_provider.dart';
 import '../../core/theme/kura_theme.dart';
+import '../../core/design/tokens.dart';
 import '../../services/acuity_service.dart';
 import '../../services/data_repository.dart';
 
@@ -108,9 +109,29 @@ class _AcuityVisitTypeMapScreenState
               ),
               const SizedBox(height: 12),
               if (types.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.all(24),
-                  child: Center(child: Text('Acuity no devolvió tipos de cita.')),
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 40),
+                  child: Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.event_busy_outlined,
+                            size: 40,
+                            color: BrandTokens.of(context).textDisabled),
+                        const SizedBox(height: 12),
+                        const Text('Acuity no devolvió tipos de cita.',
+                            style: TextStyle(fontWeight: FontWeight.w700)),
+                        const SizedBox(height: 4),
+                        Text(
+                            'Configura los tipos de cita en Acuity, o revisa la '
+                            'conexión del centro; aquí aparecerán para mapearlos.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                                fontSize: 12,
+                                color: BrandTokens.of(context).textSecondary)),
+                      ],
+                    ),
+                  ),
                 )
               else
                 for (final t in types) _typeRow(t),
