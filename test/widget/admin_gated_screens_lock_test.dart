@@ -6,6 +6,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:kuratracker/core/design/tokens.dart';
+import 'package:kuratracker/core/providers/session_provider.dart';
+import 'package:kuratracker/models/app_user.dart';
 import 'package:kuratracker/services/acuity_service.dart';
 import 'package:kuratracker/services/data_repository.dart';
 import 'package:kuratracker/services/local_db/local_store.dart';
@@ -67,13 +69,31 @@ class _FakeAcuity extends AcuityService {
   Future<List<dynamic>> appointmentTypes() async => const [];
 }
 
-Future<void> _pump(WidgetTester tester, Widget screen) async {
+class _FakeSessionController extends SessionController {
+  _FakeSessionController(AppUser user) {
+    state = SessionState(user: user);
+  }
+}
+
+const _master = AppUser(
+  id: 'm1',
+  role: AppRole.master,
+  fullName: 'Master Uno',
+  email: 'master@x.test',
+  organizationId: 'org-cualquiera',
+);
+
+Future<void> _pump(WidgetTester tester, Widget screen,
+    {List<Override> extraOverrides = const []}) async {
   tester.view.physicalSize = const Size(1200, 2200);
   tester.view.devicePixelRatio = 1.0;
   addTearDown(tester.view.resetPhysicalSize);
   addTearDown(tester.view.resetDevicePixelRatio);
   await tester.pumpWidget(ProviderScope(
-    overrides: [acuityServiceProvider.overrideWithValue(_FakeAcuity())],
+    overrides: [
+      acuityServiceProvider.overrideWithValue(_FakeAcuity()),
+      ...extraOverrides,
+    ],
     child: MaterialApp(
       theme: ThemeData(extensions: <ThemeExtension<dynamic>>[BrandTokens.kura]),
       home: screen,
@@ -146,6 +166,25 @@ void main() {
     for (final g in _gatedScreens) {
       await _pump(tester, g.build(repo, org));
       expect(find.text(lockCta), findsNothing, reason: '${g.name} con módulo');
+    }
+  });
+
+  // La otra cara del candado: el MASTER lo TRASCIENDE (0012: ve y gestiona todos
+  // los centros). Sin esta prueba, un candado que corre ANTES del chequeo de rol
+  // deja fuera al master —justo el único que puede accionar el interruptor de
+  // fuente que vive DENTRO de la Matriz— y la reja seguiría verde. Enumerado: vale
+  // para las 6, así ninguna gateada puede volver a encerrar al master en silencio.
+  testWidgets('master SIN module:admin: NINGUNA gateada muestra el bloqueo',
+      (tester) async {
+    final repo = await DataRepository.instance();
+    const org = 'gated-master-sin-admin'; // a propósito, sin el módulo
+    for (final g in _gatedScreens) {
+      await _pump(tester, g.build(repo, org),
+          extraOverrides: [
+            sessionProvider.overrideWith((ref) => _FakeSessionController(_master)),
+          ]);
+      expect(find.text(lockCta), findsNothing,
+          reason: '${g.name}: el master trasciende el candado comercial');
     }
   });
 }

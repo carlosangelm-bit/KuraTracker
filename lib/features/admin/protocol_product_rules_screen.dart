@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../../core/widgets/kura_back_button.dart';
 
 import '../../core/widgets/kura_module_lock.dart';
 
+import '../../core/providers/session_provider.dart';
 import '../../core/theme/kura_theme.dart';
 import '../../engine/models/kura_engine_enums.dart';
 import '../../models/inventory.dart';
@@ -13,7 +16,7 @@ import '../../services/data_repository.dart';
 /// Configuración del vínculo PROTOCOLO → PRODUCTO por MEDIDA (0076). Por cada
 /// categoría del protocolo (KuraTag), el admin define reglas que resuelven el
 /// producto concreto y su cantidad según el área/volumen de la herida.
-class ProtocolProductRulesScreen extends StatefulWidget {
+class ProtocolProductRulesScreen extends ConsumerStatefulWidget {
   final DataRepository repo;
   final String? organizationId;
   const ProtocolProductRulesScreen({
@@ -22,12 +25,12 @@ class ProtocolProductRulesScreen extends StatefulWidget {
     required this.organizationId,
   });
   @override
-  State<ProtocolProductRulesScreen> createState() =>
+  ConsumerState<ProtocolProductRulesScreen> createState() =>
       _ProtocolProductRulesScreenState();
 }
 
 class _ProtocolProductRulesScreenState
-    extends State<ProtocolProductRulesScreen> {
+    extends ConsumerState<ProtocolProductRulesScreen> {
   // Categorías con producto asociado (educación no lleva insumo cobrable).
   static const _categories = [
     KuraTag.limpieza,
@@ -94,8 +97,11 @@ class _ProtocolProductRulesScreenState
   @override
   Widget build(BuildContext context) {
     // Segunda capa del candado (además del botón): con URL propia, un admin
-    // sin el módulo entraría tecleando la ruta. Se bloquea al construir.
-    if (!widget.repo.premiumAdminFor(widget.organizationId)) {
+    // sin el módulo entraría tecleando la ruta. Se bloquea al construir. El MASTER
+    // lo TRASCIENDE (0012: ve y gestiona todos los centros); el candado es del
+    // centro, no del superusuario. Enumerado en admin_gated_screens_lock_test.
+    final isMaster = ref.read(sessionProvider).user?.isMaster ?? false;
+    if (!isMaster && !widget.repo.premiumAdminFor(widget.organizationId)) {
       return adminModuleLockedScaffold(context,
           repo: widget.repo,
           organizationId: widget.organizationId,

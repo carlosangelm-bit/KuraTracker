@@ -72,11 +72,14 @@ class _ProtocolMatrixScreenState extends ConsumerState<ProtocolMatrixScreen> {
     final user = ref.watch(sessionProvider).user;
     final isMaster = user?.isMaster ?? false;
     final isAdmin = user?.isAdmin ?? false;
-    // Candado COMERCIAL (module:admin), como todas las pantallas hijas de /admin: es un gate del
-    // CENTRO, independiente del rol, así que va PRIMERO. Un centro sin el módulo ve el bloqueo con
-    // precio, teclee quien teclee la URL. La enumeración en admin_gated_screens_lock_test exige que
-    // esta pantalla lo conserve (si se le cae, la reja se pone roja).
-    if (!repo.premiumAdminFor(org)) {
+    // Candado COMERCIAL (module:admin), como todas las pantallas hijas de /admin: gate del CENTRO,
+    // va antes de la autoría. PERO el MASTER lo TRASCIENDE (coherente con 0012: ve y gestiona todos
+    // los centros) — y aquí es imperativo: el interruptor de fuente de resolución es EXCLUSIVO de
+    // master y vive DENTRO de esta pantalla; sin esta excepción, el único que puede accionarlo sería
+    // el único que no puede abrirla. Orden: master pasa siempre → si no, sin módulo → bloqueo con
+    // precio. La enumeración en admin_gated_screens_lock_test exige AMBAS caras (sin módulo y sin
+    // master → bloqueo; master → NO bloqueo).
+    if (!isMaster && !repo.premiumAdminFor(org)) {
       return adminModuleLockedScaffold(context,
           repo: repo,
           organizationId: org,
