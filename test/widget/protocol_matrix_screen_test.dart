@@ -78,6 +78,31 @@ void main() {
     expect(find.byType(ProtocolProductRulesScreen), findsNothing);
   });
 
+  testWidgets('EDITOR: "Nueva regla" da de alta una regla con su FRASE (el hueco §15)',
+      (t) async {
+    final store = await LocalStore.instance();
+    final repo = await DataRepository.instance();
+    const org = 'matrix-editor';
+    await _seedEntitlement(store, org, 'admin');
+    await _seedEntitlement(store, org, 'protocol:author');
+    await _pump(t, repo, _user(AppRole.admin, org), org);
+
+    final before = repo.listProtocolCatalogRules().length;
+    await t.tap(find.text('Nueva regla'));
+    await t.pumpAndSettle();
+    // La FRASE para la nota es el campo central (sin él, el protocolo no sirve).
+    expect(find.text('Frase para la nota'), findsOneWidget);
+    await t.enterText(
+        find.widgetWithText(TextField, 'Frase para la nota'), 'Curación cada 72 h');
+    await t.tap(find.text('Crear'));
+    await t.pumpAndSettle();
+
+    final rules = repo.listProtocolCatalogRules();
+    expect(rules.length, before + 1);
+    expect(rules.any((r) => r.notePhrase == 'Curación cada 72 h'), isTrue);
+    expect(find.text('Regla creada'), findsOneWidget); // no falla en silencio
+  });
+
   testWidgets('admin SIN autoría → editor de reglas propias (delegado)', (t) async {
     final store = await LocalStore.instance();
     final repo = await DataRepository.instance();

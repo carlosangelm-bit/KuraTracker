@@ -30,6 +30,28 @@ class ProtocolMatrixScreen extends ConsumerStatefulWidget {
       _ProtocolMatrixScreenState();
 }
 
+// Etiquetas legibles de contexto (TOP-LEVEL: las comparte la tabla y el editor de reglas).
+// Los valores crudos vienen del catálogo (Excel); el texto es el del DOMINIO (mismas palabras
+// de las pantallas clínicas), no inventado. Un valor sin mapa cae a su forma cruda (visible,
+// para cazarlo), no a un guion bajo silencioso.
+const _ctxKindLabel = {
+  'etiologia': 'Etiología',
+  'piel': 'Piel',
+  'evolucion': 'Evolución',
+};
+const _ctxValueLabel = {
+  'lpp': 'Lesión por presión (LPP)',
+  'pie_diabetico': 'Pie diabético',
+  'quemaduras': 'Quemaduras',
+  'quirurgica': 'Quirúrgica',
+  'insuf_venosa': 'Insuficiencia venosa',
+  'desgarro': 'Desgarro cutáneo',
+  'dai': 'DAI (dermatitis asociada a incontinencia)',
+  'marsi': 'MARSI (lesión por adhesivos)',
+  'mdrpi': 'MDRPI (lesión por dispositivo médico)',
+  'seguimiento': 'Seguimiento',
+};
+
 class _ProtocolMatrixScreenState extends ConsumerState<ProtocolMatrixScreen> {
   // Reflejo local del interruptor tras un cambio de master, para que se vea al instante (la
   // hidratación de la org llega después; la RPC ya actualizó la base que leen las clínicas).
@@ -39,27 +61,6 @@ class _ProtocolMatrixScreenState extends ConsumerState<ProtocolMatrixScreen> {
   // en vivo. Se filtra por PASO (categoría) y por CONTEXTO.
   String? _catFilter; // KuraTag.dbValue | null = todos
   String? _ctxFilter; // context_value | null = todos
-
-  // Etiquetas legibles de contexto. Los valores crudos vienen del catálogo (Excel); el texto es el
-  // del DOMINIO (mismas palabras de las pantallas clínicas), no inventado. Un valor sin mapa cae a
-  // su forma cruda (visible, para cazarlo), no a un guion bajo silencioso.
-  static const _ctxKindLabel = {
-    'etiologia': 'Etiología',
-    'piel': 'Piel',
-    'evolucion': 'Evolución',
-  };
-  static const _ctxValueLabel = {
-    'lpp': 'Lesión por presión (LPP)',
-    'pie_diabetico': 'Pie diabético',
-    'quemaduras': 'Quemaduras',
-    'quirurgica': 'Quirúrgica',
-    'insuf_venosa': 'Insuficiencia venosa',
-    'desgarro': 'Desgarro cutáneo',
-    'dai': 'DAI (dermatitis asociada a incontinencia)',
-    'marsi': 'MARSI (lesión por adhesivos)',
-    'mdrpi': 'MDRPI (lesión por dispositivo médico)',
-    'seguimiento': 'Seguimiento',
-  };
 
   DataRepository get repo => widget.repo;
   String? get org => widget.organizationId;
@@ -126,9 +127,22 @@ class _ProtocolMatrixScreenState extends ConsumerState<ProtocolMatrixScreen> {
       children: [
         _switchHeader(isMaster),
         const SizedBox(height: 12),
-        Text('Catálogo Kura+ · $atadas de ${all.length} reglas con producto atado',
-            style: TextStyle(
-                fontSize: 12, color: BrandTokens.of(context).textSecondary)),
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                  'Catálogo Kura+ · $atadas de ${all.length} reglas con producto atado',
+                  style: TextStyle(
+                      fontSize: 12,
+                      color: BrandTokens.of(context).textSecondary)),
+            ),
+            FilledButton.icon(
+              onPressed: () => _openRuleForm(),
+              icon: const Icon(Icons.add, size: 18),
+              label: const Text('Nueva regla'),
+            ),
+          ],
+        ),
         const SizedBox(height: 12),
         _filters(all, catPool),
         const SizedBox(height: 12),
@@ -405,6 +419,18 @@ class _ProtocolMatrixScreenState extends ConsumerState<ProtocolMatrixScreen> {
             onPressed: () => _atar(r),
             child: Text(r.hasIdentity ? 'Cambiar' : 'Atar'),
           ),
+          IconButton(
+            tooltip: 'Editar regla',
+            visualDensity: VisualDensity.compact,
+            icon: const Icon(Icons.edit_outlined, size: 18),
+            onPressed: () => _openRuleForm(existing: r),
+          ),
+          IconButton(
+            tooltip: 'Borrar regla',
+            visualDensity: VisualDensity.compact,
+            icon: Icon(Icons.delete_outline, size: 18, color: t.statusWarning),
+            onPressed: () => _deleteRule(r),
+          ),
         ],
       );
 
@@ -440,6 +466,64 @@ class _ProtocolMatrixScreenState extends ConsumerState<ProtocolMatrixScreen> {
             : 'Atado a ${item.name} · sin producto de tienda: en el catálogo Kura+ '
                 'esta regla va solo con prosa (huérfana)')));
   }
+
+  // -------- Alta / edición / borrado de reglas del catálogo (§15 etapa 6, editor) --------
+  // La autoridad la decide current_user_can_author_catalog() (RLS 0142); NO se agrega
+  // condición nueva en el cliente. Nada en silencio: si el guardado/borrado falla, se dice.
+  Future<void> _openRuleForm({ProtocolProductRule? existing}) async {
+    final saved = await showModalBottomSheet<ProtocolProductRule>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => _RuleFormSheet(existing: existing, organizationId: org),
+    );
+    if (saved == null || !mounted) return;
+    try {
+      await repo.saveProtocolCatalogRule(saved);
+      if (!mounted) return;
+      setState(() {});
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(existing == null ? 'Regla creada' : 'Regla actualizada')));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('No se pudo guardar la regla: ${_clean(e)}')));
+    }
+  }
+
+  Future<void> _deleteRule(ProtocolProductRule rule) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (dctx) => AlertDialog(
+        title: const Text('Borrar regla'),
+        content: Text(
+            '¿Borrar esta regla de ${_catLabel(rule.category)}'
+            '${(rule.notePhrase ?? '').isNotEmpty ? ' · "${rule.notePhrase}"' : ''}? '
+            'No se puede deshacer.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(dctx, false),
+              child: const Text('Cancelar')),
+          FilledButton(
+              onPressed: () => Navigator.pop(dctx, true),
+              child: const Text('Borrar')),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    try {
+      await repo.deleteProtocolCatalogRule(rule.id);
+      if (!mounted) return;
+      setState(() {});
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Regla borrada')));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('No se pudo borrar la regla: ${_clean(e)}')));
+    }
+  }
+
+  String _clean(Object e) => '$e'.replaceFirst('Exception: ', '');
 
   Widget _noPermission() => Center(
         child: Padding(
@@ -646,6 +730,229 @@ class _CatalogLoadFailed extends StatelessWidget {
           label: const Text('Reintentar'),
         ),
       ],
+    );
+  }
+}
+
+/// Editor de una regla del catálogo Kura+ (§15 etapa 6 — el ALTA/edición que faltaba;
+/// sin él, "frase para la nota" quedaba vacía y el protocolo no servía en la nota).
+/// Campos: paso, contexto (tipo+valor), escala·disparador, cantidad, y la FRASE. El
+/// producto se ata aparte (botón Atar), no se re-hace aquí. La autoridad la decide la
+/// RLS (current_user_can_author_catalog); esta hoja no agrega condición de cliente.
+class _RuleFormSheet extends StatefulWidget {
+  final ProtocolProductRule? existing;
+  final String? organizationId;
+  const _RuleFormSheet({this.existing, required this.organizationId});
+  @override
+  State<_RuleFormSheet> createState() => _RuleFormSheetState();
+}
+
+class _RuleFormSheetState extends State<_RuleFormSheet> {
+  late String _category;
+  String? _contextKind;
+  String? _contextValue;
+  late QuantityMode _quantityMode;
+  late final TextEditingController _scale;
+  late final TextEditingController _trigger;
+  late final TextEditingController _qty;
+  late final TextEditingController _note;
+
+  @override
+  void initState() {
+    super.initState();
+    final e = widget.existing;
+    _category = e?.category ?? KuraTag.aposito.dbValue;
+    _contextKind = e?.contextKind;
+    _contextValue = e?.contextValue;
+    _quantityMode = e?.quantityMode ?? QuantityMode.fixed;
+    _scale = TextEditingController(text: e?.scaleLabel ?? '');
+    _trigger = TextEditingController(text: e?.triggerLabel ?? '');
+    _qty = TextEditingController(text: _fmtQty(e?.quantityValue ?? 1));
+    _note = TextEditingController(text: e?.notePhrase ?? '');
+  }
+
+  static String _fmtQty(double v) => v == v.roundToDouble()
+      ? v.toInt().toString()
+      : v.toString();
+
+  @override
+  void dispose() {
+    _scale.dispose();
+    _trigger.dispose();
+    _qty.dispose();
+    _note.dispose();
+    super.dispose();
+  }
+
+  String? _blank(String s) => s.trim().isEmpty ? null : s.trim();
+
+  void _save() {
+    final e = widget.existing;
+    // Se construye la regla desde el formulario, PRESERVANDO lo que no se edita aquí:
+    // identidad de producto (par shopify), prosa atada, medida y multi-factor.
+    final rule = ProtocolProductRule(
+      id: e?.id ?? '',
+      organizationId: e?.organizationId ?? (widget.organizationId ?? ''),
+      category: _category,
+      quantityMode: _quantityMode,
+      quantityValue: double.tryParse(_qty.text.trim()) ?? 1,
+      contextKind: _contextKind,
+      contextValue: _contextValue,
+      scaleLabel: _blank(_scale.text),
+      triggerLabel: _blank(_trigger.text),
+      notePhrase: _blank(_note.text),
+      // Preservados del existente (no editables en esta hoja):
+      inventoryItemId: e?.inventoryItemId,
+      name: e?.name,
+      brand: e?.brand,
+      altName: e?.altName,
+      altBrand: e?.altBrand,
+      shopifyProductId: e?.shopifyProductId,
+      shopifyVariantId: e?.shopifyVariantId,
+      etapaClinica: e?.etapaClinica,
+      notas: e?.notas,
+      sortOrder: e?.sortOrder ?? 0,
+      dimension: e?.dimension ?? RuleDimension.none,
+      minValue: e?.minValue,
+      maxValue: e?.maxValue,
+      exudateLevels: e?.exudateLevels ?? const [],
+      zoneGroups: e?.zoneGroups ?? const [],
+      infection: e?.infection ?? RuleInfection.any,
+      priority: e?.priority ?? 0,
+    );
+    Navigator.pop(context, rule);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isNew = widget.existing == null;
+    // Valores de contexto: los conocidos + el actual (si viniera crudo, no se pierde).
+    final ctxValues = <String>{
+      ..._ctxValueLabel.keys,
+      if (_contextValue != null) _contextValue!,
+    }.toList();
+    return Padding(
+      padding: EdgeInsets.only(
+          bottom: MediaQuery.of(context).viewInsets.bottom,
+          left: 16, right: 16, top: 16),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(isNew ? 'Nueva regla del protocolo' : 'Editar regla',
+                style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+            const SizedBox(height: 12),
+            DropdownButtonFormField<String>(
+              value: _category,
+              decoration: const InputDecoration(labelText: 'Paso (categoría)'),
+              items: [
+                for (final tag in KuraTag.values)
+                  DropdownMenuItem(value: tag.dbValue, child: Text(tag.label)),
+              ],
+              onChanged: (v) => setState(() => _category = v ?? _category),
+            ),
+            const SizedBox(height: 8),
+            Row(children: [
+              Expanded(
+                child: DropdownButtonFormField<String?>(
+                  value: _contextKind,
+                  decoration: const InputDecoration(labelText: 'Tipo de contexto'),
+                  items: [
+                    const DropdownMenuItem(value: null, child: Text('Cualquiera')),
+                    for (final e in _ctxKindLabel.entries)
+                      DropdownMenuItem(value: e.key, child: Text(e.value)),
+                  ],
+                  onChanged: (v) => setState(() => _contextKind = v),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: DropdownButtonFormField<String?>(
+                  value: _contextValue,
+                  isExpanded: true,
+                  decoration: const InputDecoration(labelText: 'Contexto'),
+                  items: [
+                    const DropdownMenuItem(value: null, child: Text('Cualquiera')),
+                    for (final v in ctxValues)
+                      DropdownMenuItem(
+                          value: v,
+                          child: Text(_ctxValueLabel[v] ?? v,
+                              overflow: TextOverflow.ellipsis)),
+                  ],
+                  onChanged: (v) => setState(() => _contextValue = v),
+                ),
+              ),
+            ]),
+            const SizedBox(height: 8),
+            Row(children: [
+              Expanded(
+                child: TextField(
+                  controller: _scale,
+                  decoration: const InputDecoration(
+                      labelText: 'Escala', hintText: 'p. ej. Área'),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: TextField(
+                  controller: _trigger,
+                  decoration: const InputDecoration(
+                      labelText: 'Disparador', hintText: 'p. ej. > 10 cm²'),
+                ),
+              ),
+            ]),
+            const SizedBox(height: 8),
+            Row(children: [
+              Expanded(
+                child: DropdownButtonFormField<QuantityMode>(
+                  value: _quantityMode,
+                  decoration: const InputDecoration(labelText: 'Cantidad'),
+                  items: [
+                    for (final m in QuantityMode.values)
+                      DropdownMenuItem(value: m, child: Text(m.label)),
+                  ],
+                  onChanged: (v) =>
+                      setState(() => _quantityMode = v ?? _quantityMode),
+                ),
+              ),
+              const SizedBox(width: 8),
+              SizedBox(
+                width: 90,
+                child: TextField(
+                  controller: _qty,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(labelText: 'Valor'),
+                ),
+              ),
+            ]),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _note,
+              minLines: 2,
+              maxLines: 4,
+              decoration: const InputDecoration(
+                labelText: 'Frase para la nota',
+                hintText: 'Lo que aparece en la nota clínica cuando aplica esta regla.',
+              ),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('Cancelar')),
+                const SizedBox(width: 8),
+                FilledButton(
+                    onPressed: _save,
+                    child: Text(isNew ? 'Crear' : 'Guardar')),
+              ],
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
     );
   }
 }
