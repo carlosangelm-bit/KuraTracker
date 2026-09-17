@@ -6469,7 +6469,12 @@ class DataRepository {
         (c) => c['patient_id'] == patientId && c['type'] == type.dbValue);
     final patch = {
       'granted': granted,
-      'granted_at': granted ? DateTime.now().toIso8601String() : null,
+      // granted_at es el momento de OTORGAR el consentimiento (hecho LEGAL, se
+      // muestra e imprime). Sin default en la tabla (es condicional: null si no se
+      // otorga), así que lo pone el cliente — pero en UTC EXPLÍCITO, nunca hora
+      // local sin zona (que sobre timestamptz quedaba 6 h corrida).
+      'granted_at':
+          granted ? DateTime.now().toUtc().toIso8601String() : null,
       'signed_by': signedBy,
       'doc_ref': docRef,
     };
@@ -6478,12 +6483,13 @@ class DataRepository {
           Collections.consents, existing.first['id'] as String, patch);
       return Consent.fromJson(saved);
     }
+    // created_at NO lo escribe el cliente: la tabla trae `default now()` (0026),
+    // la base lo pone en UTC como corresponde.
     final row = {
       'id': _uuid.v4(),
       'patient_id': patientId,
       'type': type.dbValue,
       ...patch,
-      'created_at': DateTime.now().toIso8601String(),
     };
     final saved = await _store.insertRow(Collections.consents, row);
     return Consent.fromJson(saved);
