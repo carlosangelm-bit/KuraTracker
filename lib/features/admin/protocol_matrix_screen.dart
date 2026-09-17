@@ -4,8 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/providers/session_provider.dart';
 import '../../core/design/tokens.dart';
 import '../../core/widgets/kura_module_lock.dart';
+import '../../models/inventory.dart';
 import '../../models/note_option_catalog.dart';
-import '../../models/product_catalog_item.dart';
 import '../../models/protocol_product_rule.dart';
 import '../../services/data_repository.dart';
 import 'protocol_product_rules_screen.dart';
@@ -412,26 +412,35 @@ class _ProtocolMatrixScreenState extends ConsumerState<ProtocolMatrixScreen> {
 
   // ------------------------------------------------------------------ ATADO
   Future<void> _atar(ProtocolProductRule rule) async {
-    final item = await showModalBottomSheet<ProductCatalogItem>(
+    // Se selecciona de los INSUMOS del centro (dados de alta en Insumos: jalados de
+    // la tienda o creados a mano), NO del catálogo global de la tienda. Solo se
+    // puede atar lo que el centro ya tiene de alta.
+    final item = await showModalBottomSheet<InventoryItem>(
       context: context,
       isScrollControlled: true,
-      builder: (_) => _ProductPickerSheet(
-          repo: repo, seed: rule.name ?? ''),
+      builder: (_) =>
+          _InventoryPickerSheet(repo: repo, organizationId: org, seed: rule.name ?? ''),
     );
     if (item == null || !mounted) return;
-    // La tabla es global: se reescribe la regla con el par shopify. saveProtocolCatalogRule quita
-    // organization_id. Ata identidad SIN tocar la prosa (name/brand/alt siguen siendo lo que ve
-    // el clínico); el humano ya desambiguó la presentación.
+    // La tabla es GLOBAL: se guarda el par shopify TOMADO DEL INSUMO. Un insumo
+    // creado a mano (is_external, sin producto de tienda) no tiene par → la regla
+    // queda HUÉRFANA (solo prosa) en el catálogo Kura+; el modelo ya lo contempla y
+    // un centro cliente no podría resolver un id propio de todos modos. Ata identidad
+    // SIN tocar la prosa (name/brand siguen siendo lo que ve el clínico).
+    final hasPair = (item.shopifyProductId ?? '').isNotEmpty;
     final updated = ProtocolProductRule.fromJson({
       ...rule.toJson(),
-      'shopify_product_id': item.shopifyProductId,
+      'shopify_product_id': item.shopifyProductId ?? '',
       'shopify_variant_id': item.shopifyVariantId ?? '',
     });
     await repo.saveProtocolCatalogRule(updated);
     if (!mounted) return;
     setState(() {});
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('Atado: ${item.title}${item.variantTitle != null ? ' · ${item.variantTitle}' : ''}')));
+        content: Text(hasPair
+            ? 'Atado a ${item.name}'
+            : 'Atado a ${item.name} · sin producto de tienda: en el catálogo Kura+ '
+                'esta regla va solo con prosa (huérfana)')));
   }
 
   Widget _noPermission() => Center(
@@ -454,18 +463,21 @@ class _ProtocolMatrixScreenState extends ConsumerState<ProtocolMatrixScreen> {
       );
 }
 
-/// Selector de producto contra product_catalog EN VIVO. El humano desambigua la presentación
-/// (Border Flex vs su variante Lite; cuál de los Prontosan). NO se filtra por clasificación
-/// (kura_tag/generic_product están vacías). Marca/línea a la vista para elegir bien.
-class _ProductPickerSheet extends StatefulWidget {
+/// Selector de INSUMOS del centro (dados de alta en Insumos: jalados de la tienda o
+/// creados a mano). Solo se puede atar lo que el centro ya tiene de alta. Un insumo
+/// sin producto de tienda (is_external) se marca: al atarlo, la regla del catálogo
+/// GLOBAL queda huérfana (solo prosa). NO se selecciona del catálogo global de tienda.
+class _InventoryPickerSheet extends StatefulWidget {
   final DataRepository repo;
+  final String? organizationId;
   final String seed;
-  const _ProductPickerSheet({required this.repo, required this.seed});
+  const _InventoryPickerSheet(
+      {required this.repo, required this.organizationId, required this.seed});
   @override
-  State<_ProductPickerSheet> createState() => _ProductPickerSheetState();
+  State<_InventoryPickerSheet> createState() => _InventoryPickerSheetState();
 }
 
-class _ProductPickerSheetState extends State<_ProductPickerSheet> {
+class _InventoryPickerSheetState extends State<_InventoryPickerSheet> {
   late final TextEditingController _ctrl =
       TextEditingController(text: _firstWord(widget.seed));
   String _q = '';
@@ -481,22 +493,21 @@ class _ProductPickerSheetState extends State<_ProductPickerSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final all = widget.repo.listProductCatalog();
-    final loadFailed = widget.repo.productCatalogLoadFailed;
+    final all =
+        widget.repo.listInventoryItems(organizationId: widget.organizationId);
+    final loadFailed = widget.repo.inventoryLoadFailed;
     // Dos estados de falla, no uno (en clínica, "rancio" es peor que "vacío"):
     //  - falló + vacío → no se pudo cargar (abajo, _CatalogLoadFailed);
-    //  - falló + CON datos → hay respaldo de caché, pero es viejo: avisar que se
-    //    muestra la última versión y no se pudo actualizar (esta franja).
+    //  - falló + CON datos → hay respaldo de caché, pero es viejo (esta franja).
     final stale = loadFailed && all.isNotEmpty;
     final q = _q.trim().toLowerCase();
     final results = q.isEmpty
         ? all
-        : all.where((p) {
-            final hay =
-                '${p.title} ${p.variantTitle ?? ''} ${p.vendor ?? ''} ${p.sku ?? ''}'
-                    .toLowerCase();
+        : all.where((it) {
+            final hay = '${it.name} ${it.supplier ?? ''}'.toLowerCase();
             return q.split(' ').every((t) => hay.contains(t));
           }).toList();
+    final t = BrandTokens.of(context);
     return Padding(
       padding: EdgeInsets.only(
           bottom: MediaQuery.of(context).viewInsets.bottom,
@@ -506,7 +517,7 @@ class _ProductPickerSheetState extends State<_ProductPickerSheet> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Text('Elegí la presentación de la tienda',
+          const Text('Elegí el insumo del centro',
               style: TextStyle(fontWeight: FontWeight.w800)),
           const SizedBox(height: 8),
           TextField(
@@ -514,7 +525,7 @@ class _ProductPickerSheetState extends State<_ProductPickerSheet> {
             autofocus: true,
             decoration: const InputDecoration(
               prefixIcon: Icon(Icons.search),
-              hintText: 'Buscar por nombre, marca o SKU',
+              hintText: 'Buscar por nombre o proveedor',
             ),
             onChanged: (v) => setState(() => _q = v),
           ),
@@ -522,7 +533,7 @@ class _ProductPickerSheetState extends State<_ProductPickerSheet> {
           if (stale)
             _StaleCatalogBanner(
               onRetry: () async {
-                await widget.repo.refreshProductCatalog();
+                await widget.repo.refreshInventory();
                 if (mounted) setState(() {});
               },
             ),
@@ -530,32 +541,36 @@ class _ProductPickerSheetState extends State<_ProductPickerSheet> {
             child: results.isEmpty
                 ? Padding(
                     padding: const EdgeInsets.all(24),
-                    // Red de seguridad: si el catálogo NO cargó (falló la
-                    // hidratación), NO decir "sin candidatos" —eso lo haría ver
-                    // como catálogo vacío—; decir que falló y ofrecer reintentar.
+                    // Red de seguridad: si los insumos NO cargaron (falló la
+                    // hidratación), NO decir "sin insumos" —eso lo haría ver como
+                    // inventario vacío—; decir que falló y ofrecer reintentar.
                     child: (all.isEmpty && loadFailed)
                         ? _CatalogLoadFailed(
                             onRetry: () async {
-                              await widget.repo.refreshProductCatalog();
+                              await widget.repo.refreshInventory();
                               if (mounted) setState(() {});
                             },
                           )
                         : const Text(
-                            'Sin candidatos en la tienda para esa búsqueda.'),
+                            'Sin insumos que coincidan. Dá de alta el insumo en '
+                            'Insumos y vuelve a atar.'),
                   )
                 : ListView.builder(
                     shrinkWrap: true,
                     itemCount: results.length,
                     itemBuilder: (_, i) {
-                      final p = results[i];
+                      final it = results[i];
+                      final orphan = (it.shopifyProductId ?? '').isEmpty;
                       return ListTile(
-                        title: Text(p.title),
+                        title: Text(it.name),
                         subtitle: Text([
-                          p.variantTitle,
-                          p.vendor,
-                          if (p.sku != null) 'SKU ${p.sku}',
+                          it.supplier,
+                          if (orphan) 'sin producto de tienda (solo prosa)',
                         ].whereType<String>().where((s) => s.isNotEmpty).join(' · ')),
-                        onTap: () => Navigator.pop(context, p),
+                        trailing: orphan
+                            ? Icon(Icons.link_off, size: 18, color: t.statusWarning)
+                            : null,
+                        onTap: () => Navigator.pop(context, it),
                       );
                     },
                   ),
@@ -602,11 +617,11 @@ class _StaleCatalogBanner extends StatelessWidget {
   }
 }
 
-/// Estado de FALLA de carga del catálogo (distinto de "vacío"): la hidratación de
-/// product_catalog no cargó, así que la lista no es de fiar. En producción esto es
-/// justo el caso peligroso —el atado de la Matriz se vería vacío sin ruido— y aquí
-/// se dice con todas las letras + Reintentar. Red de seguridad del hidratado por
-/// tandas ([[refresh-collection-swallows-empty]]).
+/// Estado de FALLA de carga de INSUMOS (distinto de "vacío"): la hidratación de
+/// inventory_items no cargó, así que la lista no es de fiar. En producción es el
+/// caso peligroso —el atado de la Matriz se vería vacío sin ruido— y aquí se dice
+/// con todas las letras + Reintentar. Red de seguridad del hidratado por tandas
+/// ([[refresh-collection-swallows-empty]]).
 class _CatalogLoadFailed extends StatelessWidget {
   const _CatalogLoadFailed({required this.onRetry});
   final Future<void> Function() onRetry;
@@ -619,7 +634,7 @@ class _CatalogLoadFailed extends StatelessWidget {
       children: [
         Icon(Icons.cloud_off, size: 40, color: t.statusWarning),
         const SizedBox(height: 8),
-        const Text('No se pudo cargar el catálogo de la tienda.',
+        const Text('No se pudieron cargar los insumos.',
             textAlign: TextAlign.center,
             style: TextStyle(fontWeight: FontWeight.w700)),
         const SizedBox(height: 4),

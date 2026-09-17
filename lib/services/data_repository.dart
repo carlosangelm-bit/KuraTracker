@@ -1864,18 +1864,19 @@ class DataRepository {
     return store is SupabaseDataStore && store.loadFailed(collection);
   }
 
-  /// Atajo para la Matriz: ¿falló la carga del catálogo de productos (vs. estar
-  /// vacío porque nunca se sincronizó)? Distingue "no se pudo cargar" de "sin
-  /// productos" en la pantalla de atado.
-  bool get productCatalogLoadFailed =>
-      collectionLoadFailed(Collections.productCatalog);
+  /// Atajo para la Matriz: ¿falló la carga de INSUMOS (vs. estar vacío porque el
+  /// centro no ha dado ninguno de alta)? El atado del protocolo selecciona de los
+  /// insumos del centro —no del catálogo global de la tienda—, así que la red de
+  /// seguridad (falló vs vacío) es sobre inventory_items.
+  bool get inventoryLoadFailed =>
+      collectionLoadFailed(Collections.inventoryItems);
 
-  /// Reintenta cargar SOLO el catálogo de productos (botón Reintentar de la Matriz
-  /// cuando la carga inicial falló). No-op en demo.
-  Future<void> refreshProductCatalog() async {
+  /// Reintenta cargar SOLO los insumos (botón Reintentar de la Matriz cuando la
+  /// carga inicial falló). No-op en demo.
+  Future<void> refreshInventory() async {
     final store = _store;
     if (store is SupabaseDataStore) {
-      await store.refreshCollection(Collections.productCatalog);
+      await store.refreshCollection(Collections.inventoryItems);
     }
   }
 
