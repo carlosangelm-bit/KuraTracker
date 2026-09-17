@@ -5,6 +5,7 @@ import '../../core/design/tokens.dart';
 import '../../core/widgets/kura_error_state.dart';
 import '../../core/config/app_config.dart';
 import '../../core/providers/session_provider.dart';
+import '../../core/providers/active_organization_provider.dart';
 import '../../core/router/app_shell.dart' show KuraAccountMenu, hasNavRail;
 import '../support/support_launcher.dart';
 import '../../core/nav/kura_nav_rail.dart';
@@ -142,8 +143,11 @@ class AdminSectionBody extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final repoAsync = ref.watch(dataRepositoryProvider);
     final sessionUser = ref.watch(sessionProvider).user;
-    // organizationId/currentUserId del admin en sesión, acotan las altas al centro.
-    final organizationId = sessionUser?.organizationId;
+    // Centro ACTIVO, no el de origen: la capacidad (premium*For) se pregunta sobre el
+    // centro que el usuario tiene activo. No-master → == origen (idéntico a hoy);
+    // master → el centro que inspecciona en /platform. Cierra el candado pegado al
+    // origen que dejaba al master fuera de Insumos/Marca del centro seleccionado.
+    final organizationId = ref.watch(activeOrganizationIdProvider);
     final currentUserId = sessionUser?.id;
     return repoAsync.when(
       loading: () => const Center(child: CircularProgressIndicator()),

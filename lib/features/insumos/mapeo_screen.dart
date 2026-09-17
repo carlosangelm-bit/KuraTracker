@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/theme/kura_theme.dart';
 import '../../core/providers/session_provider.dart';
+import '../../core/providers/active_organization_provider.dart';
 import '../../core/router/app_shell.dart' show UserMenuButton;
 import 'purchase_guard.dart';
 import '../../models/note_option_catalog.dart';
@@ -84,7 +85,8 @@ class _MapeoScreenState extends ConsumerState<MapeoScreen> {
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, st) => Center(child: Text('Error: $e')),
         data: (repo) {
-          final orgId = user?.organizationId;
+          // centro ACTIVO (no el de origen): la capacidad se pregunta sobre el centro activo
+          final orgId = ref.watch(activeOrganizationIdProvider);
           if (!repo.premiumInsumosFor(orgId)) {
             return const _PremiumLocked();
           }

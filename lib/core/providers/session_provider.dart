@@ -14,6 +14,7 @@ import '../../engine/risk/prevention_risk_engine.dart';
 import '../../engine/risk/braden_scale.dart';
 import '../../engine/risk/scale_applicability.dart';
 import '../config/app_config.dart';
+import 'active_organization_provider.dart';
 
 /// Estado de sesion. En modo Supabase (produccion), refleja
 /// auth.currentUser + la fila de `profiles` correspondiente. En modo demo
@@ -322,8 +323,10 @@ final kuraProtocolEnabledProvider = Provider<bool>((ref) {
   final user = ref.watch(sessionProvider).user;
   if (user == null) return false;
   final repo = ref.watch(dataRepositoryProvider).valueOrNull;
+  // Capacidad sobre el centro ACTIVO (no el de origen). No-master → == origen.
   final centerHasAddon =
-      repo?.premiumProtocoloKuraFor(user.organizationId) ?? false;
+      repo?.premiumProtocoloKuraFor(ref.watch(activeOrganizationIdProvider)) ??
+          false;
   return centerHasAddon && user.premiumEnabled;
 });
 

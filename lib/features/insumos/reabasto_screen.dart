@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/theme/kura_theme.dart';
 import '../../core/providers/session_provider.dart';
+import '../../core/providers/active_organization_provider.dart';
 import '../../core/router/app_shell.dart' show UserMenuButton;
 import '../../core/widgets/kura_bottom_action_bar.dart';
 import '../../models/inventory.dart';
@@ -51,7 +52,8 @@ class _ReabastoScreenState extends ConsumerState<ReabastoScreen> {
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, st) => Center(child: Text('Error: $e')),
         data: (repo) {
-          final orgId = user?.organizationId;
+          // centro ACTIVO (no el de origen): la capacidad se pregunta sobre el centro activo
+          final orgId = ref.watch(activeOrganizationIdProvider);
           if (!repo.premiumInsumosFor(orgId)) {
             return const Center(
                 child: Padding(
@@ -230,8 +232,9 @@ class _ReabastoScreenState extends ConsumerState<ReabastoScreen> {
       ),
       // El checkout NO es «crear»: es el CIERRE de un pedido (carrito → tienda). Va en una
       // barra de acción inferior fija (§8.2), no en un FAB que tape el último renglón.
-      bottomNavigationBar:
-          _buildCheckoutBar(repoAsync.valueOrNull, user?.organizationId),
+      // centro ACTIVO (no el de origen): la capacidad se pregunta sobre el centro activo
+      bottomNavigationBar: _buildCheckoutBar(
+          repoAsync.valueOrNull, ref.watch(activeOrganizationIdProvider)),
     );
   }
 
@@ -409,7 +412,8 @@ class _ReabastoScreenState extends ConsumerState<ReabastoScreen> {
       if (!ok) throw ShopifyException('No se pudo abrir el checkout.');
       // Registra el PEDIDO con lo solicitado; la recepción cerrará contra él
       // (0095), en vez de capturar una entrada "de la nada".
-      final orgId = ref.read(sessionProvider).user?.organizationId;
+      // centro ACTIVO (no el de origen): la capacidad se pregunta sobre el centro activo
+      final orgId = ref.read(activeOrganizationIdProvider);
       if (orgId != null) {
         await repo.createSupplyOrder(
           organizationId: orgId,

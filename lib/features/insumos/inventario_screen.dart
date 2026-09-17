@@ -8,6 +8,7 @@ import 'package:intl/intl.dart';
 import '../../core/design/tokens.dart';
 import '../../core/format/money.dart';
 import '../../core/providers/session_provider.dart';
+import '../../core/providers/active_organization_provider.dart';
 import '../../core/router/app_shell.dart' show UserMenuButton;
 import '../../core/widgets/kura_action_bar.dart';
 import '../../core/widgets/kura_data_table.dart';
@@ -332,7 +333,8 @@ class _InventarioScreenState extends ConsumerState<InventarioScreen> {
 
   Widget _body(
       BuildContext context, BrandTokens t, DataRepository repo, dynamic user) {
-    final orgId = user?.organizationId as String?;
+    // centro ACTIVO (no el de origen): la capacidad se pregunta sobre el centro activo
+    final orgId = ref.watch(activeOrganizationIdProvider);
 
     // Sin módulo: sección completa del bloqueo (precio de billing_catalog + salida
     // a Licencias), no una línea gris suelta.

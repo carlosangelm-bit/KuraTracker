@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 
 import '../../core/theme/kura_theme.dart';
 import '../../core/providers/session_provider.dart';
+import '../../core/providers/active_organization_provider.dart';
 import '../../core/router/app_shell.dart' show UserMenuButton;
 import '../../models/inventory.dart';
 import '../../models/supply_product_mapping.dart';
@@ -41,7 +42,6 @@ class _ConsumoScreenState extends ConsumerState<ConsumoScreen> {
   @override
   Widget build(BuildContext context) {
     final repoAsync = ref.watch(dataRepositoryProvider);
-    final user = ref.watch(sessionProvider).user;
 
     return Scaffold(
       appBar: AppBar(
@@ -60,7 +60,8 @@ class _ConsumoScreenState extends ConsumerState<ConsumoScreen> {
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, st) => Center(child: Text('Error: $e')),
         data: (repo) {
-          final orgId = user?.organizationId;
+          // centro ACTIVO (no el de origen): la capacidad se pregunta sobre el centro activo
+          final orgId = ref.watch(activeOrganizationIdProvider);
           if (!repo.premiumInsumosFor(orgId)) {
             return const Center(
                 child: Padding(

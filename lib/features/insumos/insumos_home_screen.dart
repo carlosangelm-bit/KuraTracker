@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/theme/kura_theme.dart';
 import '../../core/providers/session_provider.dart';
+import '../../core/providers/active_organization_provider.dart';
 import '../../core/router/app_shell.dart' show KuraScreen;
 import '../../models/inventory.dart';
 import '../../services/data_repository.dart';
@@ -22,6 +23,8 @@ class InsumosHomeScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final repoAsync = ref.watch(dataRepositoryProvider);
     final user = ref.watch(sessionProvider).user;
+    // centro ACTIVO (no el de origen): la capacidad se pregunta sobre el centro activo
+    final orgId = ref.watch(activeOrganizationIdProvider);
 
     return KuraScreen(
       title: 'Insumos',
@@ -29,7 +32,7 @@ class InsumosHomeScreen extends ConsumerWidget {
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, st) => Center(child: Text('Error: $e')),
         data: (repo) {
-          final premium = repo.premiumInsumosFor(user?.organizationId);
+          final premium = repo.premiumInsumosFor(orgId);
           // La compra es del admin del centro (y master); enfermería/clínico no
           // ven tienda/inventario/reabasto/mapeo. Consumo (clínico) sí queda.
           final canPurchase = canPurchaseSupplies(user);
@@ -51,7 +54,7 @@ class InsumosHomeScreen extends ConsumerWidget {
               const SizedBox(height: 12),
 
               // Dashboard: gráficos (solo con datos/premium).
-              if (premium) ..._insumosCharts(repo, user?.organizationId),
+              if (premium) ..._insumosCharts(repo, orgId),
 
               // Base (no premium) — YA disponible. Solo compradores (admin/master).
               if (canPurchase)

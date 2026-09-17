@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/theme/kura_theme.dart';
 import '../../core/providers/session_provider.dart';
+import '../../core/providers/active_organization_provider.dart';
 import '../../core/config/app_config.dart';
 import '../../core/router/app_shell.dart' show KuraAccountMenu, hasNavRail;
 import '../support/support_launcher.dart';
@@ -48,10 +49,6 @@ import '../../core/nav/section_action.dart';
 /// de paciente es accesible desde aqui ni desde el DataRepository que
 /// consume (listAllPatients/etc. no se llaman en ningun punto de este
 /// archivo).
-/// Centro seleccionado en /platform: vive en un provider (no en el State de una
-/// pantalla), así PERSISTE al cambiar de sección dentro del shell.
-final _platformOrgProvider = StateProvider<String?>((ref) => null);
-
 /// SHELL de /platform: la barra superior (con las acciones del master) y el riel
 /// único (KuraNavRail). Vive en un ShellRoute ANIDADO; el cuerpo de la sección llega
 /// como [child] y cambia sin reconstruir el riel.
@@ -347,7 +344,8 @@ class _PlatformSectionsShellState extends ConsumerState<PlatformSectionsShell> {
 
 /// CUERPO de una sección de /platform (sin riel). Lo construye cada ruta de sección
 /// con NoTransitionPage: cambiar de sección es cambiar de panel, no navegar. El centro
-/// seleccionado vive en [_platformOrgProvider] (persiste entre secciones). Centros y
+/// seleccionado vive en [activeOrgOverrideProvider] (persiste entre secciones y recargas;
+/// es el centro ACTIVO que también leen /admin y las clínicas). Centros y
 /// Solicitudes son GLOBALES (sin selector); el resto opera sobre el centro elegido.
 class PlatformSectionBody extends ConsumerStatefulWidget {
   final String section;
@@ -363,8 +361,10 @@ class _PlatformSectionBodyState extends ConsumerState<PlatformSectionBody> {
     'modulos', 'solicitudes', 'licencia',
   };
 
+  // El selector de /platform es el ÚNICO escritor de la anulación del centro activo
+  // (persistida, compartida con /admin y las pantallas clínicas). set() la guarda.
   void _selectOrg(String? id) =>
-      ref.read(_platformOrgProvider.notifier).state = id;
+      ref.read(activeOrgOverrideProvider.notifier).set(id);
 
   @override
   Widget build(BuildContext context) {
@@ -379,7 +379,7 @@ class _PlatformSectionBodyState extends ConsumerState<PlatformSectionBody> {
         final orgs = repo.listOrganizations();
         // El centro seleccionado del provider si sigue existiendo; si no, el primero.
         // No se ESCRIBE durante el build (solo el selector escribe).
-        final raw = ref.watch(_platformOrgProvider);
+        final raw = ref.watch(activeOrgOverrideProvider);
         final selected = (raw != null && orgs.any((o) => o.id == raw))
             ? raw
             : (orgs.isNotEmpty ? orgs.first.id : null);

@@ -9,6 +9,7 @@ import 'package:intl/intl.dart';
 
 import '../../core/config/app_config.dart';
 import '../../core/providers/session_provider.dart';
+import '../../core/providers/active_organization_provider.dart';
 import '../../core/theme/kura_theme.dart';
 import '../../core/utils/image_pick_error.dart';
 import '../../core/utils/wound_volume.dart';
@@ -1332,9 +1333,11 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
     // materiales seleccionados/sugeridos: le dicen al profesional qué producto
     // CONCRETO aplicar, con terminología consistente en todo el flujo.
     final commercialRows = <Widget>[];
+    // Capacidad sobre el centro ACTIVO (no el de origen). No-master → == origen.
+    final activeOrg = ref.watch(activeOrganizationIdProvider);
     if (field == NoteOptionField.materialsUsed &&
-        repo.premiumInsumosFor(session.user?.organizationId)) {
-      final orgId = session.user?.organizationId;
+        repo.premiumInsumosFor(activeOrg)) {
+      final orgId = activeOrg;
       for (final label in selected) {
         if (label == kOtherOptionValue) continue;
         final names = repo.commercialNamesForCenterMaterial(orgId, label);

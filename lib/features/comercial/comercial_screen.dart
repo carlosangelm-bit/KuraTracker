@@ -8,6 +8,7 @@ import '../../core/theme/kura_theme.dart';
 import '../../core/layout/responsive.dart';
 import '../../core/nav/section_action.dart' show SectionAction, SectionActionButton;
 import '../../core/providers/session_provider.dart';
+import '../../core/providers/active_organization_provider.dart';
 import '../../core/router/app_shell.dart'
     show KuraScreen, kFloatingNavBarHeight, hasNavRail;
 import '../../core/widgets/kura_primary_fab.dart';
@@ -80,13 +81,13 @@ class _ComercialScreenState extends ConsumerState<ComercialScreen>
   @override
   Widget build(BuildContext context) {
     final repoAsync = ref.watch(dataRepositoryProvider);
-    final user = ref.watch(sessionProvider).user;
 
     return repoAsync.when(
       loading: () => const Scaffold(body: Center(child: CircularProgressIndicator())),
       error: (e, st) => Scaffold(body: Center(child: Text('Error: $e'))),
       data: (repo) {
-        final orgId = user?.organizationId;
+        // centro ACTIVO (no el de origen): la capacidad se pregunta sobre el centro activo
+        final orgId = ref.watch(activeOrganizationIdProvider);
         if (!repo.premiumComercialFor(orgId)) {
           return KuraScreen(
             title: 'Comercial',
