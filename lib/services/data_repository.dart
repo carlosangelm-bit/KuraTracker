@@ -96,10 +96,26 @@ class DataRepository {
   DataRepository._(this._store);
 
   static DataRepository? _instance;
+  // Guarda de concurrencia: instance() asignaba _instance SOLO tras un `await
+  // store.hydrate()` interno, así que dos llamadores en el arranque (p.ej.
+  // SessionController y dataRepositoryProvider) entraban ambos antes de que se
+  // fijara el singleton → construían DOS stores y hidrataban DOS veces ("cada
+  // tabla se pide dos veces"), con la decisión de sesión tomada sobre el store
+  // equivocado. Memorizar el Future en vuelo hace que los concurrentes compartan
+  // UNA sola construcción/hidratación.
+  static Future<DataRepository>? _pending;
 
   static Future<DataRepository> instance() async {
     if (_instance != null) return _instance!;
+    final pending = _pending ??= _build();
+    try {
+      return await pending;
+    } finally {
+      _pending = null;
+    }
+  }
 
+  static Future<DataRepository> _build() async {
     if (AppConfig.isSupabaseConfigured) {
       // Offline-first (Fase 1): la cola persistente de escrituras se pasa al
       // store para que una falla por red encole en vez de perder la captura.

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -62,8 +64,34 @@ class SessionState {
 class SessionController extends StateNotifier<SessionState> {
   SessionController() : super(const SessionState()) {
     if (AppConfig.isSupabaseConfigured) {
+      // Reintento: leer currentUser UNA sola vez perdía el arranque en frío si la
+      // hidratación del perfil aún no había poblado la caché. Escuchar los eventos
+      // de auth (tokenRefreshed / signedIn / initialSession posteriores) permite
+      // re-resolver la sesión cuando el primer intento no encontró al usuario.
+      _authSub = Supabase.instance.client.auth.onAuthStateChange.listen(_onAuthEvent);
       _restoreSupabaseSession();
     }
+  }
+
+  StreamSubscription<AuthState>? _authSub;
+  // Evita restauraciones concurrentes (constructor + evento de auth simultáneos).
+  bool _restoring = false;
+
+  void _onAuthEvent(AuthState data) {
+    // El logout lo gobierna logout(); no interferir.
+    if (data.event == AuthChangeEvent.signedOut) return;
+    // Solo reintenta si Supabase ya tiene usuario pero AÚN no resolvimos el AppUser
+    // y no hay una restauración/login en curso (isLoading lo marca).
+    final hasAuthUser = Supabase.instance.client.auth.currentUser != null;
+    if (hasAuthUser && state.user == null && !state.isLoading && !_restoring) {
+      _restoreSupabaseSession();
+    }
+  }
+
+  @override
+  void dispose() {
+    _authSub?.cancel();
+    super.dispose();
   }
 
   /// Si Supabase ya tiene una sesion persistida (p.ej. tras refrescar la
@@ -83,33 +111,45 @@ class SessionController extends StateNotifier<SessionState> {
   }
 
   Future<void> _restoreSupabaseSession() async {
-    final authUser = Supabase.instance.client.auth.currentUser;
-    // [SESSION-RELOAD] instrumentación temporal del defecto de recarga web. Traza
-    // el tramo que Carlos señaló: currentUser (ya poblado tras setInitialSession),
-    // la hidratación del perfil desde profiles (necesita red) y el veredicto. QUITAR
-    // al cerrar session-reload-web.
-    debugPrint('[SESSION-RELOAD] restore: authUser=${authUser?.email} '
-        'session=${Supabase.instance.client.auth.currentSession != null}');
-    if (authUser == null) return;
-    state = state.copyWith(isLoading: true);
+    if (_restoring) return;
+    _restoring = true;
     try {
-      final repo = await DataRepository.instance();
-      await repo.hydrateAfterLogin();
-      var user = repo.findUserByEmail(authUser.email ?? '');
-      debugPrint('[SESSION-RELOAD] tras hydrate: perfiles=${repo.listUsers().length} '
-          'match=${user != null} active=${user?.isActive}');
-      if (user != null && user.isActive) {
-        user = await _ensureStaffIdForAdmin(repo, user);
-        state = _buildSession(repo, user);
+      final authUser = Supabase.instance.client.auth.currentUser;
+      // [SESSION-RELOAD] instrumentación temporal del defecto de recarga web. Traza
+      // el tramo que Carlos señaló: currentUser (ya poblado tras setInitialSession),
+      // la hidratación del perfil desde profiles (necesita red) y el veredicto. QUITAR
+      // al cerrar session-reload-web.
+      debugPrint('[SESSION-RELOAD] restore: authUser=${authUser?.email} '
+          'session=${Supabase.instance.client.auth.currentSession != null}');
+      // Sin sesión: desenlace terminal RESUELTO (sin usuario). El router puede
+      // decidir /login con confianza.
+      if (authUser == null) {
+        state = state.copyWith(isLoading: false);
         return;
       }
-    } catch (e) {
-      // Sesion invalida/expirada o perfil aun no disponible; se pedira
-      // login manual.
-      debugPrint('[SESSION-RELOAD] EXCEPCIÓN en restore: $e');
+      state = state.copyWith(isLoading: true);
+      try {
+        final repo = await DataRepository.instance();
+        await repo.hydrateAfterLogin();
+        var user = repo.findUserByEmail(authUser.email ?? '');
+        debugPrint('[SESSION-RELOAD] tras hydrate: perfiles=${repo.listUsers().length} '
+            'match=${user != null} active=${user?.isActive}');
+        if (user != null && user.isActive) {
+          user = await _ensureStaffIdForAdmin(repo, user);
+          state = _buildSession(repo, user);
+          return;
+        }
+      } catch (e) {
+        // Sesion invalida/expirada o perfil aun no disponible; se pedira
+        // login manual. Si un evento de auth posterior trae la sesión,
+        // _onAuthEvent reintenta.
+        debugPrint('[SESSION-RELOAD] EXCEPCIÓN en restore: $e');
+      }
+      debugPrint('[SESSION-RELOAD] restore SIN usuario → isAuthenticated=false → /login');
+      state = state.copyWith(isLoading: false);
+    } finally {
+      _restoring = false;
     }
-    debugPrint('[SESSION-RELOAD] restore SIN usuario → isAuthenticated=false → /login');
-    state = state.copyWith(isLoading: false);
   }
 
   /// Fix admin-clinico (ajuste obligatorio #3): si el usuario es admin y NO
