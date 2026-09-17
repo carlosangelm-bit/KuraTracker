@@ -168,7 +168,9 @@ class SessionController extends StateNotifier<SessionState> {
     if (user.role != AppRole.admin || user.staffId != null) return user;
     try {
       final staffId = await repo.ensureAdminStaffId(user);
-      await repo.hydrateAfterLogin();
+      // force: se acaba de escribir la fila de staff; hay que refrescar para verla
+      // (solo ocurre en admins SIN staffId, una vez; el caso común sale arriba).
+      await repo.hydrateAfterLogin(force: true);
       return repo.findUserByEmail(user.email) ?? user.copyWith(staffId: staffId);
     } catch (_) {
       // Si el aprovisionamiento falla (p.ej. RLS/red), se continua sin

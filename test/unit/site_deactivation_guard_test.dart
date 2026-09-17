@@ -49,7 +49,7 @@ class _MemStore implements DataStore {
   Future<void> refreshCollection(String collection) async {}
 
   @override
-  Future<void> hydrate() async {}
+  Future<void> hydrate({bool force = false}) async {}
 }
 
 Map<String, dynamic> _site(String id,

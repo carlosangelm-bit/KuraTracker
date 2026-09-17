@@ -164,10 +164,13 @@ class DataRepository {
 
   /// Fuerza la re-hidratacion de la cache (backend Supabase) tras login.
   /// No-op en modo local.
-  Future<void> hydrateAfterLogin() async {
+  // [force] pasa a store.hydrate: fuerza re-hidratación aunque ya se haya hecho
+  // (cambio de centro, aprovisionamiento de staff). Sin él, en el arranque en frío
+  // esta llamada se DEDUPE (instance() ya hidrató en la misma carga).
+  Future<void> hydrateAfterLogin({bool force = false}) async {
     final store = _store;
     if (store is SupabaseDataStore) {
-      await store.hydrate();
+      await store.hydrate(force: force);
       // Con la cache ya poblada, registra en el motor los parámetros clínicos
       // guardados (o el asset si no hay ninguno).
       await loadClinicalParams();
@@ -745,7 +748,8 @@ class DataRepository {
     final store = _store;
     if (store is SupabaseDataStore) {
       await store.callRpc('set_active_center', {'target_org': organizationId});
-      await hydrateAfterLogin();
+      // force: el centro cambió; hay que RE-hidratar aunque ya estuviera hidratado.
+      await hydrateAfterLogin(force: true);
     } else {
       // Demo: aplicar el CONJUNTO de roles de la membresía al perfil, igual que
       // el RPC reescrito (0106). Antes copiaba solo el escalar.

@@ -147,7 +147,7 @@ class LocalStoreDataStore implements DataStore {
   }
 
   @override
-  Future<void> hydrate() async {
+  Future<void> hydrate({bool force = false}) async {
     // No-op: no hay cache separada que poblar en el caso local.
   }
 }

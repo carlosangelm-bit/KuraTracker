@@ -44,5 +44,8 @@ abstract class DataStore {
   /// usuario actual (segun RLS, en el caso remoto). Se llama una vez tras el
   /// login (o al arrancar, en el caso local). En [LocalStoreDataStore] es un
   /// no-op (SharedPreferences ya actua como "cache" persistente).
-  Future<void> hydrate();
+  // [force] fuerza una re-hidratación aunque ya se haya hidratado (refrescos
+  // reales: cambio de centro, aprovisionamiento). Sin él, una hidratación ya
+  // hecha se omite — dedupe del arranque en frío.
+  Future<void> hydrate({bool force = false});
 }

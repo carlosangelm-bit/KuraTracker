@@ -37,6 +37,11 @@ class SupabaseDataStore implements DataStore {
   final SupabaseClient _client;
   final Map<String, List<Map<String, dynamic>>> _cache = {};
   bool _hydrated = false;
+  // Hidratación en vuelo: colapsa llamadas CONCURRENTES a la misma (comparten
+  // este Future). Junto con _hydrated (secuenciales ya hechas), dedupe el arranque
+  // en frío, donde hydrate() se disparaba 3× (instance(), restore y
+  // _ensureStaffIdForAdmin) por ~24 s encadenados.
+  Future<void>? _hydrating;
 
   /// Cola offline (Fase 1). Si es null, las escrituras fallan como antes; si
   /// está presente, una falla POR RED encola la operación y actualiza la caché
@@ -76,20 +81,39 @@ class SupabaseDataStore implements DataStore {
   }
 
   @override
-  Future<void> hydrate() async {
-    // [SESSION-RELOAD] medición temporal del arranque en frío: hydrate() baja las
-    // 61 colecciones en SECUENCIA antes de que se pueda decidir "hay usuario". Se
-    // cronometra el total + cada colección (en refreshCollection) para ver cuáles
-    // dominan los ~47 s y cuáles NO hacen falta para la primera pantalla. QUITAR al
-    // cerrar el defecto de arranque en frío.
-    final sw = Stopwatch()..start();
-    for (final collection in Collections.all) {
-      await refreshCollection(collection);
+  @override
+  Future<void> hydrate({bool force = false}) async {
+    // DEDUPE del arranque en frío. hydrate() se disparaba 3× encadenadas
+    // (instance() interno + restore + _ensureStaffIdForAdmin) ≈ 24 s. Ahora:
+    //  - concurrentes comparten el mismo Future en vuelo (_hydrating);
+    //  - una ya-hidratada se OMITE (salvo force, para refrescos reales: cambio de
+    //    centro / aprovisionamiento de staff).
+    if (_hydrating != null) return _hydrating;
+    if (_hydrated && !force) {
+      debugPrint('[SESSION-RELOAD] hydrate() OMITIDO (ya hidratado) — llamador: '
+          '${StackTrace.current.toString().split('\n').skip(1).take(3).join(' ⏎ ')}');
+      return;
     }
+    _hydrating = _runHydrate();
+    try {
+      await _hydrating;
+    } finally {
+      _hydrating = null;
+    }
+  }
+
+  Future<void> _runHydrate() async {
+    // [SESSION-RELOAD] medición temporal del arranque en frío. QUITAR al cerrar.
+    final sw = Stopwatch()..start();
+    // PARALELO: el costo es LATENCIA (~130 ms/colección sin importar filas), no
+    // datos. 60 viajes SECUENCIALes (~8 s) → concurrentes (~1 s). NO cambia QUÉ se
+    // carga (el lazy-load de solo el arranque es un cambio aparte). Si en prod la
+    // carga útil (p.ej. wound_photos) presiona la conexión, acotar la concurrencia.
+    await Future.wait(Collections.all.map(refreshCollection));
     sw.stop();
     _hydrated = true;
     debugPrint('[SESSION-RELOAD] hydrate() COMPLETO: '
-        '${Collections.all.length} colecciones en ${sw.elapsedMilliseconds} ms');
+        '${Collections.all.length} colecciones en ${sw.elapsedMilliseconds} ms (paralelo)');
   }
 
   bool get isHydrated => _hydrated;
@@ -100,6 +124,7 @@ class SupabaseDataStore implements DataStore {
   void clearCache() {
     _cache.clear();
     _hydrated = false;
+    _hydrating = null;
   }
 
   @override
