@@ -479,6 +479,12 @@ class _ProductPickerSheetState extends State<_ProductPickerSheet> {
   @override
   Widget build(BuildContext context) {
     final all = widget.repo.listProductCatalog();
+    final loadFailed = widget.repo.productCatalogLoadFailed;
+    // Dos estados de falla, no uno (en clínica, "rancio" es peor que "vacío"):
+    //  - falló + vacío → no se pudo cargar (abajo, _CatalogLoadFailed);
+    //  - falló + CON datos → hay respaldo de caché, pero es viejo: avisar que se
+    //    muestra la última versión y no se pudo actualizar (esta franja).
+    final stale = loadFailed && all.isNotEmpty;
     final q = _q.trim().toLowerCase();
     final results = q.isEmpty
         ? all
@@ -510,11 +516,29 @@ class _ProductPickerSheetState extends State<_ProductPickerSheet> {
             onChanged: (v) => setState(() => _q = v),
           ),
           const SizedBox(height: 8),
+          if (stale)
+            _StaleCatalogBanner(
+              onRetry: () async {
+                await widget.repo.refreshProductCatalog();
+                if (mounted) setState(() {});
+              },
+            ),
           Flexible(
             child: results.isEmpty
-                ? const Padding(
-                    padding: EdgeInsets.all(24),
-                    child: Text('Sin candidatos en la tienda para esa búsqueda.'),
+                ? Padding(
+                    padding: const EdgeInsets.all(24),
+                    // Red de seguridad: si el catálogo NO cargó (falló la
+                    // hidratación), NO decir "sin candidatos" —eso lo haría ver
+                    // como catálogo vacío—; decir que falló y ofrecer reintentar.
+                    child: (all.isEmpty && loadFailed)
+                        ? _CatalogLoadFailed(
+                            onRetry: () async {
+                              await widget.repo.refreshProductCatalog();
+                              if (mounted) setState(() {});
+                            },
+                          )
+                        : const Text(
+                            'Sin candidatos en la tienda para esa búsqueda.'),
                   )
                 : ListView.builder(
                     shrinkWrap: true,
@@ -536,6 +560,76 @@ class _ProductPickerSheetState extends State<_ProductPickerSheet> {
           const SizedBox(height: 8),
         ],
       ),
+    );
+  }
+}
+
+/// Franja de datos RANCIOS: el catálogo tiene respaldo en caché (se puede seguir
+/// atando) pero la última actualización falló. En clínica, mostrar dato viejo como
+/// actual es peor que mostrar vacío; por eso se avisa sin bloquear, con Reintentar.
+class _StaleCatalogBanner extends StatelessWidget {
+  const _StaleCatalogBanner({required this.onRetry});
+  final Future<void> Function() onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = BrandTokens.of(context);
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: t.chipBg,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: t.statusWarning),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.history, size: 18, color: t.statusWarning),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'Mostrando la última versión disponible; no se pudo actualizar.',
+              style: TextStyle(fontSize: 12, color: t.textSecondary),
+            ),
+          ),
+          TextButton(onPressed: onRetry, child: const Text('Reintentar')),
+        ],
+      ),
+    );
+  }
+}
+
+/// Estado de FALLA de carga del catálogo (distinto de "vacío"): la hidratación de
+/// product_catalog no cargó, así que la lista no es de fiar. En producción esto es
+/// justo el caso peligroso —el atado de la Matriz se vería vacío sin ruido— y aquí
+/// se dice con todas las letras + Reintentar. Red de seguridad del hidratado por
+/// tandas ([[refresh-collection-swallows-empty]]).
+class _CatalogLoadFailed extends StatelessWidget {
+  const _CatalogLoadFailed({required this.onRetry});
+  final Future<void> Function() onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = BrandTokens.of(context);
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(Icons.cloud_off, size: 40, color: t.statusWarning),
+        const SizedBox(height: 8),
+        const Text('No se pudo cargar el catálogo de la tienda.',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontWeight: FontWeight.w700)),
+        const SizedBox(height: 4),
+        Text('No es que esté vacío: la carga falló. Reintentá.',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 12, color: t.textSecondary)),
+        const SizedBox(height: 12),
+        FilledButton.tonalIcon(
+          onPressed: onRetry,
+          icon: const Icon(Icons.refresh),
+          label: const Text('Reintentar'),
+        ),
+      ],
     );
   }
 }

@@ -1855,6 +1855,30 @@ class DataRepository {
         ..sort((a, b) =>
             a.displayName.toLowerCase().compareTo(b.displayName.toLowerCase()));
 
+  /// ¿FALLÓ la última carga de [collection] (red/permiso/esquema), en vez de estar
+  /// legítimamente vacía? Red de seguridad del hidratado por tandas: sin esto, un
+  /// fallo silencioso (refreshCollection lo traga como []) se ve igual que "no hay
+  /// datos". Solo aplica al backend Supabase; en demo (local) nunca falla así.
+  bool collectionLoadFailed(String collection) {
+    final store = _store;
+    return store is SupabaseDataStore && store.loadFailed(collection);
+  }
+
+  /// Atajo para la Matriz: ¿falló la carga del catálogo de productos (vs. estar
+  /// vacío porque nunca se sincronizó)? Distingue "no se pudo cargar" de "sin
+  /// productos" en la pantalla de atado.
+  bool get productCatalogLoadFailed =>
+      collectionLoadFailed(Collections.productCatalog);
+
+  /// Reintenta cargar SOLO el catálogo de productos (botón Reintentar de la Matriz
+  /// cuando la carga inicial falló). No-op en demo.
+  Future<void> refreshProductCatalog() async {
+    final store = _store;
+    if (store is SupabaseDataStore) {
+      await store.refreshCollection(Collections.productCatalog);
+    }
+  }
+
   /// Dispara la sincronización del catálogo global desde Shopify (Admin API).
   /// Solo master, solo producción. Devuelve cuántos productos quedaron.
   Future<int> syncShopifyCatalog() async {

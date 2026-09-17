@@ -43,6 +43,18 @@ class SupabaseDataStore implements DataStore {
   // _ensureStaffIdForAdmin) por ~24 s encadenados.
   Future<void>? _hydrating;
 
+  // Red de seguridad del hidratado por tandas: refreshCollection TRAGA el error
+  // como [] (resiliencia — un desfase en UNA tabla no debe tumbar el login). Pero
+  // eso vuelve un FALLO indistinguible de "vacío de verdad" para toda lectura de
+  // la app (p.ej. la Matriz mostraría "sin productos" cuando en realidad no cargó).
+  // Aquí se registra qué colecciones FALLARON su última carga, para que quien
+  // lea pueda distinguir. Un éxito posterior la saca del conjunto.
+  final Set<String> _loadFailed = <String>{};
+
+  /// ¿La ÚLTIMA carga de [collection] falló (red/permiso/esquema)? Distinto de
+  /// "cargó y está vacía": eso es getAll(...).isEmpty con loadFailed==false.
+  bool loadFailed(String collection) => _loadFailed.contains(collection);
+
   /// Cola offline (Fase 1). Si es null, las escrituras fallan como antes; si
   /// está presente, una falla POR RED encola la operación y actualiza la caché
   /// de forma optimista (se sincroniza al reconectar via [syncOutbox]).
@@ -124,6 +136,16 @@ class SupabaseDataStore implements DataStore {
     debugPrint('[SESSION-RELOAD] hydrate() COMPLETO: '
         '${all.length} colecciones en ${sw.elapsedMilliseconds} ms '
         '(tandas de $_hydrationBatchSize)');
+    // Auditoría: SIEMPRE se imprime, también sin fallos. Si el silencio significara
+    // "todo bien", un fallo del propio registro se vería igual que el éxito — el mal
+    // que este cambio combate, en la herramienta que lo vigila. Con fallos, enumera
+    // QUÉ (cada una se ve vacía sin estarlo); sin fallos, lo dice.
+    if (_loadFailed.isEmpty) {
+      debugPrint('[SESSION-RELOAD] hydrate() ${all.length}/${all.length} OK');
+    } else {
+      debugPrint('[SESSION-RELOAD] hydrate() con ${_loadFailed.length} FALLIDAS '
+          '(se ven vacías, no lo están): ${_loadFailed.join(', ')}');
+    }
   }
 
   bool get isHydrated => _hydrated;
@@ -135,6 +157,7 @@ class SupabaseDataStore implements DataStore {
     _cache.clear();
     _hydrated = false;
     _hydrating = null;
+    _loadFailed.clear();
   }
 
   @override
@@ -149,18 +172,32 @@ class SupabaseDataStore implements DataStore {
     // perfil de arranque en frío. QUITAR al cerrar el defecto.
     final sw = Stopwatch()..start();
     try {
-      final rows = await _client.from(collection).select();
+      final rows = await fetchCollectionRows(collection);
       sw.stop();
-      _cache[collection] = (rows as List).cast<Map<String, dynamic>>();
+      _cache[collection] = rows;
+      _loadFailed.remove(collection); // cargó bien: ya no está en falla
       debugPrint('[SESSION-RELOAD] hydrate $collection: '
           '${_cache[collection]!.length} filas · ${sw.elapsedMilliseconds} ms');
       _persistCollection(collection);
     } catch (e) {
       sw.stop();
+      // Red de seguridad: marca la FALLA (para que la lectura distinga de vacío) y
+      // NO cachea [] encima — se deja la cache previa si la había (getAll ya es
+      // null-safe: devuelve const [] si falta). Así un fallo no se disfraza de dato.
+      _loadFailed.add(collection);
       debugPrint('[SESSION-RELOAD] hydrate $collection FALLÓ en '
           '${sw.elapsedMilliseconds} ms, se omite: $e');
-      _cache.putIfAbsent(collection, () => <Map<String, dynamic>>[]);
     }
+  }
+
+  /// Seam de red, sobreescribible en pruebas (igual que callRpcResult): la carga
+  /// CRUDA de una colección. Aislar aquí `_client.from().select()` permite probar
+  /// el manejo de FALLO de refreshCollection —marca loadFailed y NO pisa la caché—
+  /// sin tocar la red.
+  @visibleForTesting
+  Future<List<Map<String, dynamic>>> fetchCollectionRows(String collection) async {
+    final rows = await _client.from(collection).select();
+    return (rows as List).cast<Map<String, dynamic>>();
   }
 
   @override
