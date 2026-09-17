@@ -119,7 +119,11 @@ class SessionController extends StateNotifier<SessionState> {
       // el tramo que Carlos señaló: currentUser (ya poblado tras setInitialSession),
       // la hidratación del perfil desde profiles (necesita red) y el veredicto. QUITAR
       // al cerrar session-reload-web.
-      debugPrint('[SESSION-RELOAD] restore: authUser=${authUser?.email} '
+      // identityHashCode diagnostica el DOBLE restore: si aparecen dos hash
+      // distintos, hay dos SessionController (dos instancias del provider); si es
+      // el mismo dos veces, la guarda _restoring no cerró. Instrumentación, no lógica.
+      debugPrint('[SESSION-RELOAD] restore(ctrl#${identityHashCode(this)}): '
+          'authUser=${authUser?.email} '
           'session=${Supabase.instance.client.auth.currentSession != null}');
       // Sin sesión: desenlace terminal RESUELTO (sin usuario). El router puede
       // decidir /login con confianza.

@@ -77,10 +77,19 @@ class SupabaseDataStore implements DataStore {
 
   @override
   Future<void> hydrate() async {
+    // [SESSION-RELOAD] medición temporal del arranque en frío: hydrate() baja las
+    // 61 colecciones en SECUENCIA antes de que se pueda decidir "hay usuario". Se
+    // cronometra el total + cada colección (en refreshCollection) para ver cuáles
+    // dominan los ~47 s y cuáles NO hacen falta para la primera pantalla. QUITAR al
+    // cerrar el defecto de arranque en frío.
+    final sw = Stopwatch()..start();
     for (final collection in Collections.all) {
       await refreshCollection(collection);
     }
+    sw.stop();
     _hydrated = true;
+    debugPrint('[SESSION-RELOAD] hydrate() COMPLETO: '
+        '${Collections.all.length} colecciones en ${sw.elapsedMilliseconds} ms');
   }
 
   bool get isHydrated => _hydrated;
@@ -101,22 +110,20 @@ class SupabaseDataStore implements DataStore {
     // continúa; la feature de esa colección queda vacía hasta la próxima
     // hidratación, pero el resto de la app sigue funcionando. Antes, sin este
     // try/catch, un desfase código↔esquema tumbaba el login por completo.
+    // [SESSION-RELOAD] medición temporal: ms + nº de filas por colección, para el
+    // perfil de arranque en frío. QUITAR al cerrar el defecto.
+    final sw = Stopwatch()..start();
     try {
       final rows = await _client.from(collection).select();
+      sw.stop();
       _cache[collection] = (rows as List).cast<Map<String, dynamic>>();
-      // [SESSION-RELOAD] instrumentación temporal: en el arranque en frío (recarga
-      // web) el perfil debe venir aquí; si RLS/red devuelve [] sin lanzar, la fila
-      // queda vacía en silencio y findUserByEmail no encuentra al usuario. Se
-      // registra el conteo + si el token de la petición estaba presente. QUITAR al
-      // cerrar el defecto session-reload-web.
-      if (collection == Collections.profiles) {
-        final tok = Supabase.instance.client.auth.currentSession?.accessToken;
-        debugPrint('[SESSION-RELOAD] refreshCollection(profiles) → '
-            '${_cache[collection]!.length} filas · token=${tok != null && tok.isNotEmpty}');
-      }
+      debugPrint('[SESSION-RELOAD] hydrate $collection: '
+          '${_cache[collection]!.length} filas · ${sw.elapsedMilliseconds} ms');
       _persistCollection(collection);
     } catch (e) {
-      debugPrint('refreshCollection("$collection") falló, se omite: $e');
+      sw.stop();
+      debugPrint('[SESSION-RELOAD] hydrate $collection FALLÓ en '
+          '${sw.elapsedMilliseconds} ms, se omite: $e');
       _cache.putIfAbsent(collection, () => <Map<String, dynamic>>[]);
     }
   }
