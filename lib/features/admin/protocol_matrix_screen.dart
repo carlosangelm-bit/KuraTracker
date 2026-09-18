@@ -108,6 +108,10 @@ class _ProtocolMatrixScreenState extends ConsumerState<ProtocolMatrixScreen> {
     final all = repo.listProtocolCatalogRules();
     // "Atado" = tiene insumo del centro (inventory_item_id), NO par shopify.
     final atadas = all.where((r) => r.isBound).length;
+    // Atadas a un insumo EXTERNO (sin par shopify): el catálogo Kura+ NO puede
+    // actualizarlas. Se cuenta para que armar el protocolo entero sobre externos sea una
+    // decisión VISIBLE del centro, no una sorpresa a seis meses (condición de Carlos).
+    final externas = all.where((r) => r.isBound && !r.hasIdentity).length;
 
     // Filtrado. El contexto disponible depende del paso elegido (para no ofrecer valores vacíos).
     final catPool = all
@@ -132,7 +136,8 @@ class _ProtocolMatrixScreenState extends ConsumerState<ProtocolMatrixScreen> {
           children: [
             Expanded(
               child: Text(
-                  'Catálogo Kura+ · $atadas de ${all.length} reglas con producto atado',
+                  'Catálogo Kura+ · $atadas de ${all.length} reglas con insumo atado'
+                  '${externas > 0 ? ' · $externas a insumo externo (no se actualiza por catálogo)' : ''}',
                   style: TextStyle(
                       fontSize: 12,
                       color: BrandTokens.of(context).textSecondary)),
@@ -401,13 +406,31 @@ class _ProtocolMatrixScreenState extends ConsumerState<ProtocolMatrixScreen> {
         children: [
           Expanded(
             child: r.isBound
-                ? Row(children: [
-                    Icon(Icons.link, size: 14, color: t.brandPrimary),
-                    const SizedBox(width: 4),
-                    Flexible(
-                        child: Text('Insumo atado',
-                            style: TextStyle(color: t.brandPrimary))),
-                  ])
+                ? (r.hasIdentity
+                    // Atado a un producto del catálogo Kura+ (tiene par shopify): el
+                    // catálogo puede mantenerlo actualizado.
+                    ? Row(children: [
+                        Icon(Icons.link, size: 14, color: t.brandPrimary),
+                        const SizedBox(width: 4),
+                        Flexible(
+                            child: Text('Insumo atado',
+                                style: TextStyle(color: t.brandPrimary))),
+                      ])
+                    // Atado a un insumo EXTERNO (otro proveedor, sin par shopify): es del
+                    // centro, el catálogo Kura+ NO lo actualiza. Marca visible en la fila.
+                    : Row(children: [
+                        Icon(Icons.link, size: 14, color: t.statusWarning),
+                        const SizedBox(width: 4),
+                        Flexible(
+                            child: Text('Insumo externo',
+                                style: TextStyle(color: t.statusWarning))),
+                        Tooltip(
+                          message: 'Insumo de otro proveedor (externo): es del centro. '
+                              'El catálogo Kura+ no puede actualizar esta regla.',
+                          child: Icon(Icons.info_outline,
+                              size: 13, color: t.statusWarning),
+                        ),
+                      ]))
                 : Row(children: [
                     Icon(Icons.link_off, size: 14, color: t.statusWarning),
                     const SizedBox(width: 4),
