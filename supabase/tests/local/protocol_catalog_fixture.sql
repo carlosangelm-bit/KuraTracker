@@ -105,6 +105,17 @@ language sql stable security definer set search_path = public, pg_temp as $$
   select null::uuid;
 $$;
 
+-- set_updated_at(): la fn reusable real vive en 0002 (no está en la cadena). 0146 le cuelga
+-- el trigger BEFORE UPDATE a protocol_catalog_rules, así que el arnés necesita la MISMA firma
+-- para poder cargar 0146. Idéntica a 0002.
+create or replace function public.set_updated_at()
+returns trigger language plpgsql as $$
+begin
+  new.updated_at := now();
+  return new;
+end;
+$$;
+
 -- Rol authenticated + grants: para EJERCER la RLS de verdad (postgres, dueño, la salta).
 do $$ begin create role authenticated; exception when duplicate_object then null; end $$;
 grant usage on schema public to authenticated;
