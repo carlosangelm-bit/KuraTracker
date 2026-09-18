@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -21,9 +22,11 @@ void main() {
     final repo = await DataRepository.instance();
     final org = repo.listOrganizations().first.id;
 
-    await tester.pumpWidget(MaterialApp(
-      theme: ThemeData(extensions: <ThemeExtension<dynamic>>[BrandTokens.kura]),
-      home: Scaffold(body: NoteCatalogScreen(repo: repo, organizationId: org)),
+    await tester.pumpWidget(ProviderScope(
+      child: MaterialApp(
+        theme: ThemeData(extensions: <ThemeExtension<dynamic>>[BrandTokens.kura]),
+        home: Scaffold(body: NoteCatalogScreen(repo: repo, organizationId: org)),
+      ),
     ));
     await tester.pumpAndSettle();
 

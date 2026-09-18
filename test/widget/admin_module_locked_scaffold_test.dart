@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -19,7 +20,7 @@ void main() {
     final repo = await DataRepository.instance(); // billing_catalog sembrado
     const org = 'gate-sin-admin'; // sin ningún derecho → sin module:admin
 
-    await tester.pumpWidget(MaterialApp(
+    await tester.pumpWidget(ProviderScope(child: MaterialApp(
       theme: ThemeData(extensions: <ThemeExtension<dynamic>>[BrandTokens.kura]),
       home: Builder(
         builder: (ctx) => adminModuleLockedScaffold(
@@ -30,7 +31,7 @@ void main() {
           description: 'Arma los pasos de tu propio protocolo.',
         ),
       ),
-    ));
+    )));
     await tester.pumpAndSettle();
 
     expect(find.text('Protocolo Kura+'), findsOneWidget); // AppBar
@@ -51,7 +52,7 @@ void main() {
       'source': 'master',
     });
 
-    await tester.pumpWidget(MaterialApp(
+    await tester.pumpWidget(ProviderScope(child: MaterialApp(
       theme: ThemeData(extensions: <ThemeExtension<dynamic>>[BrandTokens.kura]),
       home: Builder(
         builder: (ctx) => adminModuleLockedScaffold(
@@ -62,7 +63,7 @@ void main() {
           description: 'Arma los pasos de tu propio protocolo.',
         ),
       ),
-    ));
+    )));
     await tester.pumpAndSettle();
 
     // Con el módulo, KuraModuleLock.section se desvanece → no hay CTA de compra.

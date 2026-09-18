@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import 'kura_back_button.dart';
 import '../design/tints.dart';
 import '../design/tokens.dart';
 import '../format/money.dart';
+import '../providers/master_grant_provider.dart';
+import '../providers/session_provider.dart';
 import '../../services/data_repository.dart';
 import 'dashed_border_box.dart';
 
@@ -69,7 +72,7 @@ enum _Density { band, action, section }
 /// (`context.go('/admin')`). Ninguna dice "solicítalo a tu administrador": quien lee
 /// es quien puede comprar. Si el módulo YA está contratado, no rinde nada. Color
 /// desde [BrandTokens]: el candado y el CTA salen del acento de la marca del centro.
-class KuraModuleLock extends StatelessWidget {
+class KuraModuleLock extends ConsumerWidget {
   final DataRepository repo;
   final String organizationId;
   final String moduleKey; // 'insumos' | 'comercial' | 'admin'
@@ -129,13 +132,26 @@ class KuraModuleLock extends StatelessWidget {
   void _goToLicenses(BuildContext context) => context.go('/admin');
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final t = BrandTokens.of(context);
+    // Reconstruir tras un otorgamiento (la caché de derechos ya se refrescó).
+    ref.watch(entitlementsEpochProvider);
     final contracted = repo.hasModuleEntitlement(organizationId, moduleKey);
+    // LA REGLA DEL MASTER: al master NUNCA se le muestra el muro de venta. Si es master y
+    // el centro no tiene el módulo, en lugar del candado comercial va el banner de
+    // otorgamiento (nombra el centro, ofrece [Otorgar], sin precio ni "ver planes").
+    final isMaster = ref.watch(sessionProvider).user?.isMaster ?? false;
+    final launcher = ref.watch(masterGrantLauncherProvider);
+    final masterMode = isMaster && !contracted && launcher != null;
+
     // La acción NO se desvanece: con módulo es el botón normal, sin él el apagado.
-    if (_density == _Density.action) return _action(context, t, contracted);
+    if (_density == _Density.action) {
+      return _action(context, ref, t, contracted, masterMode);
+    }
     // band/section sí se desvanecen cuando el módulo ya está contratado.
     if (contracted) return const SizedBox.shrink();
+    // Master sin el módulo → banner de otorgamiento (no el muro de venta).
+    if (masterMode) return _masterBanner(context, ref, t);
     return _density == _Density.band ? _band(context, t) : _section(context, t);
   }
 
@@ -179,8 +195,11 @@ class KuraModuleLock extends StatelessWidget {
   }
 
   // b) Acción bloqueada. Con módulo: botón NORMAL (tonal) que dispara onPressed.
-  // Sin módulo: apagada antes de tocarla; al tocar abre (c) en diálogo.
-  Widget _action(BuildContext context, BrandTokens t, bool contracted) {
+  // Sin módulo: apagada antes de tocarla; al tocar abre (c) en diálogo — salvo el
+  // MASTER, a quien tocar le abre el otorgamiento (no el muro de venta, y le AVISA
+  // antes de que una escritura sin derecho falle).
+  Widget _action(BuildContext context, WidgetRef ref, BrandTokens t,
+      bool contracted, bool masterMode) {
     if (contracted) {
       return Material(
         color: t.chipBg,
@@ -212,7 +231,8 @@ class KuraModuleLock extends StatelessWidget {
     }
     return InkWell(
       borderRadius: AppRadii.pillR,
-      onTap: () => _openDialog(context),
+      onTap: () =>
+          masterMode ? _openMasterGrant(context, ref) : _openDialog(context),
       child: DashedBorderBox(
         color: t.border,
         radius: AppRadii.pill,
@@ -222,15 +242,91 @@ class KuraModuleLock extends StatelessWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.lock_outline, size: 13, color: t.textDisabled),
+              Icon(masterMode ? Icons.vpn_key_outlined : Icons.lock_outline,
+                  size: 13,
+                  color: masterMode ? t.brandPrimary : t.textDisabled),
               const SizedBox(width: 6),
               Text(
-                actionLabel ?? moduleName,
-                style: TextStyle(fontSize: AppType.label, color: t.textDisabled),
+                masterMode
+                    ? 'Otorgar para ${actionLabel ?? moduleName}'
+                    : (actionLabel ?? moduleName),
+                style: TextStyle(
+                    fontSize: AppType.label,
+                    color: masterMode ? t.brandPrimary : t.textDisabled),
               ),
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  /// Abre el flujo de otorgamiento del master (inyectado en la raíz), preseleccionado a
+  /// este módulo/centro. Tras otorgar, bumpea la época de derechos → el candado se
+  /// reconstruye y ya ve el módulo contratado.
+  Future<void> _openMasterGrant(BuildContext context, WidgetRef ref) async {
+    final launcher = ref.read(masterGrantLauncherProvider);
+    if (launcher == null) return;
+    final ok = await launcher(context,
+        organizationId: organizationId,
+        moduleKey: moduleKey,
+        moduleName: moduleName);
+    if (!ok) return;
+    ref.read(entitlementsEpochProvider.notifier).state++;
+    if (context.mounted) {
+      final name = repo.organizationById(organizationId)?.name;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('$moduleName otorgado'
+              '${name != null && name.isNotEmpty ? ' a «$name»' : ''}.')));
+    }
+  }
+
+  // Banner del MASTER (la regla, cableada una vez): en lugar del muro de venta. Nombra
+  // el CENTRO por su nombre (condición 1), NUNCA muestra precio ni "ver planes"
+  // (condición 2), y AVISA que las acciones necesitan el derecho para funcionar antes de
+  // que una escritura falle (condición 3). El [Otorgar] abre el flujo preseleccionado.
+  Widget _masterBanner(BuildContext context, WidgetRef ref, BrandTokens t) {
+    final name = repo.organizationById(organizationId)?.name ?? 'Este centro';
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Tints.brand(t, 0.05),
+        borderRadius: AppRadii.mdR,
+        border: Border.all(color: t.brandPrimary.withValues(alpha: 0.35)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.vpn_key_outlined, size: 18, color: t.brandPrimary),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(
+                child: Text(
+                  '«$name» no tiene el módulo $moduleName.',
+                  style: TextStyle(
+                      fontSize: AppType.body - 1,
+                      fontWeight: AppType.bold,
+                      color: t.textPrimary),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Como master puedes otorgárselo. Las acciones de $moduleName '
+            'necesitan el derecho para funcionar.',
+            style: TextStyle(fontSize: AppType.label, color: t.textSecondary),
+          ),
+          const SizedBox(height: AppSpacing.sm + 2),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: _cta(t, 'Otorgar $moduleName',
+                () => _openMasterGrant(context, ref)),
+          ),
+        ],
       ),
     );
   }

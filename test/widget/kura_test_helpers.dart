@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:kuratracker/core/design/tokens.dart';
@@ -17,9 +18,11 @@ Future<void> pumpBrand(
   addTearDown(tester.view.resetPhysicalSize);
   addTearDown(tester.view.resetDevicePixelRatio);
   await tester.pumpWidget(
-    MaterialApp(
-      theme: ThemeData(extensions: <ThemeExtension<dynamic>>[tokens]),
-      home: Scaffold(body: child),
+    ProviderScope(
+      child: MaterialApp(
+        theme: ThemeData(extensions: <ThemeExtension<dynamic>>[tokens]),
+        home: Scaffold(body: child),
+      ),
     ),
   );
 }

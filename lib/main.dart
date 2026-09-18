@@ -11,6 +11,8 @@ import 'core/theme/kura_theme.dart';
 import 'core/router/app_router.dart';
 import 'core/config/app_config.dart';
 import 'core/providers/session_provider.dart';
+import 'core/providers/master_grant_provider.dart';
+import 'features/platform/derechos/master_grant.dart';
 import 'features/tour/tour_scope.dart';
 import 'services/supabase/supabase_bootstrap.dart';
 
@@ -120,7 +122,32 @@ Future<void> main() async {
   // bradenScaleProvider reactivos de las pantallas son el respaldo.
   unawaited(BradenScale.load());
 
-  runApp(const ProviderScope(child: KuraTrackerApp()));
+  runApp(ProviderScope(
+    overrides: [
+      // La REGLA DEL MASTER, cableada UNA VEZ: se inyecta la implementación del atajo de
+      // otorgamiento (features/platform) en el provider de core, para que KuraModuleLock
+      // ofrezca "Otorgar" sin que core dependa de features. Lee el repo ya cargado.
+      masterGrantLauncherProvider.overrideWith((ref) {
+        return (
+          BuildContext context, {
+          required String organizationId,
+          required String moduleKey,
+          required String moduleName,
+        }) async {
+          final repo = ref.read(dataRepositoryProvider).valueOrNull;
+          if (repo == null) return false;
+          return launchMasterGrant(
+            context,
+            repo: repo,
+            organizationId: organizationId,
+            moduleKey: moduleKey,
+            moduleName: moduleName,
+          );
+        };
+      }),
+    ],
+    child: const KuraTrackerApp(),
+  ));
 }
 
 class KuraTrackerApp extends ConsumerWidget {
