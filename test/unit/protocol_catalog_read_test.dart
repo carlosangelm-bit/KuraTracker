@@ -93,6 +93,36 @@ void main() {
     expect(byId['cat-2']!.hasIdentity, isFalse); // huérfana con nombre
   });
 
+  test('isBound = atado a INSUMO DEL CENTRO (inventory_item_id), no par shopify', () async {
+    final r = await repo();
+    final byId = {for (final x in r.listProtocolCatalogRules()) x.id: x};
+    // cat-1 tiene par shopify pero NINGÚN inventory_item_id → NO está atado a un insumo.
+    expect(byId['cat-1']!.isBound, isFalse,
+        reason: 'el par shopify es identidad de catálogo, no el vínculo del protocolo');
+    // Una regla atada a un insumo EXTERNO (sin par shopify) SÍ está atada por inventory_item_id.
+    final bound = ProtocolProductRule.fromJson({
+      'id': 'cat-2',
+      'category': 'aposito',
+      'inventory_item_id': 'inv-externo-1',
+    });
+    expect(bound.isBound, isTrue);
+    expect(bound.hasIdentity, isFalse); // externo: sin par shopify, y aun así atado
+  });
+
+  test('saveProtocolCatalogRule PRESERVA inventory_item_id (el vínculo del atado)', () async {
+    final store = _MemStore({});
+    final r = await DataRepository.forSeeding(store);
+    await r.saveProtocolCatalogRule(ProtocolProductRule.fromJson({
+      'id': 'cat-9',
+      'category': 'aposito',
+      'inventory_item_id': 'inv-externo-9', // insumo del centro (externo)
+      'name': 'Gasa estéril del centro',
+    }));
+    // El upsert conserva el vínculo (antes se escribía el par shopify en null y se perdía).
+    expect(store.lastUpsertCollection, Collections.protocolCatalogRules);
+    expect(store.lastUpsert!['inventory_item_id'], 'inv-externo-9');
+  });
+
   test('canAuthorProtocolCatalog = AUTORIDAD (rol + derecho), no solo capacidad', () async {
     final r = await repo();
     // admin del centro author → autoría.

@@ -1,25 +1,25 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/theme/kura_theme.dart';
-import '../../services/shopify_service.dart';
+import '../../models/product_catalog_item.dart';
+import '../../services/data_repository.dart';
 
-/// Resultado del selector de producto de la tienda: producto + variante opcional.
-class PickedShopifyProduct {
-  final ShopifyProduct product;
-  final ShopifyVariant? variant;
-  const PickedShopifyProduct(this.product, this.variant);
-}
-
-/// Abre el selector de producto de la tienda (con buscador). Devuelve el
-/// producto elegido (y la presentación si tiene varias), o null si se cancela.
-Future<PickedShopifyProduct?> showShopifyProductPicker(BuildContext context,
-    {String title = 'Elegir producto de la tienda'}) {
-  return showModalBottomSheet<PickedShopifyProduct>(
+/// Abre el selector de producto de la tienda Kura+ (con buscador). LEE DEL CATÁLOGO
+/// LOCAL YA SINCRONIZADO (`product_catalog`), NO consulta Shopify en vivo: dar de alta
+/// un insumo NO debe depender de que la Storefront API esté arriba y autorizada en ese
+/// instante (antes reventaba con un `ShopifyException: Error de red (401)` crudo en cara
+/// del usuario). La sincronización del catálogo con Shopify es un proceso APARTE
+/// (Insumos → Tienda / mapeo). Devuelve el producto elegido, o null si se cancela.
+Future<ProductCatalogItem?> showShopifyProductPicker(
+  BuildContext context,
+  DataRepository repo, {
+  String title = 'Elegir producto de la tienda',
+}) {
+  return showModalBottomSheet<ProductCatalogItem>(
     context: context,
     isScrollControlled: true,
     showDragHandle: true,
-    builder: (_) => _ProductPickerSheet(title: title),
+    builder: (_) => _ProductPickerSheet(title: title, repo: repo),
   );
 }
 
@@ -36,19 +36,28 @@ String _fold(String s) {
   return b.toString();
 }
 
-class _ProductPickerSheet extends ConsumerStatefulWidget {
+class _ProductPickerSheet extends StatefulWidget {
   final String title;
-  const _ProductPickerSheet({required this.title});
+  final DataRepository repo;
+  const _ProductPickerSheet({required this.title, required this.repo});
   @override
-  ConsumerState<_ProductPickerSheet> createState() => _ProductPickerSheetState();
+  State<_ProductPickerSheet> createState() => _ProductPickerSheetState();
 }
 
-class _ProductPickerSheetState extends ConsumerState<_ProductPickerSheet> {
+class _ProductPickerSheetState extends State<_ProductPickerSheet> {
   String _search = '';
 
   @override
   Widget build(BuildContext context) {
-    final productsAsync = ref.watch(shopifyProductsProvider);
+    final catalog = widget.repo.listProductCatalog();
+    final q = _fold(_search);
+    final list = q.isEmpty
+        ? catalog
+        : catalog
+            .where((p) => _fold(
+                    '${p.displayName} ${p.vendor ?? ''} ${p.productType ?? ''} ${p.sku ?? ''}')
+                .contains(q))
+            .toList();
     return Padding(
       padding: EdgeInsets.only(
         left: 16,
@@ -78,35 +87,24 @@ class _ProductPickerSheetState extends ConsumerState<_ProductPickerSheet> {
             ),
             const SizedBox(height: 8),
             Flexible(
-              child: productsAsync.when(
-                loading: () => const Center(
-                    child: Padding(
-                        padding: EdgeInsets.all(24),
-                        child: CircularProgressIndicator())),
-                error: (e, st) => Padding(
-                    padding: const EdgeInsets.all(16), child: Text('Error: $e')),
-                data: (products) {
-                  final q = _fold(_search);
-                  final list = q.isEmpty
-                      ? products
-                      : products
-                          .where((p) => _fold(
-                                  '${p.title} ${p.vendor ?? ''} ${p.productType ?? ''}')
-                              .contains(q))
-                          .toList();
-                  if (list.isEmpty) {
-                    return const Padding(
-                        padding: EdgeInsets.all(24),
-                        child: Center(child: Text('Sin resultados.')));
-                  }
-                  return ListView.separated(
-                    shrinkWrap: true,
-                    itemCount: list.length,
-                    separatorBuilder: (_, __) => const Divider(height: 1),
-                    itemBuilder: (_, i) => _tile(list[i]),
-                  );
-                },
-              ),
+              child: catalog.isEmpty
+                  ? const Padding(
+                      padding: EdgeInsets.all(24),
+                      child: Center(
+                          child: Text(
+                              'El catálogo de la tienda todavía no está disponible. '
+                              'Sincronízalo desde Insumos → Tienda y vuelve a intentar.',
+                              textAlign: TextAlign.center)))
+                  : list.isEmpty
+                      ? const Padding(
+                          padding: EdgeInsets.all(24),
+                          child: Center(child: Text('Sin resultados.')))
+                      : ListView.separated(
+                          shrinkWrap: true,
+                          itemCount: list.length,
+                          separatorBuilder: (_, __) => const Divider(height: 1),
+                          itemBuilder: (_, i) => _tile(list[i]),
+                        ),
             ),
           ],
         ),
@@ -114,8 +112,10 @@ class _ProductPickerSheetState extends ConsumerState<_ProductPickerSheet> {
     );
   }
 
-  Widget _tile(ShopifyProduct p) {
-    final price = p.fromPrice;
+  Widget _tile(ProductCatalogItem p) {
+    final priceStr = p.price == null
+        ? null
+        : '\$${p.price!.toStringAsFixed(2)} ${p.currency ?? 'MXN'}';
     return ListTile(
       contentPadding: EdgeInsets.zero,
       leading: ClipRRect(
@@ -132,55 +132,18 @@ class _ProductPickerSheetState extends ConsumerState<_ProductPickerSheet> {
                       const Icon(Icons.image_not_supported_outlined, size: 18)),
         ),
       ),
-      title: Text(p.title,
+      title: Text(p.displayName,
           maxLines: 2,
           overflow: TextOverflow.ellipsis,
           style: const TextStyle(fontSize: 13)),
       subtitle: Text(
         [
           if (p.vendor != null && p.vendor!.isNotEmpty) p.vendor,
-          if (price != null)
-            (p.variants.length > 1 ? 'Desde ${price.formatted}' : price.formatted),
+          if (priceStr != null) priceStr,
         ].whereType<String>().join(' · '),
         style: const TextStyle(fontSize: 11),
       ),
-      onTap: () => _choose(p),
+      onTap: () => Navigator.of(context).pop(p),
     );
-  }
-
-  Future<void> _choose(ShopifyProduct p) async {
-    final available = p.variants.where((v) => v.availableForSale).toList();
-    final variants = available.isEmpty ? p.variants : available;
-    if (variants.length <= 1) {
-      Navigator.of(context).pop(
-          PickedShopifyProduct(p, variants.isNotEmpty ? variants.first : null));
-      return;
-    }
-    final chosen = await showModalBottomSheet<ShopifyVariant?>(
-      context: context,
-      showDragHandle: true,
-      builder: (_) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Text('Presentación de ${p.title}',
-                  style: const TextStyle(fontWeight: FontWeight.w700)),
-            ),
-            for (final v in variants)
-              ListTile(
-                title: Text(v.title),
-                trailing: Text(v.price.formatted),
-                onTap: () => Navigator.of(context).pop(v),
-              ),
-            const SizedBox(height: 8),
-          ],
-        ),
-      ),
-    );
-    if (!mounted) return;
-    if (chosen == null) return; // canceló la elección de variante
-    Navigator.of(context).pop(PickedShopifyProduct(p, chosen));
   }
 }

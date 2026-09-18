@@ -106,7 +106,8 @@ class _ProtocolMatrixScreenState extends ConsumerState<ProtocolMatrixScreen> {
   // ------------------------------------------------------------------ AUTORA
   Widget _catalogView(bool isMaster) {
     final all = repo.listProtocolCatalogRules();
-    final atadas = all.where((r) => r.hasIdentity).length;
+    // "Atado" = tiene insumo del centro (inventory_item_id), NO par shopify.
+    final atadas = all.where((r) => r.isBound).length;
 
     // Filtrado. El contexto disponible depende del paso elegido (para no ofrecer valores vacíos).
     final catPool = all
@@ -399,25 +400,25 @@ class _ProtocolMatrixScreenState extends ConsumerState<ProtocolMatrixScreen> {
   Widget _identityCell(ProtocolProductRule r, BrandTokens t) => Row(
         children: [
           Expanded(
-            child: r.hasIdentity
+            child: r.isBound
                 ? Row(children: [
                     Icon(Icons.link, size: 14, color: t.brandPrimary),
                     const SizedBox(width: 4),
                     Flexible(
-                        child: Text('Producto atado',
+                        child: Text('Insumo atado',
                             style: TextStyle(color: t.brandPrimary))),
                   ])
                 : Row(children: [
                     Icon(Icons.link_off, size: 14, color: t.statusWarning),
                     const SizedBox(width: 4),
                     Flexible(
-                        child: Text('Sin producto asignado',
+                        child: Text('Sin insumo asignado',
                             style: TextStyle(color: t.statusWarning))),
                   ]),
           ),
           TextButton(
             onPressed: () => _atar(r),
-            child: Text(r.hasIdentity ? 'Cambiar' : 'Atar'),
+            child: Text(r.isBound ? 'Cambiar' : 'Atar'),
           ),
           IconButton(
             tooltip: 'Editar regla',
@@ -446,25 +447,42 @@ class _ProtocolMatrixScreenState extends ConsumerState<ProtocolMatrixScreen> {
           _InventoryPickerSheet(repo: repo, organizationId: org, seed: rule.name ?? ''),
     );
     if (item == null || !mounted) return;
-    // La tabla es GLOBAL: se guarda el par shopify TOMADO DEL INSUMO. Un insumo
-    // creado a mano (is_external, sin producto de tienda) no tiene par → la regla
-    // queda HUÉRFANA (solo prosa) en el catálogo Kura+; el modelo ya lo contempla y
-    // un centro cliente no podría resolver un id propio de todos modos. Ata identidad
-    // SIN tocar la prosa (name/brand siguen siendo lo que ve el clínico).
-    final hasPair = (item.shopifyProductId ?? '').isNotEmpty;
+    // El VÍNCULO del protocolo es el INSUMO DEL CENTRO (`inventory_item_id`), no el par
+    // shopify (Carlos: el protocolo se ata a insumos del centro, no al catálogo de la
+    // tienda). Un insumo externo (creado a mano, sin producto de tienda) queda atado
+    // igual por inventory_item_id. El par shopify se CONSERVA solo si el insumo lo trae,
+    // como identidad de catálogo Kura+ (re-empate entre centros); NO es el vínculo. La
+    // prosa (name/brand) no se toca: es lo que ve el clínico.
     final updated = ProtocolProductRule.fromJson({
       ...rule.toJson(),
-      'shopify_product_id': item.shopifyProductId ?? '',
-      'shopify_variant_id': item.shopifyVariantId ?? '',
+      'inventory_item_id': item.id,
+      'shopify_product_id': item.shopifyProductId,
+      'shopify_variant_id': item.shopifyVariantId,
     });
-    await repo.saveProtocolCatalogRule(updated);
-    if (!mounted) return;
-    setState(() {});
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(hasPair
-            ? 'Atado a ${item.name}'
-            : 'Atado a ${item.name} · sin producto de tienda: en el catálogo Kura+ '
-                'esta regla va solo con prosa (huérfana)')));
+    try {
+      await repo.saveProtocolCatalogRule(updated);
+      // NADA en silencio: se re-lee la regla y se confirma que el vínculo QUEDÓ. Si el
+      // upsert fue rechazado por la RLS o no persistió, saveProtocolCatalogRule lanza
+      // (lo caza el catch); si "guardó" pero sin vínculo, este chequeo lo delata.
+      final saved = repo
+          .listProtocolCatalogRules()
+          .firstWhere((r) => r.id == updated.id, orElse: () => updated);
+      if (!mounted) return;
+      if (!saved.isBound) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('No se pudo atar a ${item.name}: el vínculo no quedó '
+                'guardado. Intenta de nuevo.')));
+        return;
+      }
+      setState(() {});
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Atado a ${item.name}'
+              '${item.isExternal ? ' · insumo del centro (sin producto de tienda)' : ''}')));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('No se pudo atar a ${item.name}: ${_clean(e)}')));
+    }
   }
 
   // -------- Alta / edición / borrado de reglas del catálogo (§15 etapa 6, editor) --------

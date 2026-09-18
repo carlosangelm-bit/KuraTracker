@@ -149,6 +149,14 @@ class ProtocolProductRule {
   bool get hasIdentity =>
       shopifyProductId != null && shopifyProductId!.isNotEmpty;
 
+  /// Atada a un INSUMO DEL CENTRO (`inventory_item_id`) — la autoridad del vínculo del
+  /// protocolo (Carlos): el protocolo se ata a insumos del centro, NO al catálogo de
+  /// Shopify. Un insumo externo (creado a mano, sin par shopify) queda atado por aquí
+  /// aunque `hasIdentity` sea falso. `hasIdentity` (par shopify) es SOLO la identidad de
+  /// catálogo Kura+ para re-empatar entre centros; el atado que importa es éste.
+  bool get isBound =>
+      inventoryItemId != null && inventoryItemId!.isNotEmpty;
+
   const ProtocolProductRule({
     required this.id,
     required this.organizationId,

@@ -362,10 +362,19 @@ class _InventarioScreenState extends ConsumerState<InventarioScreen> {
     final sites =
         repo.listSites(organizationId: orgId).where((s) => s.isActive).toList();
     if (sites.isEmpty) {
+      // El inventario es POR SITIO (sede). Un centro recién creado no tiene ninguno:
+      // no es un error, es el primer paso. Se explica y se da la acción (no callejón).
       return _wrap(
         t,
-        Text('Este centro no tiene sitios configurados.',
-            style: TextStyle(color: t.textSecondary)),
+        KuraEmptyState(
+          icon: Icons.add_location_alt_outlined,
+          title: 'Primero, una sede',
+          message: 'El inventario se lleva por sede: cada sitio tiene su propia '
+              'existencia. Este centro todavía no tiene ninguna. Da de alta una '
+              'sede y aquí podrás capturar sus artículos.',
+          primaryLabel: 'Configurar sedes',
+          onPrimary: () => context.go('/admin/sitios'),
+        ),
       );
     }
 
@@ -1019,19 +1028,18 @@ class _InventarioScreenState extends ConsumerState<InventarioScreen> {
 
     InventoryItem? created;
     if (kind == 'store') {
-      final picked = await showShopifyProductPicker(context,
+      final picked = await showShopifyProductPicker(context, repo,
           title: 'Agregar producto de la tienda al inventario');
       if (picked == null) return;
-      final price = picked.variant?.price ?? picked.product.fromPrice;
       created = await repo.addInventoryItem(
         organizationId: orgId,
         siteId: _siteId!,
-        name: picked.product.title,
-        shopifyProductId: picked.product.id,
-        shopifyVariantId: picked.variant?.id,
-        imageUrl: picked.product.imageUrl,
-        unitCost: price?.amount,
-        currency: price?.currencyCode,
+        name: picked.displayName,
+        shopifyProductId: picked.shopifyProductId,
+        shopifyVariantId: picked.shopifyVariantId,
+        imageUrl: picked.imageUrl,
+        unitCost: picked.price,
+        currency: picked.currency,
         createdBy: ref.read(sessionProvider).user?.id,
       );
     } else {
@@ -1050,6 +1058,10 @@ class _InventarioScreenState extends ConsumerState<InventarioScreen> {
     final priceCtrl = TextEditingController();
     final supplierCtrl = TextEditingController();
     final thresholdCtrl = TextEditingController();
+    // Una vez que el usuario toca el precio, el costo deja de autocompletarlo (si no,
+    // pisa lo que capturó). Y al enfocar el precio se selecciona todo, para que escribir
+    // encima REEMPLACE en vez de concatenar (120→156.00, teclear 199 daba 156.00199).
+    var priceTouched = false;
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
@@ -1071,10 +1083,11 @@ class _InventarioScreenState extends ConsumerState<InventarioScreen> {
                 controller: costCtrl,
                 keyboardType: const TextInputType.numberWithOptions(decimal: true),
                 decoration: const InputDecoration(labelText: 'Costo unitario (opcional)'),
-                // Autocompleta el precio con costo +30% (editable).
+                // Autocompleta el precio con costo +30% SOLO si el usuario no lo ha
+                // tocado (si ya lo capturó, no se le pisa).
                 onChanged: (v) {
                   final c = double.tryParse(v.trim());
-                  if (c != null) {
+                  if (c != null && !priceTouched) {
                     priceCtrl.text = (c * 1.3).toStringAsFixed(2);
                     setD(() {});
                   }
@@ -1085,6 +1098,11 @@ class _InventarioScreenState extends ConsumerState<InventarioScreen> {
                 keyboardType: const TextInputType.numberWithOptions(decimal: true),
                 decoration: const InputDecoration(
                     labelText: 'Precio de venta (default costo +30%)'),
+                // Al enfocar/tocar, seleccionar todo → escribir encima reemplaza.
+                onTap: () => priceCtrl.selection = TextSelection(
+                    baseOffset: 0, extentOffset: priceCtrl.text.length),
+                // El usuario ya capturó su precio: el costo ya no lo autocompleta.
+                onChanged: (_) => priceTouched = true,
               ),
               TextField(
                 controller: thresholdCtrl,
@@ -1224,6 +1242,9 @@ class _InventarioScreenState extends ConsumerState<InventarioScreen> {
         text: item.unitPrice == null ? '' : '${item.unitPrice}');
     final thresholdCtrl = TextEditingController(
         text: item.reorderThreshold?.toString() ?? '');
+    // Si ya hay un precio guardado, se considera "tocado": el costo NO lo pisa (antes,
+    // editar el costo clobbereaba el precio real del centro con costo+30%).
+    var priceTouched = priceCtrl.text.trim().isNotEmpty;
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
@@ -1240,7 +1261,7 @@ class _InventarioScreenState extends ConsumerState<InventarioScreen> {
                 decoration: const InputDecoration(labelText: 'Costo (del centro)'),
                 onChanged: (v) {
                   final c = double.tryParse(v.trim());
-                  if (c != null) {
+                  if (c != null && !priceTouched) {
                     priceCtrl.text = (c * 1.3).toStringAsFixed(2);
                     setD(() {});
                   }
@@ -1251,6 +1272,9 @@ class _InventarioScreenState extends ConsumerState<InventarioScreen> {
                 keyboardType: const TextInputType.numberWithOptions(decimal: true),
                 decoration: const InputDecoration(
                     labelText: 'Precio de venta (al paciente)'),
+                onTap: () => priceCtrl.selection = TextSelection(
+                    baseOffset: 0, extentOffset: priceCtrl.text.length),
+                onChanged: (_) => priceTouched = true,
               ),
               TextField(
                 controller: thresholdCtrl,
