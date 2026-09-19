@@ -7309,11 +7309,14 @@ class DataRepository {
     } catch (e) {
       throw ProtocolResolutionUnavailable(e);
     }
-    // costo/precio/moneda NO viajan en el RPC (viven en el inventario): se
-    // enriquecen aquí por inventory_item_id contra el inventario local.
+    // costo/precio/moneda NO viajan en el RPC (viven en el inventario): se enriquecen aquí por
+    // inventory_item_id contra el inventario local. SIN filtro de sitio (espejo de 0149): el RPC ya
+    // resolvió el ID EXACTO del insumo, así que buscarlo en el centro entero es exacto, no ambiguo.
+    // Con el filtro de sitio, un insumo resuelto en otro sitio (p. ej. Almacén) se quedaba SIN
+    // precio y el renglón nacía en $0 —el candado que 0149 levantó en el SQL y faltaba aquí—.
     final inv = {
       for (final it in listInventoryItems(
-          organizationId: organizationId, siteId: siteId, activeOnly: false))
+          organizationId: organizationId, activeOnly: false))
         it.id: it
     };
     final out = <ResolvedProtocolProduct>[];

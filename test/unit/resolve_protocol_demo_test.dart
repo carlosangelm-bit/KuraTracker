@@ -217,6 +217,35 @@ void main() {
         reason: 'si el mapper deja de leer m[source], la degradación catálogo→propio vuelve a ser invisible');
   });
 
+  // EL IMPORTE (19-sep): el precio se enriquece en Dart por inventory_item_id; 0149 quitó el filtro
+  // de sitio en el SQL pero el enriquecimiento seguía filtrando por sitio, así que un insumo
+  // resuelto en OTRO sitio del centro (p. ej. Almacén) llegaba SIN precio y el renglón/cobro nacía
+  // en $0. GUARDA de la cadena completa (regla→resolución→renglón→importe): el precio debe llegar
+  // aunque el insumo viva en un sitio distinto del que se pasa. Si alguien repone el filtro de
+  // sitio en el enriquecimiento, esto se pone rojo.
+  test('el precio se enriquece aunque el insumo viva en OTRO sitio del centro', () async {
+    final spy = _RpcSpyStore(); // devuelve inventory_item_id: rpc-item-id
+    spy.primeCache({
+      Collections.inventoryItems: [
+        {
+          'id': 'rpc-item-id', 'organization_id': org, 'site_id': 'almacen',
+          'name': 'Mepilex', 'unit_price': 337, 'unit_cost': 10,
+          'currency': 'MXN', 'is_active': true,
+        }
+      ],
+      Collections.protocolProductRules: const [],
+    });
+    final repo = await DataRepository.forSeeding(spy);
+    // La consulta pasa OTRO sitio (consultorio-1); el insumo vive en almacen.
+    final out = await repo.resolveProtocolProductsRpc(
+        organizationId: org, categories: {_tag('aposito')}, siteId: 'consultorio-1');
+    expect(out.single.inventoryItemId, 'rpc-item-id');
+    expect(out.single.unitPrice, 337,
+        reason: 'si el enriquecimiento vuelve a filtrar por sitio, el insumo de otro sitio '
+            'queda sin precio y el cobro nace en \$0');
+    expect(out.single.unitCost, 10);
+  });
+
   test('FUENTE 6.1 · el resolvedor de demo (reglas propias) emite propio', () async {
     final repo = await DataRepository.forSeeding(_MemStore(seedFromCorpus()));
     final out = await repo.resolveProtocolProductsRpc(
