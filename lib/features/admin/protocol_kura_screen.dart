@@ -70,8 +70,15 @@ class _ProtocolKuraScreenState extends ConsumerState<ProtocolKuraScreen> {
     // sin el módulo entraría tecleando la ruta. Se bloquea al construir. El MASTER
     // lo TRASCIENDE (0012: ve y gestiona todos los centros); el candado es del
     // centro, no del superusuario. Enumerado en admin_gated_screens_lock_test.
+    // Etiquetar conceptos de la nota (kura_tag) es lo que hace que el régimen de Kura+ LLEGUE a la
+    // nota; va con el asiento que ENCIENDE el protocolo (seat:protocolo), no con el módulo de
+    // administración —ese es para armar el protocolo PROPIO del centro (Carlos, 19-sep)—. Antes exigía
+    // module:admin, así que un centro con el add-on veía la Fase 3 pero no podía configurarla. Se
+    // mantiene module:admin como llave compatible; el master lo trasciende (0012).
     final isMaster = ref.read(sessionProvider).user?.isMaster ?? false;
-    if (!isMaster && !widget.repo.premiumAdminFor(widget.organizationId)) {
+    if (!isMaster &&
+        !widget.repo.premiumProtocoloKuraFor(widget.organizationId) &&
+        !widget.repo.premiumAdminFor(widget.organizationId)) {
       return adminModuleLockedBody(
           repo: widget.repo,
           organizationId: widget.organizationId,

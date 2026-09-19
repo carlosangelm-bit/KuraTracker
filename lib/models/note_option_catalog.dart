@@ -317,3 +317,25 @@ const Map<String, KuraTag?> kKuraMethodToTag = {
   'Manejo de herida punzocortante': null,
   'Manejo de herida traumática': null,
 };
+
+/// Mapeo POR DEFECTO de los conceptos precargados (0010) a su `kura_tag`. FUENTE ÚNICA del default:
+/// lo consume el seed de la demo y la migración de relleno de producción (0151), y una prueba afirma
+/// que ambos coinciden con esta lista (no pueden divergir). Solo `procedure_desc` y `materials_used`
+/// llevan etiqueta (son los campos que el motor consume). Sin esto, `kura_tag` queda NULL en TODO
+/// centro (0013 nunca lo rellenó) y "Aceptar y aplicar a la nota" no pre-marca nada. Punto de partida
+/// clínico (el centro lo ajusta a mano; el relleno NUNCA pisa una etiqueta ya puesta). Cada `(campo,
+/// concepto, etiqueta)`; la etiqueta es el KuraTag.dbValue.
+const List<(String field, String label, String tag)> kDefaultNoteOptionKuraTags = [
+  ('procedure_desc', 'Limpieza con solución salina y cambio de apósito', 'limpieza'),
+  ('procedure_desc', 'Desbridamiento cortante parcial', 'desbridamiento'),
+  ('procedure_desc', 'Desbridamiento autolítico/enzimático', 'desbridamiento'),
+  ('procedure_desc', 'Aplicación de terapia compresiva', 'compresion'),
+  ('procedure_desc', 'Educación al paciente/cuidador', 'educacion'),
+  ('materials_used', 'Solución salina 0.9%', 'limpieza'),
+  ('materials_used', 'Yodopovidona 10%', 'antimicrobiano'),
+  ('materials_used', 'Apósito de espuma (foam)', 'aposito'),
+  ('materials_used', 'Apósito de alginato', 'aposito'),
+  ('materials_used', 'Apósito hidrocoloide', 'aposito'),
+  ('materials_used', 'Gasa estéril', 'aposito'),
+  ('materials_used', 'Vendaje de compresión', 'compresion'),
+];
