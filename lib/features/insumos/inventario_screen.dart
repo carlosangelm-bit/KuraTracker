@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
 import '../../core/design/tokens.dart';
+import '../../core/pricing.dart';
 import '../../core/format/money.dart';
 import '../../core/providers/session_provider.dart';
 import '../../core/providers/active_organization_provider.dart';
@@ -175,7 +176,7 @@ class _InventarioScreenState extends ConsumerState<InventarioScreen> {
       double? toNum(String? s) =>
           (s == null || s.isEmpty) ? null : double.tryParse(s.replaceAll(',', '.'));
 
-      var created = 0, restocked = 0, skipped = 0;
+      var created = 0, restocked = 0, skipped = 0, sinPrecio = 0;
       for (var k = 1; k < raw.length; k++) {
         final r = raw[k];
         final name = cell(r, iName) ?? '';
@@ -219,6 +220,7 @@ class _InventarioScreenState extends ConsumerState<InventarioScreen> {
             createdBy: uid,
           );
           created++;
+          if (item.unitPrice == null) sinPrecio++;
           if (qty > 0) {
             await repo.addInventoryMovement(
               item: item,
@@ -230,6 +232,19 @@ class _InventarioScreenState extends ConsumerState<InventarioScreen> {
             );
           }
         } else {
+          // Re-subir el CSV actualiza costo y precio del artículo existente con
+          // la regla única (spec 19-sep): el centro repara precios re-subiendo
+          // el CSV, no solo umbrales. Solo si la fila trae costo o precio (una
+          // fila sin ninguno no pisa lo capturado a mano).
+          if (cost != null || price != null) {
+            final newPrice =
+                resolveSalePrice(price: price, cost: cost ?? match.unitCost);
+            await repo.updateInventoryItem(match.id,
+                unitCost: cost, unitPrice: newPrice);
+            if (newPrice == null) sinPrecio++;
+          } else if (match.unitPrice == null) {
+            sinPrecio++;
+          }
           // Actualiza el umbral del artículo existente si el CSV lo trae (así
           // el centro que ya cargó todo puede fijar umbrales re-subiendo el CSV).
           if (threshold != null && match.reorderThreshold != threshold) {
@@ -253,10 +268,16 @@ class _InventarioScreenState extends ConsumerState<InventarioScreen> {
       }
       if (mounted) {
         setState(() {});
+        final base = 'CSV: $created creados, $restocked reabastecidos'
+            '${skipped > 0 ? ', $skipped sin cambios' : ''}.';
+        // Aviso, no candado: un insumo sin precio se cobra a costo (dicho en
+        // voz alta), pero el centro debe saber cuántos quedaron así.
+        final aviso = sinPrecio > 0
+            ? ' $sinPrecio sin precio (se cobrarán a costo — captura el precio).'
+            : '';
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text(
-                'CSV: $created creados, $restocked reabastecidos'
-                '${skipped > 0 ? ', $skipped sin cambios' : ''}.')));
+            content: Text('$base$aviso'),
+            backgroundColor: sinPrecio > 0 ? Colors.orange.shade800 : null));
       }
     } catch (e) {
       if (mounted) {
@@ -432,6 +453,12 @@ class _InventarioScreenState extends ConsumerState<InventarioScreen> {
     final externalCount = items.where((it) => it.isExternal).length;
     final noThresholdCount =
         items.where((it) => it.reorderThreshold == null).length;
+    // Insumos con costo pero sin precio de venta: por la regla única no deberían
+    // existir (costo>0 ⇒ precio), así que un conteo>0 son legados/casos a la mano
+    // que se cobrarán A COSTO. Aviso, no candado.
+    final sinPrecioCount = items
+        .where((it) => (it.unitCost ?? 0) > 0 && it.unitPrice == null)
+        .length;
     final invValuePesos =
         items.fold<double>(0, (a, it) => a + (it.unitCost ?? 0) * oh(it));
     final consumo = _consumo(repo, _siteId!);
@@ -493,6 +520,36 @@ class _InventarioScreenState extends ConsumerState<InventarioScreen> {
                     consumoPrev: consumo.prev,
                     prevMonthLabel: consumo.prevLabel,
                   ),
+                  if (sinPrecioCount > 0) ...[
+                    const SizedBox(height: 16),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 18, vertical: 14),
+                      decoration: BoxDecoration(
+                        color: Colors.orange.shade50,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: Colors.orange.shade200),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.warning_amber_rounded,
+                              color: Colors.orange.shade800, size: 20),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              '$sinPrecioCount ${sinPrecioCount == 1 ? 'insumo tiene' : 'insumos tienen'} '
+                              'costo pero no precio de venta: se cobrarán a costo. '
+                              'Captura su precio para no vender sin margen.',
+                              style: TextStyle(
+                                  color: Colors.orange.shade900,
+                                  fontSize: 13.5),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 20),
                   // Barra de acciones.
                   _cardBox(
@@ -800,12 +857,20 @@ class _InventarioScreenState extends ConsumerState<InventarioScreen> {
       ),
       // Costo.
       KuraCell.money(_cents(it.unitCost)),
-      // Precio (textSecondary).
+      // Precio (textSecondary). Si hay costo pero no precio, se marca "sin
+      // precio" (naranja): se cobrará a costo, dicho en voz alta.
       KuraCell.custom(
         sortValue: it.unitPrice ?? -1,
-        build: (t) => Text(moneyOrDash(_cents(it.unitPrice)),
-            textAlign: TextAlign.right,
-            style: TextStyle(fontSize: 13, color: t.textSecondary)),
+        build: (t) => (it.unitPrice == null && (it.unitCost ?? 0) > 0)
+            ? Text('sin precio',
+                textAlign: TextAlign.right,
+                style: TextStyle(
+                    fontSize: 12,
+                    fontStyle: FontStyle.italic,
+                    color: Colors.orange.shade800))
+            : Text(moneyOrDash(_cents(it.unitPrice)),
+                textAlign: TextAlign.right,
+                style: TextStyle(fontSize: 13, color: t.textSecondary)),
       ),
       // Valor (w700).
       KuraCell.custom(
@@ -1083,12 +1148,12 @@ class _InventarioScreenState extends ConsumerState<InventarioScreen> {
                 controller: costCtrl,
                 keyboardType: const TextInputType.numberWithOptions(decimal: true),
                 decoration: const InputDecoration(labelText: 'Costo unitario (opcional)'),
-                // Autocompleta el precio con costo +30% SOLO si el usuario no lo ha
+                // Autocompleta el precio con el default (costo / 0.75) SOLO si el usuario no lo ha
                 // tocado (si ya lo capturó, no se le pisa).
                 onChanged: (v) {
-                  final c = double.tryParse(v.trim());
-                  if (c != null && !priceTouched) {
-                    priceCtrl.text = (c * 1.3).toStringAsFixed(2);
+                  final p = defaultSalePriceFromCost(double.tryParse(v.trim()));
+                  if (p != null && !priceTouched) {
+                    priceCtrl.text = p.toStringAsFixed(2);
                     setD(() {});
                   }
                 },
@@ -1097,7 +1162,7 @@ class _InventarioScreenState extends ConsumerState<InventarioScreen> {
                 controller: priceCtrl,
                 keyboardType: const TextInputType.numberWithOptions(decimal: true),
                 decoration: const InputDecoration(
-                    labelText: 'Precio de venta (default costo +30%)'),
+                    labelText: 'Precio de venta al paciente (default: costo / 0.75)'),
                 // Al enfocar/tocar, seleccionar todo → escribir encima reemplaza.
                 onTap: () => priceCtrl.selection = TextSelection(
                     baseOffset: 0, extentOffset: priceCtrl.text.length),
@@ -1260,9 +1325,9 @@ class _InventarioScreenState extends ConsumerState<InventarioScreen> {
                 keyboardType: const TextInputType.numberWithOptions(decimal: true),
                 decoration: const InputDecoration(labelText: 'Costo (del centro)'),
                 onChanged: (v) {
-                  final c = double.tryParse(v.trim());
-                  if (c != null && !priceTouched) {
-                    priceCtrl.text = (c * 1.3).toStringAsFixed(2);
+                  final p = defaultSalePriceFromCost(double.tryParse(v.trim()));
+                  if (p != null && !priceTouched) {
+                    priceCtrl.text = p.toStringAsFixed(2);
                     setD(() {});
                   }
                 },
@@ -1297,10 +1362,15 @@ class _InventarioScreenState extends ConsumerState<InventarioScreen> {
       ),
     );
     if (ok != true) return;
+    // Precio por la regla única: si el usuario lo dejó en blanco pero hay costo,
+    // se deriva (costo / 0.75) para no dejar el insumo con costo y sin precio.
+    final editCost = double.tryParse(costCtrl.text.trim());
+    final editPrice = resolveSalePrice(
+        price: double.tryParse(priceCtrl.text.trim()), cost: editCost);
     await repo.updateInventoryItem(
       item.id,
-      unitCost: double.tryParse(costCtrl.text.trim()),
-      unitPrice: double.tryParse(priceCtrl.text.trim()),
+      unitCost: editCost,
+      unitPrice: editPrice,
       reorderThreshold: int.tryParse(thresholdCtrl.text.trim()),
     );
     if (mounted) setState(() {});

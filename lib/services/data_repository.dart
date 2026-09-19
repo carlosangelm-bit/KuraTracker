@@ -6,6 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 
 import '../core/config/app_config.dart';
+import '../core/pricing.dart';
 import '../models/adverse_event.dart';
 import '../models/antecedentes.dart';
 import '../models/app_user.dart';
@@ -2074,9 +2075,9 @@ class DataRepository {
     String? createdBy,
   }) async {
     final now = DateTime.now().toIso8601String();
-    // Precio de venta por default = costo + 30% (editable después).
-    final price = unitPrice ??
-        (unitCost != null ? double.parse((unitCost * 1.3).toStringAsFixed(2)) : null);
+    // Precio de venta por la regla única (costo / 0.75; null = sin precio). Editable después; el
+    // precio capturado a mano nunca se pisa.
+    final price = resolveSalePrice(price: unitPrice, cost: unitCost);
     final data = {
       'id': _uuid.v4(),
       'organization_id': organizationId,
@@ -2383,7 +2384,11 @@ class DataRepository {
           shopifyProductId: pid,
           shopifyVariantId: vid.isEmpty ? null : vid,
           shopifyInventoryItemId: invItemId,
-          unitPrice: cat?.price,
+          // El precio de la tienda Kura+ es el COSTO del centro (la tienda le vende al centro);
+          // el precio al paciente lo deriva el default (costo / 0.75). Antes entraba como
+          // unitPrice y el insumo quedaba sin costo — al revés. Solo aplica al ALTA por sync; a un
+          // insumo existente el sync NO le toca costo/precio (no pisa lo editado a mano).
+          unitCost: cat?.price,
           currency: cat?.currency,
         );
       } else if (item.shopifyInventoryItemId == null && invItemId != null) {

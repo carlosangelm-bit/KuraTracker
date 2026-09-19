@@ -4,6 +4,7 @@ import '../../features/patients/patients_view_preferences.dart';
 import '../data_repository.dart';
 import 'demo_wound_photos.dart';
 import 'local_store.dart';
+import '../../core/pricing.dart';
 
 const _uuid = Uuid();
 
@@ -37,7 +38,7 @@ class DemoSeed {
   // v34: merge main→staging — combina la siembra de licencia (v33: entitlements
   // insumos/comercial solo en centros premium) con los arreglos de la semilla del
   // rebandeo Braden (v32 en main). Sube por encima de AMBOS para re-sembrar limpio.
-  static const String _seedFlag = 'seeded_v36';
+  static const String _seedFlag = 'seeded_v37'; // v37: precio de venta por default costo/0.75
 
   static Future<void> ensureSeeded(LocalStore store) async {
     if (store.getBool(_seedFlag)) return;
@@ -2457,7 +2458,7 @@ class DemoSeed {
         'shopify_variant_id': null,
         'image_url': null,
         'unit_cost': row.$3,
-        'unit_price': double.parse((row.$3 * 1.3).toStringAsFixed(2)),
+        'unit_price': resolveSalePrice(cost: row.$3),
         'currency': 'MXN',
         'supplier': row.$2,
         'reorder_threshold': row.$4,
