@@ -367,4 +367,43 @@ begin
   raise notice 'BEHAVIOR PASS [mixto-atada-item]';
 end $$;
 
+-- GUARDA de una DECISIÓN (Carlos, 19-sep): el camino CATÁLOGO NO lleva el "preferir atada" de
+-- 0150. En el catálogo, una regla cuya identidad NO aterriza (huérfana con nombre) es el caso
+-- buscado —Kura+ recomienda lo que el centro no ha surtido—; el INVENTARIO no debe cambiar la
+-- recomendación clínica. Aquí: una regla Kura+ ESPECÍFICA cuya identidad no aterriza GANA sobre
+-- una GENÉRICA que el centro SÍ surte. Si alguien aplica "preferir atada" al catálogo, esto se
+-- pone ROJO y fuerza la conversación. category 'catalog_guard' (aislada).
+insert into public.organizations (id, name) values
+  ('b0000000-0000-0000-0000-0000000000c1', 'Centro Kura+ (sin admin)') on conflict do nothing; -- sin module:admin → catálogo
+-- El centro SÍ surte el genérico (par SP-G aterriza en este insumo).
+insert into public.inventory_items (id, organization_id, site_id, name, shopify_product_id, shopify_variant_id) values
+  ('a0000000-0000-0000-0000-0000000000c1','b0000000-0000-0000-0000-0000000000c1',null,'Generico-surtido','SP-G','')
+  on conflict do nothing;
+insert into public.protocol_catalog_rules
+  (id, category, name, shopify_product_id, shopify_variant_id, dimension, min_value, max_value, quantity_mode, quantity_value, sort_order, exudate_levels, zone_groups, infection)
+values
+  -- genérica (spec 0), identidad SP-G → ATERRIZA en el insumo del centro
+  ('d0000000-0000-0000-0000-0000000000c1','catalog_guard','Guard-generico','SP-G','','none',null,null,'fixed',1,0,'[]','[]','any'),
+  -- específica (spec 2: area+exudado), identidad SP-S → NO aterriza (el centro no la surte)
+  ('d0000000-0000-0000-0000-0000000000c2','catalog_guard','Guard-especifico','SP-S','','area',0,100,'fixed',1,1,'["moderado"]','[]','any')
+  on conflict do nothing;
+
+do $$
+declare o uuid := 'b0000000-0000-0000-0000-0000000000c1'; got_item uuid;
+begin
+  -- area=5 + exudado moderado → gana la ESPECÍFICA (spec 2), aunque no aterrice; NO la genérica
+  -- surtida. El clínico ve lo que Kura+ indica.
+  perform pg_temp.chk('catalogo-conserva-especifica-sobre-generica-surtida',
+                      'catalog_guard|Guard-especifico|1.000|kura',
+                      o, array['catalog_guard'], 5, null, 'moderado', null, null, null, null,null);
+  -- …y sale como huérfana (item null): el centro no la surte, pero es la recomendación.
+  select t.inventory_item_id into got_item
+  from public.resolve_protocol(o, array['catalog_guard'], 5, null, 'moderado', null, null, null, null,null) t limit 1;
+  if got_item is not null then
+    raise exception 'BEHAVIOR FAIL [catalogo-especifica-item-null]: esperaba item null (huérfana), '
+      'fue % — ¿se le aplicó "preferir atada" al catálogo?', got_item;
+  end if;
+  raise notice 'BEHAVIOR PASS [catalogo-especifica-item-null]';
+end $$;
+
 select '=== BEHAVIOR: ALL PASSED ===' as result;
