@@ -1489,11 +1489,19 @@ class _SuppliesUsedSectionState extends ConsumerState<_SuppliesUsedSection> {
   Future<void> _addManual(DataRepository repo) async {
     final orgId = widget.organizationId;
     if (orgId == null) return;
-    // El selector muestra el inventario del CENTRO, SIN filtrar por sitio (decisión: el flujo de
-    // insumos nunca se limita por sitio; se cuadra después en el módulo de insumos). Antes
-    // filtraba por el sitio de la consulta y, para una paciente en un sitio sin inventario, abría
-    // vacío ("No hay inventario en el sitio de esta consulta") — misma costura que el precio.
-    final inventory = repo.listInventoryItems(organizationId: orgId);
+    // El selector muestra el inventario del CENTRO, SIN filtrar por sitio (el flujo de insumos nunca
+    // se limita por sitio) y CONSOLIDADO: una fila por insumo, no una por sitio. El catálogo suele
+    // estar cargado en los dos sitios (136 nombres × 2); mostrarlo duplicado obliga al clínico a
+    // adivinar cuál elegir, y esa elección decide de qué sitio se descuenta. Se agrupa por insumo y
+    // el sistema elige la copia (sitio) del descuento por regla (sitio de la consulta si tiene
+    // existencias; si no, el de más existencias), PERO enseñando el sitio y las piezas — no en
+    // silencio (Carlos, 19-sep).
+    final consultationSiteId = repo.getConsultation(widget.consultationId)?.siteId;
+    final choices = repo.consolidatedSupplyChoices(
+        organizationId: orgId, consultationSiteId: consultationSiteId);
+    final siteNames = {
+      for (final s in repo.listSites(organizationId: orgId)) s.id: s.name
+    };
     final item = await showModalBottomSheet<InventoryItem>(
       context: context,
       isScrollControlled: true,
@@ -1502,7 +1510,7 @@ class _SuppliesUsedSectionState extends ConsumerState<_SuppliesUsedSection> {
         child: ConstrainedBox(
           constraints:
               BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.7),
-          child: inventory.isEmpty
+          child: choices.isEmpty
               ? const Padding(
                   padding: EdgeInsets.all(24),
                   child: Text('Este centro no tiene inventario dado de alta.'))
@@ -1514,19 +1522,33 @@ class _SuppliesUsedSectionState extends ConsumerState<_SuppliesUsedSection> {
                       child: Text('Elegir insumo del inventario',
                           style: TextStyle(fontWeight: FontWeight.w700)),
                     ),
-                    for (final it in inventory)
+                    for (final ch in choices)
                       ListTile(
-                        title: Text(it.name),
+                        title: Text(ch.item.name),
                         // El clínico elige por lo que PAGA la paciente (precio de
                         // venta), no por el costo (que suele venir en 0 y engaña).
-                        // Sin precio se marca: ese insumo se cobra a costo.
-                        subtitle: it.unitPrice != null
-                            ? Text(_money(it.unitPrice!))
-                            : Text('sin precio — se cobra a costo',
-                                style: TextStyle(
-                                    color: Colors.orange.shade800,
-                                    fontStyle: FontStyle.italic)),
-                        onTap: () => Navigator.of(context).pop(it),
+                        // Sin precio se marca: ese insumo se cobra a costo. La 2ª
+                        // línea dice de qué sitio saldrá el descuento y sus piezas.
+                        subtitle: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            ch.item.unitPrice != null
+                                ? Text(_money(ch.item.unitPrice!))
+                                : Text('sin precio — se cobra a costo',
+                                    style: TextStyle(
+                                        color: Colors.orange.shade800,
+                                        fontStyle: FontStyle.italic)),
+                            Text(
+                              'Descuenta de ${siteNames[ch.item.siteId] ?? 'sitio'}'
+                              ' · ${ch.onHand} pz'
+                              '${ch.copies > 1 ? ' · en ${ch.copies} sitios' : ''}',
+                              style: TextStyle(
+                                  fontSize: 11, color: Colors.grey.shade600),
+                            ),
+                          ],
+                        ),
+                        onTap: () => Navigator.of(context).pop(ch.item),
                       ),
                   ],
                 ),

@@ -2056,6 +2056,54 @@ class DataRepository {
     return byItem;
   }
 
+  /// Elige la copia (sitio) de un grupo de insumos "iguales" de la que sale el DESCUENTO: el sitio de
+  /// la consulta si tiene existencias; si no, el de más existencias. Determinista (empate por siteId).
+  /// El inventory_item_id elegido define el sitio del movimiento de consumo, así que esta función ES
+  /// la decisión de "de qué sitio se descuenta". (Carlos, 19-sep: el sistema decide, no en silencio.)
+  static InventoryItem pickSupplySite(
+    List<InventoryItem> group,
+    int Function(String itemId) onHand, {
+    String? consultationSiteId,
+  }) {
+    if (consultationSiteId != null) {
+      for (final it in group) {
+        if (it.siteId == consultationSiteId && onHand(it.id) > 0) return it;
+      }
+    }
+    final sorted = [...group]..sort((a, b) {
+        final byStock = onHand(b.id).compareTo(onHand(a.id));
+        return byStock != 0 ? byStock : a.siteId.compareTo(b.siteId);
+      });
+    return sorted.first;
+  }
+
+  /// Inventario del CENTRO CONSOLIDADO para el selector de la consulta: una entrada por insumo
+  /// (agrupado por producto de Shopify si lo hay; si no, por nombre), con la copia de la que saldrá el
+  /// descuento ([pickSupplySite]) y sus existencias ahí. Así el selector no muestra el catálogo
+  /// DUPLICADO por sitio; el sitio del descuento se decide por regla, pero la UI lo enseña (sitio +
+  /// piezas), no en silencio. `copies` = cuántas copias (sitios) tiene el insumo.
+  List<({InventoryItem item, int onHand, int copies})> consolidatedSupplyChoices({
+    required String organizationId,
+    String? consultationSiteId,
+  }) {
+    final groups = <String, List<InventoryItem>>{};
+    for (final it in listInventoryItems(organizationId: organizationId)) {
+      final key = (it.shopifyProductId != null && it.shopifyProductId!.isNotEmpty)
+          ? 'p:${it.shopifyProductId}'
+          : 'n:${it.name.toLowerCase()}';
+      (groups[key] ??= []).add(it);
+    }
+    final out = <({InventoryItem item, int onHand, int copies})>[];
+    for (final g in groups.values) {
+      final picked =
+          pickSupplySite(g, onHandFor, consultationSiteId: consultationSiteId);
+      out.add((item: picked, onHand: onHandFor(picked.id), copies: g.length));
+    }
+    out.sort((a, b) =>
+        a.item.name.toLowerCase().compareTo(b.item.name.toLowerCase()));
+    return out;
+  }
+
   /// Crea un artículo de inventario (de la tienda Kura+ o externo).
   Future<InventoryItem> addInventoryItem({
     required String organizationId,

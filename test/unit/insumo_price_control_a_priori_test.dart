@@ -22,6 +22,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kuratracker/core/pricing.dart';
+import 'package:kuratracker/models/inventory.dart';
 import 'package:kuratracker/services/data_repository.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -169,6 +170,18 @@ void main() {
           reason: 'el inventario sembrado debe derivar el precio por la regla única');
     });
 
+    test('el selector consolida por insumo y muestra el sitio del descuento (no unitCost)', () {
+      final src =
+          File('lib/features/consultation/consultation_detail_screen.dart')
+              .readAsStringSync();
+      // El selector manual usa el inventario CONSOLIDADO (una fila por insumo), no la lista cruda.
+      expect(src.contains('consolidatedSupplyChoices('), isTrue,
+          reason: 'el selector manual debe consolidar el inventario por insumo');
+      // Y enseña de qué sitio saldrá el descuento (no en silencio).
+      expect(src.contains('Descuenta de'), isTrue,
+          reason: 'la fila debe decir de qué sitio se descuenta');
+    });
+
     test('el selector de insumos elige por PRECIO de venta, no por costo (marca sin precio)', () {
       // Carlos, verificación 19-sep: el clínico elegía viendo unitCost (que suele venir en 0 y
       // engaña); debe ver el precio de venta y una marca cuando no hay precio.
@@ -177,9 +190,9 @@ void main() {
               .readAsStringSync();
       // Los dos selectores (manual y sugerencia del protocolo) muestran el precio de venta…
       final subtitlePrice =
-          RegExp(r'subtitle:\s*\w+\.unitPrice != null').allMatches(src).length;
+          RegExp(r'\.unitPrice != null').allMatches(src).length;
       expect(subtitlePrice, greaterThanOrEqualTo(2),
-          reason: 'ambos selectores deben mostrar el precio de venta en el subtítulo');
+          reason: 'ambos selectores deben mostrar el precio de venta (unitPrice), no el costo');
       // …y marcan "sin precio" cuando no lo hay (se cobra a costo, dicho en voz alta).
       expect('sin precio — se cobra a costo'.allMatches(src).length,
           greaterThanOrEqualTo(2),
@@ -187,6 +200,72 @@ void main() {
       // Ningún subtítulo de selector debe elegir mostrando unitCost (la costura del cero).
       expect(RegExp(r'subtitle:\s*\w+\.unitCost').hasMatch(src), isFalse,
           reason: 'el selector NO debe elegir por costo (unitCost engaña con \$0)');
+    });
+  });
+
+  group('consolidación + regla del sitio del descuento — mira de qué sitio sale', () {
+    late DataRepository repo;
+    late String orgId;
+    late String siteA; // el sitio de la consulta
+    late String siteB;
+
+    setUp(() async {
+      repo = await DataRepository.instance();
+      final org = repo
+          .listOrganizations()
+          .firstWhere((o) => repo.listSites(organizationId: o.id).length >= 2);
+      orgId = org.id;
+      final sites = repo.listSites(organizationId: orgId);
+      siteA = sites[0].id;
+      siteB = sites[1].id;
+    });
+
+    test('el mismo insumo en dos sitios se consolida en UNA entrada (copies=2)', () async {
+      final a = await repo.addInventoryItem(
+          organizationId: orgId, siteId: siteA, name: 'Consolida ZZ', unitCost: 100);
+      final b = await repo.addInventoryItem(
+          organizationId: orgId, siteId: siteB, name: 'Consolida ZZ', unitCost: 100);
+      await repo.addInventoryMovement(item: a, delta: 5, reason: InventoryReason.compra);
+      await repo.addInventoryMovement(item: b, delta: 9, reason: InventoryReason.compra);
+      final zz = repo
+          .consolidatedSupplyChoices(organizationId: orgId, consultationSiteId: siteA)
+          .where((c) => c.item.name == 'Consolida ZZ')
+          .toList();
+      expect(zz.length, 1, reason: 'el insumo duplicado entre sitios se muestra una sola vez');
+      expect(zz.first.copies, 2);
+    });
+
+    test('descuenta del sitio de la consulta si TIENE existencias (aunque otro tenga más)',
+        () async {
+      final a = await repo.addInventoryItem(
+          organizationId: orgId, siteId: siteA, name: 'ReglaSitio YY', unitCost: 100);
+      final b = await repo.addInventoryItem(
+          organizationId: orgId, siteId: siteB, name: 'ReglaSitio YY', unitCost: 100);
+      await repo.addInventoryMovement(item: a, delta: 2, reason: InventoryReason.compra);
+      await repo.addInventoryMovement(item: b, delta: 50, reason: InventoryReason.compra);
+      final yy = repo
+          .consolidatedSupplyChoices(organizationId: orgId, consultationSiteId: siteA)
+          .firstWhere((c) => c.item.name == 'ReglaSitio YY');
+      // El sitio del insumo elegido ES el sitio del movimiento de consumo.
+      expect(yy.item.siteId, siteA,
+          reason: 'con existencias en el sitio de la consulta, el descuento sale de ahí');
+      expect(yy.onHand, 2);
+    });
+
+    test('si el sitio de la consulta NO tiene existencias, descuenta del de MÁS existencias',
+        () async {
+      await repo.addInventoryItem(
+          organizationId: orgId, siteId: siteA, name: 'ReglaSitio XX', unitCost: 100);
+      final b = await repo.addInventoryItem(
+          organizationId: orgId, siteId: siteB, name: 'ReglaSitio XX', unitCost: 100);
+      // A (sitio de la consulta) queda en 0; solo B tiene existencias.
+      await repo.addInventoryMovement(item: b, delta: 7, reason: InventoryReason.compra);
+      final xx = repo
+          .consolidatedSupplyChoices(organizationId: orgId, consultationSiteId: siteA)
+          .firstWhere((c) => c.item.name == 'ReglaSitio XX');
+      expect(xx.item.siteId, siteB,
+          reason: 'sin existencias en el sitio de la consulta, sale del de más existencias');
+      expect(xx.onHand, 7);
     });
   });
 }
