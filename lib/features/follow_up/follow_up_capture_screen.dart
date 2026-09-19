@@ -1873,10 +1873,14 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
                 const SizedBox(height: 6),
                 for (final p in _protocolInsumos!)
                   _regimenBox(
+                      // Insumo sin precio: se DICE aquí (no se descubre en la hoja de cobro).
                       icon: Icons.inventory_2_outlined,
-                      color: KuraColors.primary,
-                      title:
-                          '${p.name} · ${_fmtQty(p.quantity)}${p.inventoryItemId == null ? ' · sin insumo enlazado' : ''}',
+                      color: p.inventoryItemId != null &&
+                              (p.unitPrice ?? p.unitCost ?? 0) == 0
+                          ? KuraColors.warning
+                          : KuraColors.primary,
+                      title: '${p.name} · ${_fmtQty(p.quantity)}'
+                          '${p.inventoryItemId == null ? ' · sin insumo enlazado' : ((p.unitPrice ?? p.unitCost ?? 0) == 0 ? ' · sin precio' : '')}',
                       body: (p.notePhrase ?? '').trim()),
                 if (_protocolInsumos!
                     .any((p) => (p.notePhrase ?? '').trim().isNotEmpty)) ...[

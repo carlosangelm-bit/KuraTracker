@@ -1601,13 +1601,25 @@ class _UsageRow extends StatelessWidget {
                 onSelected: onDiscount,
                 visualDensity: VisualDensity.compact,
               ),
-              if (usage.unitCost != null)
+              if ((usage.unitPrice ?? usage.unitCost) != null &&
+                  usage.lineTotal > 0)
                 Padding(
                   padding: const EdgeInsets.only(left: 4, top: 6),
                   child: Text(
                     '\$${usage.lineTotal.toStringAsFixed(2)} MXN',
                     style: const TextStyle(fontSize: 12, color: KuraColors.primary),
                   ),
+                )
+              // NADA EN SILENCIO: un renglón que se va a COBRAR pero no tiene precio lo DICE aquí,
+              // no espera a la hoja de cobro (donde solo aparecía el total en $0).
+              else if (usage.charge)
+                Padding(
+                  padding: const EdgeInsets.only(left: 4, top: 6),
+                  child: Text('sin precio — no suma al cobro',
+                      style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: KuraColors.warning)),
                 ),
             ],
           ),
