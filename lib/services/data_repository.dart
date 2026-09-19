@@ -7369,9 +7369,11 @@ class DataRepository {
     String? siteId,
   }) {
     final wanted = {for (final c in categories) c.dbValue};
+    // SIN filtro de sitio (spec 19-sep): el insumo cuenta esté en el sitio que esté. Espejo del
+    // SQL (0149); p_site_id/siteId se conserva por firma pero no filtra.
     final inv = {
       for (final it in listInventoryItems(
-          organizationId: organizationId, siteId: siteId, activeOnly: false))
+          organizationId: organizationId, activeOnly: false))
         it.id: it
     };
     // Reglas propias que APLICAN, agrupadas por categoría. listProtocolProductRules
@@ -7399,18 +7401,20 @@ class DataRepository {
           .reduce((a, b) => a > b ? a : b);
       final seen = <String>{};
       for (final r in matching.where((r) => _demoRuleSpecificity(r) == maxSpec)) {
-        if (!seen.add(r.inventoryItemId!)) continue; // dedup: gana el de menor sort_order
         final item = inv[r.inventoryItemId];
-        if (item == null) continue; // huérfana (item no está en el centro/sitio): se salta
+        // La regla cuyo insumo NO está en el centro NO se salta: sale con item null y el nombre
+        // de la regla (espejo del SQL 0149). Dedup por item, o por regla cuando no hay item.
+        final dedupKey = item?.id ?? 'rule:${r.id}';
+        if (!seen.add(dedupKey)) continue; // gana el de menor sort_order
         out.add(ResolvedProtocolProduct(
           category: cat,
-          inventoryItemId: item.id,
-          name: item.name,
+          inventoryItemId: item?.id, // null: el insumo no aterrizó en el centro
+          name: item?.name ?? (r.name ?? ''), // sin insumo → el nombre de la regla
           quantity: _demoRuleQuantity(r, areaCm2: areaCm2, volumeCm3: volumeCm3),
           source: 'propio', // demo resuelve SIEMPRE reglas propias del centro
-          unitCost: item.unitCost,
-          unitPrice: item.unitPrice,
-          currency: item.currency,
+          unitCost: item?.unitCost,
+          unitPrice: item?.unitPrice,
+          currency: item?.currency,
           notePhrase: (r.notePhrase ?? '').trim().isEmpty ? null : r.notePhrase!.trim(),
         ));
       }

@@ -1870,11 +1870,10 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
                 _regimenBox(
                   icon: Icons.link_off,
                   color: KuraColors.warning,
-                  title: 'Sin insumo del centro para: '
+                  title: 'Sin regla de protocolo para: '
                       '${_protocolMissingMethods().join(', ')}',
-                  body: 'Puede que este centro no tenga una regla de protocolo para '
-                      'ese paso, o que el insumo no esté dado de alta en este centro. '
-                      'Puedes agregarlo a mano en el detalle de la consulta.',
+                  body: 'Este centro no tiene una regla de protocolo para ese paso. '
+                      'Puedes agregar el insumo a mano en el detalle de la consulta.',
                 ),
             ],
           ],

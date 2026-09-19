@@ -10,8 +10,7 @@
     { "id": "a0000000-0000-0000-0000-00000000000e", "site": "50000000-0000-0000-0000-000000000051", "name": "E" },
     { "id": "a0000000-0000-0000-0000-00000000000f", "site": "50000000-0000-0000-0000-000000000051", "name": "F" },
     { "id": "a0000000-0000-0000-0000-000000000010", "site": "50000000-0000-0000-0000-000000000051", "name": "G" },
-    { "id": "a0000000-0000-0000-0000-000000000011", "site": "50000000-0000-0000-0000-000000000051", "name": "H" },
-    { "id": "a0000000-0000-0000-0000-0000000000ff", "site": "50000000-0000-0000-0000-000000000052", "name": "Z" }
+    { "id": "a0000000-0000-0000-0000-000000000011", "site": "50000000-0000-0000-0000-000000000051", "name": "H" }
   ],
   "rules": [
     { "id": "c0000000-0000-0000-0000-000000000000", "category": "aposito", "item": "a0000000-0000-0000-0000-00000000000a", "name": "A", "dimension": "none", "min": null, "max": null, "quantity_mode": "fixed", "quantity_value": 1, "sort_order": 0, "exudate_levels": [], "zone_groups": [], "infection": "any" },
@@ -24,8 +23,7 @@
     { "id": "c0000000-0000-0000-0000-000000000007", "category": "relleno_cavidad", "item": "a0000000-0000-0000-0000-00000000000d", "name": "D", "dimension": "volume", "min": 0, "max": 5, "quantity_mode": "per_volume", "quantity_value": 0.5, "sort_order": 7, "exudate_levels": [], "zone_groups": [], "infection": "any" },
     { "id": "c0000000-0000-0000-0000-000000000008", "category": "relleno_cavidad", "item": "a0000000-0000-0000-0000-00000000000e", "name": "E", "dimension": "volume", "min": 5, "max": null, "quantity_mode": "per_volume", "quantity_value": 0.5, "sort_order": 8, "exudate_levels": [], "zone_groups": [], "infection": "any" },
     { "id": "c0000000-0000-0000-0000-000000000009", "category": "relleno_cavidad", "item": "a0000000-0000-0000-0000-00000000000d", "name": "D", "dimension": "volume", "min": 0, "max": 5, "quantity_mode": "fixed", "quantity_value": 9, "sort_order": 9, "exudate_levels": [], "zone_groups": [], "infection": "any" },
-    { "id": "c0000000-0000-0000-0000-00000000000a", "category": "aposito", "item": "a0000000-0000-0000-0000-000000000010", "name": "G", "dimension": "none", "min": null, "max": null, "quantity_mode": "fixed", "quantity_value": 1, "sort_order": 10, "exudate_levels": [], "zone_groups": ["sacro_gluteo"], "infection": "yes" },
-    { "id": "c0000000-0000-0000-0000-00000000000b", "category": "aposito", "item": "a0000000-0000-0000-0000-0000000000ff", "name": "Z", "dimension": "area", "min": 0, "max": 10, "quantity_mode": "fixed", "quantity_value": 1, "sort_order": 11, "exudate_levels": [], "zone_groups": [], "infection": "any" }
+    { "id": "c0000000-0000-0000-0000-00000000000a", "category": "aposito", "item": "a0000000-0000-0000-0000-000000000010", "name": "G", "dimension": "none", "min": null, "max": null, "quantity_mode": "fixed", "quantity_value": 1, "sort_order": 10, "exudate_levels": [], "zone_groups": ["sacro_gluteo"], "infection": "yes" }
   ],
   "cases": [
     { "label": "area-borde-inf", "categories": ["aposito"], "area": 0, "volume": null, "exudate": null, "zone": null, "infection": null, "expected": "aposito|B|1.000" },

@@ -269,4 +269,65 @@ begin
   end loop;
 end $$;
 
+-- =============================================================================
+-- SPEC 19-sep (flujo de insumos sin límite por existencias): resolve_protocol NO filtra por sitio,
+-- y el camino propio no desaparece la regla cuyo insumo no está.
+-- Centro OWN con module:admin + interruptor en propias (false). category 'gasa' y 'sonda' aisladas.
+-- =============================================================================
+insert into public.organizations (id, name, protocol_resolves_from_catalog) values
+  ('b0000000-0000-0000-0000-0000000000e1', 'Behavior sin-sitio', false),
+  ('b0000000-0000-0000-0000-0000000000e2', 'Otro centro', true) on conflict do nothing;
+insert into public.org_entitlements (organization_id, kind, key, status, source) values
+  ('b0000000-0000-0000-0000-0000000000e1', 'module', 'admin', 'active', 'master') on conflict do nothing;
+-- Insumo del centro e1 en el sitio "Almacén" (51…); la consulta pasará OTRO sitio (52…).
+-- Y un insumo que vive en OTRO centro (e2): existe (satisface la FK) pero NO está en e1 → la
+-- regla de e1 que lo referencie es la "huérfana con nombre" del camino propio (item no aterriza).
+insert into public.inventory_items (id, organization_id, site_id, name) values
+  ('a0000000-0000-0000-0000-0000000000e1','b0000000-0000-0000-0000-0000000000e1',
+   '51000000-0000-0000-0000-000000000000','Gasa-Almacen'),
+  ('a0000000-0000-0000-0000-0000000000e2','b0000000-0000-0000-0000-0000000000e2',
+   null,'Sonda-de-otro-centro') on conflict do nothing;
+insert into public.protocol_product_rules
+  (id, organization_id, category, inventory_item_id, name, dimension, quantity_mode, quantity_value, sort_order, exudate_levels, zone_groups, infection)
+values
+  -- (a) insumo en 51…, la regla es del CENTRO e1
+  ('ce000000-0000-0000-0000-0000000000e1','b0000000-0000-0000-0000-0000000000e1','gasa',
+   'a0000000-0000-0000-0000-0000000000e1','Gasa-Almacen','none','fixed',1,0,'[]','[]','any'),
+  -- (b) la regla de e1 referencia un insumo que NO está en e1 (vive en e2): debe SALIR con item null
+  ('ce000000-0000-0000-0000-0000000000e2','b0000000-0000-0000-0000-0000000000e1','sonda',
+   'a0000000-0000-0000-0000-0000000000e2','Sonda-fantasma','none','fixed',1,0,'[]','[]','any')
+  on conflict do nothing;
+
+do $$
+declare o uuid := 'b0000000-0000-0000-0000-0000000000e1'; got_item uuid;
+begin
+  -- (a) se pasa el sitio 52… (distinto del sitio del insumo, 51…). Sin filtro de sitio resuelve
+  -- y el insumo ATERRIZA (item = a…e1). GUARDA DE MUTACIÓN: si alguien repone
+  -- `i.site_id = p_site_id`, el insumo del sitio 51… queda fuera del centro → sale como huérfana
+  -- con item NULL → esta aserción de item-no-null se pone ROJA. (El chk por nombre no basta:
+  -- coalesce(item_name, rule_name) daría el mismo texto; por eso se verifica el item_id.)
+  perform pg_temp.chk('sin-sitio-resuelve-otro-sitio', 'gasa|Gasa-Almacen|1.000|propio',
+                      o, array['gasa'], null,null,null,null,null,
+                      '52000000-0000-0000-0000-000000000000', null,null);
+  select t.inventory_item_id into got_item
+  from public.resolve_protocol(o, array['gasa'], null,null,null,null,null,
+                               '52000000-0000-0000-0000-000000000000', null,null) t limit 1;
+  if got_item is distinct from 'a0000000-0000-0000-0000-0000000000e1' then
+    raise exception 'BEHAVIOR FAIL [sin-sitio-item-aterriza]: esperaba el insumo del centro '
+      '(item a…e1), fue % — ¿volvió el filtro de sitio?', got_item;
+  end if;
+  raise notice 'BEHAVIOR PASS [sin-sitio-item-aterriza]';
+
+  -- (b) la regla cuyo insumo NO existe en el centro SALE (no desaparece), con su nombre…
+  perform pg_temp.chk('propio-huerfana-con-nombre', 'sonda|Sonda-fantasma|1.000|propio',
+                      o, array['sonda'], null,null,null,null,null, null, null,null);
+  -- …y su inventory_item_id es NULL (el insumo no aterrizó en el centro).
+  select t.inventory_item_id into got_item
+  from public.resolve_protocol(o, array['sonda'], null,null,null,null,null,null,null,null) t limit 1;
+  if got_item is not null then
+    raise exception 'BEHAVIOR FAIL [propio-huerfana-item-null]: esperaba item null, fue %', got_item;
+  end if;
+  raise notice 'BEHAVIOR PASS [propio-huerfana-item-null]';
+end $$;
+
 select '=== BEHAVIOR: ALL PASSED ===' as result;
