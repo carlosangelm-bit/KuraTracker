@@ -71,8 +71,10 @@ class Organization {
         centerType: CenterTypeX.fromDb(json['center_type'] as String?),
         premiumInsumos: json['premium_insumos'] as bool? ?? false,
         premiumProtocoloKura: json['premium_protocolo_kura'] as bool? ?? false,
+        // Default true, ALINEADO con el default del servidor (0148). Si un payload llegara sin
+        // la columna, un false aquí diría "reglas propias" mientras el servidor resuelve Kura+.
         resolvesFromCatalog:
-            json['protocol_resolves_from_catalog'] as bool? ?? false,
+            json['protocol_resolves_from_catalog'] as bool? ?? true,
         shopifyMirror: json['shopify_mirror'] as bool? ?? false,
         inventoryScope: (json['inventory_scope'] as String?) ?? 'site',
         mpPointDeviceId: json['mp_point_device_id'] as String?,

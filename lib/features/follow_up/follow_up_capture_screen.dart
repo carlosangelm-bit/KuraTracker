@@ -1827,42 +1827,55 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
                 body: 'Revisa la conexión; podrás agregarlos en el detalle de la '
                     'consulta al cobrar.',
               ),
-            ] else if (_protocolInsumos != null &&
-                _protocolInsumos!.isNotEmpty) ...[
-              const SizedBox(height: 12),
-              const Text('Insumos del protocolo',
-                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13)),
-              const Text(
-                  'Se guardan con el seguimiento; el cobro los toma en el detalle '
-                  'de la consulta (no se cobra aquí).',
-                  style: TextStyle(fontSize: 11, color: KuraColors.darkText)),
-              const SizedBox(height: 6),
-              for (final p in _protocolInsumos!)
-                _regimenBox(
-                    icon: Icons.inventory_2_outlined,
-                    color: KuraColors.primary,
-                    title:
-                        '${p.name} · ${_fmtQty(p.quantity)}${p.inventoryItemId == null ? ' · sin insumo enlazado' : ''}',
-                    body: (p.notePhrase ?? '').trim()),
-              if (_protocolInsumos!
-                  .any((p) => (p.notePhrase ?? '').trim().isNotEmpty)) ...[
-                const SizedBox(height: 4),
-                FilledButton.icon(
-                  icon: Icon(_frasesInsertadas
-                      ? Icons.check
-                      : Icons.note_add_outlined),
-                  label: Text(_frasesInsertadas
-                      ? 'Frases insertadas en la nota'
-                      : 'Insertar las frases en la nota'),
-                  style:
-                      FilledButton.styleFrom(backgroundColor: KuraColors.primary),
-                  onPressed: _frasesInsertadas ? null : _insertFrasesToNote,
-                ),
+            ] else if (_protocolInsumos != null) ...[
+              if (_protocolInsumos!.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                const Text('Insumos del protocolo',
+                    style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13)),
                 const Text(
-                    'Se agregan a “Notas clínicas / Observaciones”, donde puedes '
-                    'editarlas o borrarlas. La nota es tuya.',
+                    'Se guardan con el seguimiento; el cobro los toma en el detalle '
+                    'de la consulta (no se cobra aquí).',
                     style: TextStyle(fontSize: 11, color: KuraColors.darkText)),
+                const SizedBox(height: 6),
+                for (final p in _protocolInsumos!)
+                  _regimenBox(
+                      icon: Icons.inventory_2_outlined,
+                      color: KuraColors.primary,
+                      title:
+                          '${p.name} · ${_fmtQty(p.quantity)}${p.inventoryItemId == null ? ' · sin insumo enlazado' : ''}',
+                      body: (p.notePhrase ?? '').trim()),
+                if (_protocolInsumos!
+                    .any((p) => (p.notePhrase ?? '').trim().isNotEmpty)) ...[
+                  const SizedBox(height: 4),
+                  FilledButton.icon(
+                    icon: Icon(_frasesInsertadas
+                        ? Icons.check
+                        : Icons.note_add_outlined),
+                    label: Text(_frasesInsertadas
+                        ? 'Frases insertadas en la nota'
+                        : 'Insertar las frases en la nota'),
+                    style: FilledButton.styleFrom(
+                        backgroundColor: KuraColors.primary),
+                    onPressed: _frasesInsertadas ? null : _insertFrasesToNote,
+                  ),
+                  const Text(
+                      'Se agregan a “Notas clínicas / Observaciones”, donde puedes '
+                      'editarlas o borrarlas. La nota es tuya.',
+                      style: TextStyle(fontSize: 11, color: KuraColors.darkText)),
+                ],
               ],
+              // NADA EN SILENCIO: si el motor sugirió un paso pero el protocolo no propuso
+              // insumo del centro para él, se DICE (antes se veía igual que "no hay regla").
+              if (_protocolMissingMethods().isNotEmpty)
+                _regimenBox(
+                  icon: Icons.link_off,
+                  color: KuraColors.warning,
+                  title: 'Sin insumo del centro para: '
+                      '${_protocolMissingMethods().join(', ')}',
+                  body: 'Puede que este centro no tenga una regla de protocolo para '
+                      'ese paso, o que el insumo no esté dado de alta en este centro. '
+                      'Puedes agregarlo a mano en el detalle de la consulta.',
+                ),
             ],
           ],
         ],
@@ -2127,6 +2140,24 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
   static String _fmtQty(double v) =>
       v == v.roundToDouble() ? v.toInt().toString() : v.toString();
 
+  // Pasos del régimen (métodos con etiqueta) para los que el protocolo NO propuso insumo del
+  // centro: ni regla, ni insumo dado de alta. Para DECIRLO en vez de dejar el vacío mudo.
+  List<String> _protocolMissingMethods() {
+    final out = _engineOutput;
+    if (out == null || _protocolInsumos == null) return const [];
+    final resolvedCats = _protocolInsumos!.map((p) => p.category).toSet();
+    final seen = <String>{};
+    final missing = <String>[];
+    for (final c in out.regimen) {
+      final tag = kKuraMethodToTag[c.metodo];
+      if (tag == null) continue; // sin etiqueta: no hay categoría del protocolo que resolver
+      if (!resolvedCats.contains(tag.dbValue) && seen.add(c.metodo)) {
+        missing.add(c.metodo);
+      }
+    }
+    return missing;
+  }
+
   // ¿El régimen tiene métodos con etiqueta kura_tag (es decir, hay categorías que resolver
   // contra el protocolo)? Sin ellas no hay insumos que traer y "falló" no aplica.
   bool _hasTaggedMethods(KuraEngineOutput out) => out.regimen
@@ -2164,10 +2195,20 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
     }
   }
 
+  // El sitio con el que se resuelve el protocolo DEBE ser del centro ACTIVO. El sitio primario
+  // de la paciente puede ser de OTRA organización (dato heredado); si viaja tal cual, el filtro
+  // del RPC (organization_id = centro AND site_id = <sitio>) nunca calza y la resolución se apaga
+  // en silencio. Y `sites.first` era una lotería. Regla: usa el sitio primario SOLO si es del
+  // centro activo; si no, resuelve ORG-WIDE (null) — el RPC empata el insumo en cualquier sitio
+  // del centro, en vez de contra un sitio arbitrario o ajeno.
   String? _siteIdForResolve(DataRepository repo) {
-    final patient = repo.getPatient(widget.patientId);
-    final sites = repo.listSites();
-    return patient?.primarySiteId ?? (sites.isNotEmpty ? sites.first.id : null);
+    final ownSiteIds = repo
+        .listSites(organizationId: ref.read(activeOrganizationIdProvider))
+        .where((s) => s.isActive)
+        .map((s) => s.id)
+        .toSet();
+    final primary = repo.getPatient(widget.patientId)?.primarySiteId;
+    return (primary != null && ownSiteIds.contains(primary)) ? primary : null;
   }
 
   // Inserta las FRASES del protocolo en la nota clínica (campo libre "Notas clínicas /

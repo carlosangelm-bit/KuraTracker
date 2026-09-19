@@ -148,16 +148,16 @@ void main() {
         isTrue);
   });
 
-  test('resolvesFromCatalog lee el interruptor de master (§desacople)', () async {
+  test('resolvesFromCatalog lee el interruptor del centro (default true, spec 19-sep)', () async {
     final r = await DataRepository.forSeeding(_MemStore({
       Collections.organizations: [
-        {'id': _authorOrg, 'name': 'Kura+', 'protocol_resolves_from_catalog': true},
-        {'id': _plainOrg, 'name': 'Otro'}, // sin la columna → false
+        {'id': _authorOrg, 'name': 'Kura+', 'protocol_resolves_from_catalog': false},
+        {'id': _plainOrg, 'name': 'Otro'}, // sin la columna → true (default alineado al servidor)
       ],
     }));
-    expect(r.resolvesFromCatalog(_authorOrg), isTrue);
-    expect(r.resolvesFromCatalog(_plainOrg), isFalse);
-    expect(r.resolvesFromCatalog(null), isFalse);
+    expect(r.resolvesFromCatalog(_authorOrg), isFalse); // valor explícito respetado
+    expect(r.resolvesFromCatalog(_plainOrg), isTrue); // default true, no false
+    expect(r.resolvesFromCatalog(null), isFalse); // org null → false (no hay centro)
   });
 
   test('saveProtocolCatalogRule QUITA organization_id (catálogo global) y va a la tabla catálogo',

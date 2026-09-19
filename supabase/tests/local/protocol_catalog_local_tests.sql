@@ -343,49 +343,118 @@ begin;
 rollback;
 
 -- =============================================================================
--- TEST 13 — INTERRUPTOR de fuente SOLO de master (§15 desacople). protocol_resolves_from_catalog
--- decide si un centro AUTOR resuelve contra el catálogo o sus reglas propias. Un no-master no lo
--- cambia (candado trg_zz_); el master sí. Es lo que evita que alguien mueva a Kura+ al catálogo
--- (identidad nula) sin ser master.
+-- TEST 13 — EL INTERRUPTOR de fuente (spec 19-sep, sustituye la regla de 0144/0145). Ahora lo
+-- cambia el MASTER (cualquier centro) o el ADMIN del centro CON module:admin (SU propio centro).
+-- Reescrito: la versión vieja afirmaba la regla RETIRADA (solo master) y además NO podía fallar
+-- —su criterio de éxito era `sqlerrm like '%master%'`, y su propio mensaje de FALLO contenía
+-- "master", así que se tragaba la excepción de fallo—. Aquí el éxito de un rechazo es que la
+-- excepción SE HAYA LEVANTADO de verdad (bandera), no un substring del mensaje. Setup propio.
 -- =============================================================================
 begin;
-  set local test.uid = '4a000000-0000-0000-0000-000000000000';  -- admin, NO master
-  do $$ begin
-    begin
-      update public.organizations set protocol_resolves_from_catalog = true
-        where id = '44444444-4444-4444-4444-444444444444';
-      raise exception 'TEST13a FAIL: un no-master cambió el interruptor de fuente';
-    exception when others then
-      if sqlerrm like '%master%'
-        then raise notice 'TEST13a PASS: no-master NO puede cambiar el interruptor';
-        else raise; end if;
-    end;
-  end $$;
-  set local test.uid = '30000000-0000-0000-0000-000000000000';  -- MASTER
+  -- Master, admin de OA (con module:admin), admin de OB (SIN module:admin).
+  insert into public.organizations (id, name, protocol_resolves_from_catalog) values
+    ('aa000000-0000-0000-0000-000000000013', 'OA con admin', false),
+    ('bb000000-0000-0000-0000-000000000013', 'OB sin admin', false) on conflict do nothing;
+  insert into public.org_entitlements (organization_id, kind, key, status, source) values
+    ('aa000000-0000-0000-0000-000000000013', 'module', 'admin', 'active', 'master')
+    on conflict do nothing;  -- OB deliberadamente SIN module:admin
+  insert into public.profiles (id, roles, organization_id) values
+    ('3a000000-0000-0000-0000-000000000013', array['master']::public.user_role[], null),
+    ('a1000000-0000-0000-0000-000000000013', array['admin']::public.user_role[], 'aa000000-0000-0000-0000-000000000013'),
+    ('b1000000-0000-0000-0000-000000000013', array['admin']::public.user_role[], 'bb000000-0000-0000-0000-000000000013')
+    on conflict do nothing;
+
+  -- 13a — ADMIN de su propio centro CON module:admin → SÍ puede (UPDATE directo).
+  set local test.uid = 'a1000000-0000-0000-0000-000000000013';
   do $$ begin
     update public.organizations set protocol_resolves_from_catalog = true
-      where id = '44444444-4444-4444-4444-444444444444';
-    raise notice 'TEST13b PASS: el master sí cambia el interruptor';
+      where id = 'aa000000-0000-0000-0000-000000000013';
+    if (select protocol_resolves_from_catalog from public.organizations
+        where id = 'aa000000-0000-0000-0000-000000000013') is not true then
+      raise exception 'TEST13a FAIL: el admin del centro con module:admin no aplicó el cambio';
+    end if;
+    raise notice 'TEST13a PASS: admin del centro (con module:admin) SÍ cambia su interruptor';
+  end $$;
+
+  -- 13b — ADMIN de un centro SIN module:admin → NO puede (bloqueado de verdad).
+  set local test.uid = 'b1000000-0000-0000-0000-000000000013';
+  do $$
+  declare blocked boolean := false;
+  begin
+    begin
+      update public.organizations set protocol_resolves_from_catalog = true
+        where id = 'bb000000-0000-0000-0000-000000000013';
+    exception when others then blocked := true;
+    end;
+    if not blocked then raise exception 'TEST13b FAIL: admin SIN module:admin cambió el interruptor'; end if;
+    raise notice 'TEST13b PASS: admin sin module:admin NO puede';
+  end $$;
+
+  -- 13c — ADMIN (con module:admin) de OTRO centro → NO puede sobre un centro ajeno.
+  set local test.uid = 'a1000000-0000-0000-0000-000000000013';  -- admin de OA
+  do $$
+  declare blocked boolean := false;
+  begin
+    begin
+      update public.organizations set protocol_resolves_from_catalog = true
+        where id = 'bb000000-0000-0000-0000-000000000013';  -- centro AJENO
+    exception when others then blocked := true;
+    end;
+    if not blocked then raise exception 'TEST13c FAIL: admin cambió el interruptor de OTRO centro'; end if;
+    raise notice 'TEST13c PASS: admin NO puede sobre un centro ajeno';
+  end $$;
+
+  -- 13d — MASTER → puede sobre cualquiera.
+  set local test.uid = '3a000000-0000-0000-0000-000000000013';
+  do $$ begin
+    update public.organizations set protocol_resolves_from_catalog = true
+      where id = 'bb000000-0000-0000-0000-000000000013';
+    if (select protocol_resolves_from_catalog from public.organizations
+        where id = 'bb000000-0000-0000-0000-000000000013') is not true then
+      raise exception 'TEST13d FAIL: el master no aplicó el cambio';
+    end if;
+    raise notice 'TEST13d PASS: el master cambia el interruptor de cualquier centro';
+  end $$;
+
+  -- 13e — el RPC set_org_resolves_from_catalog respeta la MISMA autoridad (Carlos: no había
+  -- prueba del escritor). Admin de OA sobre OA: SÍ; admin de OA sobre OB (ajeno): NO.
+  set local test.uid = 'a1000000-0000-0000-0000-000000000013';
+  do $$
+  declare blocked boolean := false;
+  begin
+    perform public.set_org_resolves_from_catalog('aa000000-0000-0000-0000-000000000013', false);
+    if (select protocol_resolves_from_catalog from public.organizations
+        where id = 'aa000000-0000-0000-0000-000000000013') is not false then
+      raise exception 'TEST13e FAIL: el RPC no aplicó el cambio del admin sobre su centro';
+    end if;
+    begin
+      perform public.set_org_resolves_from_catalog('bb000000-0000-0000-0000-000000000013', false);
+    exception when others then blocked := true;
+    end;
+    if not blocked then raise exception 'TEST13e FAIL: el RPC dejó al admin tocar un centro ajeno'; end if;
+    raise notice 'TEST13e PASS: el RPC respeta la autoridad (propio sí, ajeno no)';
   end $$;
 rollback;
 
 -- =============================================================================
--- TEST 14 — el candado del interruptor cubre INSERT (0145), no solo UPDATE. Un no-master no puede
--- CREAR un centro que ya nazca resolviendo del catálogo (esquivando el interruptor). La creación
--- normal de centros nace en false y pasa; esto rechaza el true sin master.
+-- TEST 14 — la rama INSERT del candado se RETIRÓ (0148): con el default en true, TODA alta de
+-- centro nace en true, así que rechazar el INSERT tumbaría la creación por autoservicio. Un
+-- no-master DEBE poder crear un centro (que nace resolviendo Kura+). Reescrito: antes afirmaba
+-- lo contrario y no podía fallar (mismo `like '%master%'`). Aquí el éxito es que la fila EXISTA.
 -- =============================================================================
 begin;
-  set local test.uid = '4a000000-0000-0000-0000-000000000000';  -- admin, NO master
+  insert into public.profiles (id, roles, organization_id) values
+    ('a1000000-0000-0000-0000-000000000014', array['admin']::public.user_role[],
+     'aa000000-0000-0000-0000-000000000014') on conflict do nothing;
+  set local test.uid = 'a1000000-0000-0000-0000-000000000014';  -- admin, NO master
   do $$ begin
-    begin
-      insert into public.organizations (id, name, protocol_resolves_from_catalog)
-        values ('bb000000-0000-0000-0000-000000000014', 'intento no-master', true);
-      raise exception 'TEST14 FAIL: un no-master creó un centro con el interruptor en true';
-    exception when others then
-      if sqlerrm like '%master%'
-        then raise notice 'TEST14 PASS: no-master NO puede crear con el interruptor en true';
-        else raise; end if;
-    end;
+    insert into public.organizations (id, name, protocol_resolves_from_catalog)
+      values ('cc000000-0000-0000-0000-000000000014', 'alta autoservicio', true);
+    if not exists (select 1 from public.organizations
+                   where id = 'cc000000-0000-0000-0000-000000000014') then
+      raise exception 'TEST14 FAIL: la creación del centro fue rechazada (la rama INSERT no se retiró)';
+    end if;
+    raise notice 'TEST14 PASS: un no-master crea un centro (nace resolviendo Kura+); sin trampa de INSERT';
   end $$;
 rollback;
 
