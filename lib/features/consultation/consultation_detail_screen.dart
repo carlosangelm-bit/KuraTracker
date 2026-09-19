@@ -1517,9 +1517,15 @@ class _SuppliesUsedSectionState extends ConsumerState<_SuppliesUsedSection> {
                     for (final it in inventory)
                       ListTile(
                         title: Text(it.name),
-                        subtitle: it.unitCost == null
-                            ? null
-                            : Text(_money(it.unitCost!)),
+                        // El clínico elige por lo que PAGA la paciente (precio de
+                        // venta), no por el costo (que suele venir en 0 y engaña).
+                        // Sin precio se marca: ese insumo se cobra a costo.
+                        subtitle: it.unitPrice != null
+                            ? Text(_money(it.unitPrice!))
+                            : Text('sin precio — se cobra a costo',
+                                style: TextStyle(
+                                    color: Colors.orange.shade800,
+                                    fontStyle: FontStyle.italic)),
                         onTap: () => Navigator.of(context).pop(it),
                       ),
                   ],
@@ -1705,10 +1711,16 @@ class _PlanSupplyChooserState extends State<_PlanSupplyChooser> {
                         controlAffinity: ListTileControlAffinity.leading,
                         title: Text(item.name,
                             style: const TextStyle(fontSize: 13)),
-                        subtitle: item.unitCost == null
-                            ? null
-                            : Text(widget.money(item.unitCost!),
-                                style: const TextStyle(fontSize: 11)),
+                        // Se elige por el precio de venta (lo que paga la
+                        // paciente), no por el costo; sin precio se marca.
+                        subtitle: item.unitPrice != null
+                            ? Text(widget.money(item.unitPrice!),
+                                style: const TextStyle(fontSize: 11))
+                            : Text('sin precio — se cobra a costo',
+                                style: TextStyle(
+                                    fontSize: 11,
+                                    color: Colors.orange.shade800,
+                                    fontStyle: FontStyle.italic)),
                         onChanged: (v) => setState(() {
                           if (v == true) {
                             _selected.add(item.id);

@@ -234,11 +234,19 @@ class _InventarioScreenState extends ConsumerState<InventarioScreen> {
         } else {
           // Re-subir el CSV actualiza costo y precio del artículo existente con
           // la regla única (spec 19-sep): el centro repara precios re-subiendo
-          // el CSV, no solo umbrales. Solo si la fila trae costo o precio (una
-          // fila sin ninguno no pisa lo capturado a mano).
+          // el CSV, no solo umbrales. Solo si la fila trae costo o precio.
+          //
+          // El precio capturado a mano NUNCA se pisa (Carlos, verificación
+          // 19-sep): si la fila trae precio explícito, ese manda (el CSV también
+          // es captura); si NO trae precio, se respeta el que el insumo ya tenga
+          // y solo se DERIVA cuando el insumo no tiene precio. Así un reabasto por
+          // CSV (costos, sin columna precio) no borra los precios ajustados a mano.
           if (cost != null || price != null) {
-            final newPrice =
-                resolveSalePrice(price: price, cost: cost ?? match.unitCost);
+            final newPrice = salePriceOnCsvReupload(
+                rowPrice: price,
+                rowCost: cost,
+                existingPrice: match.unitPrice,
+                existingCost: match.unitCost);
             await repo.updateInventoryItem(match.id,
                 unitCost: cost, unitPrice: newPrice);
             if (newPrice == null) sinPrecio++;

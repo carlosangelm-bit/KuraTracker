@@ -49,6 +49,32 @@ void main() {
     });
   });
 
+  group('re-subida de CSV — el precio a mano NUNCA se pisa (Carlos, 19-sep)', () {
+    test('fila con costo y SIN precio, insumo con precio a mano ⇒ se RESPETA', () {
+      // El caso de la verificación: reabasto por CSV (costos, sin columna precio) NO borra los
+      // precios ajustados a mano.
+      expect(
+          salePriceOnCsvReupload(
+              rowCost: 100, existingPrice: 999, existingCost: 100),
+          999);
+    });
+
+    test('fila con precio explícito ⇒ ese manda (el CSV también es captura)', () {
+      expect(
+          salePriceOnCsvReupload(
+              rowPrice: 250, rowCost: 100, existingPrice: 999),
+          250);
+    });
+
+    test('fila con costo, insumo SIN precio ⇒ se deriva (no lo deja sin precio)', () {
+      expect(salePriceOnCsvReupload(rowCost: 100, existingPrice: null), 133.33);
+    });
+
+    test('fila sin costo ni precio, insumo con precio ⇒ se conserva', () {
+      expect(salePriceOnCsvReupload(existingPrice: 500, existingCost: 375), 500);
+    });
+  });
+
   group('puertas de alta (chokepoint addInventoryItem) — mira el resultado', () {
     late DataRepository repo;
     late String orgId;
@@ -141,6 +167,26 @@ void main() {
       final src = File('lib/services/local_db/demo_seed.dart').readAsStringSync();
       expect(src.contains("'unit_price': resolveSalePrice(cost:"), isTrue,
           reason: 'el inventario sembrado debe derivar el precio por la regla única');
+    });
+
+    test('el selector de insumos elige por PRECIO de venta, no por costo (marca sin precio)', () {
+      // Carlos, verificación 19-sep: el clínico elegía viendo unitCost (que suele venir en 0 y
+      // engaña); debe ver el precio de venta y una marca cuando no hay precio.
+      final src =
+          File('lib/features/consultation/consultation_detail_screen.dart')
+              .readAsStringSync();
+      // Los dos selectores (manual y sugerencia del protocolo) muestran el precio de venta…
+      final subtitlePrice =
+          RegExp(r'subtitle:\s*\w+\.unitPrice != null').allMatches(src).length;
+      expect(subtitlePrice, greaterThanOrEqualTo(2),
+          reason: 'ambos selectores deben mostrar el precio de venta en el subtítulo');
+      // …y marcan "sin precio" cuando no lo hay (se cobra a costo, dicho en voz alta).
+      expect('sin precio — se cobra a costo'.allMatches(src).length,
+          greaterThanOrEqualTo(2),
+          reason: 'ambos selectores deben marcar el insumo sin precio');
+      // Ningún subtítulo de selector debe elegir mostrando unitCost (la costura del cero).
+      expect(RegExp(r'subtitle:\s*\w+\.unitCost').hasMatch(src), isFalse,
+          reason: 'el selector NO debe elegir por costo (unitCost engaña con \$0)');
     });
   });
 }

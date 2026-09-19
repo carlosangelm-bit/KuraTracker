@@ -24,3 +24,19 @@ double? resolveSalePrice({double? price, double? cost}) {
 /// El default derivado SOLO del costo (para el autocompletado de los formularios): costo / 0.75,
 /// o null si no hay costo utilizable.
 double? defaultSalePriceFromCost(double? cost) => resolveSalePrice(cost: cost);
+
+/// Precio con el que queda un insumo que YA existe tras re-subir un CSV. El precio capturado a mano
+/// NUNCA se pisa (Carlos, 19-sep): si la fila trae precio, ese manda (el CSV también es captura); si
+/// no trae precio, se RESPETA el precio existente; y solo cuando el insumo no tenía precio se DERIVA
+/// del costo (el de la fila, o en su defecto el existente). Así un reabasto por CSV —costos, sin
+/// columna de precio— no borra en silencio los precios que el centro ajustó a mano.
+double? salePriceOnCsvReupload({
+  double? rowPrice,
+  double? rowCost,
+  double? existingPrice,
+  double? existingCost,
+}) {
+  if (rowPrice != null) return rowPrice;
+  if (existingPrice != null) return existingPrice;
+  return resolveSalePrice(cost: rowCost ?? existingCost);
+}
