@@ -6255,6 +6255,33 @@ class DataRepository {
     return match.isEmpty ? null : Consultation.fromJson(match.first);
   }
 
+  /// Borrador de seguimiento SIN TERMINAR (is_draft) de una herida en una fecha (por defecto hoy),
+  /// o null si no hay. Es el CANDADO DURABLE de duplicación: antes de crear un seguimiento nuevo
+  /// para una herida, se busca un borrador existente de ESA herida para ESE día (sobrevive salir y
+  /// re-entrar a la captura, cosa que la memoria local de la pantalla no hacía). No reutiliza ni
+  /// bloquea: el clínico decide (dos curaciones el mismo día son un caso real). Devuelve el más
+  /// reciente. `excludeConsultationId` omite el borrador que ya se está editando.
+  Consultation? findOpenDraftForWound(String woundId,
+      {DateTime? onDate, String? excludeConsultationId}) {
+    final day = onDate ?? DateTime.now();
+    final consultIds = listMeasurementsForWound(woundId, includeDrafts: true)
+        .map((m) => m.consultationId)
+        .whereType<String>()
+        .where((cid) => cid != excludeConsultationId)
+        .toSet();
+    final drafts = consultIds
+        .map(getConsultation)
+        .whereType<Consultation>()
+        .where((c) =>
+            c.isDraft &&
+            c.visitDate.year == day.year &&
+            c.visitDate.month == day.month &&
+            c.visitDate.day == day.day)
+        .toList()
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return drafts.isEmpty ? null : drafts.first;
+  }
+
   /// Herida asociada a una consulta (vía su medición). Sirve para reabrir un
   /// borrador de seguimiento en el formulario correcto.
   String? woundIdForConsultation(String consultationId) {

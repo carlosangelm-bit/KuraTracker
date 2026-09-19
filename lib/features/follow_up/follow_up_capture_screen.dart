@@ -2607,11 +2607,53 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
     _regimenAccepted = s['regimen_accepted'] as bool? ?? _regimenAccepted;
   }
 
+  /// Pregunta del candado de duplicación: continuar el borrador existente de esta herida (hoy) o
+  /// registrar uno nuevo. "Continuar" reabre el borrador por su ruta (reusa toda la lógica de
+  /// reapertura); "nuevo" no hace nada (la captura sigue en blanco y creará su propia consulta).
+  Future<void> _promptResumeDraft(String draftId) async {
+    if (!mounted) return;
+    final resume = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Ya hay un seguimiento sin terminar'),
+        content: const Text(
+            'Existe un seguimiento sin terminar de esta herida para hoy. '
+            '¿Continuar ese o registrar uno nuevo?'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Registrar uno nuevo')),
+          FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('Continuar ese')),
+        ],
+      ),
+    );
+    if (resume == true && mounted) {
+      context.go(
+          '/patients/${widget.patientId}/wound/${widget.woundId}/follow-up/draft/$draftId');
+    }
+  }
+
   void _loadDraftIfNeeded(DataRepository repo, SessionState session) {
     if (_draftLoaded) return;
     _draftLoaded = true;
     final id = widget.draftConsultationId;
-    if (id == null) return;
+    if (id == null) {
+      // Camino "nuevo": CANDADO DURABLE de duplicación. Si ya hay un borrador sin
+      // terminar de ESTA herida para HOY, se le pregunta al clínico si continúa
+      // ese o registra uno nuevo — ni se reutiliza en silencio ni se bloquea (dos
+      // curaciones el mismo día son un caso real; la regla clínica no se inventa
+      // desde el código). Vive en la base (findOpenDraftForWound), así que
+      // sobrevive salir y re-entrar a la captura, cosa que la memoria local de la
+      // pantalla (_createdConsultationId) no hacía.
+      final existing = repo.findOpenDraftForWound(widget.woundId);
+      if (existing != null) {
+        WidgetsBinding.instance.addPostFrameCallback(
+            (_) => _promptResumeDraft(existing.id));
+      }
+      return;
+    }
     final c = repo.getConsultation(id);
     if (c == null) return;
     // Inmutabilidad (0097): si la consulta YA está finalizada, no se puede
