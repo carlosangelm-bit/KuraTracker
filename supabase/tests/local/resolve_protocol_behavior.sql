@@ -48,8 +48,13 @@ begin
     raise exception 'BEHAVIOR FAIL: corpus_json vacío (¿el runner no cargó el corpus?)';
   end if;
 
-  insert into public.organizations (id, name)
-    values ((c->>'org')::uuid, 'Behavior propio') on conflict do nothing;
+  -- Spec 19-sep: la fuente la decide module:admin + el interruptor. Para resolver con su matriz
+  -- PROPIA, el centro necesita module:admin y el interruptor en propias (false). Antes bastaba
+  -- no tener seat/autor; ahora sin module:admin resolvería Kura+ (vacío para estas reglas propias).
+  insert into public.organizations (id, name, protocol_resolves_from_catalog)
+    values ((c->>'org')::uuid, 'Behavior propio', false) on conflict do nothing;
+  insert into public.org_entitlements (organization_id, kind, key, status, source)
+    values ((c->>'org')::uuid, 'module', 'admin', 'active', 'master') on conflict do nothing;
 
   insert into public.inventory_items (id, organization_id, site_id, name)
     select (it->>'id')::uuid, (c->>'org')::uuid, (it->>'site')::uuid, it->>'name'
@@ -188,15 +193,14 @@ begin
   raise notice 'BEHAVIOR PASS [huerfana-item-null]';
 end $$;
 
--- D) EL CASO KURA+ (§15 jerarquía): un centro AUTOR con el interruptor APAGADO Y CON seat:protocolo
---    vigente (cupo>=1) resuelve con sus REGLAS PROPIAS, no con el catálogo. Ser autor MANDA sobre
---    tener asiento: el asiento no le puede cambiar la fuente saltándose el interruptor. Es
---    exactamente Kura+ (tiene asientos para su personal). category = relleno_cavidad (aislada).
-insert into public.organizations (id, name) values
-  ('b0000000-0000-0000-0000-000000000006', 'Behavior author OFF') on conflict do nothing; -- switch = false (default)
+-- D) EL CASO PROPIO (spec 19-sep): un centro CON module:admin y el interruptor en PROPIAS (false)
+--    resuelve con sus REGLAS PROPIAS, no con el catálogo — Y TENER seat:protocolo NO le fuerza el
+--    catálogo (el asiento ya no decide la fuente: ese era el defecto). category = relleno_cavidad.
+insert into public.organizations (id, name, protocol_resolves_from_catalog) values
+  ('b0000000-0000-0000-0000-000000000006', 'Behavior admin OFF', false) on conflict do nothing;
 insert into public.org_entitlements (organization_id, kind, key, quantity, status, source) values
-  ('b0000000-0000-0000-0000-000000000006', 'module', 'protocol:author', null, 'active', 'master'),
-  ('b0000000-0000-0000-0000-000000000006', 'seat',   'protocolo',       12,   'active', 'master')
+  ('b0000000-0000-0000-0000-000000000006', 'module', 'admin',     null, 'active', 'master'),
+  ('b0000000-0000-0000-0000-000000000006', 'seat',   'protocolo', 12,   'active', 'master')
   on conflict do nothing;
 insert into public.inventory_items (id, organization_id, site_id, name) values
   ('a0000000-0000-0000-0000-0000000000d6','b0000000-0000-0000-0000-000000000006',null,'Propio-D6') on conflict do nothing;
@@ -209,10 +213,60 @@ values
 do $$
 declare a uuid := 'b0000000-0000-0000-0000-000000000006';
 begin
-  -- autor + seat vigente + interruptor APAGADO → reglas PROPIAS (no catálogo). Con la disyunción
-  -- vieja, el asiento habría forzado el catálogo (vacío para relleno) y esto se pondría rojo.
-  perform pg_temp.chk('kura+-autor-con-asiento-apagado', 'relleno_cavidad|Propio-D6|1.000|propio',
+  -- module:admin + interruptor en propias + seat vigente → reglas PROPIAS (no catálogo). Con la
+  -- disyunción vieja el asiento habría forzado el catálogo (vacío para relleno) y esto sería rojo.
+  perform pg_temp.chk('admin-off-con-asiento-resuelve-propio', 'relleno_cavidad|Propio-D6|1.000|propio',
                       a, array['relleno_cavidad'], null,null,null,null,null,null, null,null);
+end $$;
+
+-- =============================================================================
+-- SPEC 19-sep — LAS CUATRO COMBINACIONES: {con, sin} module:admin × interruptor {Kura+, propias}.
+-- Misma categoría 'malla' con DOS matrices que difieren, para saber cuál resolvió:
+--   · catálogo Kura+  → 'Kura-malla|kura'
+--   · propia del centro → 'Propia-<org>|propio'
+-- Cada centro tiene AMBAS (regla de catálogo global + su regla propia), así que el resultado
+-- delata la fuente elegida. El interruptor se fija en el INSERT (sin candado); module:admin por
+-- entitlement. Todos con seat:protocolo (la puerta de USO), para aislar que la FUENTE la decide
+-- module:admin + interruptor, NO el asiento.
+-- =============================================================================
+insert into public.protocol_catalog_rules
+  (id, category, name, dimension, quantity_mode, quantity_value, sort_order, exudate_levels, zone_groups, infection)
+values
+  ('d0000000-0000-0000-0000-0000000000aa','malla','Kura-malla','none','fixed',1,0,'[]','[]','any')
+  on conflict do nothing;
+
+do $$
+declare
+  -- (org, switch, tiene_admin, esperado)
+  combos text[][] := array[
+    ['b0000000-0000-0000-0000-0000000000a1', 'true',  'yes', 'malla|Kura-malla|1.000|kura'],   -- con admin + Kura+  → catálogo
+    ['b0000000-0000-0000-0000-0000000000a2', 'false', 'yes', 'malla|Propia-a2|1.000|propio'],  -- con admin + propias → propio
+    ['b0000000-0000-0000-0000-0000000000a3', 'true',  'no',  'malla|Kura-malla|1.000|kura'],   -- sin admin (switch true) → catálogo
+    ['b0000000-0000-0000-0000-0000000000a4', 'false', 'no',  'malla|Kura-malla|1.000|kura']    -- sin admin (switch false, degradación) → catálogo
+  ];
+  row text[]; org uuid; sw boolean; has_admin boolean; label text;
+begin
+  foreach row slice 1 in array combos loop
+    org := row[1]::uuid; sw := row[2]::boolean; has_admin := row[3] = 'yes';
+    insert into public.organizations (id, name, protocol_resolves_from_catalog)
+      values (org, 'combo', sw) on conflict do nothing;
+    insert into public.org_entitlements (organization_id, kind, key, quantity, status, source)
+      values (org, 'seat', 'protocolo', 1, 'active', 'master') on conflict do nothing;
+    if has_admin then
+      insert into public.org_entitlements (organization_id, kind, key, status, source)
+        values (org, 'module', 'admin', 'active', 'master') on conflict do nothing;
+    end if;
+    -- Regla PROPIA del centro (para poder distinguirla del catálogo): 'Propia-<sufijo>'.
+    insert into public.inventory_items (id, organization_id, site_id, name)
+      values (org, org, null, 'Propia-' || right(row[1], 2)) on conflict do nothing;
+    insert into public.protocol_product_rules
+      (id, organization_id, category, inventory_item_id, name, dimension, quantity_mode, quantity_value, sort_order, exudate_levels, zone_groups, infection)
+      values (org, org, 'malla', org, 'Propia-' || right(row[1], 2), 'none', 'fixed', 1, 0, '[]', '[]', 'any')
+      on conflict do nothing;
+    label := 'combo-' || right(row[1], 2) || (case when has_admin then '-admin' else '-sinadmin' end)
+             || (case when sw then '-kura' else '-propias' end);
+    perform pg_temp.chk(label, row[4], org, array['malla'], null,null,null,null,null,null, null,null);
+  end loop;
 end $$;
 
 select '=== BEHAVIOR: ALL PASSED ===' as result;

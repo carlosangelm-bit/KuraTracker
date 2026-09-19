@@ -149,7 +149,9 @@ void main() {
     await _pump(t, repo, _user(AppRole.admin, org), org);
     // Se delega al editor existente (para no perder la edición de reglas propias).
     expect(find.byType(ProtocolProductRulesScreen), findsOneWidget);
-    expect(find.text('Este centro resuelve el protocolo con:'), findsNothing);
+    // Spec 19-sep: el interruptor de la fuente también vive en ESTA cara (el admin del
+    // centro decide desde aquí), no solo en la del catálogo.
+    expect(find.text('Este centro resuelve el protocolo con:'), findsOneWidget);
   });
 
   testWidgets('la tabla muestra contexto LEGIBLE + nota + encabezados de columna', (t) async {

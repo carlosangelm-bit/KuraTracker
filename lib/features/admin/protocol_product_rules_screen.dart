@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/utils/text_search.dart';
 import '../../core/widgets/kura_module_lock.dart';
+import 'protocol_source_switch.dart';
 
 import '../../core/providers/session_provider.dart';
 import '../../core/theme/kura_theme.dart';
@@ -125,6 +126,11 @@ class _ProtocolProductRulesScreenState
     return ListView(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 40),
         children: [
+          // El interruptor de la fuente, también en esta cara (spec 19-sep): el admin del
+          // centro decide desde aquí; y si hoy resuelve con Kura+, se avisa que edita a ciegas.
+          ProtocolSourceSwitch(
+              repo: repo, organizationId: orgId, editingOwnMatrix: true),
+          const SizedBox(height: 12),
           Text(
             'Por cada paso del protocolo, define qué producto de tu inventario se '
             'usa y en qué cantidad. Puedes condicionarlo a la MEDIDA de la herida '

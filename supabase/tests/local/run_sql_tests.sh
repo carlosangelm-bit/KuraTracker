@@ -39,6 +39,7 @@ CHAIN=(
   supabase/migrations/0144_protocol_resolve_source_switch.sql
   supabase/migrations/0145_protocol_resolve_source_hierarchy.sql
   supabase/migrations/0146_protocol_catalog_rules_updated_at.sql
+  supabase/migrations/0148_protocol_source_decided_by_admin_module.sql
 )
 SEED=supabase/migrations/0141_seed_protocol_catalog_kura_35.sql
 

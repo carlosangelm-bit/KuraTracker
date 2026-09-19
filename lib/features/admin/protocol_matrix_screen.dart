@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/providers/session_provider.dart';
 import '../../core/utils/text_search.dart';
+import 'protocol_source_switch.dart';
 import '../../core/design/tokens.dart';
 import '../../core/widgets/kura_module_lock.dart';
 import '../../models/inventory.dart';
@@ -56,8 +57,6 @@ const _ctxValueLabel = {
 class _ProtocolMatrixScreenState extends ConsumerState<ProtocolMatrixScreen> {
   // Reflejo local del interruptor tras un cambio de master, para que se vea al instante (la
   // hidratación de la org llega después; la RPC ya actualizó la base que leen las clínicas).
-  bool? _switchOverride;
-  bool _flipping = false;
   // Filtros (§presentación): con 35 reglas, 17 solo en apósito, recorrer a scroll no se sostiene
   // en vivo. Se filtra por PASO (categoría) y por CONTEXTO.
   String? _catFilter; // KuraTag.dbValue | null = todos
@@ -65,9 +64,6 @@ class _ProtocolMatrixScreenState extends ConsumerState<ProtocolMatrixScreen> {
 
   DataRepository get repo => widget.repo;
   String? get org => widget.organizationId;
-
-  bool get _resolvesFromCatalog =>
-      _switchOverride ?? repo.resolvesFromCatalog(org);
 
   @override
   Widget build(BuildContext context) {
@@ -101,11 +97,11 @@ class _ProtocolMatrixScreenState extends ConsumerState<ProtocolMatrixScreen> {
 
     // CUERPO (sin Scaffold): vive DENTRO del shell de /admin; el título ('Matriz del
     // protocolo') y el riel los pone el shell.
-    return canAuthor ? _catalogView(isMaster) : _noPermission();
+    return canAuthor ? _catalogView() : _noPermission();
   }
 
   // ------------------------------------------------------------------ AUTORA
-  Widget _catalogView(bool isMaster) {
+  Widget _catalogView() {
     final all = repo.listProtocolCatalogRules();
     // "Atado" = tiene insumo del centro (inventory_item_id), NO par shopify.
     final atadas = all.where((r) => r.isBound).length;
@@ -131,7 +127,7 @@ class _ProtocolMatrixScreenState extends ConsumerState<ProtocolMatrixScreen> {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        _switchHeader(isMaster),
+        ProtocolSourceSwitch(repo: repo, organizationId: org),
         const SizedBox(height: 12),
         Row(
           children: [
@@ -267,86 +263,6 @@ class _ProtocolMatrixScreenState extends ConsumerState<ProtocolMatrixScreen> {
         child: Text('${_catLabel(category)}  ·  $n',
             style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13)),
       );
-
-  Widget _switchHeader(bool isMaster) {
-    final catalog = _resolvesFromCatalog;
-    final color = catalog ? BrandTokens.of(context).brandPrimary : BrandTokens.of(context).statusWarning;
-    return Card(
-      color: color.withValues(alpha: 0.06),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(catalog ? Icons.verified : Icons.folder_outlined,
-                    size: 20, color: color),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text('Este centro resuelve el protocolo con:',
-                          style: TextStyle(fontSize: 12)),
-                      Text(
-                        catalog
-                            ? 'Catálogo Kura+'
-                            : 'Reglas propias del centro',
-                        style: TextStyle(
-                            fontWeight: FontWeight.w800, color: color),
-                      ),
-                    ],
-                  ),
-                ),
-                if (isMaster)
-                  _flipping
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2))
-                      : Switch(value: catalog, onChanged: _flipSwitch),
-              ],
-            ),
-            if (isMaster) ...[
-              const SizedBox(height: 4),
-              Text(
-                catalog
-                    ? 'Cámbialo para que vuelva a resolver con sus reglas propias.'
-                    : 'Atá las identidades y, cuando esté listo, prendé el catálogo: el régimen '
-                        'cambia en las pantallas clínicas al instante.',
-                style: TextStyle(
-                    fontSize: 11,
-                    color: BrandTokens.of(context).textSecondary),
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
-  Future<void> _flipSwitch(bool on) async {
-    if (org == null) return;
-    setState(() => _flipping = true);
-    try {
-      await repo.setOrgResolvesFromCatalog(org!, on);
-      if (!mounted) return;
-      setState(() {
-        _switchOverride = on; // evidente al instante
-        _flipping = false;
-      });
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(on
-              ? 'Ahora el centro resuelve con el catálogo Kura+.'
-              : 'Ahora el centro resuelve con sus reglas propias.')));
-    } catch (e) {
-      if (!mounted) return;
-      setState(() => _flipping = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('No se pudo cambiar el régimen.')));
-    }
-  }
 
   String _orDash(String s) => s.isEmpty ? '—' : s;
 
