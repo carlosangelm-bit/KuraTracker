@@ -7396,11 +7396,19 @@ class DataRepository {
     // Orden final = (category, sort_order), como el `order by` del SQL.
     for (final cat in byCat.keys.toList()..sort()) {
       final matching = byCat[cat]!;
-      final maxSpec = matching
+      // PREFERIR ATADA sobre específica (0150, espejo del SQL): si la categoría tiene alguna
+      // regla con insumo del centro, solo esas compiten (entre ellas gana la más específica); se
+      // cae a las no atadas solo si NINGUNA está atada. Sin esto, una huérfana más específica
+      // desplaza a una regla usable menos específica (regresión del left join).
+      final anyBound = matching.any((r) => inv[r.inventoryItemId] != null);
+      final tier = anyBound
+          ? matching.where((r) => inv[r.inventoryItemId] != null).toList()
+          : matching;
+      final maxSpec = tier
           .map(_demoRuleSpecificity)
           .reduce((a, b) => a > b ? a : b);
       final seen = <String>{};
-      for (final r in matching.where((r) => _demoRuleSpecificity(r) == maxSpec)) {
+      for (final r in tier.where((r) => _demoRuleSpecificity(r) == maxSpec)) {
         final item = inv[r.inventoryItemId];
         // La regla cuyo insumo NO está en el centro NO se salta: sale con item null y el nombre
         // de la regla (espejo del SQL 0149). Dedup por item, o por regla cuando no hay item.

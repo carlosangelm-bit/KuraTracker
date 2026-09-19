@@ -281,4 +281,42 @@ void main() {
     expect(out.single.notePhrase, 'Cambiar cada 72 h; vigilar exudado.',
         reason: 'la frase para la nota debe viajar hasta el resuelto');
   });
+
+  // ESPEJO del SQL 0150 (regresión del left join): en la misma categoría, una regla ATADA menos
+  // específica gana sobre una huérfana (insumo en otro centro) MÁS específica. Sin "preferir
+  // atada", el clínico se quedaría con un nombre sin insumo usable.
+  test('demo: estar atada manda sobre ser específica (no la desplaza una huérfana)', () async {
+    const orgA = '99999999-9999-9999-9999-999999999999';
+    const orgB = '88888888-8888-8888-8888-888888888888';
+    final repo = await DataRepository.forSeeding(_MemStore({
+      Collections.inventoryItems: [
+        // insumo del centro A (atado). site_id no filtra (0149), pero el modelo lo exige.
+        {'id': 'it-real', 'organization_id': orgA, 'site_id': 's-a',
+         'name': 'Venda-REAL', 'unit_cost': 1.0, 'currency': 'MXN', 'is_active': true},
+        // insumo que vive en OTRO centro (B): existe, pero no está en A
+        {'id': 'it-otro', 'organization_id': orgB, 'site_id': 's-b',
+         'name': 'Venda-otro-centro', 'unit_cost': 1.0, 'currency': 'MXN', 'is_active': true},
+      ],
+      Collections.protocolProductRules: [
+        // atada, GENÉRICA (spec 0)
+        {'id': 'r-atada', 'organization_id': orgA, 'category': 'aposito',
+         'inventory_item_id': 'it-real', 'name': 'Venda-atada', 'dimension': 'none',
+         'quantity_mode': 'fixed', 'quantity_value': 1, 'sort_order': 0,
+         'exudate_levels': const [], 'zone_groups': const [], 'infection': 'any', 'priority': 0},
+        // NO atada (insumo en B), MÁS ESPECÍFICA (area + exudado, spec 2)
+        {'id': 'r-esp', 'organization_id': orgA, 'category': 'aposito',
+         'inventory_item_id': 'it-otro', 'name': 'Venda-especifica', 'dimension': 'area',
+         'min_value': 0, 'max_value': 100, 'quantity_mode': 'fixed', 'quantity_value': 1,
+         'sort_order': 1, 'exudate_levels': const ['moderado'], 'zone_groups': const [],
+         'infection': 'any', 'priority': 0},
+      ],
+    }));
+    final out = await repo.resolveProtocolProductsRpc(
+        organizationId: orgA, categories: {_tag('aposito')},
+        areaCm2: 5, exudateLevel: 'moderado');
+    expect(out.length, 1);
+    expect(out.single.inventoryItemId, 'it-real',
+        reason: 'gana la ATADA; la huérfana más específica no debe desplazarla');
+    expect(out.single.name, 'Venda-REAL');
+  });
 }

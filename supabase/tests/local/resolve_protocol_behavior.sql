@@ -330,4 +330,41 @@ begin
   raise notice 'BEHAVIOR PASS [propio-huerfana-item-null]';
 end $$;
 
+-- MIXTO (0150, regresión del left join): en la MISMA categoría, una regla ATADA menos específica
+-- vs una huérfana (insumo en otro centro) MÁS específica. Estar atada MANDA: gana la atada. Antes
+-- de 0150 la huérfana (spec 2) desplazaba a la atada (spec 0) y el clínico se quedaba sin insumo.
+-- category 'venda' (aislada). El insumo atado es el de e1 (a…e1); el no-atado vive en e2 (a…e2).
+-- Insumo propio del centro e1 para la venda ATADA (nombre claro para el aserto).
+insert into public.inventory_items (id, organization_id, site_id, name) values
+  ('a0000000-0000-0000-0000-0000000000e3','b0000000-0000-0000-0000-0000000000e1',null,'Venda-REAL')
+  on conflict do nothing;
+insert into public.protocol_product_rules
+  (id, organization_id, category, inventory_item_id, name, dimension, min_value, max_value, quantity_mode, quantity_value, sort_order, exudate_levels, zone_groups, infection)
+values
+  -- atada, GENÉRICA (spec 0): insumo en el centro e1 (a…e3)
+  ('ce000000-0000-0000-0000-0000000000e3','b0000000-0000-0000-0000-0000000000e1','venda',
+   'a0000000-0000-0000-0000-0000000000e3','Venda-atada','none',null,null,'fixed',1,0,'[]','[]','any'),
+  -- NO atada (insumo en e2), MÁS ESPECÍFICA (area+exudado, spec 2)
+  ('ce000000-0000-0000-0000-0000000000e4','b0000000-0000-0000-0000-0000000000e1','venda',
+   'a0000000-0000-0000-0000-0000000000e2','Venda-especifica','area',0,100,'fixed',1,1,'["moderado"]','[]','any')
+  on conflict do nothing;
+
+do $$
+declare o uuid := 'b0000000-0000-0000-0000-0000000000e1'; got_item uuid;
+begin
+  -- area=5 + exudado moderado → la específica APLICA, pero gana la ATADA (menos específica): sale
+  -- con el NOMBRE DEL INSUMO atado (Venda-REAL), no la prosa de la huérfana más específica.
+  perform pg_temp.chk('mixto-atada-manda-sobre-especifica', 'venda|Venda-REAL|1.000|propio',
+                      o, array['venda'], 5, null, 'moderado', null, null, null, null,null);
+  -- GUARDA DE MUTACIÓN: el item debe ser el ATADO (a…e1), no null. Si se quita "preferir atada"
+  -- (maxspec sobre todas), gana la huérfana spec 2 → item NULL → ROJO.
+  select t.inventory_item_id into got_item
+  from public.resolve_protocol(o, array['venda'], 5, null, 'moderado', null, null, null, null,null) t limit 1;
+  if got_item is distinct from 'a0000000-0000-0000-0000-0000000000e3' then
+    raise exception 'BEHAVIOR FAIL [mixto-atada-item]: esperaba el insumo atado (a…e3), fue % '
+      '— ¿la huérfana más específica desplazó a la atada?', got_item;
+  end if;
+  raise notice 'BEHAVIOR PASS [mixto-atada-item]';
+end $$;
+
 select '=== BEHAVIOR: ALL PASSED ===' as result;
