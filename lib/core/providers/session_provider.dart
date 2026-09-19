@@ -319,16 +319,33 @@ final enabledModulesProvider = Provider<Set<ModuleKey>>((ref) {
 /// habilita nada (modelo de licencias, brief 31-ago-2026 §4). Antes era un OR,
 /// que regalaba Kura+ a todo el centro o a cualquier usuario marcado — hueco de
 /// ingresos. Se recomputa al cambiar de centro/usuario.
-final kuraProtocolEnabledProvider = Provider<bool>((ref) {
+/// Por qué el Protocolo Kura+ está (o no) disponible para el usuario actual sobre el centro
+/// ACTIVO. Se expone el MOTIVO —no solo un booleano— para que las pantallas NUNCA hagan
+/// desaparecer la fase/tarjeta en silencio: dibujan siempre y dicen por qué está vacía y a quién
+/// pedírselo. `userMissingPremium` es la TRAMPA que midió Carlos: el centro pagó, pero la casilla
+/// premium_enabled del usuario está apagada y nadie se lo dice.
+enum KuraProtocolStatus {
+  enabled, // centro con add-on Y usuario con premium_enabled
+  userMissingPremium, // centro con add-on, usuario SIN premium (la trampa)
+  centerMissingAddon, // el centro no tiene el add-on Protocolo Kura+
+  noUser, // sin sesión
+}
+
+final kuraProtocolStatusProvider = Provider<KuraProtocolStatus>((ref) {
   final user = ref.watch(sessionProvider).user;
-  if (user == null) return false;
+  if (user == null) return KuraProtocolStatus.noUser;
   final repo = ref.watch(dataRepositoryProvider).valueOrNull;
   // Capacidad sobre el centro ACTIVO (no el de origen). No-master → == origen.
   final centerHasAddon =
       repo?.premiumProtocoloKuraFor(ref.watch(activeOrganizationIdProvider)) ??
           false;
-  return centerHasAddon && user.premiumEnabled;
+  if (!centerHasAddon) return KuraProtocolStatus.centerMissingAddon;
+  if (!user.premiumEnabled) return KuraProtocolStatus.userMissingPremium;
+  return KuraProtocolStatus.enabled;
 });
+
+final kuraProtocolEnabledProvider = Provider<bool>((ref) =>
+    ref.watch(kuraProtocolStatusProvider) == KuraProtocolStatus.enabled);
 
 /// Catálogo CIE-10 de heridas crónicas (asset empaquetado, reference data
 /// estática). Se carga una vez y se cachea; lo consumen el picker y la

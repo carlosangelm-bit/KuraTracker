@@ -541,7 +541,6 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
     // de datos; no cambia la persistencia.
     final wound = repo?.getWound(widget.woundId);
     if (wound != null) _initProfileIfNeeded(wound);
-    final kuraEnabled = ref.watch(kuraProtocolEnabledProvider);
 
     final canSave = !_saving &&
         _lengthCm > 0 &&
@@ -1063,7 +1062,9 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
                 ),
 
                 const SizedBox(height: 24),
-                if (kuraEnabled && repo != null) _phase3Regimen(repo),
+                // La Fase 3 se dibuja SIEMPRE (no hay hueco 2→4): _phase3Regimen dice por qué está
+                // vacía cuando el Protocolo Kura+ no está activo para el usuario/centro.
+                if (repo != null) _phase3Regimen(repo),
                 if (repo != null && wound != null) _phase4Sheehan(repo, wound),
                 _phaseHeader(5, 'Nota + firma (obligatoria)',
                     'Evolución, materiales, firma y cédula'),
@@ -1749,6 +1750,34 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
       );
 
   Widget _phase3Regimen(DataRepository repo) {
+    // La Fase 3 SIEMPRE se dibuja (no se salta el número): si el Protocolo Kura+ no está
+    // disponible, se DICE por qué y a quién pedírselo, en vez de desaparecer (trampa medida por
+    // Carlos: el centro pagó pero al usuario le falta la casilla y nadie se lo dice).
+    final status = ref.watch(kuraProtocolStatusProvider);
+    if (status != KuraProtocolStatus.enabled) {
+      return _phaseCard(
+        n: 3,
+        title: 'Régimen sugerido por Kura+',
+        subtitle: 'El módulo de protocolo no está activo para ti en este centro.',
+        child: _regimenBox(
+          icon: Icons.lock_outline,
+          color: KuraColors.warning,
+          title: switch (status) {
+            KuraProtocolStatus.userMissingPremium =>
+              'Contratado en el centro, pero no activado para tu usuario',
+            _ => 'El Protocolo Kura+ no está contratado en este centro',
+          },
+          body: switch (status) {
+            KuraProtocolStatus.userMissingPremium =>
+              'Pídele a tu administrador que active tu Protocolo Kura+ '
+                  '(Administración → Usuarios → Premium). Mientras tanto, captura el '
+                  'seguimiento normal; esta fase queda vacía a propósito.',
+            _ => 'Pídeselo a tu administrador. Sin el add-on, el seguimiento se '
+                'captura igual; esta fase no aplica.',
+          },
+        ),
+      );
+    }
     final out = _engineOutput;
     return _phaseCard(
       n: 3,

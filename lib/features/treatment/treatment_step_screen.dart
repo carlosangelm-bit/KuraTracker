@@ -155,8 +155,8 @@ class _TreatmentStepScreenState extends ConsumerState<TreatmentStepScreen> {
     final controller = ref.read(
       woundCaptureControllerProvider(widget.draftKey).notifier,
     );
-    // Kura+ habilitado por usuario (premium_enabled) O por el add-on del centro.
-    final isPremium = ref.watch(kuraProtocolEnabledProvider);
+    final kuraStatus = ref.watch(kuraProtocolStatusProvider);
+    final isPremium = kuraStatus == KuraProtocolStatus.enabled;
 
     if (!_initializedFromEngine) {
       _initializedFromEngine = true;
@@ -222,8 +222,12 @@ class _TreatmentStepScreenState extends ConsumerState<TreatmentStepScreen> {
                           const SizedBox(width: 10),
                           Expanded(
                             child: Text(
-                              'El Protocolo Kura+ es una función premium. Contacta al administrador '
-                              'para activarla en tu cuenta.',
+                              kuraStatus == KuraProtocolStatus.userMissingPremium
+                                  ? 'El Protocolo Kura+ está contratado en este centro, pero no '
+                                      'activado para tu usuario. Pídele a tu administrador que lo '
+                                      'active (Administración → Usuarios → Premium).'
+                                  : 'El Protocolo Kura+ no está contratado en este centro. '
+                                      'Pídeselo a tu administrador.',
                               style: TextStyle(
                                   fontSize: 12, color: KuraColors.darkText.withOpacity(0.6)),
                             ),

@@ -607,6 +607,9 @@ class _UserFormDialogState extends State<_UserFormDialog> {
   final Set<AppRole> _roles = {AppRole.clinico};
   String? _siteId;
   bool _saving = false;
+  // Protocolo Kura+ para el nuevo usuario. Default ON cuando el centro tiene el add-on: así no se
+  // da de alta un clínico CIEGO al protocolo (la trampa que midió Carlos). Visible y editable.
+  bool _premiumForNewUser = true;
   String? _error;
 
   bool get _isCaregiver => _roles.contains(AppRole.cuidador);
@@ -683,6 +686,22 @@ class _UserFormDialogState extends State<_UserFormDialog> {
         primarySiteId: _isClinical ? _siteId : null,
         password: _isCaregiver ? _claveCtrl.text : null,
       );
+      // Activa el Protocolo Kura+ del usuario si se pidió (centro con add-on + clínico). El
+      // usuario YA quedó creado; si el premium falla (p. ej. tope de asientos), se AVISA pero no
+      // se pierde el usuario — no dejar la cuenta a medias en silencio.
+      if (_isClinical &&
+          _premiumForNewUser &&
+          widget.repo.premiumProtocoloKuraFor(widget.organizationId)) {
+        try {
+          await widget.repo.setUserPremium(created.uid, true);
+        } catch (e) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                content: Text('Usuario creado, pero no se pudo activar el Protocolo '
+                    'Kura+: ${'$e'.replaceFirst('Exception: ', '')}')));
+          }
+        }
+      }
       if (mounted) Navigator.pop(context, created);
     } catch (e) {
       setState(() {
@@ -696,6 +715,8 @@ class _UserFormDialogState extends State<_UserFormDialog> {
   Widget build(BuildContext context) {
     final t = BrandTokens.of(context);
     final sites = widget.repo.listSites(organizationId: widget.organizationId);
+    final centerHasKuraAddon =
+        widget.repo.premiumProtocoloKuraFor(widget.organizationId);
     return AlertDialog(
       title: const Text('Nuevo usuario'),
       content: SizedBox(
@@ -813,6 +834,24 @@ class _UserFormDialogState extends State<_UserFormDialog> {
                     ],
                     onChanged: (v) => setState(() => _siteId = v),
                   ),
+                  // Protocolo Kura+ por usuario: se muestra cuando el CENTRO tiene el add-on, así
+                  // el admin decide (default ON) en vez de dar de alta un clínico que no verá el
+                  // protocolo. Si el centro no lo tiene, no hay qué activar y no se muestra.
+                  if (centerHasKuraAddon) ...[
+                    const SizedBox(height: 4),
+                    CheckboxListTile(
+                      contentPadding: EdgeInsets.zero,
+                      controlAffinity: ListTileControlAffinity.leading,
+                      value: _premiumForNewUser,
+                      onChanged: (v) =>
+                          setState(() => _premiumForNewUser = v ?? false),
+                      title: const Text('Activar Protocolo Kura+ para este usuario'),
+                      subtitle: const Text(
+                          'El centro tiene el add-on. Sin esto, el usuario no verá el '
+                          'protocolo en la consulta.',
+                          style: TextStyle(fontSize: 11)),
+                    ),
+                  ],
                 ],
                 const SizedBox(height: 8),
                 Text(
