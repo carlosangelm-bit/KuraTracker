@@ -228,6 +228,11 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
   bool _hasSignature = false;
 
   bool _saving = false;
+  // La consulta creada EN ESTA sesión de captura (cuando no se venía de un borrador). Si un
+  // guardado crea la consulta pero un paso posterior falla y no navega, un segundo clic debe
+  // ACTUALIZAR esta misma consulta, NO crear otra (Carlos midió dos consultas duplicadas). La
+  // usan AMBOS guardados (borrador y firmado) para que la captura sea idempotente.
+  String? _createdConsultationId;
 
   double get _lengthCm => double.tryParse(_lengthCtrl.text.replaceAll(',', '.')) ?? 0;
   double get _widthCm => double.tryParse(_widthCtrl.text.replaceAll(',', '.')) ?? 0;
@@ -2798,6 +2803,40 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
   /// Guarda un BORRADOR ligero (consulta is_draft + medición) para terminar
   /// después. Solo requiere la medición (largo/ancho, que liga la herida); no
   /// exige foto/firma/nota completa. Si ya venía de un borrador, lo reemplaza.
+  // Fila de medición COMPLETA, compartida por el guardado de borrador y el firmado. Antes el
+  // borrador escribía solo largo/ancho/área/profundidad y las columnas de composición quedaban en
+  // su `default 0`, que el expediente leía como una MEDICIÓN real (granulación 100%→0% que nadie
+  // midió — el mismo cero de eKare, generado por la app). Una sola fuente para los dos caminos.
+  Map<String, dynamic> _measurementRow(String consultationId) => {
+        'wound_id': widget.woundId,
+        'consultation_id': consultationId,
+        'measured_at': _visitDate.toIso8601String().substring(0, 10),
+        'length_cm': _lengthCm,
+        'width_cm': _widthCm,
+        'area_cm2': _areaCm2,
+        'depth_cm': _depthCm,
+        'tunneling': _tunneling,
+        'undermining': _undermining,
+        'tunneling_sites':
+            _tunneling ? [for (final s in _tunnelingSites) s.toJson()] : [],
+        'undermining_sites':
+            _undermining ? [for (final s in _underminingSites) s.toJson()] : [],
+        'granulation_pct': _granulacion,
+        'slough_pct': _esfacelo,
+        'necrosis_pct': _necrosis,
+        'epithelialization_pct': _epitelizacion,
+        'captured_before_debridement': _capturedBeforeDebridement,
+        'volume_cm3': _isDeepWound ? _volumeCm3 : null,
+        'volume_manual': _isDeepWound ? _isVolumeManuallyOverridden : false,
+        'manual_measurement_note': _manualMeasurementCtrl.text.trim().isEmpty
+            ? null
+            : _manualMeasurementCtrl.text.trim(),
+        'measurement_source': _measurementSource,
+        'area_planimetric_cm2': _areaPlanimetricCm2,
+        'vision_meta':
+            _visionMeta == null ? null : {..._visionMeta!, 'edited': _visionEdited},
+      };
+
   Future<void> _saveDraft(BuildContext context, SessionState session) async {
     setState(() => _saving = true);
     final repo = await DataRepository.instance();
@@ -2821,11 +2860,12 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
           patient?.primarySiteId ?? (sites.isNotEmpty ? sites.first.id : null);
       if (siteId == null) throw StateError('No hay sitios configurados.');
 
-      // Si ya venía de un borrador, se ACTUALIZA en su lugar (conserva el id
-      // para no huérfanar el cobro/insumos que se hayan hecho sobre él).
+      // Si ya venía de un borrador —o si YA se creó una consulta en esta captura (reintento tras
+      // un fallo que no navegó)— se ACTUALIZA en su lugar, NO se crea otra (evita duplicados).
       String consultationId;
-      if (widget.draftConsultationId != null) {
-        consultationId = widget.draftConsultationId!;
+      final existingId = widget.draftConsultationId ?? _createdConsultationId;
+      if (existingId != null) {
+        consultationId = existingId;
         await repo.updateConsultationFields(
             consultationId, _consultationPatch(draft: true, withSignature: false));
         await repo.deleteWoundDataForConsultation(consultationId);
@@ -2852,21 +2892,16 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
               : _visitSummaryCtrl.text.trim(),
         );
         consultationId = consultation.id;
+        _createdConsultationId = consultationId; // un reintento ACTUALIZA, no duplica
       }
       // Instantánea COMPLETA del formulario (fuente de verdad al reabrir): así
       // no se pierde ningún campo, incluida la composición del lecho.
       await repo.updateConsultationFields(
           consultationId, {'draft_form_state': {'form': _formSnapshot()}});
-      // Medición: liga la herida (permite reabrir el borrador).
-      final draftMeasurement = await repo.createMeasurement({
-        'wound_id': widget.woundId,
-        'consultation_id': consultationId,
-        'measured_at': _visitDate.toIso8601String().substring(0, 10),
-        'length_cm': _lengthCm,
-        'width_cm': _widthCm,
-        'area_cm2': _areaCm2,
-        'depth_cm': _depthCm,
-      });
+      // Medición COMPLETA (incluye composición del lecho/tunelización/volumen): el borrador ya no
+      // deja ceros por omisión que el expediente lea como medición. Liga la herida (permite reabrir).
+      final draftMeasurement =
+          await repo.createMeasurement(_measurementRow(consultationId));
       // El borrador CONSERVA las fotos: sube las nuevas y re-persiste las ya
       // guardadas (mismo storage_path) que el clínico no volvió a tomar.
       await _persistDraftPhoto(
@@ -2967,9 +3002,12 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
 
       // Si venimos de un BORRADOR, se ACTUALIZA en su lugar (conserva el id, así
       // el cobro/insumos hechos sobre el borrador siguen ligados); si no, se crea.
+      // Reutiliza el borrador reabierto O la consulta ya creada en esta captura (un guardado de
+      // borrador previo, o un reintento): NO crea otra (evita duplicados). Si no hay ninguna, crea.
       final String consultationId;
-      if (widget.draftConsultationId != null) {
-        consultationId = widget.draftConsultationId!;
+      final existingId = widget.draftConsultationId ?? _createdConsultationId;
+      if (existingId != null) {
+        consultationId = existingId;
         await repo.updateConsultationFields(consultationId,
             _consultationPatch(draft: false, withSignature: true));
         await repo.deleteWoundDataForConsultation(consultationId);
@@ -2998,38 +3036,11 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
               : _visitSummaryCtrl.text.trim(),
         );
         consultationId = consultation.id;
+        _createdConsultationId = consultationId; // un reintento ACTUALIZA, no duplica
       }
       newConsultationId = consultationId;
 
-      final measurement = await repo.createMeasurement({
-        'wound_id': widget.woundId,
-        'consultation_id': consultationId,
-        'measured_at': _visitDate.toIso8601String().substring(0, 10),
-        'length_cm': _lengthCm,
-        'width_cm': _widthCm,
-        'area_cm2': _areaCm2,
-        'depth_cm': _depthCm,
-        'tunneling': _tunneling,
-        'undermining': _undermining,
-        'tunneling_sites':
-            _tunneling ? [for (final s in _tunnelingSites) s.toJson()] : [],
-        'undermining_sites':
-            _undermining ? [for (final s in _underminingSites) s.toJson()] : [],
-        'granulation_pct': _granulacion,
-        'slough_pct': _esfacelo,
-        'necrosis_pct': _necrosis,
-        'epithelialization_pct': _epitelizacion,
-        'captured_before_debridement': _capturedBeforeDebridement,
-        'volume_cm3': _isDeepWound ? _volumeCm3 : null,
-        'volume_manual': _isDeepWound ? _isVolumeManuallyOverridden : false,
-        'manual_measurement_note': _manualMeasurementCtrl.text.trim().isEmpty
-            ? null
-            : _manualMeasurementCtrl.text.trim(),
-        // Origen de la medición (0108): manual o motor de visión.
-        'measurement_source': _measurementSource,
-        'area_planimetric_cm2': _areaPlanimetricCm2,
-        'vision_meta': _visionMeta == null ? null : {..._visionMeta!, 'edited': _visionEdited},
-      });
+      final measurement = await repo.createMeasurement(_measurementRow(consultationId));
 
       // Correcciones del clínico (capa E): ya con el wound_measurement_id.
       // Best-effort dentro de _persistCorrections: no rompe el guardado.
