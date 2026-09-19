@@ -2476,7 +2476,10 @@ class DataRepository {
     String? currency,
     String? createdBy,
   }) async {
-    final now = DateTime.now().toIso8601String();
+    // UTC EXPLÍCITO (no hora local): estas son tablas de DINERO/consumo; en hora local un cobro
+    // después de las 18:00 del centro se contabilizaba el día ANTERIOR. LocalStore no emula el
+    // default de la base y el modelo castea created_at no-nulo, así que se manda desde el cliente.
+    final now = DateTime.now().toUtc().toIso8601String();
     final saved = await _store.insertRow(Collections.consultationSupplyUsage, {
       'id': _uuid.v4(),
       'organization_id': organizationId,
@@ -2504,7 +2507,9 @@ class DataRepository {
     bool? charge,
     bool? discount,
   }) async {
-    final patch = <String, dynamic>{'updated_at': DateTime.now().toIso8601String()};
+    final patch = <String, dynamic>{
+      'updated_at': DateTime.now().toUtc().toIso8601String() // UTC: tabla de consumo/dinero
+    };
     if (quantity != null) patch['quantity'] = quantity;
     if (charge != null) patch['charge'] = charge;
     if (discount != null) patch['discount'] = discount;
@@ -2608,7 +2613,7 @@ class DataRepository {
     final usage = listSupplyUsageForConsultation(consultationId).where((u) => u.charge);
     final suppliesTotal = usage.fold<double>(0, (a, u) => a + u.lineTotal);
     final total = servicePrice + suppliesTotal;
-    final now = DateTime.now().toIso8601String();
+    final now = DateTime.now().toUtc().toIso8601String(); // UTC: dinero (charges + charge_items)
     final chargeId = _uuid.v4();
     final saved = await _store.insertRow(Collections.charges, {
       'id': chargeId,
@@ -2677,7 +2682,7 @@ class DataRepository {
     if (lines.isEmpty) {
       throw Exception('Agrega al menos un concepto al cobro.');
     }
-    final now = DateTime.now().toIso8601String();
+    final now = DateTime.now().toUtc().toIso8601String(); // UTC: dinero (charges + charge_items)
     final chargeId = _uuid.v4();
     double svc = 0, sup = 0;
     for (final l in lines) {
@@ -2740,7 +2745,7 @@ class DataRepository {
       'status': 'pagado',
       'payment_method': method,
       'paid_at': DateTime.now().toUtc().toIso8601String(),
-      'updated_at': DateTime.now().toIso8601String(),
+      'updated_at': DateTime.now().toUtc().toIso8601String(), // UTC: no el día anterior
       if (provider != null) 'payment_provider': provider,
       if (mpPaymentId != null) 'mp_payment_id': mpPaymentId,
       if (externalReference != null) 'external_reference': externalReference,
@@ -2794,7 +2799,7 @@ class DataRepository {
         createdBy: createdBy,
       );
       await _store.updateRow(Collections.consultationSupplyUsage, u.id,
-          {'discounted': true, 'updated_at': DateTime.now().toIso8601String()});
+          {'discounted': true, 'updated_at': DateTime.now().toUtc().toIso8601String()}); // UTC
     }
   }
 
@@ -2825,7 +2830,7 @@ class DataRepository {
 
   Future<void> cancelCharge(String chargeId) async => _store.updateRow(
       Collections.charges, chargeId,
-      {'status': 'cancelado', 'updated_at': DateTime.now().toIso8601String()});
+      {'status': 'cancelado', 'updated_at': DateTime.now().toUtc().toIso8601String()}); // UTC: dinero
 
   // ---------------- Conciliación Mercado Pago Point (0055) ----------------
 
@@ -3294,7 +3299,7 @@ class DataRepository {
         'payment_provider': null,
         'mp_payment_id': null,
         'mp_status': null,
-        'updated_at': DateTime.now().toIso8601String(),
+        'updated_at': DateTime.now().toUtc().toIso8601String(), // UTC: dinero (revierte cobro)
       });
     }
   }
