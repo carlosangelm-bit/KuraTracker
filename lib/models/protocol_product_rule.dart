@@ -296,6 +296,11 @@ class ResolvedProtocolProduct {
   // degradación sea OBSERVABLE; no debe existir como camino real sin ser visible. REQUERIDO a
   // propósito: quien construya un resuelto debe declarar de qué régimen salió.
   final String source;
+  // FRASE PARA LA NOTA: el texto que la regla del protocolo prescribe para la nota de
+  // evolución. resolve_protocol la devuelve (note_phrase, 0139/0145) pero hasta ahora Dart la
+  // tiraba. Viaja hasta la UI para que el clínico pueda INSERTARLA en la nota por un acto
+  // explícito (nunca se escribe sola). Puede venir vacía/null (regla sin frase).
+  final String? notePhrase;
   const ResolvedProtocolProduct({
     required this.category,
     required this.inventoryItemId,
@@ -305,6 +310,7 @@ class ResolvedProtocolProduct {
     this.unitCost,
     this.unitPrice,
     this.currency,
+    this.notePhrase,
   });
 }
 

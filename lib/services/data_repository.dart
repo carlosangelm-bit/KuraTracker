@@ -7324,6 +7324,11 @@ class DataRepository {
         unitCost: item?.unitCost,
         unitPrice: item?.unitPrice,
         currency: item?.currency,
+        // FRASE para la nota: resolve_protocol la devuelve (note_phrase). Viaja a la UI para
+        // que el clínico la inserte por un acto explícito.
+        notePhrase: (m['note_phrase'] as String?)?.trim().isNotEmpty == true
+            ? (m['note_phrase'] as String).trim()
+            : null,
       ));
     }
     return out;
@@ -7403,6 +7408,7 @@ class DataRepository {
           unitCost: item.unitCost,
           unitPrice: item.unitPrice,
           currency: item.currency,
+          notePhrase: (r.notePhrase ?? '').trim().isEmpty ? null : r.notePhrase!.trim(),
         ));
       }
     }

@@ -240,4 +240,45 @@ void main() {
     expect(out.single.source, kRegimenSourceUnknown,
         reason: 'columna ausente = defecto de contrato, no el valor más inocente');
   });
+
+  // FRASE (§1 hilo de la nota): la FRASE de la regla (note_phrase) llega al resuelto para que
+  // el clínico pueda insertarla en la nota. resolve_protocol la devuelve; antes Dart la tiraba.
+  test('note_phrase de la regla llega al ResolvedProtocolProduct (demo)', () async {
+    final repo = await DataRepository.forSeeding(_MemStore({
+      Collections.inventoryItems: [
+        {
+          'id': 'item-frase',
+          'organization_id': org,
+          'site_id': site,
+          'name': 'Apósito de espuma',
+          'unit_cost': 10.0,
+          'currency': 'MXN',
+          'is_active': true,
+        }
+      ],
+      Collections.protocolProductRules: [
+        {
+          'id': 'rule-frase',
+          'organization_id': org,
+          'category': 'aposito',
+          'inventory_item_id': 'item-frase',
+          'name': 'Apósito de espuma',
+          'dimension': 'none',
+          'quantity_mode': 'fixed',
+          'quantity_value': 1,
+          'sort_order': 0,
+          'exudate_levels': const [],
+          'zone_groups': const [],
+          'infection': 'any',
+          'priority': 0,
+          'note_phrase': 'Cambiar cada 72 h; vigilar exudado.',
+        }
+      ],
+    }));
+    final out = await repo.resolveProtocolProductsRpc(
+        organizationId: org, categories: {_tag('aposito')}, siteId: site, areaCm2: 5);
+    expect(out, isNotEmpty);
+    expect(out.single.notePhrase, 'Cambiar cada 72 h; vigilar exudado.',
+        reason: 'la frase para la nota debe viajar hasta el resuelto');
+  });
 }

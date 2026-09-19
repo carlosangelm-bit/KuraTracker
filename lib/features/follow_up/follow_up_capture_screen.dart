@@ -23,6 +23,8 @@ import '../../models/app_user.dart';
 import '../../models/wound.dart';
 import '../../models/consultation.dart';
 import '../../models/note_option_catalog.dart';
+import '../../models/protocol_product_rule.dart'
+    show ResolvedProtocolProduct, ProtocolResolutionUnavailable, ZoneGroup;
 import '../../models/site.dart';
 import '../../models/treatment_plan.dart';
 import '../../services/data_repository.dart';
@@ -206,6 +208,14 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
   // ---- Fase 3: régimen del motor (paso VISIBLE, ya no enterrado en un toggle) ----
   KuraEngineOutput? _engineOutput;
   bool _regimenAccepted = false;
+  // Resolución del PROTOCOLO (insumos del centro + FRASES para la nota), resuelta UNA vez
+  // aquí en la Fase 3 con los valores de esta visita. Se GUARDA al guardar el seguimiento
+  // (como insumos de la consulta) → la pantalla de cobro consume ESTE mismo resultado, no
+  // re-resuelve, para que la frase de la nota case con el insumo que se cobra (condición de
+  // Carlos). null = aún no resuelto; lista vacía = resuelto sin insumos.
+  List<ResolvedProtocolProduct>? _protocolInsumos;
+  bool _protocolResolveFailed = false; // el RPC no se pudo traer (sin red): se DICE, no calla
+  bool _frasesInsertadas = false; // la frase se inserta por acto explícito, una sola vez
 
   // Firma/cedula: solo lectura, resueltas desde el staff de la sesion (no
   // se piden como campos editables en cada nota).
@@ -1807,6 +1817,53 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
             const Text(
                 'El procedimiento/material queda editable en la nota (Fase 5).',
                 style: TextStyle(fontSize: 11, color: KuraColors.darkText)),
+            // ---- Insumos del protocolo (del centro) + FRASES para la nota ----
+            if (_protocolResolveFailed) ...[
+              const SizedBox(height: 12),
+              _regimenBox(
+                icon: Icons.wifi_off_outlined,
+                color: KuraColors.warning,
+                title: 'No se pudo traer los insumos del protocolo',
+                body: 'Revisa la conexión; podrás agregarlos en el detalle de la '
+                    'consulta al cobrar.',
+              ),
+            ] else if (_protocolInsumos != null &&
+                _protocolInsumos!.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              const Text('Insumos del protocolo',
+                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13)),
+              const Text(
+                  'Se guardan con el seguimiento; el cobro los toma en el detalle '
+                  'de la consulta (no se cobra aquí).',
+                  style: TextStyle(fontSize: 11, color: KuraColors.darkText)),
+              const SizedBox(height: 6),
+              for (final p in _protocolInsumos!)
+                _regimenBox(
+                    icon: Icons.inventory_2_outlined,
+                    color: KuraColors.primary,
+                    title:
+                        '${p.name} · ${_fmtQty(p.quantity)}${p.inventoryItemId == null ? ' · sin insumo enlazado' : ''}',
+                    body: (p.notePhrase ?? '').trim()),
+              if (_protocolInsumos!
+                  .any((p) => (p.notePhrase ?? '').trim().isNotEmpty)) ...[
+                const SizedBox(height: 4),
+                FilledButton.icon(
+                  icon: Icon(_frasesInsertadas
+                      ? Icons.check
+                      : Icons.note_add_outlined),
+                  label: Text(_frasesInsertadas
+                      ? 'Frases insertadas en la nota'
+                      : 'Insertar las frases en la nota'),
+                  style:
+                      FilledButton.styleFrom(backgroundColor: KuraColors.primary),
+                  onPressed: _frasesInsertadas ? null : _insertFrasesToNote,
+                ),
+                const Text(
+                    'Se agregan a “Notas clínicas / Observaciones”, donde puedes '
+                    'editarlas o borrarlas. La nota es tuya.',
+                    style: TextStyle(fontSize: 11, color: KuraColors.darkText)),
+              ],
+            ],
           ],
         ],
       ),
@@ -1994,10 +2051,17 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
       if (input == null) throw StateError('Herida no encontrada.');
       final engine = await KuraProtocolEngine.load();
       final output = engine.run(input);
+      // Con el régimen calculado, se resuelve el PROTOCOLO (insumos del centro + FRASES) una
+      // sola vez, con los valores de ESTA visita. Es la resolución que se guardará y que el
+      // cobro consumirá; no se re-resuelve por separado.
+      final insumos = await _resolveProtocolInsumos(repo, output);
       if (!mounted) return;
       setState(() {
         _engineOutput = output;
         _regimenAccepted = false;
+        _protocolInsumos = insumos;
+        _protocolResolveFailed = insumos == null && _hasTaggedMethods(output);
+        _frasesInsertadas = false;
       });
     } catch (e) {
       if (mounted) {
@@ -2056,6 +2120,101 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
             'del centro; pídele al administrador que asigne etiquetas kura_tag.',
           ),
         ),
+      );
+    }
+  }
+
+  static String _fmtQty(double v) =>
+      v == v.roundToDouble() ? v.toInt().toString() : v.toString();
+
+  // ¿El régimen tiene métodos con etiqueta kura_tag (es decir, hay categorías que resolver
+  // contra el protocolo)? Sin ellas no hay insumos que traer y "falló" no aplica.
+  bool _hasTaggedMethods(KuraEngineOutput out) => out.regimen
+      .map((r) => kKuraMethodToTag[r.metodo])
+      .whereType<KuraTag>()
+      .isNotEmpty;
+
+  // Resuelve el PROTOCOLO (insumos del centro + frases) para el régimen dado, con los valores
+  // de esta visita. Devuelve la lista (posiblemente vacía), o null si el RPC no se pudo traer
+  // (sin red) — el llamador lo marca y se DICE en pantalla, nunca en silencio. Mismos insumos
+  // que consumirá el cobro (se guardan al guardar el seguimiento).
+  Future<List<ResolvedProtocolProduct>?> _resolveProtocolInsumos(
+      DataRepository repo, KuraEngineOutput out) async {
+    final cats = out.regimen
+        .map((r) => kKuraMethodToTag[r.metodo])
+        .whereType<KuraTag>()
+        .toSet();
+    if (cats.isEmpty) return const [];
+    final orgId = ref.read(activeOrganizationIdProvider);
+    if (orgId == null) return const [];
+    final wound = repo.getWound(widget.woundId);
+    try {
+      return await repo.resolveProtocolProductsRpc(
+        organizationId: orgId,
+        categories: cats,
+        areaCm2: _areaCm2 > 0 ? _areaCm2 : null,
+        volumeCm3: _isDeepWound ? _volumeCm3 : null,
+        exudateLevel: _exudadoCantidad.name,
+        zoneGroup: ZoneGroup.forLocation(wound?.bodyLocationPrimary),
+        infectionSuspected: _infeccionCriterios.isNotEmpty,
+        siteId: _siteIdForResolve(repo),
+      );
+    } on ProtocolResolutionUnavailable {
+      return null; // sin red: el llamador marca _protocolResolveFailed
+    }
+  }
+
+  String? _siteIdForResolve(DataRepository repo) {
+    final patient = repo.getPatient(widget.patientId);
+    final sites = repo.listSites();
+    return patient?.primarySiteId ?? (sites.isNotEmpty ? sites.first.id : null);
+  }
+
+  // Inserta las FRASES del protocolo en la nota clínica (campo libre "Notas clínicas /
+  // Observaciones"). Acto EXPLÍCITO del clínico (nunca solo), una sola vez; la nota queda
+  // totalmente editable después (es del clínico, no del protocolo).
+  void _insertFrasesToNote() {
+    final frases = (_protocolInsumos ?? const <ResolvedProtocolProduct>[])
+        .map((p) => p.notePhrase)
+        .whereType<String>()
+        .map((s) => s.trim())
+        .where((s) => s.isNotEmpty)
+        .toList();
+    if (frases.isEmpty) return;
+    final existing = _clinicalNotesCtrl.text.trimRight();
+    final block = frases.join('\n');
+    _clinicalNotesCtrl.text = existing.isEmpty ? block : '$existing\n$block';
+    setState(() => _frasesInsertadas = true);
+  }
+
+  // Guarda la resolución del protocolo (la MISMA de la Fase 3) como insumos de la consulta,
+  // para que la pantalla de cobro la consuma sin re-resolver. NO cobra (el cobro se queda en
+  // el detalle); solo deja el resultado. Dedup por insumo (como "Sugerir del plan").
+  Future<void> _persistProtocolInsumos(
+      DataRepository repo, String consultationId) async {
+    final resolved = _protocolInsumos;
+    final orgId = ref.read(activeOrganizationIdProvider);
+    if (resolved == null || resolved.isEmpty || orgId == null) return;
+    final existing = repo
+        .listSupplyUsageForConsultation(consultationId)
+        .map((u) => u.inventoryItemId)
+        .whereType<String>()
+        .toSet();
+    final createdBy = ref.read(sessionProvider).user?.id;
+    for (final r in resolved) {
+      final itemId = r.inventoryItemId;
+      if (itemId != null && !existing.add(itemId)) continue;
+      await repo.addSupplyUsage(
+        organizationId: orgId,
+        consultationId: consultationId,
+        patientId: widget.patientId,
+        name: r.name,
+        inventoryItemId: r.inventoryItemId,
+        quantity: r.quantity <= 0 ? 1 : r.quantity.ceil(),
+        unitCost: r.unitCost,
+        unitPrice: r.unitPrice,
+        currency: r.currency,
+        createdBy: createdBy,
       );
     }
   }
@@ -2680,6 +2839,9 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
             ? null
             : _clinicalNotesCtrl.text.trim(),
       });
+      // Guarda la resolución del protocolo (la MISMA de la Fase 3) como insumos de la
+      // consulta: el detalle la consume al cobrar, sin re-resolver (condición de Carlos).
+      await _persistProtocolInsumos(repo, consultationId);
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
             content: Text('Borrador guardado. Puedes cobrar y completar la '
@@ -2824,6 +2986,9 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
             ? null
             : _clinicalNotesCtrl.text.trim(),
       });
+      // La MISMA resolución del protocolo de la Fase 3 se guarda como insumos de la
+      // consulta, para que el cobro (en el detalle) la consuma sin re-resolver.
+      await _persistProtocolInsumos(repo, consultationId);
 
       // 2 fotografias de seguimiento (Protocolo de Fotografias y Medicion):
       // 1ra despues de limpiar (sin medicion), 2da con medicion. Las fotos se
