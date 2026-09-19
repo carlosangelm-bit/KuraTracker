@@ -2863,7 +2863,10 @@ class DataRepository {
     String source = 'manual',
     String? createdBy,
   }) async {
-    final now = DateTime.now();
+    // UTC EXPLÍCITO: point_payments es DINERO (bandeja de conciliación de MP Point). En hora
+    // local, un pago conciliado tras las 18:00 del centro quedaba fechado el día anterior — el
+    // mismo defecto que charges/charge_items.
+    final now = DateTime.now().toUtc();
     final saved = await _store.insertRow(Collections.pointPayments, {
       'id': _uuid.v4(),
       'organization_id': organizationId,
@@ -2876,7 +2879,7 @@ class DataRepository {
       'external_reference': externalReference,
       'device_id': deviceId,
       'description': description,
-      'captured_at': (capturedAt ?? now).toIso8601String(),
+      'captured_at': (capturedAt ?? now).toUtc().toIso8601String(),
       'source': source,
       'created_by': createdBy,
       'created_at': now.toIso8601String(),
@@ -2903,11 +2906,12 @@ class DataRepository {
           'El pago no está aprobado (estado: ${payment.status}); no se puede '
           'ligar a un cobro.');
     }
+    final nowUtc = DateTime.now().toUtc().toIso8601String(); // UTC: dinero (conciliación Point)
     await _store.updateRow(Collections.pointPayments, paymentId, {
       'charge_id': chargeId,
       'linked_by': linkedBy,
-      'linked_at': DateTime.now().toIso8601String(),
-      'updated_at': DateTime.now().toIso8601String(),
+      'linked_at': nowUtc,
+      'updated_at': nowUtc,
     });
     await markChargePaid(
       chargeId,
@@ -3289,7 +3293,7 @@ class DataRepository {
       'charge_id': null,
       'linked_by': null,
       'linked_at': null,
-      'updated_at': DateTime.now().toIso8601String(),
+      'updated_at': DateTime.now().toUtc().toIso8601String(), // UTC: dinero (desliga el pago)
     });
     if (payment.chargeId != null) {
       await _store.updateRow(Collections.charges, payment.chargeId!, {

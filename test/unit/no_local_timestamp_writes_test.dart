@@ -16,7 +16,9 @@ void main() {
   // las TABLAS DE DINERO —charges, charge_items, consultation_supply_usage— en sus 8 escrituras de
   // created_at/updated_at: en hora local un cobro tras las 18:00 del centro se contaba el día
   // anterior; los modelos castean created_at no-nulo y LocalStore no emula el default, así que se
-  // manda UTC desde el cliente). BAJA al migrar cada tabla a la base/UTC. Ya arreglados y FUERA de la cuenta:
+  // manda UTC desde el cliente). 46→43 al pasar point_payments (bandeja de conciliación de MP
+  // Point, TAMBIÉN dinero: linked_at/created_at/updated_at) a UTC. BAJA al migrar cada tabla a la
+  // base/UTC. Ya arreglados y FUERA de la cuenta:
   //  · protocol_catalog_rules: el cliente NO escribe created_at/updated_at (el modelo NO los lee;
   //    la base los dueña vía 0136 default + 0146 trigger).
   //  · EVENTOS del grupo (b) a UTC EXPLÍCITO (`.toUtc()`): consents.granted_at,
@@ -30,7 +32,7 @@ void main() {
   // Lo que sigue en la cuenta es AUDITORÍA (created_at/updated_at que el cliente aún sella en hora
   // local): deuda aparte, se salda emulando el default en LocalStore + trigger set_updated_at por
   // tabla + quitar la escritura. Los 6 sitios ya correctos usan `.toUtc()` y NO cuentan.
-  const knownLocalTimestampDebt = 46;
+  const knownLocalTimestampDebt = 43;
 
   test('no aparecen sellos en HORA LOCAL nuevos (DateTime.now().toIso8601String())', () {
     // Coincide LOCAL: DateTime.now().toIso8601String() SIN `.toUtc()` en medio.
