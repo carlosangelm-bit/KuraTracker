@@ -125,16 +125,18 @@ class _ConsumoScreenState extends ConsumerState<ConsumoScreen> {
     if (patient == null) {
       return const Center(child: Text('Paciente no encontrado.'));
     }
-    final sites = repo.listSites(organizationId: orgId).where((s) => s.isActive).toList();
     // Alcance del inventario (0053): en 'center' se usa el sitio principal como
     // bolsa única; en 'site' el del paciente.
     // Espejo Shopify unifica el inventario por centro (ver inventario_screen):
     // el consumo baja del mismo stock que sincronizó el admin.
     final centerMode = repo.inventoryScopeFor(orgId) == 'center' ||
         repo.shopifyMirrorFor(orgId);
-    final siteId = centerMode
-        ? (sites.isNotEmpty ? sites.first.id : null)
-        : (patient.primarySiteId ?? (sites.isNotEmpty ? sites.first.id : null));
+    // Regla única resolveSaveSite: en 'center' el primer sitio activo del centro; en 'site' el
+    // primario de la paciente SOLO si es un sitio activo del centro (antes se usaba sin validar: un
+    // primario ajeno dejaba el inventario del sitio vacío), si no el primer sitio activo del centro.
+    final siteId = repo.resolveSaveSite(
+        organizationId: orgId,
+        patientPrimarySiteId: centerMode ? null : patient.primarySiteId);
     if (siteId == null) {
       return const Center(child: Text('El centro no tiene sitios configurados.'));
     }

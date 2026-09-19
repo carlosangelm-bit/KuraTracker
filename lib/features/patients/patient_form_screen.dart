@@ -253,8 +253,19 @@ class _PatientFormScreenState extends ConsumerState<PatientFormScreen> {
         error: (e, st) => Center(child: Text('Error: $e')),
         data: (repo) {
           _prefill(repo);
-          final sites = repo.listSites();
-          _siteId ??= sites.isNotEmpty ? sites.first.id : null;
+          // Sitio principal ACOTADO al centro del expediente: al editar, el centro del propio
+          // paciente; al crear, el centro de la sesión (el mismo que usa createPatient). Antes
+          // `listSites()` era global —ofrecía sitios de otras organizaciones en el desplegable y
+          // preseleccionaba `sites.first`, la lotería—. Es DONDE se fija primarySiteId, así que
+          // acotarlo aquí corta de raíz que un expediente nazca con un sitio ajeno.
+          final orgId = _isEdit
+              ? repo.getPatient(widget.patientId!)?.organizationId
+              : ref.read(sessionProvider).user?.organizationId;
+          final sites = repo
+              .listSites(organizationId: orgId)
+              .where((s) => s.isActive)
+              .toList();
+          _siteId ??= repo.resolveSaveSite(organizationId: orgId);
 
           return Center(
             child: ConstrainedBox(

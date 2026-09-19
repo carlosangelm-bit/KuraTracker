@@ -61,19 +61,30 @@ void main() {
     });
   });
 
-  test('las pantallas que crean consulta rutean el sitio por resolveSaveSite (no la lotería global)',
+  test('TODAS las pantallas que eligen sitio para una paciente rutean por resolveSaveSite (sin lotería global)',
       () {
+    // Enumeradas (Carlos, "arregla a todos los que tocan el dato"): las pantallas que fijan el sitio
+    // de una consulta, un cobro, un consumo o el sitio principal del expediente.
     const screens = [
       'lib/features/follow_up/follow_up_capture_screen.dart',
       'lib/features/consultation/consultation_hub_screen.dart',
+      'lib/features/patients/patient_form_screen.dart',
+      'lib/features/insumos/consumo_screen.dart',
     ];
     for (final f in screens) {
-      final src = File(f).readAsStringSync();
-      expect(src.contains('resolveSaveSite('), isTrue,
-          reason: '$f debe resolver el sitio del guardado por la regla única');
-      // No debe quedar el patrón lotería `primarySiteId ?? (sites … .first)`.
-      expect(RegExp(r'primarySiteId \?\? \(sites').hasMatch(src), isFalse,
-          reason: '$f no debe caer a listSites().first global (sitio ajeno)');
+      // Se ignoran las líneas de comentario (mencionan el patrón viejo a propósito): solo cuenta el
+      // código.
+      final code = File(f)
+          .readAsLinesSync()
+          .where((l) => !l.trimLeft().startsWith('//'))
+          .join('\n');
+      expect(code.contains('resolveSaveSite('), isTrue,
+          reason: '$f debe resolver el sitio por la regla única resolveSaveSite');
+      // La lotería del sitio: `sites.first` como default, o el primario sin validar `primarySiteId ??`.
+      expect(code.contains('sites.first'), isFalse,
+          reason: '$f no debe elegir/preseleccionar el sitio con sites.first (lotería)');
+      expect(code.contains('primarySiteId ??'), isFalse,
+          reason: '$f no debe usar el sitio primario sin validarlo contra el centro');
     }
   });
 }
