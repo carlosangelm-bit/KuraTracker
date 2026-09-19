@@ -1397,8 +1397,10 @@ class _SuppliesUsedSectionState extends ConsumerState<_SuppliesUsedSection> {
     }
 
     // 2) Fallback: mapeo antiguo por (método, genérico) → producto Shopify.
+    // SIN filtro de sitio: el inventario del centro cuenta esté en el sitio que esté (mismo
+    // criterio que la resolución 0149 y el enriquecimiento de precio).
     final mapGroups = repo.supplyMappingGroups(orgId);
-    final inventory = repo.listInventoryItems(organizationId: orgId, siteId: siteId);
+    final inventory = repo.listInventoryItems(organizationId: orgId);
     final byProduct = <String, InventoryItem>{
       for (final it in inventory)
         if (it.shopifyProductId != null) it.shopifyProductId!: it
@@ -1487,9 +1489,11 @@ class _SuppliesUsedSectionState extends ConsumerState<_SuppliesUsedSection> {
   Future<void> _addManual(DataRepository repo) async {
     final orgId = widget.organizationId;
     if (orgId == null) return;
-    final siteId = _effectiveSite(repo, orgId);
-    if (siteId == null) return;
-    final inventory = repo.listInventoryItems(organizationId: orgId, siteId: siteId);
+    // El selector muestra el inventario del CENTRO, SIN filtrar por sitio (decisión: el flujo de
+    // insumos nunca se limita por sitio; se cuadra después en el módulo de insumos). Antes
+    // filtraba por el sitio de la consulta y, para una paciente en un sitio sin inventario, abría
+    // vacío ("No hay inventario en el sitio de esta consulta") — misma costura que el precio.
+    final inventory = repo.listInventoryItems(organizationId: orgId);
     final item = await showModalBottomSheet<InventoryItem>(
       context: context,
       isScrollControlled: true,
@@ -1501,7 +1505,7 @@ class _SuppliesUsedSectionState extends ConsumerState<_SuppliesUsedSection> {
           child: inventory.isEmpty
               ? const Padding(
                   padding: EdgeInsets.all(24),
-                  child: Text('No hay inventario en el sitio de esta consulta.'))
+                  child: Text('Este centro no tiene inventario dado de alta.'))
               : ListView(
                   shrinkWrap: true,
                   children: [
