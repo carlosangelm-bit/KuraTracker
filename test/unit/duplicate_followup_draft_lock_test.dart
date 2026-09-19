@@ -97,4 +97,15 @@ void main() {
         repo.findOpenDraftForWound(woundId, excludeConsultationId: draftId), isNull,
         reason: 'reabrir el propio borrador no debe volver a preguntar por él');
   });
+
+  // La pantalla usa la variante que REFRESCA antes (para ver un borrador de otro dispositivo). En la
+  // demo (LocalStore) el refresh es no-op, pero el camino real de la pantalla queda cubierto.
+  test('findOpenDraftForWoundRefreshed (el que usa la pantalla) detecta el borrador de hoy',
+      () async {
+    final woundId = await newWound('Talón (refreshed)');
+    final draftId = await addFollowUp(woundId, isDraft: true, daysAgo: 0);
+    final found = await repo.findOpenDraftForWoundRefreshed(woundId);
+    expect(found?.id, draftId,
+        reason: 'la variante con refresh debe detectar el mismo borrador que la síncrona');
+  });
 }

@@ -2607,6 +2607,14 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
     _regimenAccepted = s['regimen_accepted'] as bool? ?? _regimenAccepted;
   }
 
+  /// Candado de duplicación (camino "nuevo"): refresca datos y, si hay un borrador sin terminar de
+  /// esta herida para hoy, le pregunta al clínico. Best-effort: si algo falla, la captura sigue en
+  /// blanco (nunca bloquea el registro).
+  Future<void> _checkForExistingDraft(DataRepository repo) async {
+    final existing = await repo.findOpenDraftForWoundRefreshed(widget.woundId);
+    if (existing != null && mounted) await _promptResumeDraft(existing.id);
+  }
+
   /// Pregunta del candado de duplicación: continuar el borrador existente de esta herida (hoy) o
   /// registrar uno nuevo. "Continuar" reabre el borrador por su ruta (reusa toda la lógica de
   /// reapertura); "nuevo" no hace nada (la captura sigue en blanco y creará su propia consulta).
@@ -2644,14 +2652,11 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
       // terminar de ESTA herida para HOY, se le pregunta al clínico si continúa
       // ese o registra uno nuevo — ni se reutiliza en silencio ni se bloquea (dos
       // curaciones el mismo día son un caso real; la regla clínica no se inventa
-      // desde el código). Vive en la base (findOpenDraftForWound), así que
-      // sobrevive salir y re-entrar a la captura, cosa que la memoria local de la
-      // pantalla (_createdConsultationId) no hacía.
-      final existing = repo.findOpenDraftForWound(widget.woundId);
-      if (existing != null) {
-        WidgetsBinding.instance.addPostFrameCallback(
-            (_) => _promptResumeDraft(existing.id));
-      }
+      // desde el código). Vive en la base (findOpenDraftForWound) y REFRESCA antes
+      // consultas y mediciones, así que ve también un borrador hecho en otro
+      // dispositivo, no solo lo que la app ya tenía en caché (Carlos, 19-sep).
+      WidgetsBinding.instance
+          .addPostFrameCallback((_) => _checkForExistingDraft(repo));
       return;
     }
     final c = repo.getConsultation(id);

@@ -6282,6 +6282,24 @@ class DataRepository {
     return drafts.isEmpty ? null : drafts.first;
   }
 
+  /// Igual que [findOpenDraftForWound] pero REFRESCA antes consultas y mediciones desde el servidor
+  /// (best-effort), para que el candado de duplicación vea también un borrador hecho en OTRO
+  /// dispositivo, no solo lo que ya está en la caché de la app. En la demo (LocalStore) el refresh es
+  /// no-op. Si el refresh falla (sin red), cae a la caché — sigue cerrando el hueco del mismo
+  /// dispositivo (salir y re-entrar), que es el caso principal.
+  Future<Consultation?> findOpenDraftForWoundRefreshed(String woundId,
+      {DateTime? onDate, String? excludeConsultationId}) async {
+    try {
+      await _store.refreshCollection(Collections.consultations);
+      await _store.refreshCollection(Collections.woundMeasurements);
+    } catch (e) {
+      debugPrint(
+          'findOpenDraftForWoundRefreshed: refresh falló; se usa la caché: $e');
+    }
+    return findOpenDraftForWound(woundId,
+        onDate: onDate, excludeConsultationId: excludeConsultationId);
+  }
+
   /// Herida asociada a una consulta (vía su medición). Sirve para reabrir un
   /// borrador de seguimiento en el formulario correcto.
   String? woundIdForConsultation(String consultationId) {
