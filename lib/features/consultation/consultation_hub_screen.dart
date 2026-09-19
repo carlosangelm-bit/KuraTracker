@@ -89,12 +89,19 @@ class _ConsultationHubScreenState extends ConsumerState<ConsultationHubScreen> {
         error: (e, st) => Center(child: Text('Error: $e')),
         data: (repo) {
           final patient = repo.getPatient(widget.patientId);
-          final sites = repo.listSites();
-          _siteId ??= patient?.primarySiteId ?? (sites.isNotEmpty ? sites.first.id : null);
-
           if (patient == null) {
             return const Center(child: Text('Paciente no encontrado.'));
           }
+          // Sitios del CENTRO de la paciente (no `listSites()` global, que ofrecía sitios de otras
+          // organizaciones en el desplegable y podía preseleccionar uno ajeno). Default por la regla
+          // única resolveSaveSite: el primario si es del centro; si no, el primer sitio activo.
+          final sites = repo
+              .listSites(organizationId: patient.organizationId)
+              .where((s) => s.isActive)
+              .toList();
+          _siteId ??= repo.resolveSaveSite(
+              organizationId: patient.organizationId,
+              patientPrimarySiteId: patient.primarySiteId);
 
           // Decisión del tipo de visita:
           // - typeLocked: ya lo decidió el tipo de la cita (solo lectura).

@@ -2248,6 +2248,15 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
     return (primary != null && ownSiteIds.contains(primary)) ? primary : null;
   }
 
+  // Sitio con el que se GUARDA la consulta (y que hereda el cobro). Regla única en el repo
+  // (resolveSaveSite): el sitio primario de la paciente SOLO si es del centro activo; si no, el
+  // primer sitio activo del centro activo — nunca `listSites().first` global (lotería), que podía
+  // estampar un sitio de OTRA organización en la consulta y en charges.site_id (dinero).
+  String? _siteIdForSave(DataRepository repo) => repo.resolveSaveSite(
+        organizationId: ref.read(activeOrganizationIdProvider),
+        patientPrimarySiteId: repo.getPatient(widget.patientId)?.primarySiteId,
+      );
+
   // Inserta las FRASES del protocolo en la nota clínica (campo libre "Notas clínicas /
   // Observaciones"). Acto EXPLÍCITO del clínico (nunca solo), una sola vez; la nota queda
   // totalmente editable después (es del clínico, no del protocolo).
@@ -2905,10 +2914,7 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
       return;
     }
     try {
-      final patient = repo.getPatient(widget.patientId);
-      final sites = repo.listSites();
-      final siteId =
-          patient?.primarySiteId ?? (sites.isNotEmpty ? sites.first.id : null);
+      final siteId = _siteIdForSave(repo);
       if (siteId == null) throw StateError('No hay sitios configurados.');
 
       // Si ya venía de un borrador —o si YA se creó una consulta en esta captura (reintento tras
@@ -3041,12 +3047,9 @@ class _FollowUpCaptureScreenState extends ConsumerState<FollowUpCaptureScreen> {
       if (wound == null) {
         throw StateError('Herida no encontrada.');
       }
-      // Reutiliza el sitio principal del paciente (o el primero disponible)
-      // igual que ConsultationHubScreen, ya que este formulario no repite
-      // esa pregunta para una visita de seguimiento breve.
-      final patient = repo.getPatient(widget.patientId);
-      final sites = repo.listSites();
-      final siteId = patient?.primarySiteId ?? (sites.isNotEmpty ? sites.first.id : null);
+      // Sitio del guardado: el primario de la paciente SOLO si es del centro activo; si no, el
+      // primer sitio activo del centro activo (nunca un sitio global/ajeno). Ver _siteIdForSave.
+      final siteId = _siteIdForSave(repo);
       if (siteId == null) {
         throw StateError('No hay sitios configurados.');
       }

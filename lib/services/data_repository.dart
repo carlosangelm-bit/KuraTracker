@@ -6300,6 +6300,23 @@ class DataRepository {
         onDate: onDate, excludeConsultationId: excludeConsultationId);
   }
 
+  /// Sitio con el que se GUARDA una consulta (y que hereda el cobro) para una paciente en un centro:
+  /// el sitio PRIMARIO de la paciente SOLO si es un sitio ACTIVO del centro; si no, el primer sitio
+  /// activo del centro. null si el centro no tiene sitios activos. Evita el bug de estampar un sitio
+  /// AJENO —de otra organización, dato heredado— o un `listSites().first` global (lotería) en la
+  /// consulta y en charges.site_id (dinero). Regla única para todos los que crean consulta.
+  String? resolveSaveSite(
+      {required String? organizationId, String? patientPrimarySiteId}) {
+    final ownSites = listSites(organizationId: organizationId)
+        .where((s) => s.isActive)
+        .toList();
+    if (patientPrimarySiteId != null &&
+        ownSites.any((s) => s.id == patientPrimarySiteId)) {
+      return patientPrimarySiteId;
+    }
+    return ownSites.isNotEmpty ? ownSites.first.id : null;
+  }
+
   /// Herida asociada a una consulta (vía su medición). Sirve para reabrir un
   /// borrador de seguimiento en el formulario correcto.
   String? woundIdForConsultation(String consultationId) {
