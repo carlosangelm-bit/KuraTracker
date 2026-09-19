@@ -7226,10 +7226,13 @@ class DataRepository {
   }
 
   Future<void> saveProtocolProductRule(ProtocolProductRule rule) async {
+    // updated_at NO lo escribe el cliente: la base lo dueña (default now() en INSERT, 0076 +
+    // trigger set_updated_at en UPDATE, 0147). El cliente lo mandaba en HORA LOCAL sobre un
+    // timestamptz → ~6 h de desfase. El modelo no lee updated_at, así que quitarlo es seguro
+    // también en demo (LocalStore no emula el default, pero nadie castea el campo).
     await _store.upsertRow(Collections.protocolProductRules, {
-      ...rule.toJson(),
+      ...rule.toJson()..remove('updated_at'),
       'id': rule.id.isEmpty ? _uuid.v4() : rule.id,
-      'updated_at': DateTime.now().toIso8601String(),
     });
   }
 

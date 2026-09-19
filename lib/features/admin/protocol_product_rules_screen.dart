@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/utils/text_search.dart';
 import '../../core/widgets/kura_module_lock.dart';
 
 import '../../core/providers/session_provider.dart';
@@ -306,6 +307,10 @@ class _RuleEditorState extends State<_RuleEditor> {
   final Set<String> _exudate = {};
   final Set<String> _zones = {};
   RuleInfection _infection = RuleInfection.any;
+  // FRASE para la nota: el texto que la regla prescribe para la nota de evolución. La columna
+  // existe en protocol_product_rules; sin este campo las reglas PROPIAS nunca la tenían y la
+  // Opción A (frase→nota) solo servía por la vía del catálogo Kura+ (hallazgo de Carlos).
+  final _notePhraseCtrl = TextEditingController();
 
   static const _exudateLabels = {
     'ninguno': 'Ninguno',
@@ -330,6 +335,7 @@ class _RuleEditorState extends State<_RuleEditor> {
       _exudate.addAll(e.exudateLevels);
       _zones.addAll(e.zoneGroups);
       _infection = e.infection;
+      _notePhraseCtrl.text = e.notePhrase ?? '';
     }
   }
 
@@ -341,6 +347,7 @@ class _RuleEditorState extends State<_RuleEditor> {
     _minCtrl.dispose();
     _maxCtrl.dispose();
     _qtyCtrl.dispose();
+    _notePhraseCtrl.dispose();
     super.dispose();
   }
 
@@ -371,6 +378,8 @@ class _RuleEditorState extends State<_RuleEditor> {
       zoneGroups: _zones.toList(),
       infection: _infection,
       priority: widget.existing?.priority ?? 0,
+      notePhrase:
+          _notePhraseCtrl.text.trim().isEmpty ? null : _notePhraseCtrl.text.trim(),
     );
     Navigator.of(context).pop(rule);
   }
@@ -612,6 +621,21 @@ class _RuleEditorState extends State<_RuleEditor> {
                   fontSize: 11, color: KuraColors.darkText.withValues(alpha: 0.5)),
             ),
             const SizedBox(height: 16),
+            // FRASE para la nota (opcional): el clínico la inserta en la nota de evolución
+            // por un acto explícito durante el seguimiento (Fase 3). Mismo comportamiento que
+            // el catálogo Kura+.
+            TextField(
+              controller: _notePhraseCtrl,
+              minLines: 2,
+              maxLines: 4,
+              decoration: const InputDecoration(
+                labelText: 'Frase para la nota (opcional)',
+                hintText:
+                    'Texto que el clínico podrá insertar en la nota de evolución.',
+                isDense: true,
+              ),
+            ),
+            const SizedBox(height: 16),
             SizedBox(
               width: double.infinity,
               child: FilledButton(
@@ -639,11 +663,11 @@ class _InventorySearchSheetState extends State<_InventorySearchSheet> {
   String _q = '';
   @override
   Widget build(BuildContext context) {
-    final q = _q.trim().toLowerCase();
-    final filtered = q.isEmpty
+    // Búsqueda sin acentos: "apos" encuentra "Apósito" (foldAccents, util canónica).
+    final filtered = _q.trim().isEmpty
         ? widget.items
         : widget.items
-            .where((i) => i.name.toLowerCase().contains(q))
+            .where((i) => matchesSearch(i.name, _q))
             .toList();
     return Padding(
       padding: EdgeInsets.only(

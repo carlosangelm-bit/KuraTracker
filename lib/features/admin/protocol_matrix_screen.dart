@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/providers/session_provider.dart';
+import '../../core/utils/text_search.dart';
 import '../../core/design/tokens.dart';
 import '../../core/widgets/kura_module_lock.dart';
 import '../../models/inventory.dart';
@@ -623,11 +624,12 @@ class _InventoryPickerSheetState extends State<_InventoryPickerSheet> {
     //  - falló + vacío → no se pudo cargar (abajo, _CatalogLoadFailed);
     //  - falló + CON datos → hay respaldo de caché, pero es viejo (esta franja).
     final stale = loadFailed && all.isNotEmpty;
-    final q = _q.trim().toLowerCase();
+    // Búsqueda sin acentos: "apos" encuentra "Apósito" (foldAccents, util canónica).
+    final q = foldAccents(_q.trim());
     final results = q.isEmpty
         ? all
         : all.where((it) {
-            final hay = '${it.name} ${it.supplier ?? ''}'.toLowerCase();
+            final hay = foldAccents('${it.name} ${it.supplier ?? ''}');
             return q.split(' ').every((t) => hay.contains(t));
           }).toList();
     final t = BrandTokens.of(context);
